@@ -1,0 +1,294 @@
+{
+  "profile": {
+    "id": "standard",
+    "label": "Standart Nöbet Kuralları",
+    "version": "2025-09-09",
+    "description": "Katı/soft öncelik piramidine göre yapılandırılmış, vardiya adaleti ve yorgunluk dengelemesi içeren temel kural profili." 
+  },
+  "weights": {
+    "W1": 10,
+    "W2": 8,
+    "W3": 6,
+    "W4": 5,
+    "W5": 3,
+    "W6": 3,
+    "W7": 2
+  },
+  "limits": {
+    "max_consec_days": 6,
+    "max_week_hours": 80,
+    "max_week_target_hours": 48,
+    "max_long_shift_per_week": 2,
+    "max_critical_role_per_week": 2
+  },
+  "fatigue": {
+    "scores": {
+      "night": 2,
+      "long16": 2,
+      "long24": 3,
+      "critical_area": 1
+    },
+    "consecutive_penalty_threshold": 4,
+    "hard_ceiling": 5,
+    "cooldown_after_heavy": 1,
+    "description": "Skor ≥5 olan personele ertesi gün ağır görev veya gece nöbeti yazılmaz; mümkün değilse yüksek ceza uygulanır."
+  },
+  "shifts": [
+    { "id": "M", "name": "Sabah", "start": "08:00", "end": "16:00", "len": 8 },
+    { "id": "M4", "name": "Akşam", "start": "16:00", "end": "00:00", "len": 8, "heavy": true },
+    { "id": "V1", "name": "Uzun", "start": "08:00", "end": "24:00", "len": 16, "heavy": true },
+    { "id": "N", "name": "Gece", "start": "00:00", "end": "08:00", "len": 8, "night": true },
+    { "id": "V2", "name": "24 Saat", "start": "08:00", "end": "08:00+1", "len": 24, "night": true, "heavy": true }
+  ],
+  "roles": [
+    { "id": "triaj", "min": 1, "qualified": ["hemsire_triaj"] },
+    { "id": "resus", "min": 2, "qualified": ["hekim_uzman", "hemsire_resus"], "critical": true },
+    { "id": "kirmizi", "min": 1 },
+    { "id": "sari", "min": 1 },
+    { "id": "cocuk", "min": 1 },
+    { "id": "yesil", "min_weekday": 3, "min_weekend": 4 },
+    { "id": "eczane", "min": 1, "exclusive": true },
+    { "id": "ekip_sorum", "min": 1, "exclusive": true }
+  ],
+  "staffSchema": {
+    "attributes": [
+      "quals",
+      "night_allowed",
+      "pregnant",
+      "breastfeeding",
+      "seniority",
+      "exempt",
+      "volunteer_night",
+      "related_with"
+    ],
+    "preferences": [
+      "off_days",
+      "prefer",
+      "avoid",
+      "notes"
+    ]
+  },
+  "rules": {
+    "hard": [
+      {
+        "id": "H1_REST_11H",
+        "label": "Vardiyalar Arası En Az 11 Saat",
+        "scope": "global",
+        "priority": 1,
+        "description": "Her personel için ardışık vardiyalar arasında en az 11 saat ara bırak.",
+        "constraint": "forbid_overlap_with_min_gap(11h)",
+        "notes": "Hamile/emziren personel için gece vardiyası tamamen yasaklanır."
+      },
+      {
+        "id": "H2_QUAL_MATCH",
+        "label": "Yetkinlik ve Sertifika",
+        "scope": "role",
+        "priority": 1,
+        "description": "Görev ancak gerekli eğitim/sertifika listesinde bulunan personele atanabilir.",
+        "constraint": "x[p,g,d] <= qualified[p,g]"
+      },
+      {
+        "id": "H3_SINGLE_ASSIGN",
+        "label": "Aynı Gün Tek Görev",
+        "scope": "per-person",
+        "priority": 1,
+        "description": "Bir personel aynı gün sadece bir görev/vardiya alabilir.",
+        "constraint": "sum_g x[p,g,d] <= 1"
+      },
+      {
+        "id": "H4_MIN_STAFF",
+        "label": "Asgari Kadro",
+        "scope": "role",
+        "priority": 1,
+        "description": "Her kritik rol için vardiya başına tanımlanan asgari personel sağlanmalı.",
+        "constraint": "sum_p x[p,g,d] >= min_staff[g,d]",
+        "relaxable": true,
+        "relax_policy": {
+          "requires_approval": true,
+          "log_level": "critical"
+        }
+      },
+      {
+        "id": "H5_SAFETY_GUARDS",
+        "label": "Güvenlik Rolleri",
+        "scope": "night",
+        "priority": 1,
+        "description": "Gece vardiyasında en az bir uzman hekim ve resüsitasyonda iki kişi bulundur.",
+        "constraint": "night_roles_require_specialists"
+      },
+      {
+        "id": "H6_POST_NIGHT_REST",
+        "label": "Gece Sonrası Dinlenme",
+        "scope": "per-person",
+        "priority": 1,
+        "description": "N, V1 veya V2 vardiyasından sonra ertesi gün ağır görev/gece yazılmaz; M4/V1 sonrası erken vardiya yasak.",
+        "constraint": "block_next_day_after(['N','V1','V2'], heavy_only=true)"
+      },
+      {
+        "id": "H7_MAX_CONSEC",
+        "label": "Maksimum Ardışık Gün",
+        "scope": "per-person",
+        "priority": 1,
+        "description": "Her 7 günlük pencerede en fazla 6 çalışma günü.",
+        "constraint": "rolling_sum(x[p,*,d], 7) <= 6"
+      },
+      {
+        "id": "H8_NIGHT_EXEMPTIONS",
+        "label": "Gece Muafiyetleri",
+        "scope": "per-person",
+        "priority": 1,
+        "description": "Hamile, emziren veya night_allowed=false olan personele gece vardiyası atanmaz.",
+        "constraint": "x[p,night,d] = 0"
+      },
+      {
+        "id": "H9_EXCLUSIVE_ROLES",
+        "label": "Exclusive Roller",
+        "scope": "role",
+        "priority": 1,
+        "description": "Eczane veya ekip sorumlusu atanan personel aynı gün başka görev alamaz.",
+        "constraint": "if assigned(p,'exclusive_role',d) then sum_g x[p,g,d] = 1"
+      },
+      {
+        "id": "H10_FAMILY_BLOCK",
+        "label": "Aile Aynı Gece",
+        "scope": "night",
+        "priority": 1,
+        "description": "Eş/akraba ilişkisi olan personel aynı gece aynı alanda çalışamaz (parametreyle kapatılabilir).",
+        "constraint": "forbid_related_pairs",
+        "toggle_key": "family_block_enabled"
+      },
+      {
+        "id": "H11_MENTORING",
+        "label": "Mentor Gece",
+        "scope": "night",
+        "priority": 1,
+        "description": "Yeni personelin gece vardiyası yanında kıdemli bulunmasını zorunlu kıl.",
+        "constraint": "night_requires_senior"
+      }
+    ],
+    "soft": {
+      "high": [
+        {
+          "id": "S1_WEEKLY_HOURS",
+          "label": "Haftalık Hedef Saat",
+          "penalty": "W3",
+          "description": "Kişi başı haftalık toplam saatler hedef aralıkta tutulur; 80 saat üstü büyük ceza."
+        },
+        {
+          "id": "S2_NIGHT_BALANCE",
+          "label": "Gece Dengesi",
+          "penalty": "W1",
+          "description": "Aylık ve yıllık gece sayıları ortalamadan ±1 içinde tutulur; gönüllüler için pozitif sapma izinli."
+        },
+        {
+          "id": "S3_HOLIDAY_BALANCE",
+          "label": "Resmi Tatil Dengesi",
+          "penalty": "W2",
+          "description": "Resmi/dini tatil nöbetleri tüm yıl için eşit paylaşılır; ardışık tatil günleri aynı kişiye verilmez."
+        },
+        {
+          "id": "S4_LONG_SHIFT_FREQ",
+          "label": "Uzun Vardiya Sıklığı",
+          "penalty": "W4",
+          "description": "16s ve 24s vardiyalar haftada en fazla ikişer kez yazılır, ardışık gün yasak."
+        },
+        {
+          "id": "S5_ROTATION",
+          "label": "Alan Rotasyonu",
+          "penalty": "W6",
+          "description": "Kişiler aynı kritik alanlarda sıkışmasın diye ay içinde belirli alan çeşitliliği sağlanır."
+        }
+      ],
+      "medium": [
+        {
+          "id": "S6_PREFERENCES",
+          "label": "Personel Tercihleri",
+          "penalty": "W5",
+          "description": "Boş gün, vardiya tercihi ve mazeretlere uyum sağlanır; çakışma durumunda adalet önceliği kullanılır."
+        },
+        {
+          "id": "S7_WEEKEND_BALANCE",
+          "label": "Hafta Sonu Dengesi",
+          "penalty": "W6",
+          "description": "Cumartesi/pazar yükü kişi bazında ±1 sapma hedefiyle dengelenir."
+        },
+        {
+          "id": "S8_TEAM_LEAD_ROTATION",
+          "label": "Ekip Sorumlusu Dönüşümü",
+          "penalty": "W6",
+          "description": "Ağır sorumluluk görevleri kıdemliler arasında eşit paylaşılır."
+        }
+      ],
+      "low": [
+        {
+          "id": "S9_SENIOR_MENTOR",
+          "label": "Kıdem / Mentorluk",
+          "penalty": "W7",
+          "description": "Yeni + kıdemli aynı vardiyada olacak şekilde eşleştirmeye çalış."
+        },
+        {
+          "id": "S10_FATIGUE_SCORE",
+          "label": "Yorgunluk Ceza",
+          "penalty": "W7",
+          "description": "Fatigue skoru yükselen personele alternatif bulun; engellenemeyen durumlarda düşük seviye ceza yaz."
+        },
+        {
+          "id": "S11_VOLUNTEER_NIGHT",
+          "label": "Gönüllü Gece",
+          "penalty": "W5",
+          "description": "Gönüllü gece isteyenlere öncelik tanırken toplam dengeyi koru."
+        },
+        {
+          "id": "S12_AN_MONTH_CREDIT",
+          "label": "Ay Başı AN Etkisi",
+          "penalty": "W5",
+          "description": "Önceki ay AN kodu olanlara yeni ay gece yükü açısından kredi ver."
+        }
+      ]
+    }
+  },
+  "reporting": {
+    "metrics": [
+      "night_count",
+      "holiday_count",
+      "long_shift_count",
+      "weekly_hours",
+      "fatigue_score",
+      "preference_hits"
+    ],
+    "deviation_report": true,
+    "compliance_log": {
+      "include_relaxations": true,
+      "include_reasons": true
+    }
+  },
+  "operations": {
+    "profiles": [
+      {
+        "id": "intensive",
+        "description": "Yoğunluk modu (acil servis, grip sezonu)",
+        "overrides": {
+          "limits": { "max_long_shift_per_week": 3 },
+          "weights": { "W4": 6 },
+          "roles": [{ "id": "yesil", "min_weekday": 4, "min_weekend": 5 }]
+        }
+      },
+      {
+        "id": "holiday",
+        "description": "Bayram profili",
+        "overrides": {
+          "weights": { "W2": 10 },
+          "limits": { "max_consec_days": 5 }
+        }
+      }
+    ],
+    "pin_policy": {
+      "description": "Kilitli atamalar solver girişinde sabitlenir.",
+      "respect_user_pins": true
+    },
+    "local_repair": {
+      "enabled": true,
+      "description": "Son dakika izin eklenirse sadece ilgili gün ve alan re-optimize edilir."
+    }
+  }
+}

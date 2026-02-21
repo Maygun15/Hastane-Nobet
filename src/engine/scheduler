@@ -1,0 +1,210 @@
+/*
+  HASTANE — Basit Nöbet Planlayıcı (JS)
+  Kurallar:
+  - Aynı gün bir kişi 1 görev.
+  - Gece nöbeti alan ertesi gün tekrar gece alamaz.
+  - Servis Sorumlusu: hafta içi sabit kişi (Gamze ÖZTÜRK TEZKİN), başka göreve atanmaz.
+  - YEŞİL (V1): hafta içi 3, hafta sonu 4 kişi (eksikse “Hafta Sonu” satırları dinamik eklenir).
+*/
+
+const DEFAULT_NIGHT_CODES = new Set(["N", "V1", "V2", "SV"]);
+const DAY_NAMES_TR = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+
+/* -------- Yardımcılar -------- */
+function upTR(s) {
+  return (s ?? "").toString().trim().toLocaleUpperCase("tr");
+}
+function mulberry32(seed) {
+  let t = seed >>> 0;
+  return function () {
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function randPick(arr, rng) {
+  if (!arr || arr.length === 0) return undefined;
+  const idx = Math.floor(rng() * arr.length);
+  return arr[idx];
+}
+function buildDayCols(year, month) {
+  const d = new Date(year, month - 1, 1);
+  const out = [];
+  while (d.getMonth() + 1 === month) {
+    const dd = String(d.getDate()).padStart(2, "0");
+    const name = DAY_NAMES_TR[d.getDay() === 0 ? 6 : d.getDay() - 1];
+    out.push(`${dd} (${name})`);
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+function areaKeywords(gorevName) {
+  const g = upTR(gorevName);
+  const map = {
+    "SERVİS SORUMLUSU": ["SERVİS SORUMLUSU"],
+    "SÜPERVİZÖR": ["SÜPERVİZÖR", "SV"],
+    "EKİP SORUMLUSU": ["EKİP SORUMLUSU"],
+    "RESÜSİTASYON": ["RESÜSİTASYON"],
+    "KIRMIZI VE SARI GÖREVLENDİRME": ["KIRMIZI", "SARI"],
+    "KIRMIZI": ["KIRMIZI"],
+    "SARI": ["SARI"],
+    "ÇOCUK": ["ÇOCUK"],
+    "YEŞİL": ["YEŞİL"],
+    "ECZANE": ["ECZANE"],
+    "CERRAHİ MÜDAHELE": ["CERRAHİ MÜDAHELE", "CERRAHİ"],
+    "AŞI": ["AŞI"],
+    "TRİAJ": ["TRİAJ"],
+  };
+  for (const k of Object.keys(map)) if (g.includes(k)) return map[k];
+  return g ? [g.split(" ")[0]] : [];
+}
+function eligibleNurses(nurses, gorevName, vardiyaCode) {
+  const code = upTR(vardiyaCode);
+  const keys = areaKeywords(gorevName);
+  const out = [];
+  for (const n of nurses) {
+    const areas = upTR(n["ÇALIŞMA ALANLARI"]);
+    const shifts = "," + upTR(n["VARDİYE KODLARI"]).replace(/\s+/g, "") + ",";
+    const shiftOK = shifts.includes("," + code + ",");
+    const areaOK = keys.some((k) => areas.includes(k));
+    if (shiftOK && areaOK) out.push(n["AD SOYAD"]);
+  }
+  // fallback: sadece vardiya uyumu
+  if (out.length === 0) {
+    for (const n of nurses) {
+      const shifts = "," + upTR(n["VARDİYE KODLARI"]).replace(/\s+/g, "") + ",";
+      if (shifts.includes("," + code + ",")) out.push(n["AD SOYAD"]);
+    }
+  }
+  return out;
+}
+function hadNightPrevDay(assignments, rows, person, prevDayIdx, nightCodes) {
+  if (prevDayIdx < 0) return false;
+  for (let r = 0; r < rows.length; r++) {
+    if (assignments[r][prevDayIdx] === person && nightCodes.has(rows[r].vardiya)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/* -------- Ana API -------- */
+export function buildSchedule(nurses, tasks, opts) {
+  const year = opts?.year ?? new Date().getFullYear();
+  const month = opts?.month ?? new Date().getMonth() + 1;
+  const supervisorName = opts?.supervisorName ?? "GAMZE ÖZTÜRK TEZKİN";
+  const greenWeekday = opts?.greenWeekday ?? 3;
+  const greenWeekend = opts?.greenWeekend ?? 4;
+  const rng = mulberry32(opts?.seed ?? year * 100 + month);
+  const nightCodes = new Set(opts?.nightShiftCodes ?? Array.from(DEFAULT_NIGHT_CODES));
+  const supNorm = upTR(supervisorName);
+
+  // 1) Girdi temizliği
+  const tasksClean = (tasks || [])
+    .map((t) => ({
+      gorev: upTR(t["GÖREVİ"]),
+      vardiya: upTR(t["VARDİYE TİPİ"]),
+      count: Math.max(0, Number(t["ÇALIŞAN KİŞİ SAYISI"]) || 0),
+    }))
+    .filter((t) => t.count > 0);
+
+  // 2) Master satırlar
+  const rows = [];
+  let yesilV1Rows = 0;
+  for (const t of tasksClean) {
+    if (t.gorev.includes("YEŞİL") && t.vardiya === "V1") yesilV1Rows += t.count;
+    for (let i = 0; i < t.count; i++) {
+      rows.push({
+        gorev: t.gorev,
+        vardiya: t.vardiya,
+        suffix: t.count > 1 ? ` — #${i + 1}` : "",
+        weekendOnly: false,
+      });
+    }
+  }
+  // 3) Hafta sonu Yeşil(V1) kotasını 4’e tamamlamak için eksik satır ekle (sadece Cmt–Paz dolar)
+  if (yesilV1Rows < 4) {
+    for (let k = yesilV1Rows + 1; k <= 4; k++) {
+      rows.push({
+        gorev: "YEŞİL",
+        vardiya: "V1",
+        suffix: ` — #${k} (Hafta Sonu)`,
+        weekendOnly: true,
+      });
+    }
+  }
+
+  // 4) Tablo iskeleti
+  const days = buildDayCols(year, month);
+  const columns = ["GÖREV SATIRI", ...days];
+  const labels = rows.map((r) => `${r.gorev} (${r.vardiya})${r.suffix}`);
+  const table = Array.from({ length: rows.length }, () => Array(days.length).fill(""));
+
+  // 5) Gün gün atama
+  for (let d = 0; d < days.length; d++) {
+    const weekdayJS = new Date(year, month - 1, d + 1).getDay(); // 0=Sun
+    const isWeekend = weekdayJS === 0 || weekdayJS === 6;
+    const greenNeed = isWeekend ? greenWeekend : greenWeekday;
+    let greenFilled = 0;
+    const usedToday = new Set();
+
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r];
+
+      // Servis Sorumlusu: hafta içi sabit kişi, başka göreve atanmaz
+      if (row.gorev.includes("SERVİS SORUMLUSU")) {
+        const name = !isWeekend ? supervisorName : "";
+        table[r][d] = name;
+        if (name) usedToday.add(name);
+        continue;
+      }
+
+      // Sadece hafta sonu görünür satırlar
+      if (row.weekendOnly && !isWeekend) {
+        table[r][d] = "";
+        continue;
+      }
+
+      // Yeşil(V1) kota
+      if (row.gorev.includes("YEŞİL") && row.vardiya === "V1") {
+        if (greenFilled >= greenNeed) {
+          table[r][d] = "";
+          continue;
+        }
+      }
+
+      // Aday havuz: alan+vardiya uyumu, aynı gün tek görev, gece üstüne gece yok, supervisor hariç
+      let pool = eligibleNurses(nurses, row.gorev, row.vardiya)
+        .filter((name) => !usedToday.has(name))
+        .filter((name) => upTR(name) !== supNorm);
+
+      if (nightCodes.has(row.vardiya)) {
+        pool = pool.filter((name) => !hadNightPrevDay(table, rows, name, d - 1, nightCodes));
+      }
+
+      if (pool.length === 0) {
+        table[r][d] = "";
+        continue;
+      }
+
+      const pick = randPick(pool, rng);
+      table[r][d] = pick;
+      usedToday.add(pick);
+      if (row.gorev.includes("YEŞİL") && row.vardiya === "V1") greenFilled++;
+    }
+  }
+
+  return { columns, rows: labels, table };
+}
+
+/* -------- Excel yardımcı (opsiyonel) -------- */
+export function toExcel(schedule, XLSX, sheetName = "Cizelge") {
+  const { columns, rows, table } = schedule;
+  const aoa = [columns];
+  for (let r = 0; r < rows.length; r++) aoa.push([rows[r], ...table[r]]);
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  return wb;
+}

@@ -1,0 +1,108 @@
+/* =========================
+   src/index.css  (tam dosya)
+   — Tipografi ve bileşen stili standardı
+   — Toplu İzin Listesi ile birebir uyumlu
+========================= */
+
+/* Tailwind CSS direktifleri */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Genel görünüm */
+:root {
+  color-scheme: light;
+
+  /* Tipografi */
+  --app-font-size: 13px;       /* tablo metinleri */
+  --app-font-size-sm: 12px;    /* dipnot/ikincil */
+  --app-line-height: 1.35;
+
+  /* Köşe ve çerçeveler */
+  --app-radius: 14px;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans",
+    "Apple Color Emoji", "Segoe UI Emoji";
+  line-height: var(--app-line-height);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===== Uygulama sarmalayıcı =====
+   App.jsx kök div’ine .tl-font ekleyeceğiz. */
+.tl-font {
+  font-size: var(--app-font-size);
+  letter-spacing: 0.1px;
+}
+
+/* ===== Kart/kaplar ===== */
+.tl-card {
+  @apply bg-white shadow-sm;
+  border-radius: var(--app-radius);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+/* ===== Tablo başlık/hücre ===== */
+.tl-th {
+  @apply font-medium;
+  font-size: 12.5px;
+  color: #2b2b2b;
+}
+.tl-td {
+  font-size: 13px;
+  color: #1f2937; /* gray-800 */
+}
+
+/* Küçük metinler / alt açıklamalar */
+.tl-sub {
+  font-size: var(--app-font-size-sm);
+  color: #6b7280; /* gray-500 */
+}
+
+/* ===== Buton standardı ===== */
+.tl-btn {
+  @apply inline-flex items-center justify-center select-none;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.07);
+  background: #fafafa;
+  transition: background 120ms ease;
+}
+.tl-btn:hover { background: #f2f2f2; }
+
+.tl-btn-primary {
+  background: #111827;  /* gray-900 */
+  color: #fff;
+  border-color: #111827;
+}
+.tl-btn-primary:hover { filter: brightness(0.92); }
+
+/* ===== Basit yardımcılar (opsiyonel) ===== */
+.tl-input {
+  @apply outline-none;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.07);
+  background: #fff;
+}
+.tl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: #fff;
+  font-size: 12px;
+}
