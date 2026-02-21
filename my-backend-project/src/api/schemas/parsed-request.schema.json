@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "parsed-request.schema.json",
+  "title": "Parsed AI Request",
+  "type": "object",
+  "required": ["schemaVersion", "activeYM", "items"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "personId": { "type": ["string", "null"] },
+    "locale": { "type": "string" },
+    "activeYM": {
+      "type": "string",
+      "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+    },
+    "items": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Item" }
+    }
+  },
+  "$defs": {
+    "BaseItem": {
+      "type": "object",
+      "properties": {
+        "meta": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+
+    "BlockItem": {
+      "allOf": [
+        { "$ref": "#/$defs/BaseItem" },
+        {
+          "type": "object",
+          "required": ["kind", "date"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "BLOCK" },
+            "type": { "type": "string" },
+            "date": { "type": "string", "format": "date" }
+          }
+        }
+      ]
+    },
+
+    "OvertimeItem": {
+      "allOf": [
+        { "$ref": "#/$defs/BaseItem" },
+        {
+          "type": "object",
+          "required": ["kind", "date", "hours"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "OVERTIME" },
+            "date": { "type": "string", "format": "date" },
+            "hours": { "type": "number", "minimum": 0 }
+          }
+        }
+      ]
+    },
+
+    "ShiftPreferenceItem": {
+      "allOf": [
+        { "$ref": "#/$defs/BaseItem" },
+        {
+          "type": "object",
+          "required": ["kind", "code"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "SHIFT_PREFERENCE" },
+            "code": { "type": "string" }
+          }
+        }
+      ]
+    },
+
+    "Item": {
+      "oneOf": [
+        { "$ref": "#/$defs/BlockItem" },
+        { "$ref": "#/$defs/OvertimeItem" },
+        { "$ref": "#/$defs/ShiftPreferenceItem" }
+      ]
+    }
+  }
+}
