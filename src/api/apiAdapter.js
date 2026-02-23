@@ -10,7 +10,7 @@ const resolvedBase = (() => {
   if (typeof window !== "undefined") {
     if (window.__API_BASE__) return window.__API_BASE__;
     if (["5173", "5174"].includes(window.location?.port)) {
-      return "http://localhost:3000";
+      return "https://hastane-backend-production.up.railway.app";
     }
   }
   return "";

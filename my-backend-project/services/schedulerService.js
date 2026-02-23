@@ -46,8 +46,73 @@ function buildDaysFromScheduleData({ year, month, data }) {
     : [];
   if (!defs.length) return null;
 
-  const overrides = data?.overrides && typeof data.overrides === 'object' ? data.overrides : {};
   const shiftMeta = buildShiftMetaMap(data);
+
+  const isDailyDefs = defs.some(
+    (d) => d && (d.date || d.day) && Array.isArray(d.shifts)
+  );
+
+  if (isDailyDefs) {
+    const last = new Date(year, month, 0).getDate();
+    const byDate = new Map();
+    for (const def of defs) {
+      if (!def || !Array.isArray(def.shifts)) continue;
+      let y = year;
+      let m = month;
+      let d = null;
+      if (def.date) {
+        const parts = String(def.date).split("-");
+        if (parts.length === 3) {
+          y = Number(parts[0]);
+          m = Number(parts[1]);
+          d = Number(parts[2]);
+        }
+      } else if (def.day) {
+        d = Number(def.day);
+      }
+      if (!d || y !== year || m !== month) continue;
+
+      const key = `${year}-${pad2(month)}-${pad2(d)}`;
+      const arr = byDate.get(key) || [];
+      for (const sh of def.shifts) {
+        if (!sh) continue;
+        const code = String(sh.code || sh.shiftCode || sh.id || sh.label || sh.name || "").trim();
+        const area = String(sh.area || sh.label || def.label || def.area || def.name || "").trim();
+        const need = Math.max(
+          0,
+          Number(sh.requiredCount ?? sh.count ?? sh.need ?? sh.required ?? sh.qty ?? 0) || 0
+        );
+        if (!code || need <= 0) continue;
+        const meta = shiftMeta.get(code) || {};
+        arr.push({
+          id: String(sh.id || code),
+          code,
+          area,
+          requiredCount: need,
+          hours: meta.hours,
+          start: meta.start,
+          end: meta.end,
+          isNight: meta.isNight || false,
+        });
+      }
+      byDate.set(key, arr);
+    }
+
+    const days = [];
+    for (let d = 1; d <= last; d++) {
+      const dt = new Date(year, month - 1, d);
+      const wd = dt.getDay();
+      const date = `${year}-${pad2(month)}-${pad2(d)}`;
+      days.push({
+        date,
+        weekday: wd,
+        shifts: byDate.get(date) || [],
+      });
+    }
+    return days;
+  }
+
+  const overrides = data?.overrides && typeof data.overrides === 'object' ? data.overrides : {};
 
   const last = new Date(year, month, 0).getDate();
   const days = [];
@@ -60,6 +125,7 @@ function buildDaysFromScheduleData({ year, month, data }) {
     for (const def of defs) {
       const rowId = String(def?.id ?? def?.rowId ?? '');
       const shiftCode = def?.shiftCode || def?.label || def?.code || '';
+      const area = String(def?.label || def?.area || def?.name || '').trim();
       if (!rowId) continue;
 
       let v = overrides?.[rowId]?.[d];
@@ -76,6 +142,7 @@ function buildDaysFromScheduleData({ year, month, data }) {
       shifts.push({
         id: rowId,
         code: shiftCode,
+        area,
         requiredCount: need,
         hours: meta.hours,
         start: meta.start,
@@ -142,7 +209,10 @@ async function buildStaff({ serviceId = '', role = '' } = {}) {
 }
 
 async function generateSchedule({ sectionId, serviceId = '', role = '', year, month, dryRun = false, userId, payload = {} }) {
-  const scheduleDoc = await MonthlySchedule.findOne({ sectionId, serviceId, role, year, month }).lean();
+  const query = { sectionId, year, month };
+  if (serviceId) query.serviceId = serviceId;
+  if (role) query.role = role;
+  const scheduleDoc = await MonthlySchedule.findOne(query).lean();
   const days =
     Array.isArray(payload.days) && payload.days.length
       ? payload.days

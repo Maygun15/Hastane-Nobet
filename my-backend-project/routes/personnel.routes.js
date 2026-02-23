@@ -47,12 +47,57 @@ router.get('/',
         tc: p.tc || '',
         phone: p.phone || '',
         email: p.email || '',
+        areas: p.meta?.areas || [],
+        meta: p.meta || {},
       }));
 
       return res.json({ items: mapped, total, page, size: limit });
     } catch (err) {
       console.error('GET /api/personnel ERR:', err);
       return res.status(500).json({ error: 'Liste alınamadı' });
+    }
+  }
+);
+
+router.post('/',
+  requireAuth,
+  async (req, res) => {
+    try {
+      const {
+        name,
+        serviceId = '',
+        meta = {},
+        tc = '',
+        phone = '',
+        email = ''
+      } = req.body;
+
+      if (!name || !String(name).trim()) {
+        return res.status(400).json({ error: 'İsim gerekli' });
+      }
+
+      const person = await Person.create({
+        name: String(name).trim(),
+        serviceId: String(serviceId || ''),
+        meta: meta || {},
+        tc,
+        phone,
+        email,
+        createdBy: req.user?.uid || null
+      });
+
+      return res.json({
+        ok: true,
+        person: {
+          id: String(person._id),
+          name: person.name,
+          serviceId: person.serviceId,
+          meta: person.meta || {}
+        }
+      });
+    } catch (err) {
+      console.error('POST /api/personnel ERR:', err);
+      return res.status(500).json({ error: 'Personel oluşturulamadı' });
     }
   }
 );

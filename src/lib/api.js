@@ -2,7 +2,7 @@
 
 /* ========= BASE ========= */
 export const REQUIRE_BACKEND = (import.meta.env.VITE_REQUIRE_BACKEND || 'true') === 'true';
-const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:3000')
+const API_BASE = (import.meta.env.VITE_API_BASE || 'https://hastane-backend-production.up.railway.app')
   .replace(/\/+$/, ''); // sondaki /'ları sil
 
 // Route prefix — admin/invite gibi kök yollar için boş

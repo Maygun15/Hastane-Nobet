@@ -24,6 +24,26 @@ const shiftIsNight = (shift) => {
   return code.includes("N");
 };
 
+const normalizeArea = (s) =>
+  (s || "")
+    .toString()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim();
+
+const getPersonAreas = (person) => {
+  const raw = person?.meta?.areas || person?.meta?.duties || person?.areas || [];
+  if (Array.isArray(raw)) return raw.map(normalizeArea).filter(Boolean);
+  if (typeof raw === "string") return raw.split(",").map(normalizeArea).filter(Boolean);
+  return [];
+};
+
+const getShiftArea = (shift) => {
+  if (!shift) return "";
+  return normalizeArea(shift.area || shift.label || shift.name || "");
+};
+
 function isAvailable(person, day, context, shift) {
   if (!person || !day) return false;
   const rules = context?.rules || {};
@@ -38,6 +58,22 @@ function isAvailable(person, day, context, shift) {
         } catch {}
       }
     : null;
+
+  // AREA ELIGIBILITY (çalışma alanı)
+  if (shift) {
+    const areas = getPersonAreas(person);
+    const shiftArea = getShiftArea(shift);
+    // Alan tanımlı değilse görev verilmeyecek
+    if (areas.length === 0) {
+      if (logBlock) logBlock("NO_AREAS");
+      return false;
+    }
+    // Shift alanı boşsa filtre uygulamayız
+    if (shiftArea && !areas.includes(shiftArea)) {
+      if (logBlock) logBlock("AREA_NOT_ALLOWED");
+      return false;
+    }
+  }
 
   // ONE_SHIFT_PER_DAY
   if (rules.ONE_SHIFT_PER_DAY && Array.isArray(person.assignedDays) && person.assignedDays.includes(dayKey)) {

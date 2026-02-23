@@ -68,6 +68,53 @@ router.get('/monthly',
   }
 );
 
+async function upsertMonthly(req, res) {
+  try {
+    const query = req.scheduleQuery;
+    const payload = req.body?.data || {};
+    const meta = req.body?.meta || {};
+
+    const update = {
+      ...query,
+      data: payload,
+      meta,
+      updatedBy: req.user?.uid || null,
+    };
+    if (!req.body?.id) {
+      update.createdBy = req.user?.uid || null;
+    }
+
+    const doc = await MonthlySchedule.findOneAndUpdate(
+      query,
+      { $set: update },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    return res.json({
+      ok: true,
+      schedule: {
+        id: String(doc._id),
+        ...query,
+        data: doc.data || {},
+        meta: doc.meta || {},
+        createdAt: doc.createdAt,
+        updatedAt: doc.updatedAt,
+        createdBy: doc.createdBy || null,
+        updatedBy: doc.updatedBy || null,
+      },
+    });
+  } catch (err) {
+    console.error('[PUT/POST /api/schedules/monthly] ERR:', err);
+    if (err?.message?.includes('duplicate key')) {
+      return res.status(409).json({ ok: false, message: 'Çakışan kayıt' });
+    }
+    if (err.name === 'ValidationError' || err.name === 'CastError') {
+      return res.status(400).json({ ok: false, message: err.message });
+    }
+    return res.status(500).json({ ok: false, message: 'Sunucu hatası' });
+  }
+}
+
 router.put('/monthly',
   requireAuth,
   (req, res, next) => {
@@ -81,52 +128,24 @@ router.put('/monthly',
     }
   },
   sameServiceOrAdmin,
-  async (req, res) => {
+  upsertMonthly
+);
+
+// Backward-compat: eski clientlar /api/schedules POST çağırıyor olabilir
+router.post('/',
+  requireAuth,
+  (req, res, next) => {
     try {
-      const query = req.scheduleQuery;
-      const payload = req.body?.data || {};
-      const meta = req.body?.meta || {};
-
-      const update = {
-        ...query,
-        data: payload,
-        meta,
-        updatedBy: req.user?.uid || null,
-      };
-      if (!req.body?.id) {
-        update.createdBy = req.user?.uid || null;
-      }
-
-      const doc = await MonthlySchedule.findOneAndUpdate(
-        query,
-        { $set: update },
-        { new: true, upsert: true, setDefaultsOnInsert: true }
-      ).lean();
-
-      return res.json({
-        ok: true,
-        schedule: {
-          id: String(doc._id),
-          ...query,
-          data: doc.data || {},
-          meta: doc.meta || {},
-          createdAt: doc.createdAt,
-          updatedAt: doc.updatedAt,
-          createdBy: doc.createdBy || null,
-          updatedBy: doc.updatedBy || null,
-        },
-      });
+      const query = buildQuery(req);
+      req.scheduleQuery = query;
+      req.targetServiceId = query.serviceId;
+      next();
     } catch (err) {
-      console.error('[PUT /api/schedules/monthly] ERR:', err);
-      if (err?.message?.includes('duplicate key')) {
-        return res.status(409).json({ ok: false, message: 'Çakışan kayıt' });
-      }
-      if (err.name === 'ValidationError' || err.name === 'CastError') {
-        return res.status(400).json({ ok: false, message: err.message });
-      }
-      return res.status(500).json({ ok: false, message: 'Sunucu hatası' });
+      return res.status(400).json({ ok: false, message: err.message || 'Geçersiz istek' });
     }
-  }
+  },
+  sameServiceOrAdmin,
+  upsertMonthly
 );
 
 module.exports = router;
