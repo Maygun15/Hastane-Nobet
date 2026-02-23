@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const Person = require('../models/Person');
-const { requireAuth, sameServiceOrAdmin } = require('../middleware/authz');
+const { requireAuth, requireRole, sameServiceOrAdmin } = require('../middleware/authz');
 
 function parseIntSafe(val, def = null) {
   const n = Number(val);
@@ -98,6 +98,54 @@ router.post('/',
     } catch (err) {
       console.error('POST /api/personnel ERR:', err);
       return res.status(500).json({ error: 'Personel oluşturulamadı' });
+    }
+  }
+);
+
+// Bulk insert (opsiyonel: replaceAll=true ile tümünü silip yeniden yazar)
+router.post('/bulk',
+  requireAuth,
+  requireRole('admin', 'authorized'),
+  async (req, res) => {
+    try {
+      const body = req.body;
+      const replaceAll = !!(req.query?.replaceAll || body?.replaceAll);
+      const items = Array.isArray(body) ? body : Array.isArray(body?.items) ? body.items : null;
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ error: 'Array expected (body: [] veya { items: [] })' });
+      }
+
+      const mapped = items.map((it) => {
+        const name = String(it?.name || it?.fullName || '').trim();
+        const serviceId = String(it?.serviceId || it?.service || '').trim();
+        if (!name) throw new Error('İsim gerekli');
+        if (!serviceId) throw new Error('serviceId gerekli');
+
+        const meta = { ...(it?.meta || {}) };
+        if (it?.role && !meta.role) meta.role = it.role;
+        if (Array.isArray(it?.areas) && !meta.areas) meta.areas = it.areas;
+
+        return {
+          name,
+          serviceId,
+          firstName: it?.firstName || it?.first_name || '',
+          lastName: it?.lastName || it?.last_name || '',
+          tc: it?.tc || '',
+          phone: it?.phone || '',
+          email: it?.email || '',
+          meta,
+          createdBy: req.user?.uid || null,
+        };
+      });
+
+      if (replaceAll && mapped.length > 0) {
+        await Person.deleteMany({});
+      }
+      const inserted = await Person.insertMany(mapped, { ordered: false });
+      return res.json({ ok: true, count: inserted.length });
+    } catch (err) {
+      console.error('POST /api/personnel/bulk ERR:', err);
+      return res.status(500).json({ error: err.message || 'Bulk ekleme hatası' });
     }
   }
 );
