@@ -7,6 +7,7 @@ import AuthProvider, { useAuth } from "./auth/AuthContext.jsx";
 import LoginPage from "./pages/auth/Login.jsx";
 // Örnek ana sayfa (senin mevcut ana bileşenin neyse onu içe aktar)
 import AppHome from "./pages/Home.jsx"; // yoksa geçici bir component oluştur
+import RosterPage from "./pages/RosterPage.jsx";
 
 function Protected({ children }) {
   const { user, token, loading } = useAuth();
@@ -26,6 +27,14 @@ export default function AppRoutes() {
             element={
               <Protected>
                 <AppHome />
+              </Protected>
+            }
+          />
+          <Route
+            path="/roster"
+            element={
+              <Protected>
+                <RosterPage />
               </Protected>
             }
           />

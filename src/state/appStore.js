@@ -27,7 +27,7 @@ export const useAppStore = create(
       setYM: (ym) => {
         const year = Number(ym?.year);
         const month = Number(ym?.month);
-        if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return;
+        if (!Number.isFinite(year) || year <= 0 || !Number.isFinite(month) || month < 1 || month > 12) return;
         set({ ym: { year, month } });
       },
       gotoPrev: () => {

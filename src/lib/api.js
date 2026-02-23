@@ -46,7 +46,9 @@ async function okOrThrow(resp) {
   const data = await safeJson(resp);
   if (!resp.ok) {
     const msg = (data && (data.message || data.error)) || `HTTP ${resp.status}`;
-    throw new Error(msg);
+    const err = new Error(msg);
+    err.status = resp.status;
+    throw err;
   }
   return data;
 }
@@ -65,8 +67,10 @@ function withTimeout(promise, ms = 20000) {
 }
 
 // tek path için istek
-function req(path, { method = 'GET', body, headers, timeoutMs } = {}) {
-  const f = fetch(`${API_BASE}${path}`, {
+async function req(path, { method = 'GET', body, headers, timeoutMs, retries } = {}) {
+  const effectiveRetries = retries ?? (method === 'GET' ? 2 : 0);
+  const url = `${API_BASE}${path}`;
+  const opts = {
     method,
     headers: {
       'Content-Type': 'application/json',
@@ -74,8 +78,25 @@ function req(path, { method = 'GET', body, headers, timeoutMs } = {}) {
       ...(headers || {}),
     },
     body: body ? JSON.stringify(body) : undefined,
-  });
-  return withTimeout(f, timeoutMs).then(okOrThrow);
+  };
+
+  let lastErr;
+  for (let i = 0; i <= effectiveRetries; i++) {
+    try {
+      const f = fetch(url, opts);
+      return await withTimeout(f, timeoutMs).then(okOrThrow);
+    } catch (err) {
+      lastErr = err;
+      // 4xx hatalarında (429 ve 408 hariç) tekrar deneme yapma
+      if (err.status && err.status >= 400 && err.status < 500 && err.status !== 429 && err.status !== 408) {
+        throw err;
+      }
+      if (i === effectiveRetries) break;
+      // Exponential backoff: 500ms, 1000ms, 2000ms...
+      await new Promise((r) => setTimeout(r, 500 * Math.pow(2, i)));
+    }
+  }
+  throw lastErr;
 }
 
 // dışarı da ver (bazı bileşenlerde kullanışlı)

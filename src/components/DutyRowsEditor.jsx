@@ -19,7 +19,7 @@ import useCrudModel from "../hooks/useCrudModel.js";
 import { parseAssignmentsFile } from "../lib/importExcel.js";
 import { getPeople, getAreas, getShifts, buildPeopleFromLeaves } from "../lib/dataResolver.js";
 import { getAllLeaves, getLeaveSuppress, leavesToUnavailable as leavesToUnavailableByPid } from "../lib/leaves.js";
-import { getMonthlySchedule, saveMonthlySchedule, generateSchedulerPlan } from "../api/apiAdapter.js";
+import { getMonthlySchedule, saveMonthlySchedule, generateSchedulerPlan, fetchPersonnel } from "../api/apiAdapter.js";
 
 /* ===== Toaster (opsiyonel) ===== */
 let toastSafe = null;
@@ -1075,6 +1075,24 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   }, [sectionId, serviceKey, role, year, month1, replaceAllDefs, note]);
   useEffect(() => {
     return () => setLoadingRemote(false);
+  }, []);
+
+  // Backend personelini yerel motora (solver) tanıtmak için senkronizasyon
+  useEffect(() => {
+    async function syncStaffToLocal() {
+      try {
+        const staff = await fetchPersonnel({ active: true });
+        if (staff && Array.isArray(staff)) {
+          // Solver'ın kullandığı anahtarlara (nurses/doctors) yazıyoruz
+          const nurses = staff.filter(p => p.role === 'Nurse' || p.role === 'Hemşire' || p.title === 'Hemşire');
+          const doctors = staff.filter(p => p.role === 'Doctor' || p.role === 'Doktor' || p.title === 'Doktor');
+          
+          if (nurses.length) localStorage.setItem('nurses', JSON.stringify(nurses));
+          if (doctors.length) localStorage.setItem('doctors', JSON.stringify(doctors));
+        }
+      } catch (e) { console.warn("Personel senkronizasyonu yapılamadı:", e); }
+    }
+    syncStaffToLocal();
   }, []);
 
   const doSave = useCallback(async ({ silent = false } = {}) => {

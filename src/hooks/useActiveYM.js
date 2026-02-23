@@ -34,6 +34,11 @@ function clampMonth1(m) {
   if (n >= 1 && n <= 12) return Math.trunc(n);
   return null;
 }
+function clampYear(y) {
+  const n = Number(y);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.trunc(n);
+}
 function fromLegacyMonth(val) {
   const n = Number(val);
   if (!Number.isFinite(n)) return null;
@@ -56,8 +61,10 @@ export default function useActiveYM(options = { syncLegacyLS: true }) {
 
   const setYear = useCallback(
     (year) => {
+      const n = Number(year);
+      if (!Number.isFinite(n) || n <= 0) return;
       const curr = useAppStore.getState().ym;
-      setYM({ year: Number(year), month: curr.month });
+      setYM({ year: n, month: curr.month });
     },
     [setYM]
   );
@@ -75,17 +82,17 @@ export default function useActiveYM(options = { syncLegacyLS: true }) {
 
     try {
       // A) yeni anahtarlar
-      const ny = Number(localStorage.getItem(NEW_YEAR));
+      const ny = clampYear(localStorage.getItem(NEW_YEAR));
       const nm = clampMonth1(localStorage.getItem(NEW_MONTH));
 
       // B) 1-baz eski açık anahtar
-      const ly = Number.isFinite(ny) ? ny : Number(localStorage.getItem(LEG_Y));
+      const ly = ny ?? clampYear(localStorage.getItem(LEG_Y));
       const lm1 = clampMonth1(localStorage.getItem(LEG_M1));
 
       // C) 0-baz eski anahtar
       const lm = fromLegacyMonth(localStorage.getItem(LEG_M0));
 
-      let year  = Number.isFinite(ly) ? ly : todayYM().year;
+      let year  = ly ?? todayYM().year;
       let month = nm ?? lm1 ?? lm ?? todayYM().month;
 
       // store ile aynıysa dokunma

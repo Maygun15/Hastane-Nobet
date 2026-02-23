@@ -254,6 +254,18 @@ export function solveHourBalanced({
   const personById = new Map((people || []).map((p) => [String(p.id), p]));
   const hoursByPerson = new Map((people || []).map((p) => [String(p.id), 0]));
 
+  // 🔸 Performans Optimizasyonu: Haftalık saatleri cache'le
+  const weeklyHoursCache = new Map(); // key: "personId|mondayYmd" -> hours
+  const dayToMonday = new Map();
+  for (const d of days) {
+    const date = ymdToDate(d);
+    const m = weekStartMonday(date);
+    const yyyy = m.getFullYear();
+    const mm = String(m.getMonth() + 1).padStart(2, "0");
+    const dd = String(m.getDate()).padStart(2, "0");
+    dayToMonday.set(d, `${yyyy}-${mm}-${dd}`);
+  }
+
   /* ===== (A) Kişiye özel aylık hedef saat ===== */
   const workdaySet = new Set(days.filter(isWeekdayYmd));
   const baseTarget = workdaySet.size * 8;
@@ -371,6 +383,13 @@ export function solveHourBalanced({
       if (area === CUSTOM_RULES?.greenArea?.code) incAreaCount(day, area, "V1");
     }
 
+    // Haftalık saat cache güncelle
+    const mon = dayToMonday.get(day);
+    if (mon) {
+      const k = `${personId}|${mon}`;
+      weeklyHoursCache.set(k, (weeklyHoursCache.get(k) || 0) + slotH);
+    }
+
     let roleMap = assignByDay.get(day);
     if (!roleMap) {
       roleMap = new Map();
@@ -395,6 +414,13 @@ export function solveHourBalanced({
     if (typeof areaResolver === "function" && shiftCode === "V1") {
       const area = areaResolver(roleLabel);
       if (area === CUSTOM_RULES?.greenArea?.code) decAreaCount(day, area, "V1");
+    }
+
+    // Haftalık saat cache geri al
+    const mon = dayToMonday.get(day);
+    if (mon) {
+      const k = `${personId}|${mon}`;
+      weeklyHoursCache.set(k, (weeklyHoursCache.get(k) || 0) - slotH);
     }
 
     const roleMap = assignByDay.get(day);
@@ -481,8 +507,14 @@ export function solveHourBalanced({
 
     // Haftalık saat limiti
     if (rules.weeklyHourLimit && rules.weeklyHourLimit > 0) {
-      const wHrs = weeklyHoursWith(assignments, pidStr, day, slotH);
-      if (wHrs > rules.weeklyHourLimit) return "Haftalık saat limiti";
+      const mon = dayToMonday.get(day);
+      if (mon) {
+        const current = weeklyHoursCache.get(`${pidStr}|${mon}`) || 0;
+        if (current + slotH > rules.weeklyHourLimit) return "Haftalık saat limiti";
+      } else {
+        const wHrs = weeklyHoursWith(assignments, pidStr, day, slotH);
+        if (wHrs > rules.weeklyHourLimit) return "Haftalık saat limiti";
+      }
     }
 
     // Önceki gün etkileri: dinlenme / nextDayAllowed / ardışık gece

@@ -129,57 +129,24 @@ export default function PeopleTab({
   };
 
   // KAYDET / GÜNCELLE
-  const syncOneToBackend = (row) => {
+  const syncOneToBackend = async (row) => {
     const token = getToken();
     if (!token) return;
     try {
-      const wsData = [
-        [
-          "ROL",
-          "SERVIS",
-          "UNVANI",
-          "T.C. KİMLİK NO",
-          "AD SOYAD",
-          "TELEFON NUMARASI",
-          "MAİL ADRESİ",
-          "ÇALIŞMA ALANLARI",
-          "VARDİYE KODLARI",
-        ],
-        [
-          row.role,
-          row.service,
-          row.title || "",
-          row.tc || "",
-          row.name || "",
-          row.phone || "",
-          row.mail || "",
-          (row.areas || []).join(", "),
-          (row.shiftCodes || []).join(", "),
-        ],
-      ];
-      const ws = XLSX.utils.aoa_to_sheet(wsData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "SINGLE");
-      const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
-      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      const fd = new FormData();
-      fd.append("file", blob, "single.xlsx");
-      fetch(`${API.base}/api/users/import.xlsx`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      })
-        .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
-        .then(({ ok, data }) => {
-          if (!ok) throw new Error(data?.message || "Backend import hatası");
-          if (Array.isArray(data?.tempPasswords) && data.tempPasswords.length) {
-            console.log("Temp passwords:", data.tempPasswords);
-            alert("Kayıt backend'e işlendi. Geçici şifreler konsolda.");
-          }
-        })
-        .catch((err) => {
-          console.warn("Backend sync error:", err?.message || err);
-        });
+      const payload = {
+        name: row.name || "",
+        serviceId: row.service || "",
+        meta: {
+          role: row.role || "",
+          title: row.title || "",
+          areas: Array.isArray(row.areas) ? row.areas : [],
+          shiftCodes: Array.isArray(row.shiftCodes) ? row.shiftCodes : [],
+        },
+        tc: row.tc || "",
+        phone: row.phone || "",
+        email: row.mail || "",
+      };
+      await API.http.post(`/api/personnel`, payload);
     } catch (e) {
       console.warn("Backend sync error:", e?.message || e);
     }
@@ -390,32 +357,34 @@ export default function PeopleTab({
       setPeople((prev) => sortByKeyTR([...(prev || []), ...parsed], "name"));
       if (importRef.current) importRef.current.value = "";
       alert(parsed.length + " kayıt yüklendi");
-      // Backend'e de yükle (kullanıcı hesabı oluştur/yenile)
+      // Backend'e bulk gönder
       const token = getToken();
-      if (token) {
-        const fd = new FormData();
-        fd.append("file", f);
-        fetch(`${API.base}/api/users/import.xlsx`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: fd,
-        })
-          .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
-          .then(({ ok, data }) => {
-            if (!ok) throw new Error(data?.message || "Backend import hatası");
-            const created = data?.created ?? 0;
-            const updated = data?.updated ?? 0;
-            if (Array.isArray(data?.tempPasswords) && data.tempPasswords.length) {
-              console.log("Temp passwords:", data.tempPasswords);
-              alert(`Backend senkron: ${created} yeni, ${updated} güncellendi.\nGeçici şifreler konsolda.`);
-            } else {
-              alert(`Backend senkron: ${created} yeni, ${updated} güncellendi.`);
-            }
-          })
-          .catch((err) => {
-            alert(err?.message || "Backend senkron başarısız");
-          });
+      if (!token) {
+        alert("Backend senkron için giriş gerekli.");
+        return;
       }
+      const bulkItems = parsed.map((p) => ({
+        name: p.name || "",
+        serviceId: p.service || "",
+        meta: {
+          role: p.role || "",
+          title: p.title || "",
+          areas: Array.isArray(p.areas) ? p.areas : [],
+          shiftCodes: Array.isArray(p.shiftCodes) ? p.shiftCodes : [],
+        },
+        tc: p.tc || "",
+        phone: p.phone || "",
+        email: p.mail || "",
+      }));
+      API.http
+        .post(`/api/personnel/bulk?replaceAll=1`, bulkItems)
+        .then((data) => {
+          const count = data?.count ?? bulkItems.length;
+          alert(`Backend senkron: ${count} kayıt işlendi.`);
+        })
+        .catch((err) => {
+          alert(err?.message || "Backend senkron başarısız");
+        });
     };
     r.readAsArrayBuffer(f);
   };

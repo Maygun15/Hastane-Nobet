@@ -9,11 +9,9 @@ const resolvedBase = (() => {
   if (envBase) return envBase;
   if (typeof window !== "undefined") {
     if (window.__API_BASE__) return window.__API_BASE__;
-    if (["5173", "5174"].includes(window.location?.port)) {
-      return "https://hastane-backend-production.up.railway.app";
-    }
   }
-  return "";
+  // Varsayılan olarak production backend (Vercel'de env tanımlı değilse burası çalışır)
+  return "https://hastane-backend-production.up.railway.app";
 })();
 
 const API_BASE = resolvedBase;
@@ -84,6 +82,8 @@ export async function fetchPersonnel({
       fullName: p.fullName ?? `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim(),
       title: p.title ?? p.title_name ?? "",
       service: p.service ?? p.department ?? "",
+      phone: p.phone || "",
+      email: p.email || "",
     }));
   } catch (err) {
     if (err?.status !== 404) console.error("fetchPersonnel err:", err);

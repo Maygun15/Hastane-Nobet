@@ -22,7 +22,7 @@ export default function TopBar() {
     <header className="w-full h-14 bg-white border-b flex items-center justify-between px-4">
       <div className="flex items-center gap-3">
         <div className="font-semibold">🏥 Hastane Nöbet Sistemi</div>
-        <Badge tone="blue">v1</Badge>
+        <Badge tone="blue">v1.1</Badge>
       </div>
 
       <div className="flex items-center gap-3">

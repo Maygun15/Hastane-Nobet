@@ -27,7 +27,8 @@ import UsersTab from "../tabs/UsersTab.jsx";
 // Normal kullanıcı takvimi
 import PersonCalendar from "../tabs/PersonCalendar.jsx";
 import { getActiveYM, setActiveYM } from "../utils/activeYM.js";
-import { apiChangePassword } from "../lib/api.js";
+import { apiChangePassword, API, getToken } from "../lib/api.js";
+import { ROLE } from "../constants/enums.js";
 
 // Yedekleme butonları (yeni)
 import BackupButtons from "../components/BackupButtons.jsx";
@@ -126,6 +127,53 @@ export default function HospitalRosterApp() {
   useEffect(() => { LS.set("personLeaves", personLeaves); }, [personLeaves]);
 
   const peopleAll = useMemo(() => [...(doctors || []), ...(nurses || [])], [doctors, nurses]);
+
+  /* ---- Backend’den personel çek ---- */
+  useEffect(() => {
+    let alive = true;
+    const loadPersonnel = async () => {
+      const token = getToken();
+      if (!token) return;
+      try {
+        const data = await API.http.get(`/api/personnel?page=1&size=2000`);
+        const items = Array.isArray(data?.items) ? data.items : [];
+
+        const mapped = items.map((p) => {
+          const meta = p?.meta || {};
+          const roleHint = String(meta.role || p.title || "").toLowerCase();
+          const isDoctor = /doktor|doctor|hekim|tabip/.test(roleHint);
+          const fullName =
+            p.fullName ||
+            [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
+          const service =
+            (p.serviceId || p.service || meta.service || "acil")
+              .toString()
+              .trim()
+              .toLowerCase();
+          return {
+            id: p.id,
+            role: isDoctor ? ROLE.Doctor : ROLE.Nurse,
+            service,
+            title: meta.title || p.title || "",
+            tc: p.tc || "",
+            name: fullName || "",
+            phone: p.phone || "",
+            mail: p.email || "",
+            areas: Array.isArray(p.areas) ? p.areas : Array.isArray(meta.areas) ? meta.areas : [],
+            shiftCodes: Array.isArray(meta.shiftCodes) ? meta.shiftCodes : [],
+          };
+        });
+
+        if (!alive) return;
+        setNurses(mapped.filter((p) => p.role === ROLE.Nurse));
+        setDoctors(mapped.filter((p) => p.role === ROLE.Doctor));
+      } catch (e) {
+        console.warn("Personnel load error:", e?.message || e);
+      }
+    };
+    loadPersonnel();
+    return () => { alive = false; };
+  }, [user]);
 
   const visibleWorkAreas = useMemo(() => {
     if (!user) return [];
