@@ -81,6 +81,7 @@ export async function fetchPersonnel({
       id: p.id,
       fullName: p.fullName ?? `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim(),
       title: p.title ?? p.title_name ?? "",
+      role: p.role ?? p.departmentRole ?? "",
       service: p.service ?? p.department ?? "",
       phone: p.phone || "",
       email: p.email || "",

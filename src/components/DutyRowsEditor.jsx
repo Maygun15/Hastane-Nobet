@@ -14,6 +14,7 @@ import { LS } from "../utils/storage.js";
 import { generateRoster, STAFF_KEY } from "../engine/rosterEngine.js";
 import { generateAutoSchedule } from "../engine/autoPlanner.js";
 import SupervisorSetup from "./SupervisorSetup.jsx";
+import PinningModal from "./PinningModal.jsx";
 
 import useCrudModel from "../hooks/useCrudModel.js";
 import { parseAssignmentsFile } from "../lib/importExcel.js";
@@ -200,18 +201,33 @@ function normalizeFromParamTable(x, role) {
 }
 
 function ensureStaffInEngineStore(activeRole) {
-  const src = activeRole === "Doctor" ? LS.get("doctors", []) : LS.get("nurses", []);
-  let staff = (src || []).map((x) => normalizeFromParamTable(x, activeRole)).filter(Boolean);
-  if (!staff.length) {
-    const ppl = getPeople() || [];
-    staff = ppl.map((x) => normalizeFromParamTable(x, activeRole)).filter(Boolean);
-  }
+  // 1. Kaynakları birleştir: LS'deki rol bazlı liste + genel havuz (getPeople)
+  const roleKey = activeRole === "Doctor" ? "doctors" : "nurses";
+  const specific = LS.get(roleKey, []) || [];
+  const general = getPeople() || [];
+  
+  // Hepsini birleştir ve normalize et
+  const combined = [...specific, ...general];
+  let staff = combined.map((x) => normalizeFromParamTable(x, activeRole)).filter(Boolean);
+
+  // Eğer hala boşsa diğer kaynaklara bak (kartlar, izinler)
   if (!staff.length) {
     const cards = LS.get(STAFF_KEY, []) || [];
     staff = cards.filter((c) => c?.name && !isGroupLabel(c.name));
     if (!staff.length) staff = buildPeopleFromLeaves(activeRole);
   }
+  
+  // Dedupe (ID bazlı mükerrer kayıtları temizle)
+  const seen = new Set();
+  staff = staff.filter(p => {
+    if (!p.id || seen.has(p.id)) return false;
+    seen.add(p.id);
+    return true;
+  });
+
   staff = (staff || []).filter((s) => s?.name && !isGroupLabel(s.name));
+  // Alfabetik sıralama
+  staff.sort((a, b) => (a.name || "").localeCompare(b.name || "", "tr"));
   LS.set(STAFF_KEY, staff);
   return staff;
 }
@@ -355,13 +371,14 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     );
   }, []);
   const makeSignature = useCallback(
-    (defsData, overridesData, rosterData, previewData, aiPlanData) =>
+    (defsData, overridesData, rosterData, previewData, aiPlanData, pinsData) =>
       JSON.stringify({
         defs: defsData || [],
         overrides: normalizeOverridesForSignature(overridesData),
         roster: rosterData || null,
         preview: previewData || null,
         aiPlan: aiPlanData || null,
+        pins: pinsData || [],
       }),
     [normalizeOverridesForSignature]
   );
@@ -381,6 +398,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   /* Local UI state */
   const [editorRowId, setEditorRowId] = useState(null);
   const [supOpen, setSupOpen] = useState(false);
+  const [pinOpen, setPinOpen] = useState(false);
 
   /* Basit toast */
   const note = useCallback((msg, type = "info") => {
@@ -394,6 +412,9 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       alert(msg);
     }
   }, []);
+
+  /* Pinler (Sabitlenenler) */
+  const [pins, setPins] = useState([]);
 
   /* setCount */
   const setCount = (rowId, day, val) => {
@@ -566,6 +587,20 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       ])
     );
 
+    // Pinleri hazırla: { personId, day: "YYYY-MM-DD", roleLabel, shiftCode }
+    const pinnedAssignments = pins.map(p => {
+      const r = rows.find(row => String(row.id) === String(p.rowId));
+      if (!r) return null;
+      return {
+        personId: String(p.personId),
+        day: `${year}-${String(month0 + 1).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`,
+        roleLabel: r.label,
+        shiftCode: r.shiftCode,
+        rowId: r.id,
+        dayNum: Number(p.day)
+      };
+    }).filter(Boolean);
+
     const rosterRes = generateRoster({
       year,
       month0,
@@ -574,6 +609,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       overrides: committed,
       shiftOptions,
       unavailable,
+      pins: pinnedAssignments, // Solver'a gönder
     });
 
     const rowMeta = new Map((rows || []).map((r) => [String(r.id), r]));
@@ -1021,6 +1057,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           if ("preview" in data) setPreview(data.preview || null);
           if ("roster" in data) setRoster(data.roster || null);
           if ("aiPlan" in data) setAiPlan(data.aiPlan || null);
+          if ("pins" in data) setPins(data.pins || []);
           setLastSavedInfo({
             updatedAt: schedule.updatedAt || schedule.createdAt || null,
             updatedBy: schedule.updatedBy || schedule.createdBy || null,
@@ -1034,7 +1071,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             data.overrides || {},
             data.roster ?? null,
             data.preview ?? null,
-            data.aiPlan ?? null
+            data.aiPlan ?? null,
+            data.pins ?? []
           );
           setAutoSaveStatus("idle");
           setAutoSaveError(null);
@@ -1083,9 +1121,21 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       try {
         const staff = await fetchPersonnel({ active: true });
         if (staff && Array.isArray(staff)) {
+          // Tüm personeli genel havuza kaydet
+          localStorage.setItem('peopleV2', JSON.stringify(staff));
+
           // Solver'ın kullandığı anahtarlara (nurses/doctors) yazıyoruz
-          const nurses = staff.filter(p => p.role === 'Nurse' || p.role === 'Hemşire' || p.title === 'Hemşire');
-          const doctors = staff.filter(p => p.role === 'Doctor' || p.role === 'Doktor' || p.title === 'Doktor');
+          const nurses = staff.filter(p => {
+             const r = (p.role || "").toLowerCase();
+             const t = (p.title || "").toLowerCase();
+             return r === 'nurse' || r === 'hemşire' || t === 'hemşire' || t.includes('hemşire');
+          });
+          
+          const doctors = staff.filter(p => {
+             const r = (p.role || "").toLowerCase();
+             const t = (p.title || "").toLowerCase();
+             return r === 'doctor' || r === 'doktor' || t === 'doktor' || t.includes('doktor');
+          });
           
           if (nurses.length) localStorage.setItem('nurses', JSON.stringify(nurses));
           if (doctors.length) localStorage.setItem('doctors', JSON.stringify(doctors));
@@ -1114,6 +1164,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         roster,
         preview,
         aiPlan,
+        pins,
         generatedAt: new Date().toISOString(),
       };
       const meta = {
@@ -1139,7 +1190,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         payload.overrides,
         payload.roster,
         payload.preview,
-        payload.aiPlan
+        payload.aiPlan,
+        payload.pins
       );
       setAutoSaveStatus("saved");
       setAutoSaveError(null);
@@ -1288,6 +1340,18 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     const staffAll = ensureStaffInEngineStore(role);
     const hasStaff = (staffAll || []).some((s) => !s.role || s.role === role);
 
+    // Pinleri sunucu formatına hazırla
+    const pinnedAssignments = pins.map(p => {
+      const r = rows.find(row => String(row.id) === String(p.rowId));
+      if (!r) return null;
+      return {
+        personId: String(p.personId),
+        day: `${year}-${String(month0 + 1).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`,
+        roleLabel: r.label,
+        shiftCode: r.shiftCode
+      };
+    }).filter(Boolean);
+
     try {
       const res = await generateSchedulerPlan({
         sectionId,
@@ -1295,6 +1359,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         role,
         year,
         month: month1,
+        pins: pinnedAssignments, // Pinleri sunucuya gönder
       });
       const data = res?.data || res;
       if (data?.assignments?.length) {
@@ -1309,6 +1374,15 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         note(`${added ? `${added} satır eklendi, ` : ""}Liste oluşturuldu (server).`, "success");
         return;
       }
+
+      // EĞER atama yok ama uyarılar (issues) varsa, bunları göster ki kullanıcı nedenini anlasın
+      if (data?.issues?.length) {
+        const rosterFromServer = buildRosterFromBackend([], data.issues);
+        setRoster(rosterFromServer);
+        note("Plan oluşturulamadı, ancak uyarılar mevcut. 'Kişilere Atama' panelini inceleyin.", "warning");
+        return;
+      }
+
       note("Sunucu planı boş döndü. Yerel önizleme korunuyor.", "warning");
     } catch (err) {
       console.error(err);
@@ -1387,6 +1461,9 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       <div className="flex items-center gap-2">
         <button onClick={() => setSupOpen(true)} className="px-3 py-2 rounded bg-violet-600 text-white text-sm">
           Sorumlu Ayarları
+        </button>
+        <button onClick={() => setPinOpen(true)} className="px-3 py-2 rounded bg-sky-600 text-white text-sm">
+          Sabitle (Pin)
         </button>
 
         {/* Satır-bazlı içe aktarma (G1) */}
@@ -1531,8 +1608,28 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
           {!!(roster.issues?.length) && (
             <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-sm">
-              <div className="font-medium mb-1">Uyarılar</div>
-              <ul className="list-disc pl-5">
+              <div className="font-medium mb-1 flex flex-wrap justify-between gap-2">
+                <span>Uyarılar</span>
+                <span className="text-xs font-normal text-amber-800 bg-amber-100 px-2 py-0.5 rounded">
+                  {(() => {
+                    let needed = 0;
+                    rows.forEach((r) => {
+                      const pat = Array.isArray(r.pattern) ? r.pattern : Array(7).fill(r.defaultCount || 0);
+                      const ovr = overrides[r.id] || {};
+                      for (let d = 1; d <= daysInMonth; d++) {
+                        const wd = new Date(year, month0, d).getDay();
+                        const weekend = wd === 0 || wd === 6;
+                        if (r.weekendOff && weekend) continue;
+                        let v = ovr[d] ?? pat[monIndex(wd)] ?? r.defaultCount ?? 0;
+                        needed += Math.max(0, Number(v) || 0);
+                      }
+                    });
+                    const st = ensureStaffInEngineStore(role).filter((s) => !s.role || s.role === role).length;
+                    return `Talep: ${needed} nöbet / Personel: ${st} kişi (Ort: ${(st ? needed / st : 0).toFixed(1)})`;
+                  })()}
+                </span>
+              </div>
+              <ul className="list-disc pl-5 max-h-60 overflow-auto">
                 {roster.issues.map((x, i) => (
                   <li key={i}>
                     Gün {x.day}, “{x.label}” için yeterli aday bulunamadı{ x.reason ? ` (${x.reason})` : "" }.
@@ -1564,7 +1661,9 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                       <td className="p-2">{shift}</td>
                       {Array.from({ length: daysInMonth }).map((_, dIdx) => {
                         const d = dIdx + 1;
-                        const names = (roster.namedAssignments?.[d]?.[r.id] || []).filter((nm) => !isGroupLabel(nm));
+                        const names = (roster.namedAssignments?.[d]?.[r.id] || [])
+                          .filter((nm) => !isGroupLabel(nm))
+                          .sort((a, b) => a.localeCompare(b, "tr"));
                         return (
                           <td key={dIdx} className="p-2 text-center whitespace-pre-wrap">
                             {names.join("\n")}
@@ -1581,15 +1680,13 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       )}
 
       {/* Yeni Satır Ekle */}
-      <div className="rounded-lg border bg-white p-3">
-        <div className="text-sm font-medium mb-2">Yeni Satır Ekle</div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex-1 min-w-[220px]">
-            <label className="text-xs text-slate-500">Görev (Çalışma Alanları)</label>
+      <div className="rounded-lg border bg-white p-3 flex flex-wrap items-end gap-3 shadow-sm">
+          <div className="flex-1 min-w-[200px]">
+            <div className="text-[11px] text-slate-500 mb-1 ml-1">Görev (Çalışma Alanı)</div>
             <select
               value={form.label}
               onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
-              className="w-full h-9 rounded border px-2"
+              className="w-full h-9 rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
             >
               <option value="">Seçin…</option>
               {areaOptions.map((a) => (
@@ -1599,12 +1696,12 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
               ))}
             </select>
           </div>
-          <div className="flex-1 min-w-[220px]">
-            <label className="text-xs text-slate-500">Vardiya (Çalışma Saatleri)</label>
+          <div className="flex-1 min-w-[200px]">
+            <div className="text-[11px] text-slate-500 mb-1 ml-1">Vardiya</div>
             <select
               value={form.shiftCode}
               onChange={(e) => setForm((f) => ({ ...f, shiftCode: e.target.value }))}
-              className="w-full h-9 rounded border px-2"
+              className="w-full h-9 rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
             >
               <option value="">Seçin…</option>
               {(shiftOptions || []).map((v) => (
@@ -1614,22 +1711,19 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
               ))}
             </select>
           </div>
-          <div className="w-[160px]">
-            <label className="text-xs text-slate-500">Görevli Kişi (varsayılan)</label>
+          <div className="w-[100px]">
+            <div className="text-[11px] text-slate-500 mb-1 ml-1">Kişi Sayısı</div>
             <input
               type="number"
               min={0}
               value={form.defaultCount}
               onChange={(e) => setForm((f) => ({ ...f, defaultCount: Number(e.target.value || 0) }))}
-              className="w-full h-9 rounded border px-2"
+              className="w-full h-9 rounded-lg border-slate-300 text-sm text-center focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
             />
           </div>
-          <div>
-            <button onClick={addRow} className="h-9 px-3 rounded bg-sky-600 text-white text-sm">
-              Satır Ekle
-            </button>
-          </div>
-        </div>
+          <button onClick={addRow} className="h-9 px-4 rounded-lg bg-sky-600 text-white text-sm font-medium hover:bg-sky-700 transition-colors shadow-sm">
+            Ekle
+          </button>
       </div>
 
       {/* Düzenleme Grid’i (Pzt→Paz) */}
@@ -1870,6 +1964,18 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
       {/* Sorumlu Ayarları Paneli */}
       <SupervisorSetup open={supOpen} onClose={() => setSupOpen(false)} role={role} year={year} month0={month0} />
+      
+      {/* Pinleme Modalı */}
+      <PinningModal 
+        open={pinOpen} 
+        onClose={() => setPinOpen(false)}
+        pins={pins}
+        onAdd={(p) => setPins([...pins, p])}
+        onRemove={(id) => setPins(pins.filter(p => p.id !== id))}
+        people={ensureStaffInEngineStore(role)}
+        rows={rows}
+        daysInMonth={daysInMonth}
+      />
     </div>
   );
 });

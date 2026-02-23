@@ -123,8 +123,16 @@ export function getShifts() {
 
 /* -------- people: bilinen düz listeler ve grouped objeler -------- */
 function readPeopleKnown() {
-  const flat = pickFirst(KEYS.people, []);
+  // Genel listelerden birini al
+  const flat = pickFirst(["peopleV2", "people", "personel", "staff"], []);
   const list1 = Array.isArray(flat) ? flat : [];
+
+  // Spesifik rol listelerini de ekle (pickFirst sadece ilkini alıyordu, bu yüzden doctors kaybolabiliyordu)
+  const nurses = LSget("nurses", []);
+  if (Array.isArray(nurses)) list1.push(...nurses);
+
+  const doctors = LSget("doctors", []);
+  if (Array.isArray(doctors)) list1.push(...doctors);
 
   const grp = pickFirst(KEYS.groupedPeople, {});
   const list2 = [];

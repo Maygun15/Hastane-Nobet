@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, forwardRef, useImperativeHandle } 
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
-import { X, Download, FileText, Copy, Info, Phone, Mail, Clock, Calendar, Hash } from "lucide-react";
+import { X, Download, FileText, Copy, Info, Phone, Mail, Clock, Calendar, Hash, Trash2 } from "lucide-react";
 
 /**
  * Nöbet çizelgesini tablo olarak gösteren bileşen.
@@ -14,6 +14,8 @@ import { X, Download, FileText, Copy, Info, Phone, Mail, Clock, Calendar, Hash }
  * @param {Array} people - Personel listesi [{ id, name }, ...]
  * @param {Object} allLeaves - İzin verileri { [personId]: { "YYYY-MM": { [day]: {code, note} } } }
  * @param {boolean} compact - Tabloyu sıkışık modda gösterir
+ * @param {string} dayFilter - 'all' | 'weekday' | 'weekend'
+ * @param {function} onAssignmentDelete - (cellData) => void
  */
 const RosterTable = forwardRef(function RosterTable({
   year,
@@ -23,6 +25,8 @@ const RosterTable = forwardRef(function RosterTable({
   people = [],
   allLeaves = {},
   compact = false,
+  dayFilter = "all",
+  onAssignmentDelete,
 }, ref) {
   const [selectedCell, setSelectedCell] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
@@ -162,8 +166,11 @@ const RosterTable = forwardRef(function RosterTable({
   // 1. Günleri oluştur
   const days = useMemo(() => {
     if (!year || !month) return [];
-    return buildMonthDaysLocal(year, month);
-  }, [year, month]);
+    const all = buildMonthDaysLocal(year, month);
+    if (dayFilter === "weekday") return all.filter(d => !d.isWeekend);
+    if (dayFilter === "weekend") return all.filter(d => d.isWeekend);
+    return all;
+  }, [year, month, dayFilter]);
 
   // 2. Kişi lookup (id -> person object)
   const personMap = useMemo(() => {
@@ -185,16 +192,34 @@ const RosterTable = forwardRef(function RosterTable({
 
   // 4. Personel istatistiklerini hesapla (toplam saat/nöbet)
   const personStats = useMemo(() => {
-    const stats = new Map();
+    const visible = new Map();
+    const monthly = new Map();
+    const visibleDays = new Set(days.map(d => d.ymd));
+
     for (const a of assignments) {
       const pid = String(a.personId);
-      if (!stats.has(pid)) stats.set(pid, { hours: 0, shifts: 0 });
-      const s = stats.get(pid);
-      s.hours += (Number(a.hours) || 0);
-      s.shifts += 1;
+      const hrs = Number(a.hours) || 0;
+      
+      const dObj = new Date(a.day);
+      const isWeekend = dObj.getDay() === 0 || dObj.getDay() === 6;
+
+      // Aylık Toplam
+      if (!monthly.has(pid)) monthly.set(pid, { hours: 0, shifts: 0, weekendShifts: 0 });
+      const m = monthly.get(pid);
+      m.hours += hrs;
+      m.shifts += 1;
+      if (isWeekend) m.weekendShifts += 1;
+
+      // Görüntülenen (Filtreli) Toplam
+      if (visibleDays.has(a.day)) {
+        if (!visible.has(pid)) visible.set(pid, { hours: 0, shifts: 0 });
+        const v = visible.get(pid);
+        v.hours += hrs;
+        v.shifts += 1;
+      }
     }
-    return stats;
-  }, [assignments]);
+    return { visible, monthly };
+  }, [assignments, days]);
 
   // Modal için takvim gridi
   const calendarGrid = useMemo(() => {
@@ -215,13 +240,21 @@ const RosterTable = forwardRef(function RosterTable({
     const rows = [];
     
     for (const tl of taskLines) {
-      // Bu görev için ayın en yoğun gününde kaç kişi lazım?
-      let maxSlots = tl.defaultCount || 0;
-      if (tl.counts) {
-        for (const c of Object.values(tl.counts)) {
-          if (Number.isFinite(c)) maxSlots = Math.max(maxSlots, c);
-        }
+      // Bu görev için GÖRÜNTÜLENEN GÜNLERDE en fazla kaç kişi lazım?
+      // (Eskiden tüm ayı tarıyorduk, şimdi sadece filtrelenen günlere bakıyoruz)
+      let maxSlots = 0;
+      
+      if (days.length === 0) {
+         maxSlots = tl.defaultCount || 0;
+      } else {
+         for (const d of days) {
+            let req = tl.defaultCount || 0;
+            if (tl.counts && tl.counts[d.d] !== undefined) req = tl.counts[d.d];
+            if (tl.weekendOff && d.isWeekend) req = 0; // Hafta sonu kapalıysa 0
+            maxSlots = Math.max(maxSlots, req);
+         }
       }
+
       if (maxSlots < 1) maxSlots = 1; // En az 1 satır göster
 
       for (let s = 0; s < maxSlots; s++) {
@@ -233,7 +266,7 @@ const RosterTable = forwardRef(function RosterTable({
       }
     }
     return rows;
-  }, [taskLines]);
+  }, [taskLines, days]); // days değişince (filtre) satır sayısı da yeniden hesaplansın
 
   if (!year || !month) return <div className="p-4 text-gray-500 text-sm">Tarih bilgisi eksik.</div>;
   if (!days.length) return null;
@@ -312,10 +345,16 @@ const RosterTable = forwardRef(function RosterTable({
 
           // Personelin toplam saati ve nöbet sayısı (Modal için)
           if (person) {
-            const stats = personStats.get(String(pid));
-            if (stats) {
-              cellData.totalHours = stats.hours;
-              cellData.totalShifts = stats.shifts;
+            const vStats = personStats.visible.get(String(pid));
+            const mStats = personStats.monthly.get(String(pid));
+            if (vStats) {
+              cellData.totalHours = vStats.hours;
+              cellData.totalShifts = vStats.shifts;
+            }
+            if (mStats) {
+              cellData.monthlyHours = mStats.hours;
+              cellData.monthlyShifts = mStats.shifts;
+              cellData.weekendShifts = mStats.weekendShifts;
             }
           }
 
@@ -434,12 +473,23 @@ const RosterTable = forwardRef(function RosterTable({
                   <div className="mt-3 flex flex-col gap-1 text-sm text-slate-700 bg-slate-50 p-2 rounded-lg border border-slate-100">
                     <div className="flex items-center gap-2">
                       <Clock size={16} className="text-slate-400" />
-                      <span>Bu ay toplam <strong>{selectedCell.totalHours}</strong> saat.</span>
+                      <span>
+                        {dayFilter === 'all' ? 'Bu ay toplam' : 'Görüntülenen'}: <strong>{selectedCell.totalHours}</strong> saat.
+                        {dayFilter !== 'all' && selectedCell.monthlyHours !== undefined && <span className="text-xs text-slate-500 ml-1">(Ay: {selectedCell.monthlyHours})</span>}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Hash size={16} className="text-slate-400" />
-                      <span>Bu ay toplam <strong>{selectedCell.totalShifts}</strong> nöbet.</span>
+                      <span>
+                        {dayFilter === 'all' ? 'Bu ay toplam' : 'Görüntülenen'}: <strong>{selectedCell.totalShifts}</strong> nöbet.
+                        {dayFilter !== 'all' && selectedCell.monthlyShifts !== undefined && <span className="text-xs text-slate-500 ml-1">(Ay: {selectedCell.monthlyShifts})</span>}
+                      </span>
                     </div>
+                    {selectedCell.weekendShifts !== undefined && (
+                      <div className="flex items-center gap-2 text-xs text-slate-500 pl-6">
+                        <span>• Hafta Sonu: <strong>{selectedCell.weekendShifts}</strong> nöbet</span>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -543,6 +593,18 @@ const RosterTable = forwardRef(function RosterTable({
             <Copy size={14} className="text-slate-500" />
             <span>Adı Kopyala</span>
           </button>
+          {onAssignmentDelete && (
+            <button
+              className="w-full text-left px-3 py-2 hover:bg-rose-50 text-rose-600 flex items-center gap-2 transition-colors border-t border-slate-100"
+              onClick={() => {
+                onAssignmentDelete(contextMenu.data);
+                setContextMenu(null);
+              }}
+            >
+              <Trash2 size={14} />
+              <span>Atamayı Sil</span>
+            </button>
+          )}
         </div>
       )}
     </div>

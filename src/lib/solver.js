@@ -240,6 +240,7 @@ export function solveHourBalanced({
   leaves,           // [{ personId, day:"YYYY-MM-DD", code:"Y|B|KN|AN|...", shiftCode?: "M|M4|..." , ... }]
   areaResolver,     // (opsiyonel) (roleLabel) => areaCode (örn: "YESIL")
   requestMatrix,    // isteklere bağlı yumuşak/sert kısıtlar
+  pins,             // [{ personId, day, roleLabel, shiftCode }]
 }) {
   // 🔸 Kurallar: DEFAULT + (DutyRulesTab/LS) + hardRules (en son gelen baskın)
   const uiRules = getActiveDutyRules();
@@ -463,6 +464,24 @@ export function solveHourBalanced({
     }
   }
 
+  // 🔸 Pinlenen atamaları önceden yerleştir ve slotlardan düş
+  if (Array.isArray(pins)) {
+    for (const p of pins) {
+      // Eşleşen bir slot bul (henüz atanmamış)
+      const idx = slots.findIndex(s => 
+        s.day === p.day && 
+        norm(s.roleLabel) === norm(p.roleLabel) && 
+        norm(s.shiftCode) === norm(p.shiftCode)
+      );
+      
+      if (idx !== -1) {
+        const slot = slots[idx];
+        place(slot.day, slot.roleLabel, slot.shiftCode, String(p.personId), slot.hours);
+        slots.splice(idx, 1); // Slotu tüket, başkasına verilmesin
+      }
+    }
+  }
+
   // Zor slotlar önce: uygun kişi sayısı az olanlar
   const candidateCount = (s) => {
     const elig = eligibleByLabel?.[s.roleLabel] || [];
@@ -583,6 +602,8 @@ export function solveHourBalanced({
     });
   };
 
+  let failInfo = null;
+
   // DFS/backtracking yerleştirici — 2 PAS: (1) soft’a saygı, (2) soft’u yok say
   const tryAssign = (k) => {
     if (k >= slots.length) return true;
@@ -675,9 +696,13 @@ export function solveHourBalanced({
     }
 
     // Bu slot için kimse bulunamadı → geri dön
+    if (!failInfo) {
+      // İlk başarısızlık noktasını kaydet
+      failInfo = { day, roleLabel, shiftCode, reason: "Uygun aday bulunamadı (kurallar/izinler)" };
+    }
     return false;
   };
 
   const ok = tryAssign(0);
-  return ok ? { assignments, hoursByPerson, overrides } : { assignments: [], hoursByPerson, overrides };
+  return ok ? { assignments, hoursByPerson, overrides } : { assignments: [], hoursByPerson, overrides, failure: failInfo };
 }

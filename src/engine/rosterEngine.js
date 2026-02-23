@@ -370,7 +370,7 @@ function buildLeaveIndexFromAny(cands, { year, month0, staff }) {
  */
 export function generateRoster({
   year, month0, role = "Nurse", rows, overrides,
-  leavePolicy = "hard", forcePins = true, requireEligibility = true,
+  leavePolicy = "hard", forcePins = true, requireEligibility = true, pins: explicitPins = [],
 }) {
   const ym = `${year}-${String(month0 + 1).padStart(2, "0")}`;
   const rng = mulberry32(year * 100 + (month0 + 1));
@@ -435,8 +435,21 @@ export function generateRoster({
   };
 
   // 3) Pins
-  const pinsTree = readJSON(PINS_KEY, {});
-  const pins = (pinsTree?.[role]?.[ym]) || {};
+  let pins = {};
+  if (explicitPins && explicitPins.length > 0) {
+    // DutyRowsEditor'den gelen array formatını { [day]: { [rowId]: [pid] } } formatına çevir
+    for (const p of explicitPins) {
+      const d = p.dayNum;
+      const rid = p.rowId;
+      const pid = p.personId;
+      if (!pins[d]) pins[d] = {};
+      if (!pins[d][rid]) pins[d][rid] = [];
+      pins[d][rid].push(pid);
+    }
+  } else {
+    const pinsTree = readJSON(PINS_KEY, {});
+    pins = (pinsTree?.[role]?.[ym]) || {};
+  }
 
   // 4) Supervisor config + pool
   const supCfgRaw = readJSON(SUP_CFG_KEY, {}) || {};

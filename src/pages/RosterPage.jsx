@@ -19,6 +19,7 @@ export default function RosterPage() {
   const tableRef = useRef(null);
   const { user } = useAuth();
   const [onlyMine, setOnlyMine] = useState(false);
+  const [dayFilter, setDayFilter] = useState("all");
 
   // İzinleri çek (yerel depolamadan)
   const allLeaves = useMemo(() => getAllLeaves(), []);
@@ -106,8 +107,12 @@ export default function RosterPage() {
           }
           setAssignments(flatAssignments);
         } else {
-          setTaskLines([]);
-          setAssignments([]);
+          // Veri gelmezse hemen boşaltma, belki geçici bir ağ hatasıdır.
+          // Sadece explicit null/boş array dönerse temizle.
+          if (res && res.data === null) {
+             setTaskLines([]);
+             setAssignments([]);
+          }
         }
       } catch (err) {
         console.error("RosterPage fetch error:", err);
@@ -162,6 +167,19 @@ export default function RosterPage() {
     }
   };
 
+  const handleAssignmentDelete = (cellData) => {
+    if (!window.confirm(`${cellData.personName} için ${cellData.date} tarihindeki atamayı silmek istediğinize emin misiniz?`)) return;
+
+    setAssignments((prev) => prev.filter((a) => {
+      return !(
+        a.day === cellData.date &&
+        a.roleLabel === cellData.role &&
+        a.shiftCode === cellData.shift &&
+        String(a.personId) === String(cellData.personId)
+      );
+    }));
+  };
+
   // Filtreleme Mantığı
   const filteredAssignments = useMemo(() => {
     if (!onlyMine || !user) return assignments;
@@ -214,6 +232,8 @@ export default function RosterPage() {
           isFullscreen={isFullscreen}
           onToggleMyShifts={user ? setOnlyMine : null}
           onlyMyShifts={onlyMine}
+          dayFilter={dayFilter}
+          onDayFilterChange={setDayFilter}
         />
       </div>
 
@@ -247,6 +267,8 @@ export default function RosterPage() {
           people={people}
           allLeaves={allLeaves}
           compact={onlyMine}
+          dayFilter={dayFilter}
+          onAssignmentDelete={handleAssignmentDelete}
         />
       )}
     </div>

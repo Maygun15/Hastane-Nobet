@@ -1,246 +1,188 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { X, Save } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { X, Save, RotateCcw, Info, ShieldAlert, Clock } from "lucide-react";
 import { LS } from "../utils/storage.js";
-import { getPeople } from "../lib/dataResolver.js";
 
-const SUP_CFG_KEY = "supervisorConfig";
-const SUP_POOL_KEY = "supervisorPool";
+const DEFAULT_RULES = {
+  maxPerDayPerPerson: 1,
+  maxConsecutiveNights: 1,
+  targetMonthlyHours: 168,
+  weeklyHourLimit: 80,
+  restAfterNight24h: true,
+  distinctTasksSameHour: true,
+};
 
-function daysIn(y, m0) { return new Date(y, m0 + 1, 0).getDate(); }
-const U = (s) => (s || "").toString().trim().toLocaleUpperCase("tr-TR");
+export default function SupervisorSetup({ open, onClose, role }) {
+  const [rules, setRules] = useState(DEFAULT_RULES);
 
-export default function SupervisorSetup({
-  open,
-  onClose,
-  role = "Nurse",
-  year = new Date().getFullYear(),
-  month0 = new Date().getMonth(),
-}) {
-  const people = useMemo(() => (getPeople(role) || []).map(p => ({
-    id: String(p.id ?? p.pid ?? p.tc ?? p.code ?? p.fullName),
-    name: p.fullName || p.name || p.displayName || String(p.id),
-  })), [role]);
-
-  const name2id = useMemo(() => new Map(people.map(p => [U(p.name), p.id])), [people]);
-
-  const [primary, setPrimary] = useState("");
-  const [assistants, setAssistants] = useState([]);      // id[]
-  const [fallbackPool, setFallbackPool] = useState([]);  // id[]
-  const [weekdayOnly, setWeekdayOnly] = useState(true);
-  const [ensureAssistCount, setEnsureAssistCount] = useState(1);
-  const [assistDays, setAssistDays] = useState(new Set());
-  const [offDays, setOffDays] = useState(new Set());
-  const [search, setSearch] = useState("");
-
-  // config yükle
   useEffect(() => {
-    try {
-      const cfg = LS.get(SUP_CFG_KEY, null) || {};
-      const pool = LS.get(SUP_POOL_KEY, []);
-      if (cfg.primary) setPrimary(String(cfg.primary));
-      if (Array.isArray(cfg.assistants)) setAssistants(cfg.assistants.map(String));
-      if (Array.isArray(cfg.fallbackPool)) setFallbackPool(cfg.fallbackPool.map(String));
-      else if (Array.isArray(pool)) setFallbackPool(pool.map(String));
-      setWeekdayOnly(cfg.weekdayOnly !== false);
-      setEnsureAssistCount(Number(cfg.ensureAssistCount ?? 1) || 1);
-
-      const toSet = (v) => {
-        if (!v) return new Set();
-        if (Array.isArray(v)) return new Set(v.map(Number));
-        if (typeof v === "object") return new Set(Object.keys(v).map(Number));
-        return new Set();
-      };
-      setAssistDays(toSet(cfg.assistDays));
-      setOffDays(toSet(cfg.offDays));
-    } catch {}
+    if (open) {
+      const storedArr = LS.get("dutyRulesV2", []) || [];
+      const storedMap = {};
+      storedArr.forEach((r) => {
+        if (r.active) storedMap[r.id] = r.value;
+      });
+      
+      setRules((prev) => ({
+        ...prev,
+        ...storedMap,
+      }));
+    }
   }, [open]);
 
-  // arama filtresi
-  const filtered = useMemo(() => {
-    const s = search.trim().toLocaleLowerCase("tr-TR");
-    if (!s) return people;
-    return people.filter(p => p.name.toLocaleLowerCase("tr-TR").includes(s));
-  }, [people, search]);
-
-  const toggleInSet = (set, d) => {
-    const s = new Set(set);
-    if (s.has(d)) s.delete(d); else s.add(d);
-    return s;
+  const handleChange = (key, val) => {
+    setRules((prev) => ({ ...prev, [key]: val }));
   };
 
-  const save = () => {
-    const cfg = {
-      primary: primary || null,             // ID veya isim (ID kaydediyoruz)
-      assistants: assistants || [],
-      fallbackPool: fallbackPool || [],
-      weekdayOnly,
-      ensureAssistCount: Math.max(0, Number(ensureAssistCount) || 0),
-      assistDays: Array.from(assistDays),
-      offDays: Array.from(offDays),
-    };
-    LS.set(SUP_CFG_KEY, cfg);
-    LS.set(SUP_POOL_KEY, cfg.fallbackPool || []);
-    try { window.dispatchEvent(new Event("supervisor:changed")); } catch {}
-    onClose?.();
+  const handleSave = () => {
+    const currentArr = LS.get("dutyRulesV2", []) || [];
+    const newArr = [...currentArr];
+
+    Object.entries(rules).forEach(([key, val]) => {
+      const idx = newArr.findIndex((r) => r.id === key);
+      if (idx >= 0) {
+        newArr[idx] = { ...newArr[idx], value: val, active: true };
+      } else {
+        newArr.push({ id: key, value: val, active: true, name: key });
+      }
+    });
+
+    LS.set("dutyRulesV2", newArr);
+    onClose();
   };
 
-  const dim = daysIn(year, month0);
-
-  // Yardımcı seçimi (checkbox)
-  const toggleAssistant = (id) => {
-    setAssistants((arr) => arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id]);
-  };
-  const togglePool = (id) => {
-    setFallbackPool((arr) => arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id]);
-  };
+  if (!open) return null;
 
   return (
-    <div className={`fixed inset-0 z-50 ${open ? "" : "pointer-events-none"}`}>
-      {/* overlay */}
-      <div
-        className={`absolute inset-0 bg-black/40 transition-opacity ${open ? "opacity-100" : "opacity-0"}`}
-        onClick={onClose}
-      />
-      {/* modal */}
-      <div
-        className={`absolute left-1/2 top-10 -translate-x-1/2 w-[900px] max-w-[95vw] rounded-xl border bg-white shadow-xl transition-all ${open ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}
-      >
-        <div className="p-4 border-b flex items-center gap-3">
-          <div className="font-semibold">Sorumlu Ayarları</div>
-          <span className="text-xs text-slate-500">({role === "Doctor" ? "Doktor" : "Hemşire"})</span>
-          <button className="ml-auto h-8 w-8 rounded hover:bg-slate-100 flex items-center justify-center" onClick={onClose}>
-            <X className="w-4 h-4" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between p-4 border-b bg-slate-50">
+          <div>
+            <h3 className="font-semibold text-slate-800">Sorumlu Ayarları</h3>
+            <p className="text-xs text-slate-500">{role === "Doctor" ? "Doktor" : "Hemşire"} grubu için genel kısıtlamalar</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+            <X size={20} />
           </button>
         </div>
 
-        <div className="p-4 grid grid-cols-12 gap-4">
-          {/* Sol: kişi listesi ve arama */}
-          <div className="col-span-5">
-            <div className="mb-2 text-sm">Personel</div>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Ara..."
-              className="w-full h-9 rounded border px-2 mb-2"
-            />
-            <div className="border rounded-lg h-[420px] overflow-auto">
-              {filtered.map(p => (
-                <div key={p.id} className="px-3 py-2 flex items-center gap-2 border-b last:border-b-0">
-                  <input
-                    type="radio"
-                    name="primary"
-                    checked={primary === p.id}
-                    onChange={() => setPrimary(p.id)}
-                    title="Asıl Sorumlu"
-                  />
-                  <div className="flex-1">{p.name}</div>
-                  <label className="text-xs inline-flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      checked={assistants.includes(p.id)}
-                      onChange={() => toggleAssistant(p.id)}
-                    />
-                    Yardımcı
-                  </label>
-                  <label className="text-xs inline-flex items-center gap-1 ml-2">
-                    <input
-                      type="checkbox"
-                      checked={fallbackPool.includes(p.id)}
-                      onChange={() => togglePool(p.id)}
-                    />
-                    Havuz
-                  </label>
-                </div>
-              ))}
+        <div className="p-6 space-y-6 overflow-y-auto">
+          {/* Sayısal Ayarlar */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-900 border-b pb-2">
+              <Clock size={16} className="text-violet-600" />
+              Limitler ve Hedefler
             </div>
-            <div className="mt-2 text-xs text-slate-500">
-              İpucu: Bir kişiyi hem “Yardımcı” hem “Havuz” olarak işaretleyebilirsin.
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Günlük Max Nöbet</label>
+                <input
+                  type="number"
+                  min="1"
+                  className="w-full rounded-lg border-slate-200 text-sm focus:ring-violet-500 focus:border-violet-500"
+                  value={rules.maxPerDayPerPerson}
+                  onChange={(e) => handleChange("maxPerDayPerPerson", Number(e.target.value))}
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Aynı gün max görev sayısı.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Ardışık Gece Sınırı</label>
+                <input
+                  type="number"
+                  min="0"
+                  className="w-full rounded-lg border-slate-200 text-sm focus:ring-violet-500 focus:border-violet-500"
+                  value={rules.maxConsecutiveNights}
+                  onChange={(e) => handleChange("maxConsecutiveNights", Number(e.target.value))}
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Peş peşe gece nöbeti limiti.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Aylık Hedef Saat</label>
+                <input
+                  type="number"
+                  min="0"
+                  className="w-full rounded-lg border-slate-200 text-sm focus:ring-violet-500 focus:border-violet-500"
+                  value={rules.targetMonthlyHours}
+                  onChange={(e) => handleChange("targetMonthlyHours", Number(e.target.value))}
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Dengeleme hedefi (örn: 168).</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Haftalık Saat Limiti</label>
+                <input
+                  type="number"
+                  min="0"
+                  className="w-full rounded-lg border-slate-200 text-sm focus:ring-violet-500 focus:border-violet-500"
+                  value={rules.weeklyHourLimit}
+                  onChange={(e) => handleChange("weeklyHourLimit", Number(e.target.value))}
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Haftalık max çalışma saati.</p>
+              </div>
             </div>
           </div>
 
-          {/* Sağ: kurallar */}
-          <div className="col-span-7 space-y-4">
-            <div className="rounded-lg border p-3">
-              <div className="font-medium mb-2">Genel</div>
-              <div className="flex items-center gap-3">
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={weekdayOnly}
-                    onChange={(e) => setWeekdayOnly(e.target.checked)}
-                  />
-                  Sadece hafta içi
-                </label>
-                <div className="flex items-center gap-2">
-                  Yardımcı kişi sayısı (assistDays’de min):
-                  <input
-                    type="number"
-                    min={0}
-                    className="h-8 w-16 rounded border px-2 text-center"
-                    value={ensureAssistCount}
-                    onChange={(e) => setEnsureAssistCount(Number(e.target.value || 0))}
-                  />
-                </div>
+          {/* Mantıksal Ayarlar */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-900 border-b pb-2">
+              <ShieldAlert size={16} className="text-violet-600" />
+              Kurallar ve Kısıtlamalar
+            </div>
+
+            <div className="flex items-start gap-3 p-3 rounded-lg border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+              <input
+                type="checkbox"
+                id="restAfterNight"
+                className="mt-1 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                checked={rules.restAfterNight24h}
+                onChange={(e) => handleChange("restAfterNight24h", e.target.checked)}
+              />
+              <div>
+                <label htmlFor="restAfterNight" className="block text-sm font-medium text-slate-700 cursor-pointer">Gece Sonrası 24 Saat Dinlenme</label>
+                <p className="text-xs text-slate-500 mt-0.5">Gece veya uzun (16s+) vardiya tutan personel ertesi gün görev alamaz.</p>
               </div>
             </div>
 
-            <div className="rounded-lg border p-3">
-              <div className="font-medium mb-2">Gün Ayarları ({year}-{String(month0+1).padStart(2,"0")})</div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-sm mb-1">Yardımcı İstenen Günler</div>
-                  <DayGrid
-                    year={year}
-                    month0={month0}
-                    selected={assistDays}
-                    onToggle={(d) => setAssistDays(s => toggleInSet(s, d))}
-                  />
-                </div>
-                <div>
-                  <div className="text-sm mb-1">Primary Yazılmasın (Off Days)</div>
-                  <DayGrid
-                    year={year}
-                    month0={month0}
-                    selected={offDays}
-                    onToggle={(d) => setOffDays(s => toggleInSet(s, d))}
-                  />
-                </div>
+            <div className="flex items-start gap-3 p-3 rounded-lg border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+              <input
+                type="checkbox"
+                id="distinctTasks"
+                className="mt-1 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                checked={rules.distinctTasksSameHour}
+                onChange={(e) => handleChange("distinctTasksSameHour", e.target.checked)}
+              />
+              <div>
+                <label htmlFor="distinctTasks" className="block text-sm font-medium text-slate-700 cursor-pointer">Saat Çakışması Kontrolü</label>
+                <p className="text-xs text-slate-500 mt-0.5">Aynı saat aralığına denk gelen iki farklı görev atanmasını engeller.</p>
               </div>
-              <div className="mt-2 text-xs text-slate-500">
-                Not: Assist günlerinde, satırdaki ihtiyaç “primary + belirtilen yardımcı sayısı” kadar yükseltilir.
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button className="h-9 px-3 rounded border" onClick={onClose}>Vazgeç</button>
-              <button className="h-9 px-3 rounded bg-sky-600 text-white inline-flex items-center gap-2" onClick={save}>
-                <Save className="w-4 h-4" /> Kaydet
-              </button>
             </div>
           </div>
+          
+          <div className="flex items-start gap-2 text-xs text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-100">
+            <Info size={16} className="shrink-0 mt-0.5" />
+            <p>Bu ayarlar "Liste Oluştur" butonuna bastığınızda otomatik planlayıcı (solver) tarafından kullanılır. Manuel düzenlemelerde bu kurallar esnetilebilir.</p>
+          </div>
+        </div>
+
+        <div className="p-4 border-t bg-slate-50 flex justify-end gap-3">
+          <button 
+            onClick={() => setRules(DEFAULT_RULES)} 
+            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-lg flex items-center gap-2 transition-colors"
+          >
+            <RotateCcw size={16}/> 
+            Varsayılan
+          </button>
+          <button 
+            onClick={handleSave} 
+            className="px-4 py-2 text-sm font-medium bg-violet-600 text-white hover:bg-violet-700 rounded-lg flex items-center gap-2 shadow-sm transition-colors"
+          >
+            <Save size={16}/> 
+            Kaydet ve Kapat
+          </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-/* Küçük gün ızgarası */
-function DayGrid({ year, month0, selected, onToggle }) {
-  const dim = daysIn(year, month0);
-  return (
-    <div className="grid grid-cols-7 gap-1">
-      {Array.from({ length: dim }, (_, i) => i + 1).map((d) => {
-        const on = selected.has(d);
-        return (
-          <button
-            key={d}
-            className={`h-8 rounded border text-sm ${on ? "bg-sky-600 text-white border-sky-600" : "bg-white hover:bg-slate-50"}`}
-            onClick={() => onToggle?.(d)}
-          >
-            {d}
-          </button>
-        );
-      })}
     </div>
   );
 }

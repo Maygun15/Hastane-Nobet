@@ -39,6 +39,8 @@ export default function ScheduleToolbar({
   onRoleChange,
   onToggleMyShifts,
   onlyMyShifts,
+  dayFilter = "all",
+  onDayFilterChange,
 }) {
   const safeYear = Number.isFinite(year) ? year : new Date().getFullYear();
   const monthIndex = Number.isFinite(month) ? Math.min(Math.max(Number(month) - 1, 0), 11) : 0;
@@ -112,6 +114,42 @@ export default function ScheduleToolbar({
                 }`}
               >
                 Doktor
+              </button>
+            </div>
+          )}
+
+          {/* Gün Filtresi */}
+          {onDayFilterChange && (
+            <div className="flex bg-slate-100 p-1 rounded-xl mr-1 md:mr-2 border border-slate-200">
+              <button
+                type="button"
+                onClick={() => onDayFilterChange("all")}
+                className={`px-2 py-1 md:px-3 md:py-1.5 text-[10px] md:text-xs font-medium rounded-lg transition-all ${
+                  dayFilter === "all" ? "bg-white text-sky-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+                title="Tüm Günler"
+              >
+                Tümü
+              </button>
+              <button
+                type="button"
+                onClick={() => onDayFilterChange("weekday")}
+                className={`px-2 py-1 md:px-3 md:py-1.5 text-[10px] md:text-xs font-medium rounded-lg transition-all ${
+                  dayFilter === "weekday" ? "bg-white text-sky-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+                title="Sadece Hafta İçi"
+              >
+                H.İçi
+              </button>
+              <button
+                type="button"
+                onClick={() => onDayFilterChange("weekend")}
+                className={`px-2 py-1 md:px-3 md:py-1.5 text-[10px] md:text-xs font-medium rounded-lg transition-all ${
+                  dayFilter === "weekend" ? "bg-white text-sky-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+                title="Sadece Hafta Sonu"
+              >
+                H.Sonu
               </button>
             </div>
           )}
