@@ -55,9 +55,7 @@ const RosterTable = forwardRef(function RosterTable({
     // Başlık satırı
     const header = ["Görev", "Vardiya"];
     days.forEach(d => {
-      const date = new Date(d.ymd);
-      const dayName = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"][date.getDay()];
-      header.push(`${d.d} ${dayName}`);
+      header.push(`${d.d} ${d.dayName}`);
     });
     
     const data = [header];
@@ -101,11 +99,7 @@ const RosterTable = forwardRef(function RosterTable({
 
     // Tablo Başlıkları
     const tableHead = [
-      ["Görev", "Vardiya", ...days.map((d) => {
-        const date = new Date(d.ymd);
-        const dayName = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"][date.getDay()];
-        return `${d.d}\n${dayName}`;
-      })]
+      ["Görev", "Vardiya", ...days.map((d) => `${d.d}\n${d.dayName}`)]
     ];
 
     // Tablo Gövdesi
@@ -307,7 +301,7 @@ const RosterTable = forwardRef(function RosterTable({
               >
                 <div className="text-xs font-bold">{d.d}</div>
                 <div className="text-[10px] font-normal opacity-75">
-                  {["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"][new Date(d.ymd).getDay()]}
+                  {d.dayName}
                 </div>
               </th>
             ))}
@@ -617,12 +611,15 @@ export default RosterTable;
 function buildMonthDaysLocal(year, month) {
   const days = [];
   const date = new Date(year, month - 1, 1);
+  const dayNames = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
   while (date.getMonth() === month - 1) {
     const ymd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const dow = date.getDay();
     days.push({
       d: date.getDate(),
       ymd,
-      isWeekend: date.getDay() === 0 || date.getDay() === 6
+      isWeekend: dow === 0 || dow === 6,
+      dayName: dayNames[dow]
     });
     date.setDate(date.getDate() + 1);
   }

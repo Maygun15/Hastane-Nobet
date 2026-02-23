@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import RosterTable from "../components/RosterTable.jsx";
 import ScheduleToolbar from "../components/ScheduleToolbar.jsx";
 import { getMonthlySchedule, fetchPersonnel } from "../api/apiAdapter.js";
@@ -11,6 +12,8 @@ export default function RosterPage() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [loading, setLoading] = useState(false);
+  const [peopleError, setPeopleError] = useState("");
+  const [dataError, setDataError] = useState("");
   
   const [assignments, setAssignments] = useState([]);
   const [taskLines, setTaskLines] = useState([]);
@@ -20,6 +23,7 @@ export default function RosterPage() {
   const { user } = useAuth();
   const [onlyMine, setOnlyMine] = useState(false);
   const [dayFilter, setDayFilter] = useState("all");
+  const navigate = useNavigate();
 
   // İzinleri çek (yerel depolamadan)
   const allLeaves = useMemo(() => getAllLeaves(), []);
@@ -47,9 +51,13 @@ export default function RosterPage() {
         } else {
           setPeople(getPeople(role) || []);
         }
+        setPeopleError("");
       } catch (err) {
         console.warn("Personel listesi sunucudan alınamadı, yerel veri kullanılıyor.", err);
-        if (active) setPeople(getPeople(role) || []);
+        if (active) {
+          setPeople(getPeople(role) || []);
+          setPeopleError("Personel listesi alınamadı. Yerel veri kullanılıyor.");
+        }
       }
     }
     loadPeople();
@@ -60,6 +68,7 @@ export default function RosterPage() {
     let active = true;
     async function fetchData() {
       setLoading(true);
+      setDataError("");
       try {
         // Backend'den planı çek
         const res = await getMonthlySchedule({
@@ -116,6 +125,7 @@ export default function RosterPage() {
         }
       } catch (err) {
         console.error("RosterPage fetch error:", err);
+        if (active) setDataError("Çizelge verisi alınamadı. Lütfen tekrar deneyin.");
       } finally {
         if (active) setLoading(false);
       }
@@ -234,7 +244,14 @@ export default function RosterPage() {
           onlyMyShifts={onlyMine}
           dayFilter={dayFilter}
           onDayFilterChange={setDayFilter}
+          onStats={() => navigate("/stats")}
         />
+        {(peopleError || dataError) && (
+          <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+            {peopleError && <div>{peopleError}</div>}
+            {dataError && <div>{dataError}</div>}
+          </div>
+        )}
       </div>
 
       {loading ? (
