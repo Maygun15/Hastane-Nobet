@@ -110,6 +110,7 @@ router.post('/bulk',
     try {
       const body = req.body;
       const replaceAll = !!(req.query?.replaceAll || body?.replaceAll);
+      const replaceRole = String(req.query?.role || body?.role || '').trim();
       const items = Array.isArray(body) ? body : Array.isArray(body?.items) ? body.items : null;
       if (!Array.isArray(items)) {
         return res.status(400).json({ error: 'Array expected (body: [] veya { items: [] })' });
@@ -139,7 +140,20 @@ router.post('/bulk',
       });
 
       if (replaceAll && mapped.length > 0) {
-        await Person.deleteMany({});
+        if (replaceRole) {
+          const esc = replaceRole.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const rx = new RegExp(`^${esc}$`, 'i');
+          await Person.deleteMany({
+            $or: [
+              { "meta.role": rx },
+              { role: rx },
+              { title: rx },
+              { "meta.title": rx },
+            ],
+          });
+        } else {
+          await Person.deleteMany({});
+        }
       }
       const inserted = await Person.insertMany(mapped, { ordered: false });
       return res.json({ ok: true, count: inserted.length });

@@ -388,8 +388,9 @@ export default function PeopleTab({
         phone: p.phone || "",
         email: p.mail || "",
       }));
+      const qs = new URLSearchParams({ replaceAll: "1", role: String(role || "") }).toString();
       API.http
-        .post(`/api/personnel/bulk?replaceAll=1`, bulkItems)
+        .post(`/api/personnel/bulk?${qs}`, bulkItems)
         .then((data) => {
           const count = data?.count ?? bulkItems.length;
           alert(`Backend senkron: ${count} kayıt işlendi.`);
