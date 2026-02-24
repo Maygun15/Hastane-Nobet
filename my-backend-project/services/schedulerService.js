@@ -162,7 +162,20 @@ function buildDaysFromScheduleData({ year, month, data }) {
 }
 
 async function fetchDutyRules({ sectionId, serviceId = '', role = '' }) {
-  const doc = await DutyRule.findOne({ sectionId, serviceId, role }).lean();
+  // Önce en spesifik kuralı ara; yoksa daha genel kuralı kullan
+  const fallbacks = [
+    { sectionId, serviceId, role },
+    { sectionId, serviceId, role: '' },
+    { sectionId, serviceId: '', role },
+    { sectionId, serviceId: '', role: '' },
+  ];
+
+  let doc = null;
+  for (const q of fallbacks) {
+    doc = await DutyRule.findOne(q).lean();
+    if (doc) break;
+  }
+
   const rules = { ...DEFAULT_RULES, ...(doc?.rules || {}) };
   const weights = { ...DEFAULT_WEIGHTS, ...(doc?.weights || {}) };
   return { doc, rules, weights };

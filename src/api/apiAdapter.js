@@ -2,19 +2,13 @@
 // G6'DA KULLANDIĞIN ENDPOINTLERİ BURAYA AYNI ŞEKİLDE UYARLA
 
 import { getToken } from "../lib/api.js";
+import { getApiBase, assertProdWriteAllowed } from "../lib/apiConfig.js";
 import { LS } from "../utils/storage.js";
 
-const resolvedBase = (() => {
-  const envBase = import.meta.env?.VITE_API_BASE ?? "";
-  if (envBase) return envBase;
-  if (typeof window !== "undefined") {
-    if (window.__API_BASE__) return window.__API_BASE__;
-  }
-  // Varsayılan olarak production backend (Vercel'de env tanımlı değilse burası çalışır)
-  return "https://hastane-backend-production.up.railway.app";
+const API_BASE = (() => {
+  if (typeof window !== "undefined" && window.__API_BASE__) return window.__API_BASE__;
+  return getApiBase();
 })();
-
-const API_BASE = resolvedBase;
 
 const makeUrl = (pathAndQuery) => {
   if (!API_BASE || /^https?:\/\//i.test(pathAndQuery)) return pathAndQuery;
@@ -24,6 +18,7 @@ const makeUrl = (pathAndQuery) => {
 };
 
 async function httpRequest(pathAndQuery, { method = "GET", body, token, headers } = {}) {
+  assertProdWriteAllowed(pathAndQuery, method);
   const finalHeaders = { ...(headers || {}) };
   const authToken = token || getToken();
   if (authToken && !finalHeaders.Authorization) finalHeaders.Authorization = `Bearer ${authToken}`;

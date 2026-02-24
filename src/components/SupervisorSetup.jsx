@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { X, Save, RotateCcw, Info, ShieldAlert, Clock } from "lucide-react";
-import { LS } from "../utils/storage.js";
 
 const DEFAULT_RULES = {
   maxPerDayPerPerson: 1,
@@ -11,33 +10,31 @@ const DEFAULT_RULES = {
   distinctTasksSameHour: true,
 };
 
-export default function SupervisorSetup({ open, onClose, role }) {
-  const [rules, setRules] = useState(DEFAULT_RULES);
+export default function SupervisorSetup({ open, onClose, role, currentRules = [], onSave }) {
+  const [localRules, setLocalRules] = useState(DEFAULT_RULES);
 
   useEffect(() => {
     if (open) {
-      const storedArr = LS.get("dutyRulesV2", []) || [];
       const storedMap = {};
-      storedArr.forEach((r) => {
+      (currentRules || []).forEach((r) => {
         if (r.active) storedMap[r.id] = r.value;
       });
       
-      setRules((prev) => ({
+      setLocalRules((prev) => ({
         ...prev,
         ...storedMap,
       }));
     }
-  }, [open]);
+  }, [open, currentRules]);
 
   const handleChange = (key, val) => {
-    setRules((prev) => ({ ...prev, [key]: val }));
+    setLocalRules((prev) => ({ ...prev, [key]: val }));
   };
 
   const handleSave = () => {
-    const currentArr = LS.get("dutyRulesV2", []) || [];
-    const newArr = [...currentArr];
+    const newArr = [...(currentRules || [])];
 
-    Object.entries(rules).forEach(([key, val]) => {
+    Object.entries(localRules).forEach(([key, val]) => {
       const idx = newArr.findIndex((r) => r.id === key);
       if (idx >= 0) {
         newArr[idx] = { ...newArr[idx], value: val, active: true };
@@ -46,8 +43,7 @@ export default function SupervisorSetup({ open, onClose, role }) {
       }
     });
 
-    LS.set("dutyRulesV2", newArr);
-    onClose();
+    onSave(newArr);
   };
 
   if (!open) return null;
@@ -80,7 +76,7 @@ export default function SupervisorSetup({ open, onClose, role }) {
                   type="number"
                   min="1"
                   className="w-full rounded-lg border-slate-200 text-sm focus:ring-violet-500 focus:border-violet-500"
-                  value={rules.maxPerDayPerPerson}
+                  value={localRules.maxPerDayPerPerson}
                   onChange={(e) => handleChange("maxPerDayPerPerson", Number(e.target.value))}
                 />
                 <p className="text-[10px] text-slate-400 mt-1">Aynı gün max görev sayısı.</p>
@@ -92,7 +88,7 @@ export default function SupervisorSetup({ open, onClose, role }) {
                   type="number"
                   min="0"
                   className="w-full rounded-lg border-slate-200 text-sm focus:ring-violet-500 focus:border-violet-500"
-                  value={rules.maxConsecutiveNights}
+                  value={localRules.maxConsecutiveNights}
                   onChange={(e) => handleChange("maxConsecutiveNights", Number(e.target.value))}
                 />
                 <p className="text-[10px] text-slate-400 mt-1">Peş peşe gece nöbeti limiti.</p>
@@ -104,7 +100,7 @@ export default function SupervisorSetup({ open, onClose, role }) {
                   type="number"
                   min="0"
                   className="w-full rounded-lg border-slate-200 text-sm focus:ring-violet-500 focus:border-violet-500"
-                  value={rules.targetMonthlyHours}
+                  value={localRules.targetMonthlyHours}
                   onChange={(e) => handleChange("targetMonthlyHours", Number(e.target.value))}
                 />
                 <p className="text-[10px] text-slate-400 mt-1">Dengeleme hedefi (örn: 168).</p>
@@ -116,7 +112,7 @@ export default function SupervisorSetup({ open, onClose, role }) {
                   type="number"
                   min="0"
                   className="w-full rounded-lg border-slate-200 text-sm focus:ring-violet-500 focus:border-violet-500"
-                  value={rules.weeklyHourLimit}
+                  value={localRules.weeklyHourLimit}
                   onChange={(e) => handleChange("weeklyHourLimit", Number(e.target.value))}
                 />
                 <p className="text-[10px] text-slate-400 mt-1">Haftalık max çalışma saati.</p>
@@ -136,7 +132,7 @@ export default function SupervisorSetup({ open, onClose, role }) {
                 type="checkbox"
                 id="restAfterNight"
                 className="mt-1 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
-                checked={rules.restAfterNight24h}
+                checked={localRules.restAfterNight24h}
                 onChange={(e) => handleChange("restAfterNight24h", e.target.checked)}
               />
               <div>
@@ -150,7 +146,7 @@ export default function SupervisorSetup({ open, onClose, role }) {
                 type="checkbox"
                 id="distinctTasks"
                 className="mt-1 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
-                checked={rules.distinctTasksSameHour}
+                checked={localRules.distinctTasksSameHour}
                 onChange={(e) => handleChange("distinctTasksSameHour", e.target.checked)}
               />
               <div>
@@ -168,7 +164,7 @@ export default function SupervisorSetup({ open, onClose, role }) {
 
         <div className="p-4 border-t bg-slate-50 flex justify-end gap-3">
           <button 
-            onClick={() => setRules(DEFAULT_RULES)} 
+            onClick={() => setLocalRules(DEFAULT_RULES)} 
             className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-lg flex items-center gap-2 transition-colors"
           >
             <RotateCcw size={16}/> 

@@ -371,7 +371,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     );
   }, []);
   const makeSignature = useCallback(
-    (defsData, overridesData, rosterData, previewData, aiPlanData, pinsData) =>
+    (defsData, overridesData, rosterData, previewData, aiPlanData, pinsData, rulesData) =>
       JSON.stringify({
         defs: defsData || [],
         overrides: normalizeOverridesForSignature(overridesData),
@@ -379,6 +379,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         preview: previewData || null,
         aiPlan: aiPlanData || null,
         pins: pinsData || [],
+        rules: rulesData || [],
       }),
     [normalizeOverridesForSignature]
   );
@@ -390,9 +391,16 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     if (saved && saved.year === year && saved.month === month0 + 1) return saved;
     return null;
   });
+
+  /* Pinler (Sabitlenenler) */
+  const [pins, setPins] = useState([]);
+
+  /* Kurallar (Backend + LS Sync) */
+  const [rules, setRules] = useState(() => LS.get("dutyRulesV2", []) || []);
+
   const computeSignature = useCallback(
-    () => makeSignature(rows, overrides, roster, preview, aiPlan),
-    [rows, overrides, roster, preview, aiPlan, makeSignature]
+    () => makeSignature(rows, overrides, roster, preview, aiPlan, pins, rules),
+    [rows, overrides, roster, preview, aiPlan, pins, rules, makeSignature]
   );
 
   /* Local UI state */
@@ -412,9 +420,6 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       alert(msg);
     }
   }, []);
-
-  /* Pinler (Sabitlenenler) */
-  const [pins, setPins] = useState([]);
 
   /* setCount */
   const setCount = (rowId, day, val) => {
@@ -1058,6 +1063,11 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           if ("roster" in data) setRoster(data.roster || null);
           if ("aiPlan" in data) setAiPlan(data.aiPlan || null);
           if ("pins" in data) setPins(data.pins || []);
+          if ("rules" in data) {
+            const r = data.rules || [];
+            setRules(r);
+            LS.set("dutyRulesV2", r); // Solver için LS'yi güncelle
+          }
           setLastSavedInfo({
             updatedAt: schedule.updatedAt || schedule.createdAt || null,
             updatedBy: schedule.updatedBy || schedule.createdBy || null,
@@ -1072,7 +1082,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             data.roster ?? null,
             data.preview ?? null,
             data.aiPlan ?? null,
-            data.pins ?? []
+            data.pins ?? [],
+            data.rules ?? []
           );
           setAutoSaveStatus("idle");
           setAutoSaveError(null);
@@ -1165,6 +1176,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         preview,
         aiPlan,
         pins,
+        rules,
         generatedAt: new Date().toISOString(),
       };
       const meta = {
@@ -1191,7 +1203,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         payload.roster,
         payload.preview,
         payload.aiPlan,
-        payload.pins
+        payload.pins,
+        payload.rules
       );
       setAutoSaveStatus("saved");
       setAutoSaveError(null);
@@ -1206,7 +1219,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     } finally {
       setSaving(false);
     }
-  }, [sectionId, serviceKey, role, year, month1, rows, overrides, roster, preview, aiPlan, daysInMonth, note, makeSignature]);
+  }, [sectionId, serviceKey, role, year, month1, rows, overrides, roster, preview, aiPlan, pins, rules, daysInMonth, note, makeSignature]);
 
   useEffect(() => {
     if (autoSaveStatus !== "saved") return undefined;
@@ -1963,7 +1976,16 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       </div>
 
       {/* Sorumlu Ayarları Paneli */}
-      <SupervisorSetup open={supOpen} onClose={() => setSupOpen(false)} role={role} year={year} month0={month0} />
+      <SupervisorSetup 
+        open={supOpen} 
+        onClose={() => setSupOpen(false)} 
+        role={role} 
+        currentRules={rules}
+        onSave={(newRules) => {
+          setRules(newRules);
+          LS.set("dutyRulesV2", newRules); // Solver için LS'yi güncelle
+        }}
+      />
       
       {/* Pinleme Modalı */}
       <PinningModal 

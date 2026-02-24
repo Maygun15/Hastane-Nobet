@@ -127,6 +127,11 @@ export default function PeopleTab({
     setForm(empty);
     setEditingId(null);
   };
+  const resetUi = () => {
+    reset();
+    setEditOpen(false);
+    setEditQuery("");
+  };
 
   // KAYDET / GÜNCELLE
   const syncOneToBackend = async (row) => {
@@ -354,7 +359,14 @@ export default function PeopleTab({
         );
         return;
       }
-      setPeople((prev) => sortByKeyTR([...(prev || []), ...parsed], "name"));
+      const ok = window.confirm(
+        `Excel'den yükleme mevcut kayıtları silecek ve ${parsed.length} yeni kayıt ekleyecek. Emin misiniz?`
+      );
+      if (!ok) {
+        if (importRef.current) importRef.current.value = "";
+        return;
+      }
+      setPeople(sortByKeyTR(parsed, "name"));
       if (importRef.current) importRef.current.value = "";
       alert(parsed.length + " kayıt yüklendi");
       // Backend'e bulk gönder
@@ -415,6 +427,12 @@ export default function PeopleTab({
             className="px-3 py-2 rounded-xl bg-slate-100"
           >
             Düzenle
+          </button>
+          <button
+            onClick={resetUi}
+            className="px-3 py-2 rounded-xl bg-rose-50 text-rose-700 border border-rose-200"
+          >
+            Sıfırla
           </button>
           <button
             onClick={triggerImport}

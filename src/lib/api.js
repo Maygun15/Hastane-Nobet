@@ -1,9 +1,8 @@
 // src/lib/api.js — Vite uyumlu, sağlamlaştırılmış
 
 /* ========= BASE ========= */
-export const REQUIRE_BACKEND = (import.meta.env.VITE_REQUIRE_BACKEND || 'true') === 'true';
-const API_BASE = (import.meta.env.VITE_API_BASE || 'https://hastane-backend-production.up.railway.app')
-  .replace(/\/+$/, ''); // sondaki /'ları sil
+import { getApiBase, assertProdWriteAllowed } from "./apiConfig.js";
+export const REQUIRE_BACKEND = (import.meta.env.VITE_REQUIRE_BACKEND || "true") === "true";
 
 // Route prefix — admin/invite gibi kök yollar için boş
 const AUTH_PREFIX = ''; // admin/invite gibi kök yollar için
@@ -69,7 +68,9 @@ function withTimeout(promise, ms = 20000) {
 // tek path için istek
 async function req(path, { method = 'GET', body, headers, timeoutMs, retries } = {}) {
   const effectiveRetries = retries ?? (method === 'GET' ? 2 : 0);
-  const url = `${API_BASE}${path}`;
+  assertProdWriteAllowed(path, method);
+  const base = getApiBase().replace(/\/+$/, "");
+  const url = `${base}${path}`;
   const opts = {
     method,
     headers: {
@@ -174,7 +175,7 @@ export const apiAiPing = () => req('/api/ai/ping');
 
 /* ========= Convenience ========= */
 export const API = {
-  base: API_BASE,
+  base: getApiBase(),
   health: apiHealth,
   register: apiRegister,
   login: apiLogin,

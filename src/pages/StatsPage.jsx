@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import * as XLSX from "xlsx";
 import ScheduleToolbar from "../components/ScheduleToolbar.jsx";
 import { getMonthlySchedule, fetchPersonnel } from "../api/apiAdapter.js";
 import { getPeople } from "../lib/dataResolver.js";
 import { LS } from "../utils/storage.js";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Download } from "lucide-react";
 
 export default function StatsPage() {
   const [year, setYear] = useState(new Date().getFullYear());
@@ -129,13 +130,35 @@ export default function StatsPage() {
     return Object.values(personStats).sort((a, b) => b.hours - a.hours);
   }, [data, people, year, month, role]);
 
+  const handleExport = () => {
+    if (!stats.length) return;
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(stats.map(s => ({
+      "Personel": s.name,
+      "Toplam Nöbet": s.shifts,
+      "Toplam Saat": s.hours,
+      "Hafta Sonu": s.weekends,
+      "Gece": s.nights,
+      "Ort. Süre": s.shifts > 0 ? (s.hours / s.shifts).toFixed(1) : "0"
+    })));
+    ws['!cols'] = [{wch:25}, {wch:12}, {wch:12}, {wch:12}, {wch:10}, {wch:10}];
+    XLSX.utils.book_append_sheet(wb, ws, "Rapor");
+    XLSX.writeFile(wb, `Rapor_${year}-${String(month).padStart(2, '0')}.xlsx`);
+  };
+
   return (
       <div className="p-2 md:p-4 max-w-[1400px] mx-auto space-y-4">
-        <div className="flex items-center gap-2 mb-2">
-            <button onClick={() => navigate("/roster")} className="p-2 hover:bg-slate-100 rounded-full transition-colors" title="Listeye Dön">
-                <ArrowLeft size={20} className="text-slate-600" />
+        <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+                <button onClick={() => navigate("/roster")} className="p-2 hover:bg-slate-100 rounded-full transition-colors" title="Listeye Dön">
+                    <ArrowLeft size={20} className="text-slate-600" />
+                </button>
+                <h1 className="text-xl font-bold text-slate-800">Detaylı Rapor</h1>
+            </div>
+            <button onClick={handleExport} className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700 transition-colors shadow-sm">
+                <Download size={16} />
+                <span className="hidden sm:inline">Excel İndir</span>
             </button>
-            <h1 className="text-xl font-bold text-slate-800">Detaylı Rapor</h1>
         </div>
 
         <ScheduleToolbar 

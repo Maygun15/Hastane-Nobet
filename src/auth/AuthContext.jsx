@@ -32,6 +32,14 @@ export function AuthProvider({ children }) {
   const [status, setStatus] = useState("idle"); // ilk yüklenme
   const isAuthenticated = !!user;
 
+  // user bilgisini LS'de tut (prod yazma kısıtı için)
+  useEffect(() => {
+    try {
+      if (user) localStorage.setItem("authUser", JSON.stringify(user));
+      else localStorage.removeItem("authUser");
+    } catch {}
+  }, [user]);
+
   // /me ile kullanıcıyı yenile
   const refresh = useCallback(async () => {
     const t = getToken();
