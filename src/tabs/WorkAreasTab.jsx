@@ -2,11 +2,14 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 
-const LS_KEY = "workAreasV1";
+const LS_KEY = "workAreas";
 const norm = (s) => (s || "").toString().trim().toLocaleUpperCase("tr-TR");
 
-export default function WorkAreasTab() {
-  const [areas, setAreas] = useState(() => {
+function useHybridAreas(external, setExternal) {
+  const controlled = typeof setExternal === "function" && Array.isArray(external);
+
+  const [inner, setInner] = useState(() => {
+    if (controlled) return [];
     try {
       const s = localStorage.getItem(LS_KEY);
       return s
@@ -19,14 +22,36 @@ export default function WorkAreasTab() {
     } catch { return []; }
   });
 
+  const setAreas = (updater) => {
+    if (controlled) {
+      setExternal((prev) => (typeof updater === "function" ? updater(prev ?? []) : updater));
+    } else {
+      setInner((prev0) => {
+        const next = typeof updater === "function" ? updater(prev0 ?? []) : updater;
+        try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch {}
+        return next;
+      });
+    }
+  };
+
+  const list = controlled ? (external ?? []) : (inner ?? []);
+
+  useEffect(() => {
+    if (!controlled) {
+      try { localStorage.setItem(LS_KEY, JSON.stringify(list ?? [])); } catch {}
+    }
+  }, [controlled, list]);
+
+  return [list, setAreas, controlled];
+}
+
+export default function WorkAreasTab({ workAreas, setWorkAreas }) {
+  const [areas, setAreas] = useHybridAreas(workAreas, setWorkAreas);
+
   const [name, setName] = useState("");
   const [editingIndex, setEditingIndex] = useState(null);
   const [editingValue, setEditingValue] = useState("");
   const fileRef = useRef(null);
-
-  useEffect(() => {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(areas)); } catch {}
-  }, [areas]);
 
   /* -------- CRUD -------- */
   const addArea = () => {

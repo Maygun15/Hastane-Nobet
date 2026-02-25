@@ -289,6 +289,12 @@ try {
   app.use('/api/duty-rules', auth, ensureActive, dutyRulesRoutes);
 } catch {}
 
+/* ============== SETTINGS ROUTES ============== */
+try {
+  const settingsRoutes = require('./routes/settings.routes.js');
+  app.use('/api/settings', auth, ensureActive, settingsRoutes);
+} catch {}
+
 /* ============== SCHEDULER ROUTER ============== */
 try {
   const schedulerRoutes = require('./routes/scheduler.routes.js');

@@ -140,7 +140,40 @@ function usePeople(external) {
   return [];
 }
 
-export default function RequestBoxTab({ people: peopleProp }) {
+function useHybridRequests(external, setExternal) {
+  const controlled = typeof setExternal === "function" && Array.isArray(external);
+
+  const readLocal = () => {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const [inner, setInner] = useState(() => (controlled ? [] : readLocal()));
+
+  const setList = (updater) => {
+    if (controlled) {
+      setExternal((prev) => (typeof updater === "function" ? updater(prev ?? []) : updater));
+    } else {
+      setInner((prev) => (typeof updater === "function" ? updater(prev ?? []) : updater));
+    }
+  };
+
+  const list = controlled ? (external ?? []) : (inner ?? []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(list));
+    } catch {}
+  }, [list]);
+
+  return [list, setList, controlled];
+}
+
+export default function RequestBoxTab({ people: peopleProp, requests, setRequests }) {
   const people = usePeople(peopleProp);
   const services = useMemo(() => {
     const set = new Set();
@@ -148,14 +181,7 @@ export default function RequestBoxTab({ people: peopleProp }) {
     return Array.from(set.values());
   }, [people]);
 
-  const [list, setList] = useState(() => {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [list, setList] = useHybridRequests(requests, setRequests);
 
   const [type, setType] = useState("NOTE"); // NOTE | OFF | SHIFT
   const [text, setText] = useState("");
@@ -171,12 +197,6 @@ export default function RequestBoxTab({ people: peopleProp }) {
       return "";
     }
   });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify(list));
-    } catch {}
-  }, [list]);
 
   useEffect(() => {
     try {

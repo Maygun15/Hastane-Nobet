@@ -164,7 +164,17 @@ function lsClear() {
 }
 
 /* ---------- component ---------- */
-export default function ParametersTab() {
+export default function ParametersTab({
+  workAreas,
+  setWorkAreas,
+  workingHours,
+  setWorkingHours,
+  leaveTypes,
+  setLeaveTypes,
+  requestBox,
+  setRequestBox,
+  people,
+}) {
   // Açılış önceliği: HASH > QUERY > LS > DEFAULT
   const initial = useMemo(() => {
     return subFromHash() ?? subFromQuery() ?? lsGet() ?? DEFAULT_ID;
@@ -297,14 +307,26 @@ export default function ParametersTab() {
 
       {/* İçerik */}
       <div className="mt-2">
-        {active === "calisma-alanlari" && <WorkAreasTab />}
-        {active === "calisma-saatleri" && <WorkingHoursTab />}
-        {active === "izin-turleri"     && <LeaveTypesTab />}
+        {active === "calisma-alanlari" && (
+          <WorkAreasTab workAreas={workAreas} setWorkAreas={setWorkAreas} />
+        )}
+        {active === "calisma-saatleri" && (
+          <WorkingHoursTab workingHours={workingHours} setWorkingHours={setWorkingHours} />
+        )}
+        {active === "izin-turleri"     && (
+          <LeaveTypesTab leaveTypes={leaveTypes} setLeaveTypes={setLeaveTypes} />
+        )}
         {active === "tatil-takvimi"    && <HolidayCalendarTab />}
         {active === "nobet-kurallari"  && (
           <DutyRulesTabExplained rules={dutyRules} setRules={setDutyRules} />
         )}
-        {active === "istek"            && <RequestBoxTab />}
+        {active === "istek"            && (
+          <RequestBoxTab
+            requests={requestBox}
+            setRequests={setRequestBox}
+            people={people}
+          />
+        )}
       </div>
     </div>
   );

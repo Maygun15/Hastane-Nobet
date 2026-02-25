@@ -99,6 +99,7 @@ export default function PeopleTab({
   const [editingId, setEditingId] = useState(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editQuery, setEditQuery] = useState("");
+  const [resetting, setResetting] = useState(false);
   const importRef = useRef(null);
 
   const toggleArea = (areaId) =>
@@ -402,6 +403,36 @@ export default function PeopleTab({
     r.readAsArrayBuffer(f);
   };
 
+  const handleResetAll = async () => {
+    const ok = window.confirm(
+      `${label} listesindeki tüm kayıtlar silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?`
+    );
+    if (!ok) return;
+
+    const token = getToken();
+    if (!token) {
+      alert("Backend senkron için giriş gerekli.");
+      return;
+    }
+
+    setResetting(true);
+    try {
+      const qs = new URLSearchParams({
+        replaceAll: "1",
+        role: String(role || ""),
+        clear: "1",
+      }).toString();
+      await API.http.post(`/api/personnel/bulk?${qs}`, { items: [], replaceAll: true, role, clear: true });
+      setPeople([]);
+      resetUi();
+      alert("Liste sıfırlandı.");
+    } catch (err) {
+      alert(err?.message || "Liste sıfırlanamadı.");
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const visiblePeople = editingId
     ? people.filter((p) => p.id === editingId)
     : people;
@@ -430,10 +461,15 @@ export default function PeopleTab({
             Düzenle
           </button>
           <button
-            onClick={resetUi}
-            className="px-3 py-2 rounded-xl bg-rose-50 text-rose-700 border border-rose-200"
+            onClick={handleResetAll}
+            disabled={resetting}
+            className={`px-3 py-2 rounded-xl border ${
+              resetting
+                ? "bg-rose-100 text-rose-400 border-rose-200 cursor-wait"
+                : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
+            }`}
           >
-            Sıfırla
+            {resetting ? "Sıfırlanıyor..." : "Sıfırla"}
           </button>
           <button
             onClick={triggerImport}

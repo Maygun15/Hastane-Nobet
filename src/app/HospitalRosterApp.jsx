@@ -118,6 +118,7 @@ export default function HospitalRosterApp() {
   const [workingHours, setWorkingHours] = useState(LS.get("workingHours", []));
   const [leaveTypes, setLeaveTypes] = useState(LS.get("leaveTypes", []));
   const [personLeaves, setPersonLeaves] = useState(LS.get("personLeaves", {}));
+  const [requestBox, setRequestBox] = useState(LS.get("requestBoxV1", []));
 
   useEffect(() => { LS.set("workAreas", workAreas); }, [workAreas]);
   useEffect(() => { LS.set("nurses", nurses); }, [nurses]);
@@ -125,6 +126,98 @@ export default function HospitalRosterApp() {
   useEffect(() => { LS.set("workingHours", workingHours); }, [workingHours]);
   useEffect(() => { LS.set("leaveTypes", leaveTypes); }, [leaveTypes]);
   useEffect(() => { LS.set("personLeaves", personLeaves); }, [personLeaves]);
+  useEffect(() => { LS.set("requestBoxV1", requestBox); }, [requestBox]);
+
+  /* ---- Backend parametre sync (online-only) ---- */
+  const settingsLoadedRef = useRef(false);
+  const saveTimersRef = useRef({ wa: null, wh: null, lt: null, rq: null });
+
+  useEffect(() => {
+    let alive = true;
+    const token = getToken();
+    if (!token) return undefined;
+    (async () => {
+      try {
+        const wa = await API.http.get(`/api/settings/workAreas?serviceId=`);
+        const wh = await API.http.get(`/api/settings/workingHours?serviceId=`);
+        const lt = await API.http.get(`/api/settings/leaveTypes?serviceId=`);
+        const rq = await API.http.get(`/api/settings/requestBoxV1?serviceId=`);
+        if (!alive) return;
+        if (Array.isArray(wa?.value)) setWorkAreas(wa.value);
+        if (Array.isArray(wh?.value)) setWorkingHours(wh.value);
+        if (Array.isArray(lt?.value)) setLeaveTypes(lt.value);
+        if (Array.isArray(rq?.value)) setRequestBox(rq.value);
+      } catch (err) {
+        console.warn("Settings fetch failed:", err?.message || err);
+      } finally {
+        settingsLoadedRef.current = true;
+      }
+    })();
+    return () => { alive = false; };
+  }, [user?.id]);
+
+  const saveSetting = useCallback(async (key, value) => {
+    await API.http.req(`/api/settings/${key}`, {
+      method: "PUT",
+      body: { value, serviceId: "" },
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!settingsLoadedRef.current) return;
+    if (!isAdmin) return;
+    if (saveTimersRef.current.wa) clearTimeout(saveTimersRef.current.wa);
+    saveTimersRef.current.wa = setTimeout(() => {
+      saveSetting("workAreas", workAreas).catch((err) =>
+        console.warn("workAreas save failed:", err?.message || err)
+      );
+    }, 600);
+    return () => {
+      if (saveTimersRef.current.wa) clearTimeout(saveTimersRef.current.wa);
+    };
+  }, [workAreas, isAdmin, saveSetting]);
+
+  useEffect(() => {
+    if (!settingsLoadedRef.current) return;
+    if (!isAdmin) return;
+    if (saveTimersRef.current.wh) clearTimeout(saveTimersRef.current.wh);
+    saveTimersRef.current.wh = setTimeout(() => {
+      saveSetting("workingHours", workingHours).catch((err) =>
+        console.warn("workingHours save failed:", err?.message || err)
+      );
+    }, 600);
+    return () => {
+      if (saveTimersRef.current.wh) clearTimeout(saveTimersRef.current.wh);
+    };
+  }, [workingHours, isAdmin, saveSetting]);
+
+  useEffect(() => {
+    if (!settingsLoadedRef.current) return;
+    if (!isAdmin) return;
+    if (saveTimersRef.current.lt) clearTimeout(saveTimersRef.current.lt);
+    saveTimersRef.current.lt = setTimeout(() => {
+      saveSetting("leaveTypes", leaveTypes).catch((err) =>
+        console.warn("leaveTypes save failed:", err?.message || err)
+      );
+    }, 600);
+    return () => {
+      if (saveTimersRef.current.lt) clearTimeout(saveTimersRef.current.lt);
+    };
+  }, [leaveTypes, isAdmin, saveSetting]);
+
+  useEffect(() => {
+    if (!settingsLoadedRef.current) return;
+    if (!isAdmin) return;
+    if (saveTimersRef.current.rq) clearTimeout(saveTimersRef.current.rq);
+    saveTimersRef.current.rq = setTimeout(() => {
+      saveSetting("requestBoxV1", requestBox).catch((err) =>
+        console.warn("requestBox save failed:", err?.message || err)
+      );
+    }, 600);
+    return () => {
+      if (saveTimersRef.current.rq) clearTimeout(saveTimersRef.current.rq);
+    };
+  }, [requestBox, isAdmin, saveSetting]);
 
   const peopleAll = useMemo(() => [...(doctors || []), ...(nurses || [])], [doctors, nurses]);
 
@@ -177,9 +270,16 @@ export default function HospitalRosterApp() {
 
   const visibleWorkAreas = useMemo(() => {
     if (!user) return [];
-    if (isAdmin) return workAreas;
+    const arr = Array.isArray(workAreas) ? workAreas : [];
+    if (isAdmin) return arr;
     const allowed = new Set(user?.serviceIds || []);
-    return (workAreas || []).filter((w) => allowed.has(w.id));
+    if (allowed.size === 0) return arr;
+    return arr.filter((w) => {
+      if (!w || typeof w !== "object") return true; // string list ise filtreleme
+      const sid = w.serviceId || w.service || "";
+      if (!sid) return true; // servis bağı yoksa göster
+      return allowed.has(sid);
+    });
   }, [user, workAreas, isAdmin]);
 
   /* ---- dropdown helpers ---- */
@@ -518,8 +618,9 @@ export default function HospitalRosterApp() {
                 setWorkingHours={setWorkingHours}
                 leaveTypes={leaveTypes}
                 setLeaveTypes={setLeaveTypes}
-                nurses={nurses}
-                doctors={doctors}
+                requestBox={requestBox}
+                setRequestBox={setRequestBox}
+                people={peopleAll}
               />
             ) : <NeedAdmin />
           )}

@@ -110,6 +110,7 @@ router.post('/bulk',
     try {
       const body = req.body;
       const replaceAll = !!(req.query?.replaceAll || body?.replaceAll);
+      const clear = !!(req.query?.clear || body?.clear);
       const replaceRole = String(req.query?.role || body?.role || '').trim();
       const items = Array.isArray(body) ? body : Array.isArray(body?.items) ? body.items : null;
       if (!Array.isArray(items)) {
@@ -139,7 +140,7 @@ router.post('/bulk',
         };
       });
 
-      if (replaceAll && mapped.length > 0) {
+      if (replaceAll && (mapped.length > 0 || clear)) {
         if (replaceRole) {
           const esc = replaceRole.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           const rx = new RegExp(`^${esc}$`, 'i');
@@ -155,8 +156,10 @@ router.post('/bulk',
           await Person.deleteMany({});
         }
       }
-      const inserted = await Person.insertMany(mapped, { ordered: false });
-      return res.json({ ok: true, count: inserted.length });
+      const inserted = mapped.length
+        ? await Person.insertMany(mapped, { ordered: false })
+        : [];
+      return res.json({ ok: true, count: inserted.length, cleared: !!(replaceAll && clear) });
     } catch (err) {
       console.error('POST /api/personnel/bulk ERR:', err);
       return res.status(500).json({ error: err.message || 'Bulk ekleme hatası' });
