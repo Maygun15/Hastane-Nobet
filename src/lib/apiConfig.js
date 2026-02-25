@@ -1,6 +1,5 @@
 // src/lib/apiConfig.js
-
-const DEFAULT_PROD_BASE = "https://hastane-backend-production.up.railway.app";
+const DEFAULT_PROD_BASE = "https://hastane-backend-production-dcf1.up.railway.app";
 const RAW_PROD_BASE =
   import.meta.env?.VITE_API_BASE ||
   import.meta.env?.VITE_API_URL ||
@@ -13,8 +12,7 @@ const ENV_PROD_BASE = String(RAW_PROD_BASE || DEFAULT_PROD_BASE).replace(/\/+$/,
 const ENV_STAGING_BASE = String(RAW_STAGING_BASE || "").replace(/\/+$/, "");
 const ENV_DEFAULT = String(import.meta.env?.VITE_API_ENV || "prod").toLowerCase();
 const ENV_ONLINE_ONLY = String(import.meta.env?.VITE_ONLINE_ONLY || "true").toLowerCase() === "true";
-const ENV_PROD_WRITE_ROLES = String(import.meta.env?.VITE_PROD_WRITE_ROLES || "ADMIN");
-
+const ENV_PROD_WRITE_ROLES = String(import.meta.env?.VITE_PROD_WRITE_ROLES || "ADMIN,admin,authorized,AUTHORIZED");
 const API_ENV_KEY = "apiEnv";
 
 export function isOnlineOnly() {
@@ -22,7 +20,6 @@ export function isOnlineOnly() {
 }
 
 export function getApiEnv() {
-  // URL param overrides (e.g. ?env=staging)
   if (typeof window !== "undefined") {
     try {
       const q = new URLSearchParams(window.location.search).get("env");
@@ -30,8 +27,6 @@ export function getApiEnv() {
       if (q === "prod") return "prod";
     } catch {}
   }
-
-  // LocalStorage override
   if (typeof window !== "undefined") {
     try {
       const ls = localStorage.getItem(API_ENV_KEY);
@@ -39,8 +34,6 @@ export function getApiEnv() {
       if (ls === "prod") return "prod";
     } catch {}
   }
-
-  // Env default
   if (ENV_DEFAULT === "staging" && ENV_STAGING_BASE) return "staging";
   return "prod";
 }
@@ -71,7 +64,6 @@ export function getCachedUser() {
   try {
     const raw = localStorage.getItem("authUser");
     const parsed = raw ? JSON.parse(raw) : null;
-    // bazı client'lar { user: {...} } saklamış olabilir
     if (parsed && parsed.user && !parsed.role) return parsed.user;
     return parsed;
   } catch {
