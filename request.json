@@ -1,0 +1,7 @@
+{
+  "sectionId": "TEST_BOLUM",
+  "rules": {
+    "ONE_SHIFT_PER_DAY": true,
+    "MAX_CONSECUTIVE_DAYS": 7
+  }
+}
