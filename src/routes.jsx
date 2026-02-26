@@ -10,6 +10,8 @@ import LoginPage from "./pages/auth/Login.jsx";
 import AppHome from "./pages/Home.jsx"; // yoksa geçici bir component oluştur
 import RosterPage from "./pages/RosterPage.jsx";
 import StatsPage from "./pages/StatsPage.jsx";
+import DutyRulesPage from "./pages/DutyRulesPage.jsx";
+import HybridSchedulerPage from "./pages/HybridSchedulerPage.jsx";
 
 function Protected({ children }) {
   const { user, token, loading } = useAuth();
@@ -46,6 +48,22 @@ export default function AppRoutes() {
               element={
                 <Protected>
                   <StatsPage />
+                </Protected>
+              }
+            />
+            <Route
+              path="/duty-rules"
+              element={
+                <Protected>
+                  <DutyRulesPage />
+                </Protected>
+              }
+            />
+            <Route
+              path="/scheduler"
+              element={
+                <Protected>
+                  <HybridSchedulerPage />
                 </Protected>
               }
             />

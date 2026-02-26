@@ -93,4 +93,48 @@ router.put('/', requireAuth, requireRole('admin', 'authorized'), async (req, res
   }
 });
 
+// POST /api/duty-rules — yeni kayıt oluştur (varsa 409)
+router.post('/', requireAuth, requireRole('admin', 'authorized'), async (req, res) => {
+  try {
+    const { sectionId, serviceId, role } = parseQuery(req);
+    const rules = req.body?.rules && typeof req.body.rules === 'object' ? req.body.rules : {};
+    const weights = req.body?.weights && typeof req.body.weights === 'object' ? req.body.weights : {};
+    const enabled = req.body?.enabled !== false;
+
+    const exists = await DutyRule.findOne({ sectionId, serviceId, role }).lean();
+    if (exists) {
+      return res.status(409).json({ ok: false, message: 'Kayıt zaten var (PUT kullanın)' });
+    }
+
+    const doc = await DutyRule.create({
+      sectionId,
+      serviceId,
+      role,
+      rules,
+      weights,
+      enabled,
+      createdBy: req.user?.uid || null,
+    });
+
+    return res.status(201).json({
+      ok: true,
+      rule: {
+        id: String(doc._id),
+        sectionId,
+        serviceId,
+        role,
+        rules: doc.rules || {},
+        weights: doc.weights || {},
+        enabled: doc.enabled !== false,
+        createdAt: doc.createdAt,
+      },
+    });
+  } catch (err) {
+    if (err?.message?.includes('duplicate key')) {
+      return res.status(409).json({ ok: false, message: 'Kayıt zaten var (PUT kullanın)' });
+    }
+    return res.status(500).json({ ok: false, message: err.message || 'Sunucu hatası' });
+  }
+});
+
 module.exports = router;

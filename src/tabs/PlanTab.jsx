@@ -1,5 +1,5 @@
 // src/tabs/PlanTab.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { LS } from "../utils/storage.js";
 import { useAuth } from "../auth/AuthContext.jsx";
 import useServiceScope from "../hooks/useServiceScope.js";
@@ -7,6 +7,8 @@ import useActiveYM from "../hooks/useActiveYM.js";
 import { getAllLeaves } from "../lib/leaves.js";
 import ScheduleToolbar from "../components/ScheduleToolbar.jsx";
 import PersonScheduleCalendar from "../components/PersonScheduleCalendar.jsx";
+import { API } from "../lib/api.js";
+import { runPlannerOnce } from "../lib/runPlannerOnce.js";
 
 const MONTH_LABEL = (year, month) =>
   `${Intl.DateTimeFormat("tr-TR", { month: "long" }).format(new Date(year, month - 1, 1))} ${year}`;
@@ -64,6 +66,41 @@ function normalizePersonRecord(p, index) {
     raw: p,
     service,
   };
+}
+
+function splitByRole(items) {
+  const nurses = [];
+  const doctors = [];
+  (items || []).forEach((p, idx) => {
+    if (!p) return;
+    const meta = p?.meta || {};
+    const roleHint = String(meta.role || p.title || p.role || "").toLowerCase();
+    const isDoctor = /doktor|doctor|hekim|tabip/.test(roleHint);
+    const mapped = {
+      id: p.id || p._id || p.personId || String(idx + 1),
+      name: p.fullName || p.name || p.displayName || "",
+      fullName: p.fullName || p.name || p.displayName || "",
+      service: p.serviceId || p.service || meta.service || "",
+      meta,
+    };
+    if (isDoctor) doctors.push(mapped);
+    else nurses.push(mapped);
+  });
+  return { nurses, doctors };
+}
+
+function buildCountsFromPattern(def, year, month0) {
+  const pattern = Array.isArray(def?.pattern) ? def.pattern : null;
+  if (!pattern || pattern.length !== 7) return undefined;
+  const counts = {};
+  const daysInMonth = new Date(year, month0 + 1, 0).getDate();
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dow = new Date(year, month0, d).getDay(); // 0=Sun
+    const monIdx = (dow + 6) % 7; // 0=Mon
+    const v = Number(pattern[monIdx]);
+    if (Number.isFinite(v)) counts[d] = v;
+  }
+  return counts;
 }
 
 function readPeopleAll() {
@@ -144,6 +181,9 @@ export default function PlanTab() {
   const scope = useServiceScope();
   const { ym, setYear, setMonth } = useActiveYM();
   const { year, month } = ym;
+  const [activeRole, setActiveRole] = useState("Nurse");
+  const [plannerStatus, setPlannerStatus] = useState("idle"); // idle | loading | error | done
+  const [plannerError, setPlannerError] = useState("");
 
   const [peopleAll, setPeopleAll] = useState(() => readPeopleAll());
   useEffect(() => {
@@ -224,6 +264,79 @@ export default function PlanTab() {
     isStandard: isStandardUser,
   };
 
+  const handleRunPlanner = useCallback(async () => {
+    try {
+      setPlannerStatus("loading");
+      setPlannerError("");
+
+      const roleKey = activeRole === "Doctor" ? "DOCTOR" : "NURSE";
+      const serviceId = selectedService || "";
+      const month0 = Math.min(11, Math.max(0, Number(month) - 1));
+
+      const [personnelRes, hoursRes, scheduleRes] = await Promise.all([
+        API.http.get(`/api/personnel?page=1&size=2000`),
+        API.http.get(`/api/settings/workingHours?serviceId=`),
+        API.http.get(
+          `/api/schedules/monthly?sectionId=calisma-cizelgesi&serviceId=${encodeURIComponent(
+            serviceId
+          )}&role=${encodeURIComponent(roleKey)}&year=${year}&month=${month}`
+        ),
+      ]);
+
+      const items = Array.isArray(personnelRes?.items) ? personnelRes.items : [];
+      const { nurses, doctors } = splitByRole(items);
+      const workingHours = Array.isArray(hoursRes?.value) ? hoursRes.value : [];
+
+      const defs = scheduleRes?.schedule?.data?.defs || [];
+      const taskLines = (Array.isArray(defs) ? defs : [])
+        .map((d) => {
+          const label = (d?.label || "").toString().trim();
+          const shiftCode = (d?.shiftCode || "").toString().trim();
+          if (!label || !shiftCode) return null;
+          const counts = buildCountsFromPattern(d, year, month0);
+          return {
+            label,
+            shiftCode,
+            defaultCount: Number(d?.defaultCount ?? 0) || 0,
+            counts,
+          };
+        })
+        .filter(Boolean);
+
+      const result = await runPlannerOnce({
+        year,
+        month: month0,
+        activeServiceId: serviceId,
+        activeRole: roleKey,
+        nurses,
+        doctors,
+        workingHours,
+        personLeaves: {}, // TODO: backend leaves endpoint eklenince buraya bağla
+        taskLines,
+      });
+
+      const ctx = {
+        year: result.year,
+        month: result.month,
+        role: result.role,
+        serviceId: result.serviceId,
+        result: result.dpResult,
+        taskLines: result.taskLines,
+        workingHours: result.workingHours,
+      };
+      try {
+        localStorage.setItem("dpResultLast", JSON.stringify(ctx));
+        window.dispatchEvent(new Event("planner:dpResult"));
+      } catch {}
+
+      setPlannerStatus("done");
+    } catch (err) {
+      console.error(err);
+      setPlannerStatus("error");
+      setPlannerError(err?.message || "Planlama çalıştırılamadı.");
+    }
+  }, [activeRole, selectedService, year, month]);
+
   return (
     <div className="p-4 space-y-4">
       <ScheduleToolbar
@@ -232,7 +345,21 @@ export default function PlanTab() {
         month={month}
         setYear={setYear}
         setMonth={setMonth}
+        onBuild={handleRunPlanner}
+        role={activeRole}
+        onRoleChange={setActiveRole}
       />
+
+      {plannerStatus === "error" && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {plannerError || "Planlama çalıştırılamadı."}
+        </div>
+      )}
+      {plannerStatus === "done" && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          Plan oluşturuldu.
+        </div>
+      )}
 
       {showServiceSelect && (
         <div className="flex flex-wrap items-center gap-2">
@@ -271,4 +398,3 @@ export default function PlanTab() {
     </div>
   );
 }
-

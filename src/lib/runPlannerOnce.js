@@ -301,24 +301,37 @@ function recomputeHoursByPerson(assignments, hoursOfShiftCode) {
 /* === Dışa aktar yardımcıları === */
 const dayNameTR = (y,m,d) => ["Paz","Pzt","Sal","Çar","Per","Cum","Cmt"][new Date(y,m,d).getDay()] || "";
 
-/** Üst bardan tek tıkla çözüm: LS'ten veriyi çek, çözüp LS'e kaydet */
-export function runPlannerOnceFromLS() {
-  const year  = parseInt(localStorage.getItem("plannerYear")  || String(new Date().getFullYear()),10);
-  const month = parseInt(localStorage.getItem("plannerMonth") || String(new Date().getMonth()),10);
-  const { daysInMonth } = buildMonthDays(year, month);
-  const days = Array.from({length:daysInMonth},(_,i)=>fmtYmd(new Date(year,month,i+1)));
+/** Planner artık dışarıdan veri alır (localStorage okuma yok). */
+export async function runPlannerOnce({
+  year: yearParam,
+  month: monthParam,
+  activeServiceId,
+  activeRole,
+  nurses,
+  doctors,
+  workingHours: workingHoursParam,
+  personLeaves: personLeavesParam,
+  taskLines: taskLinesParam,
+  dpRules: dpRulesParam,
+}) {
+  const now = new Date();
+  const yearVal = Number.isFinite(Number(yearParam)) ? Number(yearParam) : now.getFullYear();
+  const monthNumRaw = Number.isFinite(Number(monthParam)) ? Number(monthParam) : now.getMonth();
+  const monthVal = Math.min(11, Math.max(0, Math.trunc(monthNumRaw)));
 
-  const activeServiceId = localStorage.getItem("activeServiceId") || "";
-  const activeRole = localStorage.getItem("activeRole") || "NURSE";
+  const year = yearVal;
+  const month0 = monthVal;
+  const month = month0;
 
-  const nurses = JSON.parse(localStorage.getItem("nurses") || "[]");
-  const doctors = JSON.parse(localStorage.getItem("doctors") || "[]");
-  const workingHours = JSON.parse(localStorage.getItem("workingHours") || "[]");
-  const personLeaves = JSON.parse(localStorage.getItem("personLeaves") || "{}");
-  const taskLines = JSON.parse(localStorage.getItem("taskLines") || "[]");
-  const dpRules = JSON.parse(localStorage.getItem("dpRules") || JSON.stringify(DEFAULT_RULES));
+  const { daysInMonth } = buildMonthDays(year, month0);
+  const days = Array.from({ length: daysInMonth }, (_, i) => fmtYmd(new Date(year, month0, i + 1)));
 
-  const staffAll = activeRole==="DOCTOR" ? doctors : nurses;
+  const roleKey = norm(activeRole || "NURSE");
+  const staffAll = roleKey === "DOCTOR" ? (doctors || []) : (nurses || []);
+  const workingHours = Array.isArray(workingHoursParam) ? workingHoursParam : [];
+  const personLeaves = personLeavesParam && typeof personLeavesParam === "object" ? personLeavesParam : {};
+  const taskLines = Array.isArray(taskLinesParam) ? taskLinesParam : [];
+  const dpRules = dpRulesParam || DEFAULT_RULES;
   const staff = (staffAll||[]).filter(p => !activeServiceId || p.service===activeServiceId);
 
   if (!activeServiceId) throw new Error("Önce bir servis seçin.");
@@ -751,28 +764,21 @@ export function runPlannerOnceFromLS() {
     requestSummary: requestSummaryPayload,
   };
 
-  // Sonucu LS’e koy (PlanTab isterse okuyabilir)
-  localStorage.setItem("dpResultLast", JSON.stringify({
-    year, month, role: activeRole, serviceId: activeServiceId, result: dpResult
-  }));
-  try {
-    localStorage.setItem("plannerRequestSummary", JSON.stringify(requestSummaryPayload));
-  } catch {}
-  try {
-    window.dispatchEvent(new Event("planner:dpResult"));
-  } catch {}
-
   return { year, month, role: activeRole, serviceId: activeServiceId, dpResult, taskLines, workingHours };
 }
 
-/** Üst bardan Excel’e aktar (dpResultLast veya parametre) */
-export function exportExcelFrom(dpCtx) {
-  const ctx = dpCtx ?? JSON.parse(localStorage.getItem("dpResultLast") || "null");
+/** Üst bardan Excel’e aktar (parametre ile) */
+export function exportExcelFrom(dpCtx, taskLinesParam = [], workingHoursParam = []) {
+  const ctx = dpCtx;
   if (!ctx?.result) throw new Error("Önce liste oluşturun.");
   const { year, month } = ctx;
   const dpResult = ctx.result;
-  const taskLines = JSON.parse(localStorage.getItem("taskLines") || "[]");
-  const workingHours = JSON.parse(localStorage.getItem("workingHours") || "[]");
+  const taskLines =
+    (Array.isArray(taskLinesParam) && taskLinesParam.length ? taskLinesParam : null) ||
+    (Array.isArray(ctx?.taskLines) ? ctx.taskLines : []);
+  const workingHours =
+    (Array.isArray(workingHoursParam) && workingHoursParam.length ? workingHoursParam : null) ||
+    (Array.isArray(ctx?.workingHours) ? ctx.workingHours : []);
 
   const days = buildMonthDays(year, month).daysInMonth;
   const D = Array.from({length:days},(_,i)=>i+1);

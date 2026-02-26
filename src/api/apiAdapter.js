@@ -210,3 +210,44 @@ export async function saveMonthlySchedule({
   });
   return payload?.schedule || null;
 }
+
+/* ================= Duty Rules ================= */
+export async function fetchDutyRules({
+  sectionId,
+  serviceId = "",
+  role = "",
+  token,
+} = {}) {
+  if (!sectionId) throw new Error("sectionId gerekli");
+  const qs = new URLSearchParams({ sectionId });
+  if (serviceId !== undefined && serviceId !== null) qs.append("serviceId", String(serviceId));
+  if (role !== undefined && role !== null) qs.append("role", String(role));
+  const data = await httpRequest(`/api/duty-rules?${qs.toString()}`, { token });
+  return data;
+}
+
+export async function saveDutyRules({
+  sectionId,
+  serviceId = "",
+  role = "",
+  rules = {},
+  weights = {},
+  enabled = true,
+  token,
+} = {}) {
+  if (!sectionId) throw new Error("sectionId gerekli");
+  const body = {
+    sectionId,
+    serviceId,
+    role,
+    rules,
+    weights,
+    enabled,
+  };
+  const data = await httpRequest(`/api/duty-rules`, {
+    method: "PUT",
+    body,
+    token,
+  });
+  return data;
+}
