@@ -309,6 +309,31 @@ try {
 try {
   const Setting = require('./models/Setting');
 
+  const respondSetting = async (req, res, key) => {
+    const serviceId = String(req.query?.serviceId || '').trim();
+    const doc = await Setting.findOne({ key, serviceId }).lean();
+    const value = Array.isArray(doc?.value) ? doc.value : (doc?.value ?? null);
+    return res.json({ ok: true, key, serviceId, value });
+  };
+
+  // settings/* legacy callers
+  app.get('/api/settings/leaveTypes', auth, ensureActive, async (req, res) => {
+    try { return await respondSetting(req, res, 'leaveTypes'); }
+    catch (e) { return res.status(500).json({ message: e.message }); }
+  });
+  app.get('/api/settings/workAreas', auth, ensureActive, async (req, res) => {
+    try { return await respondSetting(req, res, 'workAreas'); }
+    catch (e) { return res.status(500).json({ message: e.message }); }
+  });
+  app.get('/api/settings/workingHours', auth, ensureActive, async (req, res) => {
+    try { return await respondSetting(req, res, 'workingHours'); }
+    catch (e) { return res.status(500).json({ message: e.message }); }
+  });
+  app.get('/api/settings/requestBoxV1', auth, ensureActive, async (req, res) => {
+    try { return await respondSetting(req, res, 'requestBoxV1'); }
+    catch (e) { return res.status(500).json({ message: e.message }); }
+  });
+
   app.get('/api/leaveTypes', auth, ensureActive, async (req, res) => {
     try {
       const serviceId = String(req.query?.serviceId || '').trim();
