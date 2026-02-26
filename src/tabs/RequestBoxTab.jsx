@@ -4,6 +4,10 @@ import { parseRequestText } from "../lib/requestParser.js";
 
 const LS_KEY = "requestBoxV1";
 const LS_LAST_PERSON = "requestBoxLastPersonV1";
+const sortByNameTR = (arr) =>
+  [...(arr || [])].sort((a, b) =>
+    (a?.name || "").localeCompare(b?.name || "", "tr", { sensitivity: "base" })
+  );
 
 function readPlannerYM() {
   const year = Number(localStorage.getItem("plannerYear")) || new Date().getFullYear();
@@ -207,11 +211,12 @@ export default function RequestBoxTab({ people: peopleProp, requests, setRequest
   const selectedPerson =
     people.find((p) => String(p.id) === String(personId)) || null;
   const filteredPeople = useMemo(() => {
-    return people.filter((p) => {
+    const base = people.filter((p) => {
       if (serviceFilter && p.service !== serviceFilter) return false;
       if (searchTerm && !p.name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
       return true;
     });
+    return sortByNameTR(base);
   }, [people, serviceFilter, searchTerm]);
 
   const add = () => {
