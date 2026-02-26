@@ -304,6 +304,34 @@ try {
   console.error('❌ PARAMETERS ROUTE LOAD ERROR:', e.message);
 }
 
+/* ============== COMPATIBILITY ALIASES ============== */
+// Eski frontend endpointleri için geriye dönük uyum
+try {
+  const Setting = require('./models/Setting');
+
+  app.get('/api/leaveTypes', auth, ensureActive, async (req, res) => {
+    try {
+      const serviceId = String(req.query?.serviceId || '').trim();
+      const doc = await Setting.findOne({ key: 'leaveTypes', serviceId }).lean();
+      res.json(Array.isArray(doc?.value) ? doc.value : []);
+    } catch (e) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get('/api/requestBoxV1', auth, ensureActive, async (req, res) => {
+    try {
+      const serviceId = String(req.query?.serviceId || '').trim();
+      const doc = await Setting.findOne({ key: 'requestBoxV1', serviceId }).lean();
+      res.json(Array.isArray(doc?.value) ? doc.value : []);
+    } catch (e) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+} catch (e) {
+  console.error('❌ COMPAT ALIAS LOAD ERROR:', e.message);
+}
+
 /* ============== SCHEDULER ROUTER ============== */
 try {
   const schedulerRoutes = require('./routes/scheduler.routes.js');
