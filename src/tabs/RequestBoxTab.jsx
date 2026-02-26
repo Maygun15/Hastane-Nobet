@@ -218,6 +218,7 @@ export default function RequestBoxTab({ people: peopleProp, requests, setRequest
     });
     return sortByNameTR(base);
   }, [people, serviceFilter, searchTerm]);
+  const sortedPeople = useMemo(() => sortByNameTR(people), [people]);
 
   const add = () => {
     const t = text.trim();
@@ -355,13 +356,13 @@ export default function RequestBoxTab({ people: peopleProp, requests, setRequest
               </div>
             ) : (
               <select
-                size={Math.min(10, Math.max(6, people.length))}
+                size={Math.min(10, Math.max(6, sortedPeople.length))}
                 value={personId}
                 onChange={(e) => setPersonId(e.target.value)}
                 className="w-full border rounded-xl p-2"
               >
                 <option value="">(Kişi seçiniz)</option>
-                {people.map((p) => (
+                {sortedPeople.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
