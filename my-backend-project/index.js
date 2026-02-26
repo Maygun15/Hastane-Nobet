@@ -20,7 +20,7 @@ const PORT = Number(process.env.PORT || 3000);
 
 /* ================= ENV ================= */
 const MONGODB_URI     = process.env.MONGODB_URI;
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5174";
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "https://hastane-nobet.vercel.app";
 const JWT_SECRET      = process.env.JWT_SECRET || 'dev-secret';
 const SKIP_DB         = ['1','true','yes'].includes(String(process.env.SKIP_DB || '').toLowerCase());
 const ALLOW_DEV       = ['1','true','yes'].includes(String(process.env.ALLOW_DEV_ENDPOINTS || '').toLowerCase());
@@ -294,6 +294,15 @@ try {
   const settingsRoutes = require('./routes/settings.routes.js');
   app.use('/api/settings', auth, ensureActive, settingsRoutes);
 } catch {}
+
+/* ============== PARAMETERS ROUTES ============== */
+try {
+  const parametersRoutes = require('./routes/parameters.routes.js');
+  app.use('/api/parameters', auth, ensureActive, parametersRoutes);
+  console.log('✅ Parameters routes yüklendi');
+} catch (e) {
+  console.error('❌ PARAMETERS ROUTE LOAD ERROR:', e.message);
+}
 
 /* ============== SCHEDULER ROUTER ============== */
 try {
