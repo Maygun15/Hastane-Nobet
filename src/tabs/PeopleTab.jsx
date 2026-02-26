@@ -214,8 +214,8 @@ export default function PeopleTab({
 
   const editList = useMemo(() => {
     const q = editQuery.trim().toLocaleLowerCase("tr-TR");
-    if (!q) return people;
-    return people.filter((p) => {
+    if (!q) return sortByKeyTR(people, "name");
+    return sortByKeyTR(people.filter((p) => {
       const hay = [
         p.name,
         p.tc,
@@ -227,7 +227,7 @@ export default function PeopleTab({
         .map((v) => v.toString().toLocaleLowerCase("tr-TR"))
         .join(" ");
       return hay.includes(q);
-    });
+    }), "name");
   }, [people, editQuery]);
 
   /* --- Excel dışa aktarma ve şablon --- */
