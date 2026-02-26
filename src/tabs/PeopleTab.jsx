@@ -435,7 +435,7 @@ export default function PeopleTab({
 
   const visiblePeople = editingId
     ? people.filter((p) => p.id === editingId)
-    : people;
+    : sortByKeyTR(people, 'name');
 
   return (
     <div className="space-y-4">
