@@ -102,6 +102,102 @@ router.post('/',
   }
 );
 
+// Update one
+router.put('/:id',
+  requireAuth,
+  async (req, res, next) => {
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'id gerekli' });
+      const person = await Person.findById(id);
+      if (!person) return res.status(404).json({ error: 'Kayıt bulunamadı' });
+      req.targetServiceId = person.serviceId || '';
+      req.person = person;
+      return next();
+    } catch (err) {
+      console.error('PUT /api/personnel/:id ERR:', err);
+      return res.status(500).json({ error: 'Sunucu hatası' });
+    }
+  },
+  sameServiceOrAdmin,
+  async (req, res) => {
+    try {
+      const person = req.person;
+      const {
+        name,
+        serviceId = undefined,
+        meta = undefined,
+        tc = undefined,
+        phone = undefined,
+        email = undefined
+      } = req.body || {};
+
+      if (name != null && !String(name).trim()) {
+        return res.status(400).json({ error: 'İsim gerekli' });
+      }
+
+      // staff rolü farklı servise taşıyamaz
+      if (serviceId != null && req.user?.role === 'staff') {
+        const newService = String(serviceId || '');
+        if (newService && newService !== String(person.serviceId || '')) {
+          return res.status(403).json({ error: 'Servis kapsamı dışı' });
+        }
+      }
+
+      if (name != null) person.name = String(name).trim();
+      if (serviceId != null) person.serviceId = String(serviceId || '');
+      if (meta != null) person.meta = meta || {};
+      if (tc != null) person.tc = tc || '';
+      if (phone != null) person.phone = phone || '';
+      if (email != null) person.email = email || '';
+
+      await person.save();
+
+      return res.json({
+        ok: true,
+        person: {
+          id: String(person._id),
+          name: person.name,
+          serviceId: person.serviceId,
+          meta: person.meta || {}
+        }
+      });
+    } catch (err) {
+      console.error('PUT /api/personnel/:id ERR:', err);
+      return res.status(500).json({ error: 'Personel güncellenemedi' });
+    }
+  }
+);
+
+// Delete one
+router.delete('/:id',
+  requireAuth,
+  async (req, res, next) => {
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'id gerekli' });
+      const person = await Person.findById(id);
+      if (!person) return res.status(404).json({ error: 'Kayıt bulunamadı' });
+      req.targetServiceId = person.serviceId || '';
+      req.person = person;
+      return next();
+    } catch (err) {
+      console.error('DELETE /api/personnel/:id ERR:', err);
+      return res.status(500).json({ error: 'Sunucu hatası' });
+    }
+  },
+  sameServiceOrAdmin,
+  async (req, res) => {
+    try {
+      await req.person.deleteOne();
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('DELETE /api/personnel/:id ERR:', err);
+      return res.status(500).json({ error: 'Personel silinemedi' });
+    }
+  }
+);
+
 // Bulk insert (opsiyonel: replaceAll=true ile tümünü silip yeniden yazar)
 router.post('/bulk',
   requireAuth,

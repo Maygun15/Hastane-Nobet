@@ -45,6 +45,7 @@ const slugTR = (s = "") =>
     .replace(/^-+|-+$/g, "");
 
 const clean = (s) => (s ?? "").toString().trim();
+const isMongoId = (id) => typeof id === "string" && /^[a-f0-9]{24}$/i.test(id);
 
 // workAreas -> {id,name}[] (string veya obje kabul)
 function normalizeWorkAreas(input) {
@@ -135,7 +136,7 @@ export default function PeopleTab({
   };
 
   // KAYDET / GÜNCELLE
-  const syncOneToBackend = async (row) => {
+  const syncOneToBackend = async (row, editingId) => {
     const token = getToken();
     if (!token) return;
     try {
@@ -152,13 +153,19 @@ export default function PeopleTab({
         phone: row.phone || "",
         email: row.mail || "",
       };
-      await API.http.post(`/api/personnel`, payload);
+      if (editingId && isMongoId(editingId)) {
+        const res = await API.http.put(`/api/personnel/${editingId}`, payload);
+        return res?.person || null;
+      }
+      const res = await API.http.post(`/api/personnel`, payload);
+      return res?.person || null;
     } catch (e) {
       console.warn("Backend sync error:", e?.message || e);
+      return null;
     }
   };
 
-  const upsert = (e) => {
+  const upsert = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) return;
 
@@ -177,13 +184,22 @@ export default function PeopleTab({
       areas: areaNames, // <<< KRİTİK
     };
 
+    const saved = await syncOneToBackend(row, editingId);
+    const nextId = saved?.id || id;
+    const nextRow = {
+      ...row,
+      id: nextId,
+      name: saved?.name || row.name,
+      service: saved?.serviceId || row.service,
+      meta: saved?.meta || row.meta,
+    };
+
     setPeople((prev) =>
       sortByKeyTR(
-        [...(prev.filter((p) => p.id !== id)), row],
+        [...(prev.filter((p) => p.id !== id)), nextRow],
         "name"
       )
     );
-    syncOneToBackend(row);
     reset();
   };
 
@@ -209,8 +225,18 @@ export default function PeopleTab({
     });
   };
 
-  const del = (id) =>
+  const del = async (id) => {
+    if (!id) return;
+    if (isMongoId(String(id))) {
+      try {
+        await API.http.delete(`/api/personnel/${id}`);
+      } catch (e) {
+        alert("Sunucudan silinemedi. Tekrar deneyin.");
+        return;
+      }
+    }
     setPeople((prev) => sortByKeyTR(prev.filter((p) => p.id !== id), "name"));
+  };
 
   const editList = useMemo(() => {
     const q = editQuery.trim().toLocaleLowerCase("tr-TR");
