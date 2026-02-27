@@ -1402,7 +1402,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   }
 
   /* Imperative API (üst toolbar buradan çağıracak) */
-  const doAi = () => {
+  const doAi = () => doBuild();  // n8n/AI entegrasyonu sonra eklenecek
+  const doAi_legacy = () => {
     try {
       generateAutoSchedule({ year, month1_12: month0 + 1, writeToLS: true });
       note("Otomatik Çalışma Çizelgesi oluşturuldu.", "success");
