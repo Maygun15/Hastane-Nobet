@@ -25,7 +25,7 @@ export default function RosterPage() {
     const pick = (raw) => (Array.isArray(raw) ? raw : Array.isArray(raw?.value) ? raw.value : Array.isArray(raw?.items) ? raw.items : []);
     const a2 = pick(v2);
     const a1 = pick(v1);
-    return a2.length ? a2 : a1;
+    return [...a2, ...a1];
   });
   const [workingHours, setWorkingHours] = useState(() => {
     const v2 = LS.get("workingHoursV2", null);
@@ -33,7 +33,7 @@ export default function RosterPage() {
     const pick = (raw) => (Array.isArray(raw) ? raw : Array.isArray(raw?.value) ? raw.value : Array.isArray(raw?.items) ? raw.items : []);
     const a2 = pick(v2);
     const a1 = pick(v1);
-    return a2.length ? a2 : a1;
+    return [...a2, ...a1];
   });
   const [people, setPeople] = useState([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -181,8 +181,8 @@ export default function RosterPage() {
       const a1 = pick(wa1);
       const h2 = pick(wh2);
       const h1 = pick(wh1);
-      setWorkAreas(a2.length ? a2 : a1);
-      setWorkingHours(h2.length ? h2 : h1);
+      setWorkAreas([...a2, ...a1]);
+      setWorkingHours([...h2, ...h1]);
     };
     window.addEventListener("storage", refreshSettings);
     window.addEventListener("focus", refreshSettings);

@@ -14,7 +14,7 @@ const getISOWeekKey = (dateStr) => {
   if (!dateStr) return null;
   const d = new Date(`${dateStr}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return null;
-  const day = d.getUTCDay() || 7; // 1..7 (Mon..Sun)
+  const day = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - day);
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
@@ -51,16 +51,21 @@ const normalizeArea = (s) =>
     .toLowerCase()
     .trim();
 
+// Anlamlı tokenları çıkar — "alan", "birimi" gibi gürültülü kelimeleri sil
+const NOISE_WORDS = new Set([
+  'alan', 'alani', 'gorev', 'gorevi', 'gorevlendirme',
+  'birim', 'birimi', 'unit', 've', 'veya', 'yada', 'ile',
+]);
+
 const splitAreaTokens = (s) => {
   const base = normalizeArea(s);
   if (!base) return [];
   return base
-    .replace(/[\(\)\[\]\{\}]/g, " ")
-    .replace(/\b(alan|alani|gorev|gorevi|gorevlendirme|birim|birimi|unit)\b/g, " ")
-    .replace(/&|\+|\/|\\|,|;|-|_|\bve\b|\bveya\b|\byada\b/g, " ")
+    .replace(/[\(\)\[\]\{\}]/g, ' ')
+    .replace(/&|\+|\/|\\|,|;|-|_/g, ' ')
     .split(/\s+/)
-    .map((t) => t.trim())
-    .filter((t) => t && t.length > 1);
+    .map(t => t.trim())
+    .filter(t => t && t.length > 1 && !NOISE_WORDS.has(t));
 };
 
 const getPersonAreas = (person) => {
@@ -90,6 +95,34 @@ const getShiftArea = (shift) => {
 const getShiftKey = (shift) =>
   normalizeCode(shift?.id || shift?.code || shift?.label || shift?.name || "");
 
+/**
+ * Alan eşleşme mantığı:
+ * 1. Tam eşleşme: personel alanları arasında shift alanı var mı?
+ * 2. Token eşleşme: her iki taraf da tokenize edilip kesişim var mı?
+ * 3. Kapsama: personel alanı shift alanını kapsıyor mu (substring)?
+ */
+function areaMatches(personAreas, shiftArea) {
+  if (!shiftArea) return true; // shift alanı boşsa filtre uygulanmaz
+
+  // 1. Tam eşleşme
+  if (personAreas.includes(shiftArea)) return true;
+
+  // 2. Token eşleşme — her iki tarafı tokenize et
+  const shiftTokens = splitAreaTokens(shiftArea);
+  if (shiftTokens.length === 0) return true;
+
+  for (const personArea of personAreas) {
+    const personTokens = splitAreaTokens(personArea);
+    // Shift tokenlarının en az yarısı personel alanında bulunuyorsa eşleşme say
+    const matchCount = shiftTokens.filter(t => personTokens.includes(t)).length;
+    if (matchCount > 0 && matchCount >= Math.ceil(shiftTokens.length / 2)) return true;
+    // Substring eşleşme: personel alanı shift alanını içeriyor mu?
+    if (personArea.includes(shiftArea) || shiftArea.includes(personArea)) return true;
+  }
+
+  return false;
+}
+
 function isAvailable(person, day, context, shift) {
   if (!person || !day) return false;
   const rules = context?.rules || {};
@@ -100,7 +133,7 @@ function isAvailable(person, day, context, shift) {
   const logBlock = debug?.logBlocks
     ? (reason) => {
         try {
-          console.log("[SCHED-BLOCK]", reason, { pid: person?.id, date: dayKey, shift: shift?.code || shift?.id || "" });
+          console.log("[SCHED-BLOCK]", reason, { pid: person?.id, name: person?.name, date: dayKey, shift: shift?.code || shift?.id || "", area: shift?.area || shift?.label || "" });
         } catch {}
       }
     : null;
@@ -109,16 +142,16 @@ function isAvailable(person, day, context, shift) {
   if (shift) {
     const areas = getPersonAreas(person);
     const shiftArea = getShiftArea(shift);
-    // Alan tanımlı değilse görev verilmeyecek
+
+    // Alan tanımlı değilse: shift alanı da boşsa geç, dolu ise bloklama
     if (areas.length === 0) {
-      if (logBlock) logBlock("NO_AREAS");
-      return false;
-    }
-    // Shift alanı boşsa filtre uygulamayız
-    if (shiftArea && !areas.includes(shiftArea)) {
-      const tokens = splitAreaTokens(shiftArea);
-      const ok = tokens.some((t) => areas.includes(t));
-      if (!ok) {
+      if (shiftArea) {
+        if (logBlock) logBlock("NO_AREAS");
+        return false;
+      }
+      // İkisi de boşsa devam et
+    } else if (shiftArea) {
+      if (!areaMatches(areas, shiftArea)) {
         if (logBlock) logBlock("AREA_NOT_ALLOWED");
         return false;
       }
@@ -129,14 +162,9 @@ function isAvailable(person, day, context, shift) {
   if (shift) {
     const codes = getPersonShiftCodes(person);
     const shiftCode = normalizeCode(shift.code || shift.id || "");
-    if (shiftCode && codes.length) {
-      const allowed = new Set(codes);
-      let ok = allowed.has(shiftCode);
-      if (!ok && shiftCode === "D") ok = allowed.has("M");
-      if (!ok) {
-        if (logBlock) logBlock("SHIFT_CODE_NOT_ALLOWED");
-        return false;
-      }
+    if (shiftCode && codes.length && !codes.includes(shiftCode)) {
+      if (logBlock) logBlock("SHIFT_CODE_NOT_ALLOWED");
+      return false;
     }
   }
 
@@ -245,4 +273,4 @@ function isAvailable(person, day, context, shift) {
   return true;
 }
 
-module.exports = { isAvailable };
+module.exports = { isAvailable, areaMatches, normalizeArea, splitAreaTokens };

@@ -99,12 +99,13 @@ function extractListValue(raw) {
 }
 
 function readStorageList(keys) {
+  const out = [];
   for (const key of keys) {
     const v = LS.get(key, null);
     const list = extractListValue(v);
-    if (Array.isArray(list) && list.length) return list;
+    if (Array.isArray(list) && list.length) out.push(...list);
   }
-  return [];
+  return out;
 }
 
 function normalizeWorkAreas(input) {
