@@ -22,12 +22,18 @@ export default function RosterPage() {
   const [workAreas, setWorkAreas] = useState(() => {
     const v2 = LS.get("workAreasV2", null);
     const v1 = LS.get("workAreas", null);
-    return Array.isArray(v2) && v2.length ? v2 : Array.isArray(v1) ? v1 : [];
+    const pick = (raw) => (Array.isArray(raw) ? raw : Array.isArray(raw?.value) ? raw.value : Array.isArray(raw?.items) ? raw.items : []);
+    const a2 = pick(v2);
+    const a1 = pick(v1);
+    return a2.length ? a2 : a1;
   });
   const [workingHours, setWorkingHours] = useState(() => {
     const v2 = LS.get("workingHoursV2", null);
     const v1 = LS.get("workingHours", null);
-    return Array.isArray(v2) && v2.length ? v2 : Array.isArray(v1) ? v1 : [];
+    const pick = (raw) => (Array.isArray(raw) ? raw : Array.isArray(raw?.value) ? raw.value : Array.isArray(raw?.items) ? raw.items : []);
+    const a2 = pick(v2);
+    const a1 = pick(v1);
+    return a2.length ? a2 : a1;
   });
   const [people, setPeople] = useState([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -170,8 +176,13 @@ export default function RosterPage() {
       const wa1 = LS.get("workAreas", null);
       const wh2 = LS.get("workingHoursV2", null);
       const wh1 = LS.get("workingHours", null);
-      setWorkAreas(Array.isArray(wa2) && wa2.length ? wa2 : Array.isArray(wa1) ? wa1 : []);
-      setWorkingHours(Array.isArray(wh2) && wh2.length ? wh2 : Array.isArray(wh1) ? wh1 : []);
+      const pick = (raw) => (Array.isArray(raw) ? raw : Array.isArray(raw?.value) ? raw.value : Array.isArray(raw?.items) ? raw.items : []);
+      const a2 = pick(wa2);
+      const a1 = pick(wa1);
+      const h2 = pick(wh2);
+      const h1 = pick(wh1);
+      setWorkAreas(a2.length ? a2 : a1);
+      setWorkingHours(h2.length ? h2 : h1);
     };
     window.addEventListener("storage", refreshSettings);
     window.addEventListener("focus", refreshSettings);

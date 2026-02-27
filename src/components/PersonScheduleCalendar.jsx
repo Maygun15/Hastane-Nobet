@@ -87,10 +87,22 @@ function buildServiceLabelMap() {
   return map;
 }
 
+function extractListValue(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === "object") {
+    const candidates = [raw.value, raw.items, raw.list, raw.data];
+    for (const c of candidates) {
+      if (Array.isArray(c)) return c;
+    }
+  }
+  return [];
+}
+
 function readStorageList(keys) {
   for (const key of keys) {
     const v = LS.get(key, null);
-    if (Array.isArray(v) && v.length) return v;
+    const list = extractListValue(v);
+    if (Array.isArray(list) && list.length) return list;
   }
   return [];
 }
