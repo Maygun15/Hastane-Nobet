@@ -298,51 +298,62 @@ export default function HospitalRosterApp() {
   const peopleAll = useMemo(() => [...(doctors || []), ...(nurses || [])], [doctors, nurses]);
 
   /* ---- Backend’den personel çek ---- */
+  const reloadPersonnel = useCallback(async () => {
+    const token = getToken();
+    if (!token) return;
+    try {
+      const data = await API.http.get(`/api/personnel?page=1&size=2000`);
+      const items = Array.isArray(data?.items) ? data.items : [];
+
+      const mapped = items.map((p) => {
+        const meta = p?.meta || {};
+        const roleHint = String(meta.role || p.title || "").toLowerCase();
+        const isDoctor = /doktor|doctor|hekim|tabip/.test(roleHint);
+        const fullName =
+          p.fullName ||
+          [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
+        const service =
+          (p.serviceId || p.service || meta.service || "acil")
+            .toString()
+            .trim()
+            .toLowerCase();
+        return {
+          id: p.id,
+          role: isDoctor ? ROLE.Doctor : ROLE.Nurse,
+          service,
+          title: meta.title || p.title || "",
+          tc: p.tc || "",
+          name: fullName || "",
+          phone: p.phone || "",
+          mail: p.email || "",
+          areas: Array.isArray(p.areas) ? p.areas : Array.isArray(meta.areas) ? meta.areas : [],
+          shiftCodes: Array.isArray(meta.shiftCodes) ? meta.shiftCodes : [],
+        };
+      });
+
+      setNurses(mapped.filter((p) => p.role === ROLE.Nurse));
+      setDoctors(mapped.filter((p) => p.role === ROLE.Doctor));
+    } catch (e) {
+      console.warn("Personnel load error:", e?.message || e);
+    }
+  }, [setNurses, setDoctors]);
+
   useEffect(() => {
     let alive = true;
-    const loadPersonnel = async () => {
-      const token = getToken();
-      if (!token) return;
-      try {
-        const data = await API.http.get(`/api/personnel?page=1&size=2000`);
-        const items = Array.isArray(data?.items) ? data.items : [];
-
-        const mapped = items.map((p) => {
-          const meta = p?.meta || {};
-          const roleHint = String(meta.role || p.title || "").toLowerCase();
-          const isDoctor = /doktor|doctor|hekim|tabip/.test(roleHint);
-          const fullName =
-            p.fullName ||
-            [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
-          const service =
-            (p.serviceId || p.service || meta.service || "acil")
-              .toString()
-              .trim()
-              .toLowerCase();
-          return {
-            id: p.id,
-            role: isDoctor ? ROLE.Doctor : ROLE.Nurse,
-            service,
-            title: meta.title || p.title || "",
-            tc: p.tc || "",
-            name: fullName || "",
-            phone: p.phone || "",
-            mail: p.email || "",
-            areas: Array.isArray(p.areas) ? p.areas : Array.isArray(meta.areas) ? meta.areas : [],
-            shiftCodes: Array.isArray(meta.shiftCodes) ? meta.shiftCodes : [],
-          };
-        });
-
-        if (!alive) return;
-        setNurses(mapped.filter((p) => p.role === ROLE.Nurse));
-        setDoctors(mapped.filter((p) => p.role === ROLE.Doctor));
-      } catch (e) {
-        console.warn("Personnel load error:", e?.message || e);
-      }
-    };
-    loadPersonnel();
+    (async () => {
+      if (!alive) return;
+      await reloadPersonnel();
+    })();
     return () => { alive = false; };
-  }, [user]);
+  }, [user, reloadPersonnel]);
+
+  useEffect(() => {
+    const onPersonnelChanged = () => {
+      reloadPersonnel();
+    };
+    window.addEventListener("personnel:changed", onPersonnelChanged);
+    return () => window.removeEventListener("personnel:changed", onPersonnelChanged);
+  }, [reloadPersonnel]);
 
   const visibleWorkAreas = useMemo(() => {
     if (!user) return [];

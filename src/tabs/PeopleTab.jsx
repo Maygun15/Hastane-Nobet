@@ -210,6 +210,7 @@ export default function PeopleTab({
       )
     );
     reset();
+    try { window.dispatchEvent(new Event("personnel:changed")); } catch {}
   };
 
   // KİŞİ DÜZENLE
@@ -249,6 +250,7 @@ export default function PeopleTab({
       }
     }
     setPeople((prev) => sortByKeyTR(prev.filter((p) => normId(p.id) !== normId(id)), "name"));
+    try { window.dispatchEvent(new Event("personnel:changed")); } catch {}
   };
 
   const editList = useMemo(() => {
@@ -406,13 +408,11 @@ export default function PeopleTab({
         if (importRef.current) importRef.current.value = "";
         return;
       }
-      setPeople(sortByKeyTR(parsed, "name"));
-      if (importRef.current) importRef.current.value = "";
-      alert(parsed.length + " kayıt yüklendi");
       // Backend'e bulk gönder
       const token = getToken();
-      if (!token) {
+      if (REQUIRE_BACKEND && !token) {
         alert("Backend senkron için giriş gerekli.");
+        if (importRef.current) importRef.current.value = "";
         return;
       }
       const bulkItems = parsed.map((p) => ({
@@ -433,10 +433,14 @@ export default function PeopleTab({
         .post(`/api/personnel/bulk?${qs}`, bulkItems)
         .then((data) => {
           const count = data?.count ?? bulkItems.length;
-          alert(`Backend senkron: ${count} kayıt işlendi.`);
+          setPeople(sortByKeyTR(parsed, "name"));
+          if (importRef.current) importRef.current.value = "";
+          alert(`${parsed.length} kayıt yüklendi. Backend: ${count} kayıt işlendi.`);
+          try { window.dispatchEvent(new Event("personnel:changed")); } catch {}
         })
         .catch((err) => {
           alert(err?.message || "Backend senkron başarısız");
+          if (importRef.current) importRef.current.value = "";
         });
     };
     r.readAsArrayBuffer(f);
@@ -449,7 +453,7 @@ export default function PeopleTab({
     if (!ok) return;
 
     const token = getToken();
-    if (!token) {
+    if (REQUIRE_BACKEND && !token) {
       alert("Backend senkron için giriş gerekli.");
       return;
     }
@@ -465,6 +469,7 @@ export default function PeopleTab({
       setPeople([]);
       resetUi();
       alert("Liste sıfırlandı.");
+      try { window.dispatchEvent(new Event("personnel:changed")); } catch {}
     } catch (err) {
       alert(err?.message || "Liste sıfırlanamadı.");
     } finally {
