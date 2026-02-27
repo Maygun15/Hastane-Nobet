@@ -163,8 +163,14 @@ export default function HospitalRosterApp() {
       window.dispatchEvent(new Event("settings:changed"));
     } catch {}
   }, [workAreas]);
-  useEffect(() => { LS.set("nurses", nurses); }, [nurses]);
-  useEffect(() => { LS.set("doctors", doctors); }, [doctors]);
+  useEffect(() => {
+    LS.set("nurses", nurses);
+    try { window.dispatchEvent(new Event("people:changed")); } catch {}
+  }, [nurses]);
+  useEffect(() => {
+    LS.set("doctors", doctors);
+    try { window.dispatchEvent(new Event("people:changed")); } catch {}
+  }, [doctors]);
   useEffect(() => {
     LS.set("workingHours", workingHours);
     try {
