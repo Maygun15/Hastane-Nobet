@@ -493,7 +493,13 @@ export default function PersonScheduleCalendar({
   const [remoteDefs, setRemoteDefs] = useState([]);
   const [remoteError, setRemoteError] = useState("");
   const [remoteLoading, setRemoteLoading] = useState(false);
-  const [assignModal, setAssignModal] = useState({ open: false, dayNum: null, dateStr: "" });
+  const [assignModal, setAssignModal] = useState({
+    open: false,
+    mode: "add",
+    dayNum: null,
+    dateStr: "",
+    assg: null,
+  });
   const [assignShiftId, setAssignShiftId] = useState("");
   const [assignRoleLabel, setAssignRoleLabel] = useState("");
   const [assignNote, setAssignNote] = useState("");
@@ -637,6 +643,15 @@ export default function PersonScheduleCalendar({
     return Array.from(map.values());
   }, [remoteDefs]);
 
+  const areaOptions = useMemo(() => {
+    const set = new Set();
+    (remoteDefs || []).forEach((def) => {
+      const label = String(def?.label ?? def?.area ?? def?.name ?? "").trim();
+      if (label) set.add(label);
+    });
+    return Array.from(set.values());
+  }, [remoteDefs]);
+
   const assignmentsByDay = useMemo(() => {
     const combined = new Map();
     const merge = (srcMap) => {
@@ -657,26 +672,47 @@ export default function PersonScheduleCalendar({
   const { cells } = useMemo(() => buildMonthDays(year, month0), [year, month0]);
 
   const renderAssignments = (list = []) =>
-    list.map((assg, idx) => (
-      <div
-        key={idx}
-        className="rounded bg-blue-50 border border-blue-200 px-1 py-0.5 text-[11px] text-blue-700 mt-1 flex items-center justify-between gap-2 group"
-      >
-        <span>
-          <span className="font-semibold">{assg.shiftCode || assg.code || "-"}</span>
-          {assg.roleLabel ? <span className="ml-1">{assg.roleLabel}</span> : null}
-        </span>
-        {canManage && assg?.source === "remote" && (
-          <button
-            onClick={() => handleRemoveShift(assg)}
-            className="opacity-0 group-hover:opacity-100 text-blue-500 hover:text-red-600 transition-opacity"
-            title="Sil"
-          >
-            ✕
-          </button>
-        )}
-      </div>
-    ));
+    list.map((assg, idx) => {
+      const isEditable = canManage && assg?.source === "remote";
+      return (
+        <div
+          key={idx}
+          className={`rounded bg-blue-50 border border-blue-200 px-1 py-0.5 text-[11px] text-blue-700 mt-1 flex items-center justify-between gap-2 group ${
+            isEditable ? "cursor-pointer hover:bg-blue-100" : ""
+          }`}
+          onClick={isEditable ? () => openEditModal(assg) : undefined}
+          role={isEditable ? "button" : undefined}
+          tabIndex={isEditable ? 0 : undefined}
+          onKeyDown={
+            isEditable
+              ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    openEditModal(assg);
+                  }
+                }
+              : undefined
+          }
+        >
+          <span>
+            <span className="font-semibold">{assg.shiftCode || assg.code || "-"}</span>
+            {assg.roleLabel ? <span className="ml-1">{assg.roleLabel}</span> : null}
+          </span>
+          {isEditable && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRemoveShift(assg);
+              }}
+              className="opacity-0 group-hover:opacity-100 text-blue-500 hover:text-red-600 transition-opacity"
+              title="Sil"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      );
+    });
 
   const renderLeave = (code) =>
     code ? (
@@ -693,11 +729,23 @@ export default function PersonScheduleCalendar({
     setAssignRoleLabel(shiftOptions[0]?.label || "");
     setAssignNote("");
     setAssignError("");
-    setAssignModal({ open: true, dayNum, dateStr });
+    setAssignModal({ open: true, mode: "add", dayNum, dateStr, assg: null });
+  };
+
+  const openEditModal = (assg, dayNum) => {
+    if (!canManage || !selectedPerson) return;
+    if (assg?.source && assg.source !== "remote") return;
+    const dateStr = String(assg?.day || assg?.date || `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`).slice(0, 10);
+    const shiftId = String(assg?.shiftId || assg?.shiftCode || assg?.shift || assg?.code || "").trim();
+    setAssignShiftId(shiftId);
+    setAssignRoleLabel(String(assg?.roleLabel || assg?.label || "").trim());
+    setAssignNote(String(assg?.note || "").trim());
+    setAssignError("");
+    setAssignModal({ open: true, mode: "edit", dayNum: dayNum ?? null, dateStr, assg });
   };
 
   const closeAssignModal = () => {
-    setAssignModal({ open: false, dayNum: null, dateStr: "" });
+    setAssignModal({ open: false, mode: "add", dayNum: null, dateStr: "", assg: null });
     setAssignError("");
   };
 
@@ -716,6 +764,21 @@ export default function PersonScheduleCalendar({
       return;
     }
     try {
+      if (assignModal.mode === "edit" && assignModal.assg) {
+        const prevShiftId = String(
+          assignModal.assg.shiftId || assignModal.assg.shiftCode || assignModal.assg.shift || assignModal.assg.code || ""
+        ).trim();
+        if (prevShiftId && prevShiftId !== shiftId) {
+          await unassignSchedule({
+            sectionId,
+            serviceId,
+            role: scheduleRole,
+            date: assignModal.dateStr,
+            shiftId: prevShiftId,
+            personId: selectedPerson.id,
+          });
+        }
+      }
       await assignSchedule({
         sectionId,
         serviceId,
@@ -915,7 +978,7 @@ export default function PersonScheduleCalendar({
 
       <Modal
         open={assignModal.open}
-        title="Nöbet Ekle"
+        title={assignModal.mode === "edit" ? "Nöbet Düzenle" : "Nöbet Ekle"}
         onClose={closeAssignModal}
         footer={
           <>
@@ -941,6 +1004,23 @@ export default function PersonScheduleCalendar({
           <div className="text-sm text-slate-600">
             Tarih: <span className="font-medium text-slate-800">{assignModal.dateStr}</span>
           </div>
+          <label className="flex flex-col gap-1 text-sm">
+            Alan
+            <input
+              value={assignRoleLabel}
+              onChange={(e) => setAssignRoleLabel(e.target.value)}
+              className="h-9 rounded border px-3 text-sm"
+              placeholder="Örn: NÖROLOJİ"
+              list="assign-area-options"
+            />
+            {areaOptions.length > 0 && (
+              <datalist id="assign-area-options">
+                {areaOptions.map((opt) => (
+                  <option key={opt} value={opt} />
+                ))}
+              </datalist>
+            )}
+          </label>
           {shiftOptions.length > 0 ? (
             <label className="flex flex-col gap-1 text-sm">
               Vardiya
@@ -950,7 +1030,7 @@ export default function PersonScheduleCalendar({
                   const code = e.target.value;
                   setAssignShiftId(code);
                   const found = shiftOptions.find((opt) => opt.code === code);
-                  setAssignRoleLabel(found?.label || "");
+                  if (assignModal.mode === "add") setAssignRoleLabel(found?.label || "");
                 }}
                 className="h-9 rounded border px-3 text-sm"
               >

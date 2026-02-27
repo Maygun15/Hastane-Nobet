@@ -1,6 +1,6 @@
 // src/components/DayCard.jsx
 import React from "react";
-import { AlertCircle, Plus, MoreVertical } from "lucide-react";
+import { Plus, MoreVertical } from "lucide-react";
 
 const dayNameTR = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
 
@@ -38,19 +38,7 @@ export default function DayCard({
           <span className="text-xs text-slate-400 uppercase font-medium">{dow}</span>
         </div>
         
-        {/* Nöbet Sayısı Badge */}
-        <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
-          isCritical
-            ? "bg-red-200 text-red-700"
-            : assignments.length >= requiredCount
-            ? "bg-emerald-100 text-emerald-700"
-            : "bg-amber-100 text-amber-700"
-        }`}>
-          <span className="text-[10px]">
-            {assignments.length}/{requiredCount}
-          </span>
-          {isCritical && <AlertCircle className="w-3 h-3" />}
-        </div>
+        {/* Nöbet Sayısı Badge kaldırıldı */}
       </div>
 
       {/* İzin */}
