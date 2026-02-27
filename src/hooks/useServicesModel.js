@@ -3,7 +3,7 @@
 // Backend erişilemezse localStorage fallback kullanır.
 
 import { useState, useEffect, useCallback } from "react";
-import { API, getToken } from "../lib/api.js";
+import { API } from "../lib/api.js";
 
 const LS_KEY = "services:model:v1";
 
@@ -22,17 +22,9 @@ function writeLS(items) {
 }
 
 async function apiFetch(path, opts = {}) {
-  const token = getToken();
-  const res = await fetch(`${API}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    ...opts,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-  return data;
+  const method = (opts.method || "GET").toUpperCase();
+  const body = opts.body;
+  return API.http.req(path, { method, body });
 }
 
 // React hook — bileşenlerde kullan
@@ -65,7 +57,7 @@ export function useServices() {
   const add = useCallback(async (payload) => {
     const data = await apiFetch("/api/services", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: payload,
     });
     await refresh();
     return data?.data;
@@ -74,7 +66,7 @@ export function useServices() {
   const update = useCallback(async (id, patch) => {
     await apiFetch(`/api/services/${id}`, {
       method: "PATCH",
-      body: JSON.stringify(patch),
+      body: patch,
     });
     await refresh();
   }, [refresh]);
@@ -95,7 +87,7 @@ export default function useServicesModel() {
     try {
       const data = await apiFetch("/api/services", {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: payload,
       });
       const item = data?.data;
       if (item) {
@@ -121,7 +113,7 @@ export default function useServicesModel() {
     try {
       await apiFetch(`/api/services/${id}`, {
         method: "PATCH",
-        body: JSON.stringify(patch),
+        body: patch,
       });
     } catch {}
     // localStorage'ı da güncelle

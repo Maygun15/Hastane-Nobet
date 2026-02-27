@@ -1,6 +1,6 @@
 // src/tabs/ServicesTab.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import useServicesModel from "../hooks/useServicesModel.js";
+import useServicesModel, { useServices } from "../hooks/useServicesModel.js";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { PERMISSIONS } from "../constants/roles.js";
 import * as XLSX from "xlsx";
@@ -216,6 +216,7 @@ function ServiceCard({ row, canManage, onEdit, onDelete, onToggle }) {
 export default function ServicesTab() {
   const { user } = useAuth();
   const m = useServicesModel();
+  const { refresh } = useServices();
 
   // 🔐 Yetki: Admin veya Authorized görüntüleyebilir.
   // Admin (veya SERVICES_WRITE izni olan) düzenleyebilir.
@@ -227,6 +228,10 @@ export default function ServicesTab() {
 
   const canView =
     canManage || role === "AUTHORIZED" || perms.has(PERMISSIONS.SERVICES_READ);
+
+  useEffect(() => {
+    if (canView) refresh();
+  }, [canView, refresh]);
 
   if (!canView) {
     return (
