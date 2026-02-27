@@ -9,6 +9,7 @@ import ScheduleToolbar from "../components/ScheduleToolbar.jsx";
 import PersonScheduleCalendar from "../components/PersonScheduleCalendar.jsx";
 import { API } from "../lib/api.js";
 import { runPlannerOnce } from "../lib/runPlannerOnce.js";
+import { saveMonthlySchedule } from "../api/apiAdapter.js";
 
 const MONTH_LABEL = (year, month) =>
   `${Intl.DateTimeFormat("tr-TR", { month: "long" }).format(new Date(year, month - 1, 1))} ${year}`;
@@ -269,7 +270,7 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
       setPlannerStatus("loading");
       setPlannerError("");
 
-      const roleKey = activeRole === "Doctor" ? "DOCTOR" : "NURSE";
+      const roleKey = activeRole;
       const serviceId = selectedService || "";
       const month0 = Math.min(11, Math.max(0, Number(month) - 1));
 
@@ -328,6 +329,28 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
         localStorage.setItem("dpResultLast", JSON.stringify(ctx));
         window.dispatchEvent(new Event("planner:dpResult"));
       } catch {}
+
+      // Plan çıktısını çalışma çizelgesine yaz (backend ile senkron)
+      try {
+        if (scheduleRes?.schedule?.data) {
+          const data = {
+            ...(scheduleRes.schedule.data || {}),
+            assignments: Array.isArray(result.dpResult?.assignments) ? result.dpResult.assignments : [],
+            generatedAt: new Date().toISOString(),
+          };
+          await saveMonthlySchedule({
+            sectionId: "calisma-cizelgesi",
+            serviceId,
+            role: roleKey,
+            year,
+            month,
+            data,
+            meta: scheduleRes?.schedule?.meta || {},
+          });
+        }
+      } catch (err) {
+        console.warn("Planı backend'e yazma hatası:", err?.message || err);
+      }
 
       setPlannerStatus("done");
     } catch (err) {
