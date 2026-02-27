@@ -1,6 +1,8 @@
-// src/components/PersonScheduleCalendar.jsx
+// src/components/PersonScheduleCalendar.jsx (UPDATED)
 import React, { useEffect, useMemo, useState } from "react";
 import { buildMonthDays } from "../utils/date.js";
+import DayCard from "./DayCard.jsx";
+import MonthStats from "./MonthStats.jsx";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const stripDiacritics = (str = "") =>
@@ -407,7 +409,7 @@ function collapseLeaves(allLeaves, personId, canon, ymKey) {
 
 export default function PersonScheduleCalendar({
   year,
-  month, // 1..12
+  month,
   people = [],
   allLeaves = {},
   user,
@@ -439,6 +441,8 @@ export default function PersonScheduleCalendar({
 
   const [selectedId, setSelectedId] = useState(initialPersonId);
   const [dpRevision, setDpRevision] = useState(0);
+  const [showStats, setShowStats] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     setSelectedId(initialPersonId);
@@ -462,6 +466,12 @@ export default function PersonScheduleCalendar({
     () => options.find((opt) => String(opt.id) === String(selectedId)) || null,
     [options, selectedId]
   );
+
+  const filteredOptions = useMemo(() => {
+    if (!searchQuery.trim()) return options;
+    const q = canonName(searchQuery);
+    return options.filter((opt) => opt.canon.includes(q));
+  }, [options, searchQuery]);
 
   const leavesForPerson = useMemo(() => {
     if (!selectedPerson) return {};
@@ -517,9 +527,6 @@ export default function PersonScheduleCalendar({
         if (!combined.has(day)) combined.set(day, []);
         combined.get(day).push(...list);
       }
-      if (srcMap) {
-        srcMap.clear?.();
-      }
     };
     if (assignmentInfo?.map instanceof Map) merge(assignmentInfo.map);
     merge(bufferAssignments);
@@ -547,6 +554,7 @@ export default function PersonScheduleCalendar({
 
   return (
     <div className="space-y-4">
+      {/* Başlık ve Personel Seçici */}
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1">
           <span className="text-xs text-slate-500">Yıl</span>
@@ -560,14 +568,27 @@ export default function PersonScheduleCalendar({
         </div>
         <div className="flex-1" />
         {(role.isAdmin || role.isAuthorized) && (
-          <label className="flex flex-col text-xs text-slate-500 gap-1 w-64">
+          <label className="flex flex-col text-xs text-slate-500 gap-1 w-80">
+            Personel Ara
+            <input
+              type="text"
+              placeholder="İsim ara..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-9 rounded-lg border px-3 text-sm text-slate-700 focus:ring-2 focus:ring-sky-400 focus:border-transparent"
+            />
+          </label>
+        )}
+        {(role.isAdmin || role.isAuthorized) && (
+          <label className="flex flex-col text-xs text-slate-500 gap-1 w-72">
             Personel
             <select
               value={selectedId}
               onChange={(e) => setSelectedId(e.target.value)}
-              className="h-9 rounded border px-2 text-sm text-slate-700"
+              className="h-9 rounded-lg border px-3 text-sm text-slate-700 focus:ring-2 focus:ring-sky-400 focus:border-transparent"
             >
-              {options.map((opt) => (
+              <option value="">-- Seç --</option>
+              {filteredOptions.map((opt) => (
                 <option key={opt.id} value={opt.id}>
                   {opt.name}
                 </option>
@@ -580,8 +601,19 @@ export default function PersonScheduleCalendar({
             Personel: <span className="font-medium text-slate-800">{selectedPerson.name}</span>
           </div>
         )}
+        <button
+          onClick={() => setShowStats(!showStats)}
+          className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+            showStats
+              ? "bg-sky-100 text-sky-700 border border-sky-200"
+              : "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200"
+          }`}
+        >
+          {showStats ? "📊 Özet" : "📊 Özet"}
+        </button>
       </div>
 
+      {/* Uyarılar */}
       {!selectedPerson && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-800 px-4 py-3 text-sm">
           Bu kullanıcıyla eşleşen bir personel kaydı bulunamadı. Personel listesinde kimlik bilgilerinizi
@@ -602,7 +634,19 @@ export default function PersonScheduleCalendar({
         </div>
       )}
 
-      <div className="grid grid-cols-7 gap-1 text-xs font-semibold text-slate-500">
+      {/* Ayın Özeti */}
+      {showStats && selectedPerson && (
+        <MonthStats
+          year={year}
+          month={month}
+          cells={cells}
+          assignments={assignmentsByDay}
+          requiredPerDay={2}
+        />
+      )}
+
+      {/* Takvim Başlığı */}
+      <div className="grid grid-cols-7 gap-1 text-xs font-semibold text-slate-500 px-1">
         {dayNameTR.map((name) => (
           <div key={name} className="text-center py-1">
             {name}
@@ -610,10 +654,11 @@ export default function PersonScheduleCalendar({
         ))}
       </div>
 
+      {/* Takvim Grid */}
       <div className="grid grid-cols-7 gap-1">
         {cells.map((dt, idx) => {
-        if (!dt) {
-            return <div key={`empty-${idx}`} className="h-24 rounded-lg bg-transparent" />;
+          if (!dt) {
+            return <div key={`empty-${idx}`} className="h-32 rounded-xl bg-transparent" />;
           }
           const dayNum = dt.getDate();
           const leaveCodeRaw =
@@ -621,42 +666,38 @@ export default function PersonScheduleCalendar({
           const leaveCode = formatLeaveValue(leaveCodeRaw);
           const assignments = assignmentsByDay.get(dayNum) || [];
           const isWeekend = dt.getDay() === 0 || dt.getDay() === 6;
+
           return (
-            <div
+            <DayCard
               key={`day-${dayNum}`}
-              className={`h-24 rounded-lg border p-2 flex flex-col text-xs ${
-                isWeekend ? "bg-slate-50 border-slate-200" : "bg-white border-slate-100"
-              }`}
-            >
-              <div className="flex items-center justify-between text-slate-600">
-                <span className="font-semibold text-sm text-slate-800">{dayNum}</span>
-                <span className="text-[11px] uppercase text-slate-400">
-                  {dayNameTR[(dt.getDay() + 6) % 7]}
-                </span>
-              </div>
-              <div className="flex-1 overflow-hidden">
-                {leaveCode ? renderLeave(leaveCode) : null}
-                {assignments.length ? renderAssignments(assignments) : null}
-                {!leaveCode && !assignments.length && (
-                  <div className="text-[11px] text-slate-300 mt-2 text-center">—</div>
-                )}
-              </div>
-            </div>
+              dayNum={dayNum}
+              dateObj={dt}
+              leaveCode={leaveCode}
+              assignments={assignments}
+              isWeekend={isWeekend}
+              requiredCount={2}
+              renderLeave={renderLeave}
+              renderAssignments={renderAssignments}
+              onAddShift={() => console.log(`Add shift for day ${dayNum}`)}
+              onRemoveShift={(assg) => console.log(`Remove shift:`, assg)}
+              onEditShift={() => console.log(`Edit shifts for day ${dayNum}`)}
+            />
           );
         })}
       </div>
 
-      <div className="text-xs text-slate-500">
+      {/* Legend */}
+      <div className="text-xs text-slate-500 bg-white rounded-lg border border-slate-200 p-3">
         <div>
           <span className="inline-block h-3 w-3 bg-rose-100 border border-rose-200 mr-2 align-middle rounded" />
           İzin kayıtları (Toplu İzin Listesi)
         </div>
-        <div>
+        <div className="mt-1">
           <span className="inline-block h-3 w-3 bg-blue-100 border border-blue-200 mr-2 align-middle rounded" />
           Nöbet atamaları (son plan / içe aktarılan görevler)
         </div>
-        <div className="text-[10px] text-slate-400 mt-1">
-          Not: Excel’den içe aktarılan görevler, serbest metin tarih ve vardiya alanlarını düzgün biçimde
+        <div className="text-[10px] text-slate-400 mt-2">
+          Not: Excel'den içe aktarılan görevler, serbest metin tarih ve vardiya alanlarını düzgün biçimde
           parse edebildiğimiz sürece burada gösterilir.
         </div>
       </div>

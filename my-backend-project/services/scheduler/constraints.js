@@ -51,6 +51,18 @@ const normalizeArea = (s) =>
     .toLowerCase()
     .trim();
 
+const splitAreaTokens = (s) => {
+  const base = normalizeArea(s);
+  if (!base) return [];
+  return base
+    .replace(/[\(\)\[\]\{\}]/g, " ")
+    .replace(/\b(alan|alani|gorev|gorevi|gorevlendirme|birim|birimi|unit)\b/g, " ")
+    .replace(/&|\+|\/|\\|,|;|-|_|\bve\b|\bveya\b|\byada\b/g, " ")
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t && t.length > 1);
+};
+
 const getPersonAreas = (person) => {
   const raw = person?.meta?.areas || person?.meta?.duties || person?.areas || [];
   if (Array.isArray(raw)) return raw.map(normalizeArea).filter(Boolean);
@@ -104,8 +116,12 @@ function isAvailable(person, day, context, shift) {
     }
     // Shift alanı boşsa filtre uygulamayız
     if (shiftArea && !areas.includes(shiftArea)) {
-      if (logBlock) logBlock("AREA_NOT_ALLOWED");
-      return false;
+      const tokens = splitAreaTokens(shiftArea);
+      const ok = tokens.some((t) => areas.includes(t));
+      if (!ok) {
+        if (logBlock) logBlock("AREA_NOT_ALLOWED");
+        return false;
+      }
     }
   }
 
@@ -113,9 +129,14 @@ function isAvailable(person, day, context, shift) {
   if (shift) {
     const codes = getPersonShiftCodes(person);
     const shiftCode = normalizeCode(shift.code || shift.id || "");
-    if (shiftCode && codes.length && !codes.includes(shiftCode)) {
-      if (logBlock) logBlock("SHIFT_CODE_NOT_ALLOWED");
-      return false;
+    if (shiftCode && codes.length) {
+      const allowed = new Set(codes);
+      let ok = allowed.has(shiftCode);
+      if (!ok && shiftCode === "D") ok = allowed.has("M");
+      if (!ok) {
+        if (logBlock) logBlock("SHIFT_CODE_NOT_ALLOWED");
+        return false;
+      }
     }
   }
 
