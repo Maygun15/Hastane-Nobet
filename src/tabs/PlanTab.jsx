@@ -393,6 +393,9 @@ export default function PlanTab() {
           allLeaves={allLeaves}
           user={user}
           role={roleInfo}
+          sectionId="calisma-cizelgesi"
+          serviceId={selectedService || ""}
+          scheduleRole={activeRole}
         />
       </div>
     </div>

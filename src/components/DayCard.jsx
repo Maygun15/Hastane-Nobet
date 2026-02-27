@@ -25,7 +25,7 @@ export default function DayCard({
     <div
       className={`relative h-32 rounded-xl border-2 p-2.5 flex flex-col transition-all ${
         isCritical
-          ? "bg-red-50 border-red-300 shadow-md"
+          ? "bg-white border-slate-200 shadow-sm"
           : isWeekend
           ? "bg-slate-50 border-slate-200"
           : "bg-white border-slate-200 hover:border-sky-300 hover:shadow-sm"

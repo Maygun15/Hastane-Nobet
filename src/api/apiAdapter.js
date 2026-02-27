@@ -211,6 +211,63 @@ export async function saveMonthlySchedule({
   return payload?.schedule || null;
 }
 
+/* ================= Manual Assignments ================= */
+export async function assignSchedule({
+  sectionId,
+  serviceId = "",
+  role = "",
+  date,
+  shiftId,
+  shiftCode,
+  personId,
+  personName,
+  roleLabel,
+  note,
+} = {}) {
+  if (!sectionId) throw new Error("sectionId gerekli");
+  if (!date) throw new Error("date gerekli");
+  if (!shiftId && !shiftCode) throw new Error("shiftId gerekli");
+  if (!personId) throw new Error("personId gerekli");
+  const body = {
+    sectionId,
+    serviceId,
+    role,
+    date,
+    shiftId: shiftId || shiftCode,
+    shiftCode,
+    personId,
+    personName,
+    roleLabel,
+    note,
+  };
+  return httpRequest("/api/schedules/assign", { method: "POST", body });
+}
+
+export async function unassignSchedule({
+  sectionId,
+  serviceId = "",
+  role = "",
+  date,
+  shiftId,
+  shiftCode,
+  personId,
+} = {}) {
+  if (!sectionId) throw new Error("sectionId gerekli");
+  if (!date) throw new Error("date gerekli");
+  if (!shiftId && !shiftCode) throw new Error("shiftId gerekli");
+  if (!personId) throw new Error("personId gerekli");
+  const body = {
+    sectionId,
+    serviceId,
+    role,
+    date,
+    shiftId: shiftId || shiftCode,
+    shiftCode,
+    personId,
+  };
+  return httpRequest("/api/schedules/assign", { method: "DELETE", body });
+}
+
 /* ================= Duty Rules ================= */
 export async function fetchDutyRules({
   sectionId,

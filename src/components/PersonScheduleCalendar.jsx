@@ -1,8 +1,10 @@
 // src/components/PersonScheduleCalendar.jsx (UPDATED)
 import React, { useEffect, useMemo, useState } from "react";
 import { buildMonthDays } from "../utils/date.js";
+import { assignSchedule, getMonthlySchedule, unassignSchedule } from "../api/apiAdapter.js";
 import DayCard from "./DayCard.jsx";
 import MonthStats from "./MonthStats.jsx";
+import Modal from "./Modal.jsx";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const stripDiacritics = (str = "") =>
@@ -383,6 +385,46 @@ function collectAssignmentsFromRosterPreview({ year, month0, personId, personCan
   return map;
 }
 
+function collectAssignmentsFromRemote({ year, month0, personId, personCanon, assignments }) {
+  const map = new Map();
+  if (!Array.isArray(assignments)) return map;
+  const targetPid = personId ? String(personId) : "";
+  const targetCanon = personCanon ? canonName(personCanon) : "";
+  for (const item of assignments) {
+    if (!item) continue;
+    const pidRaw = item.personId ?? item.personID ?? item.staffId ?? item.pid ?? "";
+    const pid = pidRaw == null ? "" : String(pidRaw).trim();
+    const nameRaw = item.personName ?? item.fullName ?? item.name ?? "";
+    const rowCanon = nameRaw ? canonName(nameRaw) : "";
+
+    const pidMatch = targetPid && pid && pid === targetPid;
+    const canonMatch = !pidMatch && targetCanon && rowCanon && rowCanon === targetCanon;
+    if (!pidMatch && !canonMatch) continue;
+
+    const dateStr = String(item.date ?? item.day ?? "").slice(0, 10);
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(dateStr)) continue;
+    const [yy, mm, dd] = dateStr.split("-").map((v) => Number(v));
+    if (!yy || !mm || !dd) continue;
+    if (yy !== Number(year) || mm !== Number(month0 + 1)) continue;
+    const dayNum = dd;
+
+    const assignment = {
+      day: dateStr,
+      shiftId: item.shiftId ?? item.shiftCode ?? item.shift ?? item.code ?? undefined,
+      shiftCode: item.shiftCode ?? item.shiftId ?? item.shift ?? item.code ?? undefined,
+      roleLabel: item.roleLabel ?? item.role ?? item.label ?? undefined,
+      personId: pid || (targetPid || undefined),
+      personName: nameRaw || undefined,
+      note: item.note || undefined,
+      source: "remote",
+    };
+
+    if (!map.has(dayNum)) map.set(dayNum, []);
+    map.get(dayNum).push(assignment);
+  }
+  return map;
+}
+
 function formatLeaveValue(val) {
   if (!val) return "";
   if (typeof val === "string") return val.toUpperCase();
@@ -414,6 +456,9 @@ export default function PersonScheduleCalendar({
   allLeaves = {},
   user,
   role = { isAdmin: false, isAuthorized: false, isStandard: false },
+  sectionId = "calisma-cizelgesi",
+  serviceId = "",
+  scheduleRole = "",
 }) {
   const month0 = Math.max(0, Math.min(11, Number(month) - 1 || 0));
   const ymKey = `${year}-${pad2(month0 + 1)}`;
@@ -443,6 +488,16 @@ export default function PersonScheduleCalendar({
   const [dpRevision, setDpRevision] = useState(0);
   const [showStats, setShowStats] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [remoteRevision, setRemoteRevision] = useState(0);
+  const [remoteAssignmentsRaw, setRemoteAssignmentsRaw] = useState([]);
+  const [remoteDefs, setRemoteDefs] = useState([]);
+  const [remoteError, setRemoteError] = useState("");
+  const [remoteLoading, setRemoteLoading] = useState(false);
+  const [assignModal, setAssignModal] = useState({ open: false, dayNum: null, dateStr: "" });
+  const [assignShiftId, setAssignShiftId] = useState("");
+  const [assignRoleLabel, setAssignRoleLabel] = useState("");
+  const [assignNote, setAssignNote] = useState("");
+  const [assignError, setAssignError] = useState("");
 
   useEffect(() => {
     setSelectedId(initialPersonId);
@@ -461,6 +516,8 @@ export default function PersonScheduleCalendar({
       window.removeEventListener("storage", onPlannerChange);
     };
   }, []);
+
+  const canManage = role.isAdmin || role.isAuthorized;
 
   const selectedPerson = useMemo(
     () => options.find((opt) => String(opt.id) === String(selectedId)) || null,
@@ -519,6 +576,67 @@ export default function PersonScheduleCalendar({
     });
   }, [selectedPerson, year, month0, dpRevision]);
 
+  useEffect(() => {
+    let active = true;
+    if (!canManage || !sectionId) {
+      setRemoteAssignmentsRaw([]);
+      setRemoteDefs([]);
+      setRemoteError("");
+      setRemoteLoading(false);
+      return () => {};
+    }
+    setRemoteLoading(true);
+    (async () => {
+      try {
+        const schedule = await getMonthlySchedule({
+          sectionId,
+          serviceId,
+          role: scheduleRole,
+          year,
+          month,
+        });
+        if (!active) return;
+        const data = schedule?.data || {};
+        const defs = Array.isArray(data.defs) ? data.defs : Array.isArray(data.rows) ? data.rows : [];
+        setRemoteDefs(defs);
+        setRemoteAssignmentsRaw(Array.isArray(data.assignments) ? data.assignments : []);
+        setRemoteError("");
+      } catch (err) {
+        if (!active) return;
+        setRemoteAssignmentsRaw([]);
+        setRemoteDefs([]);
+        setRemoteError(err?.message || "Sunucudan nöbet verisi alınamadı.");
+      } finally {
+        if (active) setRemoteLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [canManage, sectionId, serviceId, scheduleRole, year, month, remoteRevision]);
+
+  const remoteAssignments = useMemo(() => {
+    if (!selectedPerson) return new Map();
+    return collectAssignmentsFromRemote({
+      year,
+      month0,
+      personId: selectedPerson.id,
+      personCanon: selectedPerson.canon,
+      assignments: remoteAssignmentsRaw,
+    });
+  }, [selectedPerson, year, month0, remoteAssignmentsRaw]);
+
+  const shiftOptions = useMemo(() => {
+    const map = new Map();
+    (remoteDefs || []).forEach((def) => {
+      const code = String(def?.shiftCode ?? def?.code ?? def?.label ?? "").trim();
+      if (!code) return;
+      const label = String(def?.label ?? def?.area ?? def?.name ?? code).trim();
+      if (!map.has(code)) map.set(code, { code, label });
+    });
+    return Array.from(map.values());
+  }, [remoteDefs]);
+
   const assignmentsByDay = useMemo(() => {
     const combined = new Map();
     const merge = (srcMap) => {
@@ -532,16 +650,31 @@ export default function PersonScheduleCalendar({
     merge(bufferAssignments);
     merge(aiPlanAssignments);
     merge(rosterPreviewAssignments);
+    merge(remoteAssignments);
     return combined;
-  }, [assignmentInfo?.map, bufferAssignments, aiPlanAssignments, rosterPreviewAssignments]);
+  }, [assignmentInfo?.map, bufferAssignments, aiPlanAssignments, rosterPreviewAssignments, remoteAssignments]);
 
   const { cells } = useMemo(() => buildMonthDays(year, month0), [year, month0]);
 
   const renderAssignments = (list = []) =>
     list.map((assg, idx) => (
-      <div key={idx} className="rounded bg-blue-50 border border-blue-200 px-1 py-0.5 text-[11px] text-blue-700 mt-1">
-        <span className="font-semibold">{assg.shiftCode || assg.code || "-"}</span>
-        {assg.roleLabel ? <span className="ml-1">{assg.roleLabel}</span> : null}
+      <div
+        key={idx}
+        className="rounded bg-blue-50 border border-blue-200 px-1 py-0.5 text-[11px] text-blue-700 mt-1 flex items-center justify-between gap-2 group"
+      >
+        <span>
+          <span className="font-semibold">{assg.shiftCode || assg.code || "-"}</span>
+          {assg.roleLabel ? <span className="ml-1">{assg.roleLabel}</span> : null}
+        </span>
+        {canManage && assg?.source === "remote" && (
+          <button
+            onClick={() => handleRemoveShift(assg)}
+            className="opacity-0 group-hover:opacity-100 text-blue-500 hover:text-red-600 transition-opacity"
+            title="Sil"
+          >
+            ✕
+          </button>
+        )}
       </div>
     ));
 
@@ -551,6 +684,79 @@ export default function PersonScheduleCalendar({
         {code}
       </div>
     ) : null;
+
+  const openAssignModal = (dayNum) => {
+    if (!canManage || !selectedPerson) return;
+    const dateStr = `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`;
+    const first = shiftOptions[0]?.code || "";
+    setAssignShiftId(first);
+    setAssignRoleLabel(shiftOptions[0]?.label || "");
+    setAssignNote("");
+    setAssignError("");
+    setAssignModal({ open: true, dayNum, dateStr });
+  };
+
+  const closeAssignModal = () => {
+    setAssignModal({ open: false, dayNum: null, dateStr: "" });
+    setAssignError("");
+  };
+
+  const refreshRemote = () => {
+    setRemoteRevision((v) => v + 1);
+    try {
+      window.dispatchEvent(new Event("planner:assignments"));
+    } catch {}
+  };
+
+  const handleConfirmAssign = async () => {
+    if (!assignModal.open || !selectedPerson) return;
+    const shiftId = String(assignShiftId || "").trim();
+    if (!shiftId) {
+      setAssignError("Vardiya seçmelisiniz.");
+      return;
+    }
+    try {
+      await assignSchedule({
+        sectionId,
+        serviceId,
+        role: scheduleRole,
+        date: assignModal.dateStr,
+        shiftId,
+        shiftCode: shiftId,
+        personId: selectedPerson.id,
+        personName: selectedPerson.name,
+        roleLabel: assignRoleLabel,
+        note: assignNote,
+      });
+      closeAssignModal();
+      refreshRemote();
+    } catch (err) {
+      setAssignError(err?.message || "Nöbet eklenemedi.");
+    }
+  };
+
+  const handleRemoveShift = async (assg, dayNum) => {
+    if (!canManage || !selectedPerson) return;
+    if (assg?.source && assg.source !== "remote") return;
+    const dateStr = String(assg?.day || assg?.date || `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`).slice(0, 10);
+    const shiftId = String(assg?.shiftId || assg?.shiftCode || assg?.shift || assg?.code || "").trim();
+    const pid = String(assg?.personId || selectedPerson.id || "").trim();
+    if (!dateStr || !shiftId || !pid) return;
+    if (!window.confirm(`${selectedPerson.name} için ${dateStr} tarihli nöbet silinsin mi?`)) return;
+    try {
+      await unassignSchedule({
+        sectionId,
+        serviceId,
+        role: scheduleRole,
+        date: dateStr,
+        shiftId,
+        personId: pid,
+      });
+      refreshRemote();
+    } catch (err) {
+      alert(err?.message || "Nöbet silinemedi.");
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -633,16 +839,10 @@ export default function PersonScheduleCalendar({
           dönemine ait. {year}-{pad2(month0 + 1)} için nöbet verisi bulunamadı.
         </div>
       )}
-
-      {/* Ayın Özeti */}
-      {showStats && selectedPerson && (
-        <MonthStats
-          year={year}
-          month={month}
-          cells={cells}
-          assignments={assignmentsByDay}
-          requiredPerDay={2}
-        />
+      {remoteError && canManage && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3 text-sm">
+          {remoteError}
+        </div>
       )}
 
       {/* Takvim Başlığı */}
@@ -678,13 +878,24 @@ export default function PersonScheduleCalendar({
               requiredCount={2}
               renderLeave={renderLeave}
               renderAssignments={renderAssignments}
-              onAddShift={() => console.log(`Add shift for day ${dayNum}`)}
-              onRemoveShift={(assg) => console.log(`Remove shift:`, assg)}
-              onEditShift={() => console.log(`Edit shifts for day ${dayNum}`)}
+              onAddShift={canManage ? () => openAssignModal(dayNum) : null}
+              onRemoveShift={canManage ? (assg) => handleRemoveShift(assg, dayNum) : null}
+              onEditShift={null}
             />
           );
         })}
       </div>
+
+      {/* Ayın Özeti */}
+      {showStats && selectedPerson && (
+        <MonthStats
+          year={year}
+          month={month}
+          cells={cells}
+          assignments={assignmentsByDay}
+          requiredPerDay={2}
+        />
+      )}
 
       {/* Legend */}
       <div className="text-xs text-slate-500 bg-white rounded-lg border border-slate-200 p-3">
@@ -701,6 +912,84 @@ export default function PersonScheduleCalendar({
           parse edebildiğimiz sürece burada gösterilir.
         </div>
       </div>
+
+      <Modal
+        open={assignModal.open}
+        title="Nöbet Ekle"
+        onClose={closeAssignModal}
+        footer={
+          <>
+            <button
+              onClick={closeAssignModal}
+              className="px-3 py-2 rounded border text-sm hover:bg-slate-50"
+            >
+              Vazgeç
+            </button>
+            <button
+              onClick={handleConfirmAssign}
+              className="px-3 py-2 rounded bg-sky-600 text-white text-sm hover:bg-sky-700"
+            >
+              Kaydet
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div className="text-sm text-slate-600">
+            Personel: <span className="font-medium text-slate-800">{selectedPerson?.name || "-"}</span>
+          </div>
+          <div className="text-sm text-slate-600">
+            Tarih: <span className="font-medium text-slate-800">{assignModal.dateStr}</span>
+          </div>
+          {shiftOptions.length > 0 ? (
+            <label className="flex flex-col gap-1 text-sm">
+              Vardiya
+              <select
+                value={assignShiftId}
+                onChange={(e) => {
+                  const code = e.target.value;
+                  setAssignShiftId(code);
+                  const found = shiftOptions.find((opt) => opt.code === code);
+                  setAssignRoleLabel(found?.label || "");
+                }}
+                className="h-9 rounded border px-3 text-sm"
+              >
+                <option value="">Seç...</option>
+                {shiftOptions.map((opt) => (
+                  <option key={opt.code} value={opt.code}>
+                    {opt.label} ({opt.code})
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <label className="flex flex-col gap-1 text-sm">
+              Vardiya Kodu
+              <input
+                value={assignShiftId}
+                onChange={(e) => setAssignShiftId(e.target.value)}
+                className="h-9 rounded border px-3 text-sm"
+                placeholder="Örn: V1"
+              />
+            </label>
+          )}
+          <label className="flex flex-col gap-1 text-sm">
+            Not (opsiyonel)
+            <input
+              value={assignNote}
+              onChange={(e) => setAssignNote(e.target.value)}
+              className="h-9 rounded border px-3 text-sm"
+              placeholder="Kısa not"
+            />
+          </label>
+          {remoteLoading && (
+            <div className="text-xs text-slate-400">Sunucu senkronizasyonu...</div>
+          )}
+          {assignError && (
+            <div className="text-sm text-rose-600">{assignError}</div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }
