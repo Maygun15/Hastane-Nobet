@@ -70,6 +70,42 @@ const navBase =
 const navActive = "bg-sky-600 text-white border-sky-600";
 const navIdle   = "bg-slate-100 hover:bg-slate-200 text-slate-800";
 
+const LEAVE_TYPES_LS_KEYS = ["leaveTypesV2", "leaveTypes", "izinTurleri"];
+function readLeaveTypesFromLS() {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    for (const k of LEAVE_TYPES_LS_KEYS) {
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+      const val = JSON.parse(raw);
+      if (Array.isArray(val)) return val;
+      if (val && typeof val === "object") {
+        if (Array.isArray(val.leaveTypes)) return val.leaveTypes;
+        if (Array.isArray(val.izinTurleri)) return val.izinTurleri;
+      }
+    }
+  } catch {}
+  return [];
+}
+function sameLeaveTypes(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i] || {};
+    const y = b[i] || {};
+    if (
+      x.id !== y.id ||
+      x.code !== y.code ||
+      x.name !== y.name ||
+      !!x.countsAsWorked !== !!y.countsAsWorked ||
+      Number(x.hoursPerDay) !== Number(y.hoursPerDay)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /* ======================= APP ======================= */
 export default function HospitalRosterApp() {
   ensureHistoryPatched();
@@ -116,7 +152,7 @@ export default function HospitalRosterApp() {
   const [nurses, setNurses] = useState(LS.get("nurses", []));
   const [doctors, setDoctors] = useState(LS.get("doctors", []));
   const [workingHours, setWorkingHours] = useState(LS.get("workingHours", []));
-  const [leaveTypes, setLeaveTypes] = useState(LS.get("leaveTypes", []));
+  const [leaveTypes, setLeaveTypes] = useState(() => readLeaveTypesFromLS());
   const [personLeaves, setPersonLeaves] = useState(LS.get("personLeaves", {}));
   const [requestBox, setRequestBox] = useState(LS.get("requestBoxV1", []));
 
@@ -124,9 +160,31 @@ export default function HospitalRosterApp() {
   useEffect(() => { LS.set("nurses", nurses); }, [nurses]);
   useEffect(() => { LS.set("doctors", doctors); }, [doctors]);
   useEffect(() => { LS.set("workingHours", workingHours); }, [workingHours]);
-  useEffect(() => { LS.set("leaveTypes", leaveTypes); }, [leaveTypes]);
+  useEffect(() => {
+    LS.set("leaveTypes", leaveTypes);
+    LS.set("leaveTypesV2", leaveTypes);
+    LS.set("izinTurleri", leaveTypes);
+    try { window.dispatchEvent(new Event("leaveTypes:changed")); } catch {}
+  }, [leaveTypes]);
   useEffect(() => { LS.set("personLeaves", personLeaves); }, [personLeaves]);
   useEffect(() => { LS.set("requestBoxV1", requestBox); }, [requestBox]);
+
+  useEffect(() => {
+    const syncLeaveTypes = () => {
+      const next = readLeaveTypesFromLS();
+      setLeaveTypes((prev) => (sameLeaveTypes(prev, next) ? prev : next));
+    };
+    const onStorage = (e) => {
+      if (!e || !LEAVE_TYPES_LS_KEYS.includes(e.key)) return;
+      syncLeaveTypes();
+    };
+    window.addEventListener("leaveTypes:changed", syncLeaveTypes);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("leaveTypes:changed", syncLeaveTypes);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
 
   /* ---- Backend parametre sync (online-only) ---- */
   const settingsLoadedRef = useRef(false);
