@@ -2,7 +2,7 @@
 import React, { useRef, useState, useMemo } from "react";
 import * as XLSX from "xlsx";
 import IDCard from "../components/IDCard.jsx";
-import { API, getToken } from "../lib/api.js";
+import { API, getToken, REQUIRE_BACKEND } from "../lib/api.js";
 
 /* --- yardımcılar --- */
 const cn = (...c) => c.filter(Boolean).join(" ");
@@ -46,6 +46,7 @@ const slugTR = (s = "") =>
 
 const clean = (s) => (s ?? "").toString().trim();
 const isMongoId = (id) => typeof id === "string" && /^[a-f0-9]{24}$/i.test(id);
+const normId = (v) => String(v ?? "");
 
 // workAreas -> {id,name}[] (string veya obje kabul)
 function normalizeWorkAreas(input) {
@@ -138,7 +139,7 @@ export default function PeopleTab({
   // KAYDET / GÜNCELLE
   const syncOneToBackend = async (row, editingId) => {
     const token = getToken();
-    if (!token) return;
+    if (!token) return { person: null, error: "Giriş gerekli" };
     try {
       const payload = {
         name: row.name || "",
@@ -155,19 +156,23 @@ export default function PeopleTab({
       };
       if (editingId && isMongoId(editingId)) {
         const res = await API.http.put(`/api/personnel/${editingId}`, payload);
-        return res?.person || null;
+        return { person: res?.person || null, error: null };
       }
       const res = await API.http.post(`/api/personnel`, payload);
-      return res?.person || null;
+      return { person: res?.person || null, error: null };
     } catch (e) {
       console.warn("Backend sync error:", e?.message || e);
-      return null;
+      return { person: null, error: e?.message || "Backend senkron hatası" };
     }
   };
 
   const upsert = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) return;
+    if (REQUIRE_BACKEND && !getToken()) {
+      alert("Kaydetmek için giriş yapın.");
+      return;
+    }
 
     const id = editingId ?? Date.now();
 
@@ -184,7 +189,11 @@ export default function PeopleTab({
       areas: areaNames, // <<< KRİTİK
     };
 
-    const saved = await syncOneToBackend(row, editingId);
+    const { person: saved, error } = await syncOneToBackend(row, editingId);
+    if (REQUIRE_BACKEND && !saved) {
+      alert(error || "Sunucuya kaydedilemedi.");
+      return;
+    }
     const nextId = saved?.id || id;
     const nextRow = {
       ...row,
@@ -196,7 +205,7 @@ export default function PeopleTab({
 
     setPeople((prev) =>
       sortByKeyTR(
-        [...(prev.filter((p) => p.id !== id)), nextRow],
+        [...(prev.filter((p) => normId(p.id) !== normId(id))), nextRow],
         "name"
       )
     );
@@ -227,6 +236,10 @@ export default function PeopleTab({
 
   const del = async (id) => {
     if (!id) return;
+    if (REQUIRE_BACKEND && !getToken()) {
+      alert("Silmek için giriş yapın.");
+      return;
+    }
     if (isMongoId(String(id))) {
       try {
         await API.http.delete(`/api/personnel/${id}`);
@@ -235,7 +248,7 @@ export default function PeopleTab({
         return;
       }
     }
-    setPeople((prev) => sortByKeyTR(prev.filter((p) => p.id !== id), "name"));
+    setPeople((prev) => sortByKeyTR(prev.filter((p) => normId(p.id) !== normId(id)), "name"));
   };
 
   const editList = useMemo(() => {
