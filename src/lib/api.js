@@ -105,6 +105,9 @@ export const http = {
   req,
   get: (p, opt) => req(p, { method: 'GET', ...(opt || {}) }),
   post: (p, body, opt) => req(p, { method: 'POST', body, ...(opt || {}) }),
+  put: (p, body, opt) => req(p, { method: 'PUT', body, ...(opt || {}) }),
+  patch: (p, body, opt) => req(p, { method: 'PATCH', body, ...(opt || {}) }),
+  delete: (p, opt) => req(p, { method: 'DELETE', ...(opt || {}) }),
 };
 
 /* ========= Çoklu path dene (fallback) ========= */
