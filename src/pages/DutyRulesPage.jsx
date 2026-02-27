@@ -43,6 +43,12 @@ function mapRulesToBackend(list) {
   const v5 = boolRule(["NIGHT_NEXT_DAY_OFF"]);
   if (v5 !== undefined) out.NIGHT_NEXT_DAY_OFF = v5;
 
+  const v6 = numRule(["WEEKLY_MAX_SHIFTS", "WEEKLY_MAX_DUTIES", "WEEKLY_MAX_SHIFTS_PER_PERSON"], 0);
+  if (v6 !== undefined) out.MAX_SHIFTS_PER_WEEK = v6;
+
+  const v7 = numRule(["MAX_TASK_PER_PERSON", "MAX_SAME_TASK_PER_PERSON"], 0);
+  if (v7 !== undefined) out.MAX_TASK_PER_PERSON = v7;
+
   return out;
 }
 
@@ -72,6 +78,16 @@ function applyBackendRulesToList(list, backendRules) {
   }
   if ("NIGHT_NEXT_DAY_OFF" in backendRules) {
     setRule("NIGHT_NEXT_DAY_OFF", backendRules.NIGHT_NEXT_DAY_OFF);
+  }
+  if ("MAX_SHIFTS_PER_WEEK" in backendRules) {
+    const v = Number(backendRules.MAX_SHIFTS_PER_WEEK);
+    setRule("WEEKLY_MAX_SHIFTS", Number.isFinite(v) && v > 0, Number.isFinite(v) ? v : undefined);
+    setRule("WEEKLY_MAX_DUTIES", Number.isFinite(v) && v > 0, Number.isFinite(v) ? v : undefined);
+  }
+  if ("MAX_TASK_PER_PERSON" in backendRules) {
+    const v = Number(backendRules.MAX_TASK_PER_PERSON);
+    setRule("MAX_TASK_PER_PERSON", Number.isFinite(v) && v > 0, Number.isFinite(v) ? v : undefined);
+    setRule("MAX_SAME_TASK_PER_PERSON", Number.isFinite(v) && v > 0, Number.isFinite(v) ? v : undefined);
   }
 
   return rules.map((r) => byId.get(r.id) || r);

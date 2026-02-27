@@ -107,9 +107,11 @@ const RULE_LIBRARY = {
   ROTATION_APPLIES: { cat: "personel", level: LEVEL.MED, desc: "Görev yerleri rotasyonla dağıtılır." },
   NO_UNQUALIFIED_ASSIGN: { cat: "personel", level: LEVEL.HARD, desc: "Yetkin olmadığı alana atama yapılmaz." },
   SUPPORT_ROLES_OPTIONAL: { cat: "kadro", level: LEVEL.LOW, desc: "Destek rolleri ihtiyaç halinde tanımlanabilir." },
+  MAX_TASK_PER_PERSON: { cat: "kadro", level: LEVEL.HIGH, desc: "Aynı kişi aynı göreve ay içinde en fazla X kez yazılır." },
 
   // Süre & Dinlenme
   WEEKLY_MAX_80H: { cat: "sure", level: LEVEL.HARD, desc: "Haftalık toplam çalışma saati üst sınırı 80 saattir.", suggestedParams: { max: 80 } },
+  WEEKLY_MAX_SHIFTS: { cat: "sure", level: LEVEL.HARD, desc: "Bir personel haftada en fazla X nöbet alır." },
   DAILY_MAX_24H: { cat: "sure", level: LEVEL.HARD, desc: "Bir günde toplam çalışma 24 saati geçemez.", suggestedParams: { max: 24 } },
   MAX_CONSECUTIVE_6D: { cat: "sure", level: LEVEL.HARD, desc: "Maksimum ardışık çalışma 6 gündür.", suggestedParams: { maxDays: 6 } },
   WEEKLY_MIN_1_OFF: { cat: "sure", level: LEVEL.HARD, desc: "Her hafta en az 1 gün kesintisiz tatil olmalıdır.", suggestedParams: { minOffDays: 1 } },

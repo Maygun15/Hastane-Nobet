@@ -30,6 +30,8 @@ function buildContext({
       weekdayCount: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
       pairHistory: {},
       assignedDays: [],
+      weeklyCounts: {},
+      taskCounts: {},
       consecutiveDays: 0,
       lastAssignedDate: null,
       lastShift: null,

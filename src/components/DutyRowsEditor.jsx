@@ -109,6 +109,12 @@ function mapRulesToBackend(list) {
   const v5 = boolRule(["NIGHT_NEXT_DAY_OFF"]);
   if (v5 !== undefined) out.NIGHT_NEXT_DAY_OFF = v5;
 
+  const v6 = numRule(["WEEKLY_MAX_SHIFTS", "WEEKLY_MAX_DUTIES", "WEEKLY_MAX_SHIFTS_PER_PERSON"], 0);
+  if (v6 !== undefined) out.MAX_SHIFTS_PER_WEEK = v6;
+
+  const v7 = numRule(["MAX_TASK_PER_PERSON", "MAX_SAME_TASK_PER_PERSON"], 0);
+  if (v7 !== undefined) out.MAX_TASK_PER_PERSON = v7;
+
   return out;
 }
 

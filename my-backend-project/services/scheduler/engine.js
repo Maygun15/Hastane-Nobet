@@ -2,6 +2,28 @@
 const { isAvailable } = require("./constraints");
 const { calculateScore } = require("./scoring");
 
+const getISOWeekKey = (dateStr) => {
+  if (!dateStr) return null;
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  const day = d.getUTCDay() || 7; // 1..7 (Mon..Sun)
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+};
+
+const normalizeCode = (s) =>
+  (s || "")
+    .toString()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toUpperCase()
+    .trim();
+
+const getShiftKey = (shift) =>
+  normalizeCode(shift?.id || shift?.code || shift?.label || shift?.name || "");
+
 const daysBetween = (a, b) => {
   if (!a || !b) return null;
   const da = new Date(`${a}T00:00:00Z`);
@@ -20,6 +42,12 @@ function assign(person, day, shift, context) {
   const diff = daysBetween(person.lastAssignedDate, day.date);
   person.consecutiveDays = diff === 1 ? Number(person.consecutiveDays || 0) + 1 : 1;
   person.lastAssignedDate = day.date;
+
+  const wk = getISOWeekKey(day.date);
+  if (wk) {
+    if (!person.weeklyCounts) person.weeklyCounts = {};
+    person.weeklyCounts[wk] = Number(person.weeklyCounts[wk] || 0) + 1;
+  }
 
   const wd = Number(day.weekday ?? -1);
   if (!person.weekdayCount) person.weekdayCount = {};
@@ -41,6 +69,12 @@ function assign(person, day, shift, context) {
   }
 
   shift.assignedPersons.push({ id: person.id, name: person.name || "" });
+
+  const taskKey = getShiftKey(shift);
+  if (taskKey) {
+    if (!person.taskCounts) person.taskCounts = {};
+    person.taskCounts[taskKey] = Number(person.taskCounts[taskKey] || 0) + 1;
+  }
 
   // last shift snapshot
   person.lastShift = {

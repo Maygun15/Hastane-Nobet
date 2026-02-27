@@ -10,6 +10,17 @@ const parseTime = (s) => {
   return hh * 60 + mm;
 };
 
+const getISOWeekKey = (dateStr) => {
+  if (!dateStr) return null;
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  const day = d.getUTCDay() || 7; // 1..7 (Mon..Sun)
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+};
+
 const daysBetween = (a, b) => {
   if (!a || !b) return null;
   const da = new Date(`${a}T00:00:00Z`);
@@ -63,6 +74,9 @@ const getShiftArea = (shift) => {
   if (!shift) return "";
   return normalizeArea(shift.area || shift.label || shift.name || "");
 };
+
+const getShiftKey = (shift) =>
+  normalizeCode(shift?.id || shift?.code || shift?.label || shift?.name || "");
 
 function isAvailable(person, day, context, shift) {
   if (!person || !day) return false;
@@ -171,6 +185,36 @@ function isAvailable(person, day, context, shift) {
         }
         if (diff === 1 && minRest > 24) {
           if (logBlock) logBlock("MIN_REST_HOURS");
+          return false;
+        }
+      }
+    }
+  }
+
+  // MAX_SHIFTS_PER_WEEK
+  if (rules.MAX_SHIFTS_PER_WEEK) {
+    const max = Number(rules.MAX_SHIFTS_PER_WEEK);
+    if (Number.isFinite(max) && max > 0) {
+      const wk = getISOWeekKey(dayKey);
+      if (wk) {
+        const count = Number(person.weeklyCounts?.[wk] || 0);
+        if (count >= max) {
+          if (logBlock) logBlock("MAX_SHIFTS_PER_WEEK");
+          return false;
+        }
+      }
+    }
+  }
+
+  // MAX_TASK_PER_PERSON
+  if (rules.MAX_TASK_PER_PERSON && shift) {
+    const max = Number(rules.MAX_TASK_PER_PERSON);
+    if (Number.isFinite(max) && max > 0) {
+      const key = getShiftKey(shift);
+      if (key) {
+        const count = Number(person.taskCounts?.[key] || 0);
+        if (count >= max) {
+          if (logBlock) logBlock("MAX_TASK_PER_PERSON");
           return false;
         }
       }
