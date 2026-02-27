@@ -517,6 +517,8 @@ export default function PersonScheduleCalendar({
   sectionId = "calisma-cizelgesi",
   serviceId = "",
   scheduleRole = "",
+  workAreas = [],
+  workingHours = [],
 }) {
   const month0 = Math.max(0, Math.min(11, Number(month) - 1 || 0));
   const ymKey = `${year}-${pad2(month0 + 1)}`;
@@ -708,6 +710,8 @@ export default function PersonScheduleCalendar({
   }, [selectedPerson, year, month0, remoteAssignmentsRaw]);
 
   const shiftOptions = useMemo(() => {
+    const fromProps = normalizeWorkingHours(workingHours);
+    if (fromProps.length) return fromProps;
     const fromLS = normalizeWorkingHours(readStorageList(WORKING_HOURS_KEYS));
     if (fromLS.length) return fromLS;
     const map = new Map();
@@ -720,9 +724,11 @@ export default function PersonScheduleCalendar({
     return Array.from(map.values()).sort((a, b) =>
       String(a.label || a.code).localeCompare(String(b.label || b.code), "tr", { sensitivity: "base" })
     );
-  }, [remoteDefs, settingsRevision]);
+  }, [remoteDefs, settingsRevision, workingHours]);
 
   const areaOptions = useMemo(() => {
+    const fromProps = normalizeWorkAreas(workAreas);
+    if (fromProps.length) return fromProps;
     const fromLS = normalizeWorkAreas(readStorageList(AREA_STORAGE_KEYS));
     if (fromLS.length) return fromLS;
     const set = new Set();
@@ -731,7 +737,7 @@ export default function PersonScheduleCalendar({
       if (label) set.add(label);
     });
     return Array.from(set.values()).sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
-  }, [remoteDefs, settingsRevision]);
+  }, [remoteDefs, settingsRevision, workAreas]);
 
   const assignmentsByDay = useMemo(() => {
     const combined = new Map();

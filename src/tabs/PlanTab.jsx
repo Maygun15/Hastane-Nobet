@@ -176,7 +176,7 @@ function matchPersonToUser(user, options) {
   return null;
 }
 
-export default function PlanTab() {
+export default function PlanTab({ workAreas = [], workingHours = [] }) {
   const { user } = useAuth();
   const scope = useServiceScope();
   const { ym, setYear, setMonth } = useActiveYM();
@@ -396,6 +396,8 @@ export default function PlanTab() {
           sectionId="calisma-cizelgesi"
           serviceId={selectedService || ""}
           scheduleRole={activeRole}
+          workAreas={workAreas}
+          workingHours={workingHours}
         />
       </div>
     </div>
