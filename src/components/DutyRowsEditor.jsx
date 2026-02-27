@@ -34,6 +34,7 @@ try {
 /* ======================= yardımcılar ======================= */
 const WD_TR = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
 const HEAD_TR = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+const DUTY_RULES_LS_KEY = "dutyRulesV2";
 const norm = (s) => (s || "").toString().trim().toLocaleUpperCase("tr-TR");
 const stripDiacritics = (str) =>
   (str || "")
@@ -45,6 +46,7 @@ const stripDiacritics = (str) =>
     .replace(/ö/g, "o").replace(/ç/g, "c");
 const canonName = (s) => stripDiacritics(norm(s)).replace(/\s+/g, " ").trim();
 const monIndex = (wdSun0) => (wdSun0 + 6) % 7;
+const pad2 = (n) => String(n).padStart(2, "0");
 function normalizeMonthAnyBase(value, { preferOneBased } = { preferOneBased: true }) {
   const n = Number(value);
   if (!Number.isFinite(n)) return new Date().getMonth();
@@ -69,6 +71,73 @@ const formatDateTime = (iso) => {
   const dt = new Date(iso);
   return Number.isNaN(dt.getTime()) ? null : dt.toLocaleString("tr-TR");
 };
+
+function mapRulesToBackend(list) {
+  const arr = Array.isArray(list) ? list : [];
+  const findById = (id) => arr.find((r) => r?.id === id);
+  const findAny = (ids) => ids.map(findById).find(Boolean);
+  const findEnabled = (ids) => ids.map(findById).find((r) => r && r.enabled);
+
+  const boolRule = (ids) => {
+    const any = findAny(ids);
+    if (!any) return undefined;
+    const enabled = !!findEnabled(ids);
+    return enabled;
+  };
+  const numRule = (ids, fallback) => {
+    const any = findAny(ids);
+    if (!any) return undefined;
+    const r = findEnabled(ids);
+    if (!r) return 0;
+    const n = Number(r.value);
+    return Number.isFinite(n) ? n : fallback;
+  };
+
+  const out = {};
+  const v1 = boolRule(["ONE_SHIFT_PER_DAY", "NO_MULTIPLE_ASSIGNMENTS_PER_DAY"]);
+  if (v1 !== undefined) out.ONE_SHIFT_PER_DAY = v1;
+
+  const v2 = boolRule(["LEAVE_BLOCK_GENERIC"]);
+  if (v2 !== undefined) out.LEAVE_BLOCK = v2;
+
+  const v3 = numRule(["MAX_CONSECUTIVE_6D"], 6);
+  if (v3 !== undefined) out.MAX_CONSECUTIVE_DAYS = v3;
+
+  const v4 = numRule(["MIN_GAP_12H", "MIN_REST_11H"], 11);
+  if (v4 !== undefined) out.MIN_REST_HOURS = v4;
+
+  const v5 = boolRule(["NIGHT_NEXT_DAY_OFF"]);
+  if (v5 !== undefined) out.NIGHT_NEXT_DAY_OFF = v5;
+
+  return out;
+}
+
+function readDutyRulesFromLS() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DUTY_RULES_LS_KEY) || "[]");
+    return mapRulesToBackend(raw);
+  } catch {
+    return {};
+  }
+}
+
+function buildLeavesByPersonForMonth(year, month1) {
+  const all = getAllLeaves();
+  const ym = `${year}-${pad2(month1)}`;
+  const out = {};
+  for (const [pid, byYm] of Object.entries(all || {})) {
+    const bucket = byYm?.[ym];
+    if (!bucket) continue;
+    const dates = [];
+    for (const dKey of Object.keys(bucket || {})) {
+      const d = Number(dKey);
+      if (!Number.isFinite(d) || d < 1 || d > 31) continue;
+      dates.push(`${year}-${pad2(month1)}-${pad2(d)}`);
+    }
+    if (dates.length) out[String(pid)] = dates;
+  }
+  return out;
+}
 
 function buildWeekGrid(y, m0) {
   const daysInMonth = new Date(y, m0 + 1, 0).getDate();
@@ -177,6 +246,15 @@ function normalizeFromParamTable(x, role) {
   if (!name || isGroupLabel(name)) return null;
   const id = x?.id ?? x?.pid ?? x?.tc ?? x?.tcNo ?? x?.code ?? name;
   const areasText = x?.areas || x?.workAreas || x?.["ÇALIŞMA ALANLARI"] || "";
+  const shiftsText =
+    x?.shiftCodes ||
+    x?.codes ||
+    x?.shifts ||
+    x?.["VARDİYE KODLARI"] ||
+    x?.["VARDIYE KODLARI"] ||
+    x?.meta?.shiftCodes ||
+    x?.meta?.shifts ||
+    "";
   const areas =
     typeof areasText === "string"
       ? areasText
@@ -186,11 +264,21 @@ function normalizeFromParamTable(x, role) {
       : Array.isArray(areasText)
       ? areasText
       : [];
+  const shiftCodes =
+    typeof shiftsText === "string"
+      ? shiftsText
+          .split(/[;,/-]/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : Array.isArray(shiftsText)
+      ? shiftsText
+      : [];
   return {
     id: String(id),
     name: String(name),
     role: role === "Doctor" ? "Doctor" : "Nurse",
     areas,
+    shiftCodes,
     weekendOff: !!x?.weekendOff,
     nightAllowed: !(x?.nightAllowed === false || x?.geceYasak === true),
     dailyMax: 1,
@@ -1351,7 +1439,29 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     buildCommitThisMonth();
     await doSave({ silent: true });
     const staffAll = ensureStaffInEngineStore(role);
-    const hasStaff = (staffAll || []).some((s) => !s.role || s.role === role);
+    const staff = (staffAll || []).filter((s) => !s.role || s.role === role);
+    const hasStaff = staff.length > 0;
+
+    const staffPayload = staff.map((s) => {
+      const areas = Array.isArray(s.areas) ? s.areas : [];
+      const shiftCodes = Array.isArray(s.shiftCodes) ? s.shiftCodes : [];
+      const meta = { ...(s.meta || {}) };
+      if (!meta.areas && areas.length) meta.areas = areas;
+      if (!meta.shiftCodes && shiftCodes.length) meta.shiftCodes = shiftCodes;
+      if (!meta.role && s.role) meta.role = s.role;
+      return {
+        id: String(s.id || ""),
+        name: s.name || "",
+        fullName: s.name || "",
+        role: s.role || "",
+        areas,
+        shiftCodes,
+        meta,
+      };
+    }).filter((s) => s.id && s.name);
+
+    const dutyRules = readDutyRulesFromLS();
+    const leavesByPerson = buildLeavesByPersonForMonth(year, month1);
 
     // Pinleri sunucu formatına hazırla
     const pinnedAssignments = pins.map(p => {
@@ -1373,6 +1483,9 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         year,
         month: month1,
         pins: pinnedAssignments, // Pinleri sunucuya gönder
+        ...(staffPayload.length ? { staff: staffPayload } : {}),
+        ...(Object.keys(dutyRules || {}).length ? { rules: dutyRules } : {}),
+        ...(Object.keys(leavesByPerson || {}).length ? { leavesByPerson } : {}),
       });
       const data = res?.data || res;
       if (data?.assignments?.length) {

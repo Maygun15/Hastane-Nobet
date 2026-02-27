@@ -246,7 +246,9 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   const requestsByPerson = payload.requestsByPerson || {};
   const targetHours = Number(payload.targetHours || 0);
 
-  const { rules, weights } = await fetchDutyRules({ sectionId, serviceId, role });
+  const { rules: dbRules, weights: dbWeights } = await fetchDutyRules({ sectionId, serviceId, role });
+  const rules = { ...dbRules, ...(payload.rules || {}) };
+  const weights = { ...dbWeights, ...(payload.weights || {}) };
 
   const context = await generateMonthlyPlan({
     year,

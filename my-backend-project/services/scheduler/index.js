@@ -11,17 +11,30 @@ function buildContext({
   weights = {},
   debug = {},
 } = {}) {
-  const staffRuntime = (staff || []).map((p) => ({
-    id: String(p.id || p._id || p.personId || ""),
-    name: p.name || p.fullName || p.displayName || "",
-    totalHours: 0,
-    weekdayCount: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
-    pairHistory: {},
-    assignedDays: [],
-    consecutiveDays: 0,
-    lastAssignedDate: null,
-    lastShift: null,
-  }));
+  const staffRuntime = (staff || []).map((p) => {
+    const metaRaw = p?.meta && typeof p.meta === "object" ? p.meta : {};
+    const areas = p?.areas ?? metaRaw.areas;
+    const shiftCodes = p?.shiftCodes ?? metaRaw.shiftCodes;
+    const meta = { ...metaRaw };
+    if (areas != null && meta.areas == null) meta.areas = areas;
+    if (shiftCodes != null && meta.shiftCodes == null) meta.shiftCodes = shiftCodes;
+    if (!meta.role && p?.role) meta.role = p.role;
+
+    return {
+      id: String(p.id || p._id || p.personId || ""),
+      name: p.name || p.fullName || p.displayName || "",
+      meta,
+      areas,
+      shiftCodes,
+      totalHours: 0,
+      weekdayCount: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
+      pairHistory: {},
+      assignedDays: [],
+      consecutiveDays: 0,
+      lastAssignedDate: null,
+      lastShift: null,
+    };
+  });
 
   return {
     staff: staffRuntime,

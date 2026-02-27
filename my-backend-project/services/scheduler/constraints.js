@@ -24,6 +24,14 @@ const shiftIsNight = (shift) => {
   return code.includes("N");
 };
 
+const normalizeCode = (s) =>
+  (s || "")
+    .toString()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toUpperCase()
+    .trim();
+
 const normalizeArea = (s) =>
   (s || "")
     .toString()
@@ -36,6 +44,18 @@ const getPersonAreas = (person) => {
   const raw = person?.meta?.areas || person?.meta?.duties || person?.areas || [];
   if (Array.isArray(raw)) return raw.map(normalizeArea).filter(Boolean);
   if (typeof raw === "string") return raw.split(",").map(normalizeArea).filter(Boolean);
+  return [];
+};
+
+const getPersonShiftCodes = (person) => {
+  const raw =
+    person?.meta?.shiftCodes ||
+    person?.shiftCodes ||
+    person?.meta?.shifts ||
+    person?.shifts ||
+    [];
+  if (Array.isArray(raw)) return raw.map(normalizeCode).filter(Boolean);
+  if (typeof raw === "string") return raw.split(/[,;/-]/).map(normalizeCode).filter(Boolean);
   return [];
 };
 
@@ -71,6 +91,16 @@ function isAvailable(person, day, context, shift) {
     // Shift alanı boşsa filtre uygulamayız
     if (shiftArea && !areas.includes(shiftArea)) {
       if (logBlock) logBlock("AREA_NOT_ALLOWED");
+      return false;
+    }
+  }
+
+  // SHIFT CODE ELIGIBILITY (vardiya kodu)
+  if (shift) {
+    const codes = getPersonShiftCodes(person);
+    const shiftCode = normalizeCode(shift.code || shift.id || "");
+    if (shiftCode && codes.length && !codes.includes(shiftCode)) {
+      if (logBlock) logBlock("SHIFT_CODE_NOT_ALLOWED");
       return false;
     }
   }
