@@ -1,9 +1,10 @@
 // src/tabs/PeopleTab.jsx
-import React, { useRef, useState, useMemo } from "react";
+import React, { useRef, useState, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
 import IDCard from "../components/IDCard.jsx";
 import { API, getToken, REQUIRE_BACKEND } from "../lib/api.js";
-import { services as DEFAULT_SERVICES, SERVICE as DEFAULT_SERVICE } from "../constants/enums.js";
+import { useServices } from "../hooks/useServicesModel.js";
+import useServiceScope from "../hooks/useServiceScope.js";
 
 /* --- yardımcılar --- */
 const cn = (...c) => c.filter(Boolean).join(" ");
@@ -97,13 +98,26 @@ export default function PeopleTab({
   workingHours = [], // [{id, code, ...}]
   services = [], // [{id,name,code,...}] veya string[]
 }) {
+  const { items: servicesFromApi } = useServices();
+  const scope = useServiceScope();
   const WA = useMemo(() => normalizeWorkAreas(workAreas), [workAreas]);
+  const baseServices = useMemo(() => {
+    const fromApi = Array.isArray(servicesFromApi) ? servicesFromApi : [];
+    if (fromApi.length) return fromApi;
+    return Array.isArray(services) ? services : [];
+  }, [services, servicesFromApi]);
+  const scopedServices = useMemo(() => {
+    if (scope.isAdmin) return baseServices;
+    const allow = new Set((scope.allowedIds || []).map(String));
+    return baseServices.filter((s) =>
+      allow.has(String(s?.id ?? s?._id ?? s?.code ?? s?.name ?? ""))
+    );
+  }, [baseServices, scope.isAdmin, scope.allowedIds]);
   const serviceOptions = useMemo(() => {
-    const normalized = normalizeServices(services);
-    if (normalized.length) return normalized;
-    return (DEFAULT_SERVICES || []).map((s) => ({ id: s.id, name: s.name }));
-  }, [services]);
-  const defaultServiceId = serviceOptions[0]?.id || DEFAULT_SERVICE?.acil || "acil";
+    const normalized = normalizeServices(scopedServices);
+    return normalized;
+  }, [scopedServices]);
+  const defaultServiceId = serviceOptions[0]?.id || "";
 
   const empty = {
     id: undefined,
@@ -123,6 +137,12 @@ export default function PeopleTab({
   const [editQuery, setEditQuery] = useState("");
   const [resetting, setResetting] = useState(false);
   const importRef = useRef(null);
+
+  useEffect(() => {
+    if (!form.service && defaultServiceId) {
+      setForm((f) => ({ ...f, service: defaultServiceId }));
+    }
+  }, [defaultServiceId, form.service]);
 
   const toggleArea = (areaId) =>
     setForm((f) => {

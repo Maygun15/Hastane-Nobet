@@ -361,6 +361,8 @@ try {
 try {
   const schedulerRoutes = require('./routes/scheduler.routes.js');
   app.use('/api/scheduler', auth, ensureActive, schedulerRoutes);
+  const servicesRoutes = require('./routes/services.routes.js');
+  app.use('/api/services', auth, ensureActive, servicesRoutes);
 } catch {}
 
 /* ============ ADMIN ÖRNEĞİ ============ */
