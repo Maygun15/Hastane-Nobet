@@ -156,10 +156,22 @@ export default function HospitalRosterApp() {
   const [personLeaves, setPersonLeaves] = useState(LS.get("personLeaves", {}));
   const [requestBox, setRequestBox] = useState(LS.get("requestBoxV1", []));
 
-  useEffect(() => { LS.set("workAreas", workAreas); }, [workAreas]);
+  useEffect(() => {
+    LS.set("workAreas", workAreas);
+    try {
+      window.dispatchEvent(new Event("workAreas:changed"));
+      window.dispatchEvent(new Event("settings:changed"));
+    } catch {}
+  }, [workAreas]);
   useEffect(() => { LS.set("nurses", nurses); }, [nurses]);
   useEffect(() => { LS.set("doctors", doctors); }, [doctors]);
-  useEffect(() => { LS.set("workingHours", workingHours); }, [workingHours]);
+  useEffect(() => {
+    LS.set("workingHours", workingHours);
+    try {
+      window.dispatchEvent(new Event("workingHours:changed"));
+      window.dispatchEvent(new Event("settings:changed"));
+    } catch {}
+  }, [workingHours]);
   useEffect(() => {
     LS.set("leaveTypes", leaveTypes);
     LS.set("leaveTypesV2", leaveTypes);

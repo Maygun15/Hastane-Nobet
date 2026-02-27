@@ -186,9 +186,15 @@ export default function RosterPage() {
     };
     window.addEventListener("storage", refreshSettings);
     window.addEventListener("focus", refreshSettings);
+    window.addEventListener("settings:changed", refreshSettings);
+    window.addEventListener("workAreas:changed", refreshSettings);
+    window.addEventListener("workingHours:changed", refreshSettings);
     return () => {
       window.removeEventListener("storage", refreshSettings);
       window.removeEventListener("focus", refreshSettings);
+      window.removeEventListener("settings:changed", refreshSettings);
+      window.removeEventListener("workAreas:changed", refreshSettings);
+      window.removeEventListener("workingHours:changed", refreshSettings);
     };
   }, []);
 

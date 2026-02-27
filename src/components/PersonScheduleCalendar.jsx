@@ -561,6 +561,7 @@ export default function PersonScheduleCalendar({
   const [assignRoleLabel, setAssignRoleLabel] = useState("");
   const [assignNote, setAssignNote] = useState("");
   const [assignError, setAssignError] = useState("");
+  const [settingsRevision, setSettingsRevision] = useState(0);
 
   useEffect(() => {
     setSelectedId(initialPersonId);
@@ -577,6 +578,22 @@ export default function PersonScheduleCalendar({
       window.removeEventListener("planner:assignments", onPlannerChange);
       window.removeEventListener("planner:aiPlan", onPlannerChange);
       window.removeEventListener("storage", onPlannerChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const bump = () => setSettingsRevision((v) => v + 1);
+    window.addEventListener("settings:changed", bump);
+    window.addEventListener("workAreas:changed", bump);
+    window.addEventListener("workingHours:changed", bump);
+    window.addEventListener("storage", bump);
+    window.addEventListener("focus", bump);
+    return () => {
+      window.removeEventListener("settings:changed", bump);
+      window.removeEventListener("workAreas:changed", bump);
+      window.removeEventListener("workingHours:changed", bump);
+      window.removeEventListener("storage", bump);
+      window.removeEventListener("focus", bump);
     };
   }, []);
 
@@ -702,7 +719,7 @@ export default function PersonScheduleCalendar({
     return Array.from(map.values()).sort((a, b) =>
       String(a.label || a.code).localeCompare(String(b.label || b.code), "tr", { sensitivity: "base" })
     );
-  }, [remoteDefs]);
+  }, [remoteDefs, settingsRevision]);
 
   const areaOptions = useMemo(() => {
     const fromLS = normalizeWorkAreas(readStorageList(AREA_STORAGE_KEYS));
@@ -713,7 +730,7 @@ export default function PersonScheduleCalendar({
       if (label) set.add(label);
     });
     return Array.from(set.values()).sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
-  }, [remoteDefs]);
+  }, [remoteDefs, settingsRevision]);
 
   const assignmentsByDay = useMemo(() => {
     const combined = new Map();
