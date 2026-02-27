@@ -231,14 +231,16 @@ const RosterTable = forwardRef(function RosterTable({
         if (v) set.add(v);
       }
     });
-    if (set.size) return Array.from(set.values());
+    if (set.size) {
+      return Array.from(set.values()).sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
+    }
     // fallback: taskLines etiketleri
     const fallback = new Set();
     taskLines.forEach((t) => {
       const label = String(t.label || "").trim();
       if (label) fallback.add(label);
     });
-    return Array.from(fallback.values());
+    return Array.from(fallback.values()).sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
   }, [workAreas, taskLines]);
 
   const shiftOptions = useMemo(() => {
@@ -254,14 +256,20 @@ const RosterTable = forwardRef(function RosterTable({
       const label = labelRaw || (time ? `${code} (${time})` : code);
       map.set(code, { code, label });
     });
-    if (map.size) return Array.from(map.values());
+    if (map.size) {
+      return Array.from(map.values()).sort((a, b) =>
+        String(a.label || a.code).localeCompare(String(b.label || b.code), "tr", { sensitivity: "base" })
+      );
+    }
     // fallback: taskLines vardiya kodları
     const fallback = new Set();
     taskLines.forEach((t) => {
       const code = String(t.shiftCode || "").trim();
       if (code) fallback.add(code);
     });
-    return Array.from(fallback.values()).map((code) => ({ code, label: code }));
+    return Array.from(fallback.values())
+      .sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }))
+      .map((code) => ({ code, label: code }));
   }, [workingHours, taskLines]);
 
   // 3. Atamaları hızlı erişim için grupla: key = "YYYY-MM-DD|Role|Shift" -> [pid, pid, ...]

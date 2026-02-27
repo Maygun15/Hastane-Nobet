@@ -109,7 +109,7 @@ function normalizeWorkAreas(input) {
       if (v) set.add(v);
     }
   });
-  return Array.from(set.values());
+  return Array.from(set.values()).sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
 }
 
 function normalizeWorkingHours(input) {
@@ -125,7 +125,9 @@ function normalizeWorkingHours(input) {
     const label = labelRaw || (time ? `${code} (${time})` : code);
     map.set(code, { code, label });
   });
-  return Array.from(map.values());
+  return Array.from(map.values()).sort((a, b) =>
+    String(a.label || a.code).localeCompare(String(b.label || b.code), "tr", { sensitivity: "base" })
+  );
 }
 
 function normalizePerson(person) {
@@ -685,7 +687,9 @@ export default function PersonScheduleCalendar({
       const label = String(def?.label ?? def?.area ?? def?.name ?? code).trim();
       if (!map.has(code)) map.set(code, { code, label });
     });
-    return Array.from(map.values());
+    return Array.from(map.values()).sort((a, b) =>
+      String(a.label || a.code).localeCompare(String(b.label || b.code), "tr", { sensitivity: "base" })
+    );
   }, [remoteDefs]);
 
   const areaOptions = useMemo(() => {
@@ -696,7 +700,7 @@ export default function PersonScheduleCalendar({
       const label = String(def?.label ?? def?.area ?? def?.name ?? "").trim();
       if (label) set.add(label);
     });
-    return Array.from(set.values());
+    return Array.from(set.values()).sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
   }, [remoteDefs]);
 
   const assignmentsByDay = useMemo(() => {
