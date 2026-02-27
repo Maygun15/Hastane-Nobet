@@ -302,8 +302,29 @@ export default function HospitalRosterApp() {
     const token = getToken();
     if (!token) return;
     try {
-      const data = await API.http.get(`/api/personnel?page=1&size=2000`);
-      const items = Array.isArray(data?.items) ? data.items : [];
+      const role = roleOf(user);
+      const serviceIds = Array.isArray(user?.serviceIds) ? user.serviceIds.map(String).filter(Boolean) : [];
+      let items = [];
+
+      if (role === "STAFF") {
+        if (!serviceIds.length) return;
+        const results = await Promise.all(
+          serviceIds.map((sid) =>
+            API.http.get(`/api/personnel?page=1&size=2000&serviceId=${encodeURIComponent(sid)}`)
+          )
+        );
+        const merged = results.flatMap((r) => (Array.isArray(r?.items) ? r.items : []));
+        const byId = new Map();
+        merged.forEach((p) => {
+          const key = String(p?.id ?? p?._id ?? "");
+          if (!key) return;
+          if (!byId.has(key)) byId.set(key, p);
+        });
+        items = Array.from(byId.values());
+      } else {
+        const data = await API.http.get(`/api/personnel?page=1&size=2000`);
+        items = Array.isArray(data?.items) ? data.items : [];
+      }
 
       const mapped = items.map((p) => {
         const meta = p?.meta || {};
@@ -315,8 +336,7 @@ export default function HospitalRosterApp() {
         const service =
           (p.serviceId || p.service || meta.service || "acil")
             .toString()
-            .trim()
-            .toLowerCase();
+            .trim();
         return {
           id: p.id,
           role: isDoctor ? ROLE.Doctor : ROLE.Nurse,
@@ -336,7 +356,7 @@ export default function HospitalRosterApp() {
     } catch (e) {
       console.warn("Personnel load error:", e?.message || e);
     }
-  }, [setNurses, setDoctors]);
+  }, [setNurses, setDoctors, user]);
 
   useEffect(() => {
     let alive = true;

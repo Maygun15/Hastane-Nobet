@@ -4,6 +4,8 @@ import TopTabsBar from "../components/TopTabsBar.jsx";
 import PeopleTab from "./PeopleTab.jsx";
 import { ROLE } from "../constants/enums.js";
 import { LS } from "../utils/storage.js";
+import useServicesModel from "../hooks/useServicesModel.js";
+import useServiceScope from "../hooks/useServiceScope.js";
 
 /** LS anahtarları */
 const LS_KEY = "personnelSections";
@@ -104,6 +106,8 @@ export default function PersonnelTab({
   nurses, setNurses,
   doctors, setDoctors,
 }) {
+  const servicesModel = useServicesModel();
+  const scope = useServiceScope();
   const [sections, setSections] = useState(() => LS.get(LS_KEY, DEFAULT_SECTIONS));
   // Başlangıç: URL (?sec) > LS > ilk
   const initial = getQueryParam("sec") || LS.get(LS_ACTIVE, sections?.[0]?.id || "");
@@ -189,6 +193,13 @@ export default function PersonnelTab({
     return out;
   }, [workAreas]);
 
+  const services = useMemo(() => {
+    const list = servicesModel.list?.() || [];
+    if (scope.isAdmin) return list;
+    const allow = new Set((scope.allowedIds || []).map(String));
+    return list.filter((s) => allow.has(String(s?.id ?? s?._id ?? s?.code ?? s?.name ?? "")));
+  }, [servicesModel, scope.isAdmin, scope.allowedIds]);
+
   // setPeople proxy'leri (normalize ederek kaydeder)
   const setNursesNormalized  = useMemo(() => makeNormalizedSetter(setNurses), [setNurses]);
   const setDoctorsNormalized = useMemo(() => makeNormalizedSetter(setDoctors), [setDoctors]);
@@ -222,6 +233,7 @@ export default function PersonnelTab({
           section={active}
           workAreas={workAreaOptions}
           workingHours={workingHours}
+          services={services}
           nurses={normalizePeople(nurses)}
           setNurses={setNursesNormalized}
           doctors={normalizePeople(doctors)}
@@ -236,6 +248,7 @@ function SectionContent({
   section,
   workAreas,
   workingHours,
+  services,
   nurses, setNurses,
   doctors, setDoctors,
 }) {
@@ -250,6 +263,7 @@ function SectionContent({
         setPeople={setDoctors}
         workAreas={workAreas}
         workingHours={workingHours}
+        services={services}
       />
     );
   }
@@ -261,6 +275,7 @@ function SectionContent({
       setPeople={setNurses}
       workAreas={workAreas}
       workingHours={workingHours}
+      services={services}
     />
   );
 }

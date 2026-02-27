@@ -3,6 +3,7 @@ import React, { useRef, useState, useMemo } from "react";
 import * as XLSX from "xlsx";
 import IDCard from "../components/IDCard.jsx";
 import { API, getToken, REQUIRE_BACKEND } from "../lib/api.js";
+import { services as DEFAULT_SERVICES, SERVICE as DEFAULT_SERVICE } from "../constants/enums.js";
 
 /* --- yardımcılar --- */
 const cn = (...c) => c.filter(Boolean).join(" ");
@@ -13,22 +14,6 @@ const sortByKeyTR = (arr, key) =>
       .localeCompare((b?.[key] || "").toString(), "tr", { sensitivity: "base" })
   );
 const ROLE = { Doctor: "Doctor", Nurse: "Nurse" };
-const SERVICE = {
-  acil: "acil",
-  dahiliye: "dahiliye",
-  kardiyoloji: "kardiyoloji",
-  ortopedi: "ortopedi",
-  pediatri: "pediatri",
-  yogunbakim: "yogunbakim",
-};
-const services = [
-  { id: SERVICE.acil, name: "Acil Servis" },
-  { id: SERVICE.dahiliye, name: "Dahiliye" },
-  { id: SERVICE.kardiyoloji, name: "Kardiyoloji" },
-  { id: SERVICE.ortopedi, name: "Ortopedi" },
-  { id: SERVICE.pediatri, name: "Pediatri" },
-  { id: SERVICE.yogunbakim, name: "Yoğun Bakım" },
-];
 
 const slugTR = (s = "") =>
   s
@@ -47,6 +32,34 @@ const slugTR = (s = "") =>
 const clean = (s) => (s ?? "").toString().trim();
 const isMongoId = (id) => typeof id === "string" && /^[a-f0-9]{24}$/i.test(id);
 const normId = (v) => String(v ?? "");
+const normalizeServices = (input) => {
+  const arr = Array.isArray(input) ? input : [];
+  const out = [];
+  const seen = new Set();
+  for (const s of arr) {
+    const id = String(s?.id ?? s?._id ?? s?.code ?? s?.name ?? "").trim();
+    const name = String(s?.name ?? s?.label ?? s?.title ?? s?.code ?? s?.id ?? "").trim();
+    const code = String(s?.code ?? s?.id ?? s?._id ?? s?.name ?? "").trim();
+    if (!id || !name) continue;
+    const key = id.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ id, name, code });
+  }
+  return out;
+};
+
+const resolveServiceId = (value, options, fallback) => {
+  const raw = (value ?? "").toString().trim();
+  if (!raw) return fallback || "";
+  const q = raw.toLocaleLowerCase("tr-TR");
+  const byId = options.find((s) => String(s.id).toLocaleLowerCase("tr-TR") === q);
+  if (byId) return byId.id;
+  const byName = options.find((s) => String(s.name).toLocaleLowerCase("tr-TR") === q);
+  if (byName) return byName.id;
+  const byCode = options.find((s) => String(s.code || "").toLocaleLowerCase("tr-TR") === q);
+  return byCode ? byCode.id : raw;
+};
 
 // workAreas -> {id,name}[] (string veya obje kabul)
 function normalizeWorkAreas(input) {
@@ -82,13 +95,20 @@ export default function PeopleTab({
   setPeople,
   workAreas = [], // string[] veya {id,name}[]
   workingHours = [], // [{id, code, ...}]
+  services = [], // [{id,name,code,...}] veya string[]
 }) {
   const WA = useMemo(() => normalizeWorkAreas(workAreas), [workAreas]);
+  const serviceOptions = useMemo(() => {
+    const normalized = normalizeServices(services);
+    if (normalized.length) return normalized;
+    return (DEFAULT_SERVICES || []).map((s) => ({ id: s.id, name: s.name }));
+  }, [services]);
+  const defaultServiceId = serviceOptions[0]?.id || DEFAULT_SERVICE?.acil || "acil";
 
   const empty = {
     id: undefined,
     role,
-    service: SERVICE.acil,
+    service: defaultServiceId,
     name: "",
     title: role === ROLE.Doctor ? "Uzman" : "Hemşire",
     tc: "",
@@ -327,7 +347,7 @@ export default function PeopleTab({
       ],
       [
         role,
-        SERVICE.acil,
+        defaultServiceId,
         role === ROLE.Doctor ? "Uzman" : "Hemşire",
         "",
         "Ad Soyad",
@@ -361,10 +381,8 @@ export default function PeopleTab({
         .map((r, idx) => {
           const rrole = (r["ROL"] || role).toString().trim();
           if (rrole !== role) return null;
-          const service = (r["SERVIS"] || r["SERVİS"] || SERVICE.acil)
-            .toString()
-            .trim()
-            .toLowerCase();
+          const serviceRaw = (r["SERVIS"] || r["SERVİS"] || defaultServiceId);
+          const service = resolveServiceId(serviceRaw, serviceOptions, defaultServiceId);
           const title = (r["UNVANI"] || r["UNVAN"] || (role === ROLE.Doctor ? "Uzman" : "Hemşire"))
             .toString()
             .trim();
@@ -545,7 +563,7 @@ export default function PeopleTab({
             }
             className="w-full border rounded p-2"
           >
-            {services.map((s) => (
+            {serviceOptions.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
               </option>
