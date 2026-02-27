@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import RosterTable from "../components/RosterTable.jsx";
 import ScheduleToolbar from "../components/ScheduleToolbar.jsx";
-import { getMonthlySchedule, fetchPersonnel } from "../api/apiAdapter.js";
+import { getMonthlySchedule, fetchPersonnel, saveMonthlySchedule } from "../api/apiAdapter.js";
 import { getPeople } from "../lib/dataResolver.js";
 import { getAllLeaves } from "../lib/leaves.js";
 import { LS } from "../utils/storage.js";
@@ -17,6 +17,18 @@ export default function RosterPage() {
   
   const [assignments, setAssignments] = useState([]);
   const [taskLines, setTaskLines] = useState([]);
+  const [scheduleData, setScheduleData] = useState(null);
+  const [scheduleMeta, setScheduleMeta] = useState(null);
+  const [workAreas, setWorkAreas] = useState(() => {
+    const v2 = LS.get("workAreasV2", null);
+    const v1 = LS.get("workAreas", null);
+    return Array.isArray(v2) && v2.length ? v2 : Array.isArray(v1) ? v1 : [];
+  });
+  const [workingHours, setWorkingHours] = useState(() => {
+    const v2 = LS.get("workingHoursV2", null);
+    const v1 = LS.get("workingHours", null);
+    return Array.isArray(v2) && v2.length ? v2 : Array.isArray(v1) ? v1 : [];
+  });
   const [people, setPeople] = useState([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const tableRef = useRef(null);
@@ -83,13 +95,28 @@ export default function RosterPage() {
 
         if (res && res.data) {
           const { defs, roster } = res.data;
+          setScheduleData(res.data);
+          setScheduleMeta(res.meta || {});
           
           // 1. Görev satırlarını (taskLines) ayarla
           setTaskLines(defs || []);
 
           // 2. Atamaları (assignments) düzleştir
           const flatAssignments = [];
-          if (roster && roster.assignments) {
+          if (Array.isArray(res.data.assignments) && res.data.assignments.length) {
+            res.data.assignments.forEach((a) => {
+              if (!a) return;
+              const dateStr = String(a.day || a.date || "").slice(0, 10);
+              if (!dateStr) return;
+              flatAssignments.push({
+                day: dateStr,
+                roleLabel: a.roleLabel || a.role || a.label || "",
+                shiftCode: a.shiftCode || a.shiftId || a.shift || a.code || "",
+                personId: a.personId,
+                hours: Number(a.hours) || 0,
+              });
+            });
+          } else if (roster && roster.assignments) {
             // defs'i map'e çevir ki rowId -> label/shiftCode bulabilelim
             const defMap = new Map((defs || []).map(d => [String(d.id), d]));
 
@@ -121,6 +148,8 @@ export default function RosterPage() {
           if (res && res.data === null) {
              setTaskLines([]);
              setAssignments([]);
+             setScheduleData(null);
+             setScheduleMeta(null);
           }
         }
       } catch (err) {
@@ -134,6 +163,23 @@ export default function RosterPage() {
     fetchData();
     return () => { active = false; };
   }, [year, month, role]);
+
+  useEffect(() => {
+    const refreshSettings = () => {
+      const wa2 = LS.get("workAreasV2", null);
+      const wa1 = LS.get("workAreas", null);
+      const wh2 = LS.get("workingHoursV2", null);
+      const wh1 = LS.get("workingHours", null);
+      setWorkAreas(Array.isArray(wa2) && wa2.length ? wa2 : Array.isArray(wa1) ? wa1 : []);
+      setWorkingHours(Array.isArray(wh2) && wh2.length ? wh2 : Array.isArray(wh1) ? wh1 : []);
+    };
+    window.addEventListener("storage", refreshSettings);
+    window.addEventListener("focus", refreshSettings);
+    return () => {
+      window.removeEventListener("storage", refreshSettings);
+      window.removeEventListener("focus", refreshSettings);
+    };
+  }, []);
 
   const handlePrint = () => window.print();
 
@@ -177,17 +223,76 @@ export default function RosterPage() {
     }
   };
 
-  const handleAssignmentDelete = (cellData) => {
-    if (!window.confirm(`${cellData.personName} için ${cellData.date} tarihindeki atamayı silmek istediğinize emin misiniz?`)) return;
+  const persistAssignments = async (nextAssignments) => {
+    if (!scheduleData) throw new Error("Çizelge verisi bulunamadı.");
+    const payload = {
+      ...scheduleData,
+      assignments: nextAssignments,
+    };
+    const saved = await saveMonthlySchedule({
+      sectionId: "calisma-cizelgesi",
+      serviceId: "",
+      role,
+      year,
+      month,
+      data: payload,
+      meta: scheduleMeta || {},
+    });
+    if (saved?.data) setScheduleData(saved.data);
+    if (saved?.meta) setScheduleMeta(saved.meta);
+  };
 
-    setAssignments((prev) => prev.filter((a) => {
-      return !(
-        a.day === cellData.date &&
-        a.roleLabel === cellData.role &&
-        a.shiftCode === cellData.shift &&
-        String(a.personId) === String(cellData.personId)
+  const handleAssignmentDelete = async (cellData) => {
+    if (!window.confirm(`${cellData.personName} için ${cellData.date} tarihindeki atamayı silmek istediğinize emin misiniz?`)) return;
+    try {
+      const next = assignments.filter((a) => {
+        return !(
+          a.day === cellData.date &&
+          a.roleLabel === cellData.role &&
+          a.shiftCode === cellData.shift &&
+          String(a.personId) === String(cellData.personId)
+        );
+      });
+      setAssignments(next);
+      await persistAssignments(next);
+    } catch (err) {
+      console.error("Assignment delete failed:", err);
+      setDataError(err?.message || "Atama silinemedi.");
+    }
+  };
+
+  const handleAssignmentUpdate = async ({ date, personId, oldRole, oldShift, newRole, newShift }) => {
+    if (!date || !personId || !newRole || !newShift) return;
+    const getHoursFor = (roleLabel, shiftCode) => {
+      const def = (taskLines || []).find(
+        (t) => String(t.label) === String(roleLabel) && String(t.shiftCode) === String(shiftCode)
       );
-    }));
+      return Number(def?.hours) || 0;
+    };
+    try {
+      const next = [...assignments];
+      const idx = next.findIndex(
+        (a) =>
+          a.day === date &&
+          String(a.personId) === String(personId) &&
+          String(a.roleLabel) === String(oldRole) &&
+          String(a.shiftCode) === String(oldShift)
+      );
+      const updated = {
+        ...(idx >= 0 ? next[idx] : { day: date, personId }),
+        roleLabel: newRole,
+        shiftCode: newShift,
+        hours: getHoursFor(newRole, newShift),
+      };
+      if (idx >= 0) next[idx] = updated;
+      else next.push(updated);
+
+      setAssignments(next);
+      await persistAssignments(next);
+    } catch (err) {
+      console.error("Assignment update failed:", err);
+      setDataError(err?.message || "Atama güncellenemedi.");
+    }
   };
 
   // Filtreleme Mantığı
@@ -286,6 +391,9 @@ export default function RosterPage() {
           compact={onlyMine}
           dayFilter={dayFilter}
           onAssignmentDelete={handleAssignmentDelete}
+          onAssignmentUpdate={handleAssignmentUpdate}
+          workAreas={workAreas}
+          workingHours={workingHours}
         />
       )}
     </div>

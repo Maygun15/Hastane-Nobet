@@ -16,6 +16,9 @@ import { X, Download, FileText, Copy, Info, Phone, Mail, Clock, Calendar, Hash, 
  * @param {boolean} compact - Tabloyu sıkışık modda gösterir
  * @param {string} dayFilter - 'all' | 'weekday' | 'weekend'
  * @param {function} onAssignmentDelete - (cellData) => void
+ * @param {function} onAssignmentUpdate - ({ date, personId, oldRole, oldShift, newRole, newShift }) => Promise<void>
+ * @param {Array} workAreas - çalışma alanları (string[] veya {name}[])
+ * @param {Array} workingHours - vardiya saatleri (örn: [{code,start,end}])
  */
 const RosterTable = forwardRef(function RosterTable({
   year,
@@ -27,15 +30,29 @@ const RosterTable = forwardRef(function RosterTable({
   compact = false,
   dayFilter = "all",
   onAssignmentDelete,
+  onAssignmentUpdate,
+  workAreas = [],
+  workingHours = [],
 }, ref) {
   const [selectedCell, setSelectedCell] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
+  const [editRole, setEditRole] = useState("");
+  const [editShift, setEditShift] = useState("");
+  const [editError, setEditError] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
     window.addEventListener("click", handleClick);
     return () => window.removeEventListener("click", handleClick);
   }, []);
+
+  useEffect(() => {
+    if (!selectedCell) return;
+    setEditRole(selectedCell.role || "");
+    setEditShift(selectedCell.shift || "");
+    setEditError("");
+  }, [selectedCell]);
 
   const handleContextMenu = (e, cellData) => {
     e.preventDefault();
@@ -45,6 +62,33 @@ const RosterTable = forwardRef(function RosterTable({
       y: e.clientY,
       data: cellData,
     });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedCell || !onAssignmentUpdate) return;
+    const newRole = String(editRole || "").trim();
+    const newShift = String(editShift || "").trim();
+    if (!newRole || !newShift) {
+      setEditError("Alan ve vardiya seçmelisiniz.");
+      return;
+    }
+    setEditSaving(true);
+    setEditError("");
+    try {
+      await onAssignmentUpdate({
+        date: selectedCell.date,
+        personId: selectedCell.personId,
+        oldRole: selectedCell.role,
+        oldShift: selectedCell.shift,
+        newRole,
+        newShift,
+      });
+      setSelectedCell(null);
+    } catch (err) {
+      setEditError(err?.message || "Güncelleme başarısız.");
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const handleExport = () => {
@@ -172,6 +216,53 @@ const RosterTable = forwardRef(function RosterTable({
     people.forEach((p) => map.set(String(p.id), p));
     return map;
   }, [people]);
+
+  const roleOptions = useMemo(() => {
+    const set = new Set();
+    (Array.isArray(workAreas) ? workAreas : []).forEach((item) => {
+      if (item == null) return;
+      if (typeof item === "string") {
+        const v = item.trim();
+        if (v) set.add(v);
+        return;
+      }
+      if (typeof item === "object") {
+        const v = String(item.name ?? item.label ?? item.title ?? item.code ?? "").trim();
+        if (v) set.add(v);
+      }
+    });
+    if (set.size) return Array.from(set.values());
+    // fallback: taskLines etiketleri
+    const fallback = new Set();
+    taskLines.forEach((t) => {
+      const label = String(t.label || "").trim();
+      if (label) fallback.add(label);
+    });
+    return Array.from(fallback.values());
+  }, [workAreas, taskLines]);
+
+  const shiftOptions = useMemo(() => {
+    const map = new Map();
+    (Array.isArray(workingHours) ? workingHours : []).forEach((item) => {
+      if (!item) return;
+      const code = String(item.code ?? item.id ?? "").trim();
+      if (!code) return;
+      const start = String(item.start ?? "").trim();
+      const end = String(item.end ?? "").trim();
+      const labelRaw = String(item.label ?? item.name ?? "").trim();
+      const time = start && end ? `${start}-${end}` : "";
+      const label = labelRaw || (time ? `${code} (${time})` : code);
+      map.set(code, { code, label });
+    });
+    if (map.size) return Array.from(map.values());
+    // fallback: taskLines vardiya kodları
+    const fallback = new Set();
+    taskLines.forEach((t) => {
+      const code = String(t.shiftCode || "").trim();
+      if (code) fallback.add(code);
+    });
+    return Array.from(fallback.values()).map((code) => ({ code, label: code }));
+  }, [workingHours, taskLines]);
 
   // 3. Atamaları hızlı erişim için grupla: key = "YYYY-MM-DD|Role|Shift" -> [pid, pid, ...]
   const assignmentsMap = useMemo(() => {
@@ -450,6 +541,42 @@ const RosterTable = forwardRef(function RosterTable({
                   {selectedCell.shift}
                 </span>
               </div>
+              {onAssignmentUpdate && (
+                <div className="mt-3 pt-3 border-t border-dashed border-slate-200 space-y-2">
+                  <div className="text-xs text-slate-500 font-medium">Atama Düzenle</div>
+                  <label className="flex flex-col gap-1 text-xs">
+                    Alan
+                    <select
+                      value={editRole}
+                      onChange={(e) => setEditRole(e.target.value)}
+                      className="h-8 rounded border px-2 text-xs"
+                    >
+                      <option value="">Seç...</option>
+                      {roleOptions.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs">
+                    Vardiya
+                    <select
+                      value={editShift}
+                      onChange={(e) => setEditShift(e.target.value)}
+                      className="h-8 rounded border px-2 text-xs"
+                    >
+                      <option value="">Seç...</option>
+                      {shiftOptions.map((opt) => (
+                        <option key={opt.code} value={opt.code}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {editError && <div className="text-xs text-rose-600">{editError}</div>}
+                </div>
+              )}
               <div className="pt-2 border-t mt-2">
                 <div className="text-xs text-slate-500 mb-1">Personel</div>
                 <div className="flex items-center gap-2">
@@ -545,7 +672,16 @@ const RosterTable = forwardRef(function RosterTable({
                 )}
               </div>
             </div>
-            <div className="bg-slate-50 px-4 py-3 border-t flex justify-end">
+            <div className="bg-slate-50 px-4 py-3 border-t flex justify-end gap-2">
+              {onAssignmentUpdate && (
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={editSaving}
+                  className="px-4 py-2 bg-sky-600 text-white rounded-lg text-sm font-medium hover:bg-sky-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                >
+                  Kaydet
+                </button>
+              )}
               <button 
                 onClick={() => setSelectedCell(null)}
                 className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors"

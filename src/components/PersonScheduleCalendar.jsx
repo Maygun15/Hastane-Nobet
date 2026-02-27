@@ -1,6 +1,7 @@
 // src/components/PersonScheduleCalendar.jsx (UPDATED)
 import React, { useEffect, useMemo, useState } from "react";
 import { buildMonthDays } from "../utils/date.js";
+import { LS } from "../utils/storage.js";
 import { assignSchedule, getMonthlySchedule, unassignSchedule } from "../api/apiAdapter.js";
 import DayCard from "./DayCard.jsx";
 import MonthStats from "./MonthStats.jsx";
@@ -19,6 +20,7 @@ const dayNameTR = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
 const emptyAssignments = { map: new Map(), mismatch: null };
 
 const AREA_STORAGE_KEYS = ["workAreasV2", "workAreas"];
+const WORKING_HOURS_KEYS = ["workingHoursV2", "workingHours"];
 
 function buildServiceLabelMap() {
   const map = new Map();
@@ -83,6 +85,47 @@ function buildServiceLabelMap() {
   }
 
   return map;
+}
+
+function readStorageList(keys) {
+  for (const key of keys) {
+    const v = LS.get(key, null);
+    if (Array.isArray(v) && v.length) return v;
+  }
+  return [];
+}
+
+function normalizeWorkAreas(input) {
+  const set = new Set();
+  (Array.isArray(input) ? input : []).forEach((item) => {
+    if (item == null) return;
+    if (typeof item === "string") {
+      const v = item.trim();
+      if (v) set.add(v);
+      return;
+    }
+    if (typeof item === "object") {
+      const v = String(item.name ?? item.label ?? item.title ?? item.code ?? "").trim();
+      if (v) set.add(v);
+    }
+  });
+  return Array.from(set.values());
+}
+
+function normalizeWorkingHours(input) {
+  const map = new Map();
+  (Array.isArray(input) ? input : []).forEach((item) => {
+    if (!item) return;
+    const code = String(item.code ?? item.id ?? "").trim();
+    if (!code) return;
+    const start = String(item.start ?? "").trim();
+    const end = String(item.end ?? "").trim();
+    const labelRaw = String(item.label ?? item.name ?? "").trim();
+    const time = start && end ? `${start}-${end}` : "";
+    const label = labelRaw || (time ? `${code} (${time})` : code);
+    map.set(code, { code, label });
+  });
+  return Array.from(map.values());
 }
 
 function normalizePerson(person) {
@@ -633,6 +676,8 @@ export default function PersonScheduleCalendar({
   }, [selectedPerson, year, month0, remoteAssignmentsRaw]);
 
   const shiftOptions = useMemo(() => {
+    const fromLS = normalizeWorkingHours(readStorageList(WORKING_HOURS_KEYS));
+    if (fromLS.length) return fromLS;
     const map = new Map();
     (remoteDefs || []).forEach((def) => {
       const code = String(def?.shiftCode ?? def?.code ?? def?.label ?? "").trim();
@@ -644,6 +689,8 @@ export default function PersonScheduleCalendar({
   }, [remoteDefs]);
 
   const areaOptions = useMemo(() => {
+    const fromLS = normalizeWorkAreas(readStorageList(AREA_STORAGE_KEYS));
+    if (fromLS.length) return fromLS;
     const set = new Set();
     (remoteDefs || []).forEach((def) => {
       const label = String(def?.label ?? def?.area ?? def?.name ?? "").trim();
@@ -726,7 +773,7 @@ export default function PersonScheduleCalendar({
     const dateStr = `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`;
     const first = shiftOptions[0]?.code || "";
     setAssignShiftId(first);
-    setAssignRoleLabel(shiftOptions[0]?.label || "");
+    setAssignRoleLabel(areaOptions[0] || "");
     setAssignNote("");
     setAssignError("");
     setAssignModal({ open: true, mode: "add", dayNum, dateStr, assg: null });
@@ -1029,8 +1076,6 @@ export default function PersonScheduleCalendar({
                 onChange={(e) => {
                   const code = e.target.value;
                   setAssignShiftId(code);
-                  const found = shiftOptions.find((opt) => opt.code === code);
-                  if (assignModal.mode === "add") setAssignRoleLabel(found?.label || "");
                 }}
                 className="h-9 rounded border px-3 text-sm"
               >
