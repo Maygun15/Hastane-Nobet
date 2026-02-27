@@ -223,6 +223,7 @@ export async function assignSchedule({
   personName,
   roleLabel,
   note,
+  pinned,
 } = {}) {
   if (!sectionId) throw new Error("sectionId gerekli");
   if (!date) throw new Error("date gerekli");
@@ -239,6 +240,7 @@ export async function assignSchedule({
     personName,
     roleLabel,
     note,
+    ...(pinned !== undefined ? { pinned } : {}),
   };
   return httpRequest("/api/schedules/assign", { method: "POST", body });
 }

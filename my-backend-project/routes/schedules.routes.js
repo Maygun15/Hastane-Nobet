@@ -55,8 +55,14 @@ function normalizeAssignPayload(body, query, userId) {
   const shiftCode = String(body?.shiftCode ?? body?.shiftId ?? body?.shift ?? '').trim();
   const roleLabel = String(body?.roleLabel ?? body?.roleName ?? body?.label ?? '').trim();
   const note = String(body?.note ?? '').trim();
+  const pinnedRaw = body?.pinned;
+  const pinned =
+    pinnedRaw === true ||
+    pinnedRaw === 1 ||
+    pinnedRaw === '1' ||
+    String(pinnedRaw || '').toLowerCase() === 'true';
 
-  return {
+  const payload = {
     date: query.dateStr,
     personId,
     personName: personName || undefined,
@@ -69,6 +75,8 @@ function normalizeAssignPayload(body, query, userId) {
     createdBy: userId || null,
     createdAt: new Date().toISOString(),
   };
+  if (pinnedRaw !== undefined) payload.pinned = !!pinned;
+  return payload;
 }
 
 function assignmentKey(a) {
@@ -257,7 +265,12 @@ router.post('/assign',
       if (idx === -1) {
         assignments.push(payload);
       } else {
-        assignments[idx] = { ...assignments[idx], ...payload };
+        const existing = assignments[idx] || {};
+        const merged = { ...existing, ...payload };
+        if (payload.pinned === undefined && existing.pinned !== undefined) {
+          merged.pinned = existing.pinned;
+        }
+        assignments[idx] = merged;
       }
 
       const update = {

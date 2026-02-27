@@ -474,6 +474,7 @@ function collectAssignmentsFromRemote({ year, month0, personId, personCanon, ass
       personId: pid || (targetPid || undefined),
       personName: nameRaw || undefined,
       note: item.note || undefined,
+      pinned: !!item.pinned,
       source: "remote",
     };
 
@@ -563,6 +564,7 @@ export default function PersonScheduleCalendar({
   const [assignShiftId, setAssignShiftId] = useState("");
   const [assignRoleLabel, setAssignRoleLabel] = useState("");
   const [assignNote, setAssignNote] = useState("");
+  const [assignPinned, setAssignPinned] = useState(false);
   const [assignError, setAssignError] = useState("");
   const [settingsRevision, setSettingsRevision] = useState(0);
 
@@ -710,10 +712,10 @@ export default function PersonScheduleCalendar({
   }, [selectedPerson, year, month0, remoteAssignmentsRaw]);
 
   const shiftOptions = useMemo(() => {
-    const fromProps = normalizeWorkingHours(workingHours);
-    if (fromProps.length) return fromProps;
-    const fromLS = normalizeWorkingHours(readStorageList(WORKING_HOURS_KEYS));
-    if (fromLS.length) return fromLS;
+    const fromPropsRaw = Array.isArray(workingHours) ? workingHours : [];
+    const fromLSRaw = readStorageList(WORKING_HOURS_KEYS);
+    const merged = normalizeWorkingHours([...fromPropsRaw, ...fromLSRaw]);
+    if (merged.length) return merged;
     const map = new Map();
     (remoteDefs || []).forEach((def) => {
       const code = String(def?.shiftCode ?? def?.code ?? def?.label ?? "").trim();
@@ -727,10 +729,10 @@ export default function PersonScheduleCalendar({
   }, [remoteDefs, settingsRevision, workingHours]);
 
   const areaOptions = useMemo(() => {
-    const fromProps = normalizeWorkAreas(workAreas);
-    if (fromProps.length) return fromProps;
-    const fromLS = normalizeWorkAreas(readStorageList(AREA_STORAGE_KEYS));
-    if (fromLS.length) return fromLS;
+    const fromPropsRaw = Array.isArray(workAreas) ? workAreas : [];
+    const fromLSRaw = readStorageList(AREA_STORAGE_KEYS);
+    const merged = normalizeWorkAreas([...fromPropsRaw, ...fromLSRaw]);
+    if (merged.length) return merged;
     const set = new Set();
     (remoteDefs || []).forEach((def) => {
       const label = String(def?.label ?? def?.area ?? def?.name ?? "").trim();
@@ -761,6 +763,7 @@ export default function PersonScheduleCalendar({
   const renderAssignments = (list = []) =>
     list.map((assg, idx) => {
       const isEditable = canManage && assg?.source === "remote";
+      const isPinned = !!assg?.pinned;
       return (
         <div
           key={idx}
@@ -781,7 +784,8 @@ export default function PersonScheduleCalendar({
               : undefined
           }
         >
-          <span>
+          <span className="flex items-center gap-1">
+            {isPinned && <span title="Sabitlenmiş">📌</span>}
             <span className="font-semibold">{assg.shiftCode || assg.code || "-"}</span>
             {assg.roleLabel ? <span className="ml-1">{assg.roleLabel}</span> : null}
           </span>
@@ -815,6 +819,7 @@ export default function PersonScheduleCalendar({
     setAssignShiftId(first);
     setAssignRoleLabel(areaOptions[0] || "");
     setAssignNote("");
+    setAssignPinned(false);
     setAssignError("");
     setAssignModal({ open: true, mode: "add", dayNum, dateStr, assg: null });
   };
@@ -827,6 +832,7 @@ export default function PersonScheduleCalendar({
     setAssignShiftId(shiftId);
     setAssignRoleLabel(String(assg?.roleLabel || assg?.label || "").trim());
     setAssignNote(String(assg?.note || "").trim());
+    setAssignPinned(!!assg?.pinned);
     setAssignError("");
     setAssignModal({ open: true, mode: "edit", dayNum: dayNum ?? null, dateStr, assg });
   };
@@ -877,6 +883,7 @@ export default function PersonScheduleCalendar({
         personName: selectedPerson.name,
         roleLabel: assignRoleLabel,
         note: assignNote,
+        pinned: assignPinned,
       });
       closeAssignModal();
       refreshRemote();
@@ -1147,6 +1154,16 @@ export default function PersonScheduleCalendar({
               placeholder="Kısa not"
             />
           </label>
+          {canManage && (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={assignPinned}
+                onChange={(e) => setAssignPinned(e.target.checked)}
+              />
+              Nöbeti sabitle
+            </label>
+          )}
           {remoteLoading && (
             <div className="text-xs text-slate-400">Sunucu senkronizasyonu...</div>
           )}

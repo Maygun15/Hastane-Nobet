@@ -650,7 +650,7 @@ export default function HospitalRosterApp() {
               <MyCalendarBox me={user} leaveTypes={leaveTypes} />
             ) : (
               <PlanTab
-                workAreas={visibleWorkAreas}
+                workAreas={workAreas}
                 nurses={nurses}
                 doctors={doctors}
                 peopleAll={peopleAll}
