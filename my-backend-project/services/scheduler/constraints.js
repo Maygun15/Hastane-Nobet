@@ -95,9 +95,7 @@ function isAvailable(person, day, context, shift) {
   if (shift) {
     const areas = getPersonAreas(person);
     const shiftArea = getShiftArea(shift);
-    if (areas.length===0) {
-      if (shiftArea) { if(logBlock)logBlock("NO_AREAS"); return false; }
-    } else if (shiftArea) {
+    if (areas.length > 0 && shiftArea) {
       if (!areaMatches(areas,shiftArea)) { if(logBlock)logBlock("AREA_NOT_ALLOWED"); return false; }
     }
   }
