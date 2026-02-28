@@ -33,7 +33,14 @@ const normalizeCode = (s) =>
   (s||"").toString().normalize("NFD").replace(/\p{Diacritic}/gu,"").toUpperCase().trim();
 
 const normalizeArea = (s) =>
-  (s||"").toString().normalize("NFD").replace(/\p{Diacritic}/gu,"").toLowerCase().trim();
+  (s||"").toString()
+    .replace(/İ/g,"i").replace(/I/g,"i").replace(/ı/g,"i")
+    .replace(/Ğ/g,"g").replace(/ğ/g,"g")
+    .replace(/Ü/g,"u").replace(/ü/g,"u")
+    .replace(/Ş/g,"s").replace(/ş/g,"s")
+    .replace(/Ö/g,"o").replace(/ö/g,"o")
+    .replace(/Ç/g,"c").replace(/ç/g,"c")
+    .toLowerCase().trim();
 
 const NOISE_WORDS = new Set(['alan','alani','gorev','gorevi','gorevlendirme','birim','birimi','unit','ve','veya','yada','ile']);
 
