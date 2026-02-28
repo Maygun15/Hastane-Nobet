@@ -304,7 +304,7 @@ function getSecFromLocation() {
 /* People / LeaveTypes helpers (güvenli okuma) */
 function readPeopleAll() {
   try {
-    const keys = ["peopleAll", "people", "personList", "personnel", "nurses", "staff"];
+    const keys = ["peopleAll", "peopleV2", "people", "personList", "personnel", "nurses", "staff"];
     const normalize = (arr) =>
       (arr || [])
         .map((p) => {

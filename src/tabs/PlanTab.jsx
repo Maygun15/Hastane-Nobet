@@ -105,6 +105,7 @@ function buildCountsFromPattern(def, year, month0) {
 
 function readPeopleAll() {
   const sources = [
+    "peopleV2",
     "peopleAll",
     "people",
     "personList",
