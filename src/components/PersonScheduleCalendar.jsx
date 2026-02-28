@@ -581,16 +581,25 @@ export default function PersonScheduleCalendar({
   }, [initialPersonId]);
 
   useEffect(() => {
-    const onPlannerChange = () => setDpRevision((v) => v + 1);
+    const bumpLocal = () => setDpRevision((v) => v + 1);
+    const bumpRemote = () => setRemoteRevision((v) => v + 1);
+    const onPlannerChange = () => {
+      bumpLocal();
+      bumpRemote();
+    };
+    const onScheduleBuilt = () => bumpRemote();
+
     window.addEventListener("planner:dpResult", onPlannerChange);
     window.addEventListener("planner:assignments", onPlannerChange);
     window.addEventListener("planner:aiPlan", onPlannerChange);
-    window.addEventListener("storage", onPlannerChange);
+    window.addEventListener("schedule:built", onScheduleBuilt);
+    window.addEventListener("storage", bumpLocal);
     return () => {
       window.removeEventListener("planner:dpResult", onPlannerChange);
       window.removeEventListener("planner:assignments", onPlannerChange);
       window.removeEventListener("planner:aiPlan", onPlannerChange);
-      window.removeEventListener("storage", onPlannerChange);
+      window.removeEventListener("schedule:built", onScheduleBuilt);
+      window.removeEventListener("storage", bumpLocal);
     };
   }, []);
 

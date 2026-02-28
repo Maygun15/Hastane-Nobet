@@ -95,10 +95,18 @@ export default function MonthlyLeavesMatrixGeneric({
 
   /* ---- İzin verisini canlı tut ---- */
   const [version, setVersion] = useState(0);
-  const leavesObj = useMemo(() => personLeaves || getAllLeaves(), [personLeaves, version, ym]);
+  const [liveLeaves, setLiveLeaves] = useState(() => getAllLeaves());
+  const leavesObj = useMemo(() => {
+    const fromProp = personLeaves && typeof personLeaves === "object" ? personLeaves : {};
+    const fromLive = liveLeaves && typeof liveLeaves === "object" ? liveLeaves : {};
+    return { ...fromProp, ...fromLive };
+  }, [personLeaves, liveLeaves, ym]);
 
   useEffect(() => {
-    const refresh = () => setVersion((v) => v + 1);
+    const refresh = () => {
+      setLiveLeaves(getAllLeaves());
+      setVersion((v) => v + 1);
+    };
     window.addEventListener("leaves:changed", refresh);
     window.addEventListener("storage", refresh);
     return () => {
