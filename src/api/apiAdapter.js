@@ -212,6 +212,20 @@ export async function saveMonthlySchedule({
     method: "PUT",
     body,
   });
+  if (typeof window !== "undefined") {
+    try {
+      const detail = {
+        sectionId,
+        serviceId,
+        role,
+        year,
+        month,
+        ts: Date.now(),
+      };
+      window.dispatchEvent(new CustomEvent("schedule:saved", { detail }));
+      localStorage.setItem("scheduleLastSaved", JSON.stringify(detail));
+    } catch {}
+  }
   return payload?.schedule || null;
 }
 

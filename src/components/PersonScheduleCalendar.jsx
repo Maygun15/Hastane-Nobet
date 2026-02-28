@@ -656,18 +656,28 @@ export default function PersonScheduleCalendar({
       bumpRemote();
     };
     const onScheduleBuilt = () => bumpRemote();
+    const onScheduleSaved = () => bumpRemote();
+    const onStorage = (ev) => {
+      if (ev?.key === "scheduleLastSaved" || ev?.key === "scheduleBuildTrigger") {
+        bumpRemote();
+        return;
+      }
+      bumpLocal();
+    };
 
     window.addEventListener("planner:dpResult", onPlannerChange);
     window.addEventListener("planner:assignments", onPlannerChange);
     window.addEventListener("planner:aiPlan", onPlannerChange);
     window.addEventListener("schedule:built", onScheduleBuilt);
-    window.addEventListener("storage", bumpLocal);
+    window.addEventListener("schedule:saved", onScheduleSaved);
+    window.addEventListener("storage", onStorage);
     return () => {
       window.removeEventListener("planner:dpResult", onPlannerChange);
       window.removeEventListener("planner:assignments", onPlannerChange);
       window.removeEventListener("planner:aiPlan", onPlannerChange);
       window.removeEventListener("schedule:built", onScheduleBuilt);
-      window.removeEventListener("storage", bumpLocal);
+      window.removeEventListener("schedule:saved", onScheduleSaved);
+      window.removeEventListener("storage", onStorage);
     };
   }, []);
 
