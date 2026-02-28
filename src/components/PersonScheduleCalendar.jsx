@@ -629,6 +629,7 @@ export default function PersonScheduleCalendar({
   const [remoteDefs, setRemoteDefs] = useState([]);
   const [remoteError, setRemoteError] = useState("");
   const [remoteLoading, setRemoteLoading] = useState(false);
+  const [remoteServiceIdUsed, setRemoteServiceIdUsed] = useState("");
   const [assignModal, setAssignModal] = useState({
     open: false,
     mode: "add",
@@ -762,29 +763,45 @@ export default function PersonScheduleCalendar({
       setRemoteDefs([]);
       setRemoteError("");
       setRemoteLoading(false);
+      setRemoteServiceIdUsed("");
       return () => {};
     }
     setRemoteLoading(true);
     (async () => {
       try {
-        const schedule = await getMonthlySchedule({
-          sectionId,
-          serviceId: effectiveServiceId,
-          role: scheduleRole,
-          year,
-          month,
-        });
+        const candidates = Array.from(
+          new Set([effectiveServiceId, String(serviceId ?? "").trim(), ""])
+        );
+        let schedule = null;
+        let pickedServiceId = "";
+        for (const sid of candidates) {
+          const s = await getMonthlySchedule({
+            sectionId,
+            serviceId: sid,
+            role: scheduleRole,
+            year,
+            month,
+          });
+          if (!s) continue;
+          schedule = s;
+          pickedServiceId = sid;
+          const hasAssignments = Array.isArray(s?.data?.assignments) && s.data.assignments.length > 0;
+          const hasDefs = Array.isArray(s?.data?.defs) && s.data.defs.length > 0;
+          if (hasAssignments || hasDefs) break;
+        }
         if (!active) return;
         const data = schedule?.data || {};
         const defs = Array.isArray(data.defs) ? data.defs : Array.isArray(data.rows) ? data.rows : [];
         setRemoteDefs(defs);
         setRemoteAssignmentsRaw(Array.isArray(data.assignments) ? data.assignments : []);
+        setRemoteServiceIdUsed(pickedServiceId);
         setRemoteError("");
       } catch (err) {
         if (!active) return;
         setRemoteAssignmentsRaw([]);
         setRemoteDefs([]);
         setRemoteError(err?.message || "Sunucudan nöbet verisi alınamadı.");
+        setRemoteServiceIdUsed("");
       } finally {
         if (active) setRemoteLoading(false);
       }
@@ -792,7 +809,7 @@ export default function PersonScheduleCalendar({
     return () => {
       active = false;
     };
-  }, [canManage, sectionId, effectiveServiceId, scheduleRole, year, month, remoteRevision]);
+  }, [canManage, sectionId, effectiveServiceId, scheduleRole, year, month, remoteRevision, serviceId]);
 
   const remoteAssignments = useMemo(() => {
     if (!selectedPerson) return new Map();
@@ -981,7 +998,7 @@ export default function PersonScheduleCalendar({
         if (prevShiftId && prevShiftId !== shiftId) {
           await unassignSchedule({
             sectionId,
-            serviceId: effectiveServiceId,
+            serviceId: remoteServiceIdUsed || effectiveServiceId,
             role: scheduleRole,
             date: assignModal.dateStr,
             shiftId: prevShiftId,
@@ -991,7 +1008,7 @@ export default function PersonScheduleCalendar({
       }
       await assignSchedule({
         sectionId,
-        serviceId: effectiveServiceId,
+        serviceId: remoteServiceIdUsed || effectiveServiceId,
         role: scheduleRole,
         date: assignModal.dateStr,
         shiftId,
@@ -1020,7 +1037,7 @@ export default function PersonScheduleCalendar({
     try {
       await unassignSchedule({
         sectionId,
-        serviceId: effectiveServiceId,
+        serviceId: remoteServiceIdUsed || effectiveServiceId,
         role: scheduleRole,
         date: dateStr,
         shiftId,
