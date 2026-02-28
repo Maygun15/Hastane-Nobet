@@ -251,6 +251,15 @@ function normalizeFromParamTable(x, role) {
   const name = x?.fullName || x?.name || x?.["AD SOYAD"];
   if (!name || isGroupLabel(name)) return null;
   const id = x?.id ?? x?.pid ?? x?.tc ?? x?.tcNo ?? x?.code ?? name;
+  const serviceIdRaw =
+    x?.serviceId ??
+    x?.service ??
+    x?.department ??
+    x?.departmentId ??
+    x?.sectionId ??
+    x?.meta?.serviceId ??
+    x?.meta?.service ??
+    "";
   const areasText = x?.areas || x?.workAreas || x?.["ÇALIŞMA ALANLARI"] || "";
   const shiftsText =
     x?.shiftCodes ||
@@ -283,6 +292,7 @@ function normalizeFromParamTable(x, role) {
     id: String(id),
     name: String(name),
     role: role === "Doctor" ? "Doctor" : "Nurse",
+    serviceId: String(serviceIdRaw || ""),
     areas,
     shiftCodes,
     weekendOff: !!x?.weekendOff,
@@ -1479,19 +1489,32 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     await doSave({ silent: true });
     const staff = staffForRole;
     const hasStaff = staff.length > 0;
+    const hasServiceInfo = staff.some((s) =>
+      String(s.serviceId || s.meta?.serviceId || s.meta?.service || "").trim()
+    );
+    let scopedStaff = staff;
+    if (serviceKey && hasServiceInfo) {
+      const filtered = staff.filter(
+        (s) => String(s.serviceId || s.meta?.serviceId || s.meta?.service || "") === serviceKey
+      );
+      if (filtered.length) scopedStaff = filtered;
+      else note("Servise göre personel bulunamadı, tüm personel kullanılıyor.", "warning");
+    }
 
-    const staffPayload = staff.map((s) => {
+    const staffPayload = scopedStaff.map((s) => {
       const areas = Array.isArray(s.areas) ? s.areas : [];
       const shiftCodes = Array.isArray(s.shiftCodes) ? s.shiftCodes : [];
       const meta = { ...(s.meta || {}) };
       if (!meta.areas && areas.length) meta.areas = areas;
       if (!meta.shiftCodes && shiftCodes.length) meta.shiftCodes = shiftCodes;
       if (!meta.role && s.role) meta.role = s.role;
+      if (!meta.serviceId && s.serviceId) meta.serviceId = s.serviceId;
       return {
         id: String(s.id || ""),
         name: s.name || "",
         fullName: s.name || "",
         role: s.role || "",
+        serviceId: s.serviceId || "",
         areas,
         shiftCodes,
         meta,
@@ -1500,6 +1523,20 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
     const dutyRules = readDutyRulesFromLS();
     const leavesByPerson = buildLeavesByPersonForMonth(year, month1);
+    const staffWithMetaCount = staffPayload.filter(
+      (s) => (s.areas && s.areas.length) || (s.shiftCodes && s.shiftCodes.length)
+    ).length;
+    console.info("[ScheduleBuild:preflight]", {
+      serviceId: serviceKey || "(all)",
+      staff: staffPayload.length,
+      staffWithMeta: staffWithMetaCount,
+      rows: rows.length,
+      leaves: Object.keys(leavesByPerson || {}).length,
+      rules: Object.keys(dutyRules || {}).length,
+    });
+    if (staffPayload.length && staffWithMetaCount === 0) {
+      note("Personel kartlarında alan/vardiya kodu yok. Uygunluk kontrolü sınırlı çalışır.", "warning");
+    }
 
     // Pinleri sunucu formatına hazırla
     const pinnedAssignments = pins.map(p => {
