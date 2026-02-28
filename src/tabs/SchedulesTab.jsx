@@ -773,7 +773,7 @@ export default function SchedulesTab() {
   useEffect(() => {
     const refreshPeople = () => setPeopleAll(readPeopleAll());
     const onStorage = (e) => {
-      if (!e || ["peopleAll","people","personList","personnel","nurses","staff"].includes(e.key)) {
+      if (!e || ["peopleV2","peopleAll","people","personList","personnel","nurses","staff","doctors"].includes(e.key)) {
         refreshPeople();
       }
     };
