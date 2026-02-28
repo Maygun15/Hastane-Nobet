@@ -1594,6 +1594,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           defs: rows,
           overrides,
           roster: rosterFromServer,
+          assignments: Array.isArray(data.assignments) ? data.assignments : [],
           preview,
           aiPlan,
           pins,

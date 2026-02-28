@@ -505,8 +505,25 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
           return null;
         });
         const data = schedule?.data || schedule || {};
-        const named = data?.roster?.namedAssignments;
-        if (!named) continue;
+        let named = data?.roster?.namedAssignments;
+        if (!named && Array.isArray(data?.assignments)) {
+          const built = {};
+          (data.assignments || []).forEach((a) => {
+            const date = a?.date;
+            if (!date) return;
+            const dayNum = Number(String(date).slice(8, 10));
+            if (!Number.isFinite(dayNum) || dayNum < 1 || dayNum > dcount) return;
+            const rowId = String(a.shiftId || a.rowId || a.shiftCode || "");
+            if (!rowId) return;
+            const nm = a.personName || a.name || "";
+            if (!nm || isGroupLabel(nm)) return;
+            if (!built[dayNum]) built[dayNum] = {};
+            if (!built[dayNum][rowId]) built[dayNum][rowId] = [];
+            built[dayNum][rowId].push(nm);
+          });
+          named = built;
+        }
+        if (!named || !Object.keys(named).length) continue;
         const defsSrc = Array.isArray(data?.defs) ? data.defs : Array.isArray(data?.rows) ? data.rows : [];
         const shiftByRow = new Map();
         const labelByRow = new Map();

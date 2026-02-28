@@ -642,8 +642,25 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym }, ref) {
           return null;
         });
         const data = schedule?.data || schedule || {};
-        const named = data?.roster?.namedAssignments;
-        if (!named) continue;
+        let named = data?.roster?.namedAssignments;
+        if (!named && Array.isArray(data?.assignments)) {
+          const built = {};
+          (data.assignments || []).forEach((a) => {
+            const date = a?.date;
+            if (!date) return;
+            const day = Number(String(date).slice(8, 10));
+            if (!Number.isFinite(day) || day < 1 || day > (days?.length || 31)) return;
+            const rowId = String(a.shiftId || a.rowId || a.shiftCode || "");
+            if (!rowId) return;
+            const nm = a.personName || a.name || "";
+            if (!nm || isGroupLabel(nm)) return;
+            if (!built[day]) built[day] = {};
+            if (!built[day][rowId]) built[day][rowId] = [];
+            built[day][rowId].push(nm);
+          });
+          named = built;
+        }
+        if (!named || !Object.keys(named).length) continue;
         const defsSrc = Array.isArray(data?.defs) ? data.defs : Array.isArray(data?.rows) ? data.rows : [];
         const shiftByRow = new Map();
         defsSrc.forEach((def) => {
