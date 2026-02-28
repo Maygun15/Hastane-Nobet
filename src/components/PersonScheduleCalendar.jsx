@@ -247,11 +247,11 @@ function collectAssignmentsForMonth({ year, month0, personId, personCanon }) {
 
   for (const assg of ctx.result.assignments || []) {
     if (!assg) continue;
-    const pidMatch =
-      targetPid &&
-      String(assg.personId ?? assg.personID ?? assg.staffId ?? assg.pid ?? "") === targetPid;
-    const canonMatch =
-      !pidMatch && targetCanon && assignmentCanon(assg) === targetCanon;
+    const pid = String(assg.personId ?? assg.personID ?? assg.staffId ?? assg.pid ?? "").trim();
+    const hasTargetId = !!targetPid;
+    const hasPid = !!pid;
+    const pidMatch = hasTargetId && hasPid && pid === targetPid;
+    const canonMatch = (!hasTargetId || !hasPid) && targetCanon && assignmentCanon(assg) === targetCanon;
     if (!pidMatch && !canonMatch) continue;
     if (!assg.day || !assg.day.startsWith(target)) continue;
     const dayNum = parseInt(assg.day.slice(8, 10), 10);
@@ -279,8 +279,10 @@ function collectAssignmentsFromBuffer({ year, month0, personId, personCanon }) {
       const fullName = item.fullName ?? item.personName ?? item.name ?? "";
       const canon = fullName ? canonName(String(fullName)) : "";
 
-      const pidMatch = targetPid && pid && pid === targetPid;
-      const canonMatch = !pidMatch && targetCanon && canon && canon === targetCanon;
+      const hasTargetId = !!targetPid;
+      const hasPid = !!pid;
+      const pidMatch = hasTargetId && hasPid && pid === targetPid;
+      const canonMatch = (!hasTargetId || !hasPid) && targetCanon && canon && canon === targetCanon;
       if (!pidMatch && !canonMatch) continue;
 
       let dateStr = item.date ?? item.Date ?? "";
@@ -354,8 +356,10 @@ function collectAssignmentsFromAiPlan({ year, month0, personId, personCanon }) {
     const nameRaw = row.personName ?? row.fullName ?? row.name ?? "";
     const rowCanon = nameRaw ? canonName(nameRaw) : "";
 
-    const pidMatch = targetPid && pid && pid === targetPid;
-    const canonMatch = !pidMatch && targetCanon && rowCanon && rowCanon === targetCanon;
+    const hasTargetId = !!targetPid;
+    const hasPid = !!pid;
+    const pidMatch = hasTargetId && hasPid && pid === targetPid;
+    const canonMatch = (!hasTargetId || !hasPid) && targetCanon && rowCanon && rowCanon === targetCanon;
     if (!pidMatch && !canonMatch) continue;
 
     const dateStr = String(row.date ?? row.day ?? "").slice(0, 10);
@@ -413,8 +417,10 @@ function collectAssignmentsFromRosterPreview({ year, month0, personId, personCan
       const pid = pidRaw == null ? "" : String(pidRaw).trim();
       const nameRaw = item.personName ?? "";
       const rowCanon = nameRaw ? canonName(nameRaw) : "";
-      const pidMatch = targetPid && pid && pid === targetPid;
-      const canonMatch = !pidMatch && targetCanon && rowCanon && rowCanon === targetCanon;
+      const hasTargetId = !!targetPid;
+      const hasPid = !!pid;
+      const pidMatch = hasTargetId && hasPid && pid === targetPid;
+      const canonMatch = (!hasTargetId || !hasPid) && targetCanon && rowCanon === targetCanon;
       if (!pidMatch && !canonMatch) continue;
 
       const dateStr = String(item.date || "").slice(0, 10);
@@ -455,8 +461,10 @@ function collectAssignmentsFromRemote({ year, month0, personId, personCanon, ass
     const nameRaw = item.personName ?? item.fullName ?? item.name ?? "";
     const rowCanon = nameRaw ? canonName(nameRaw) : "";
 
-    const pidMatch = targetPid && pid && pid === targetPid;
-    const canonMatch = !pidMatch && targetCanon && rowCanon && rowCanon === targetCanon;
+    const hasTargetId = !!targetPid;
+    const hasPid = !!pid;
+    const pidMatch = hasTargetId && hasPid && pid === targetPid;
+    const canonMatch = (!hasTargetId || !hasPid) && targetCanon && rowCanon === targetCanon;
     if (!pidMatch && !canonMatch) continue;
 
     const dateStr = String(item.date ?? item.day ?? "").slice(0, 10);
@@ -743,6 +751,7 @@ export default function PersonScheduleCalendar({
 
   const assignmentsByDay = useMemo(() => {
     const combined = new Map();
+    const hasRemote = Array.isArray(remoteAssignmentsRaw) && remoteAssignmentsRaw.length > 0;
     const merge = (srcMap) => {
       if (!(srcMap instanceof Map)) return;
       for (const [day, list] of srcMap.entries()) {
@@ -750,13 +759,15 @@ export default function PersonScheduleCalendar({
         combined.get(day).push(...list);
       }
     };
-    if (assignmentInfo?.map instanceof Map) merge(assignmentInfo.map);
-    merge(bufferAssignments);
-    merge(aiPlanAssignments);
-    merge(rosterPreviewAssignments);
+    if (!hasRemote) {
+      if (assignmentInfo?.map instanceof Map) merge(assignmentInfo.map);
+      merge(bufferAssignments);
+      merge(aiPlanAssignments);
+      merge(rosterPreviewAssignments);
+    }
     merge(remoteAssignments);
     return combined;
-  }, [assignmentInfo?.map, bufferAssignments, aiPlanAssignments, rosterPreviewAssignments, remoteAssignments]);
+  }, [assignmentInfo?.map, bufferAssignments, aiPlanAssignments, rosterPreviewAssignments, remoteAssignments, remoteAssignmentsRaw]);
 
   const { cells } = useMemo(() => buildMonthDays(year, month0), [year, month0]);
 
