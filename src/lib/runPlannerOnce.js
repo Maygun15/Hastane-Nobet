@@ -662,9 +662,7 @@ export async function runPlannerOnce({
 
   const taskLinesWithHours = (taskLines||[]).map(tl => ({ ...tl, hours: hoursOfShiftCode(tl.shiftCode) }));
 
-  const unavailable = leavesToUnavailable({
-    year, month, nurses: staff, personLeaves
-  });
+  const unavailable = leavesToUnavailable(personLeaves || {}, year, month + 1);
 
   // kişi-bazlı izin düzleştirme (hedef etkisi için)
   const mkey = `${year}-${String(month+1).padStart(2,"0")}`;

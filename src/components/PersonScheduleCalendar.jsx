@@ -22,6 +22,73 @@ const emptyAssignments = { map: new Map(), mismatch: null };
 const AREA_STORAGE_KEYS = ["workAreasV2", "workAreas"];
 const WORKING_HOURS_KEYS = ["workingHoursV2", "workingHours"];
 
+const SOURCE_PRIORITY = {
+  remote: 3,
+  aiPlan: 2,
+  buffer: 1,
+  rosterPreview: 1,
+  dpResult: 1,
+};
+
+function assignmentKey(assg) {
+  const shift = String(
+    assg?.shiftCode ??
+      assg?.shiftId ??
+      assg?.shift ??
+      assg?.code ??
+      ""
+  ).trim();
+  const role = String(assg?.roleLabel ?? assg?.role ?? assg?.label ?? "").trim();
+  return `${shift}||${role}`;
+}
+
+function dedupeAssignments(list) {
+  if (!Array.isArray(list) || !list.length) return [];
+  const map = new Map();
+  for (const assg of list) {
+    const key = assignmentKey(assg);
+    const current = map.get(key);
+    if (!current) {
+      map.set(key, assg);
+      continue;
+    }
+    const currRank = SOURCE_PRIORITY[current?.source] || 0;
+    const nextRank = SOURCE_PRIORITY[assg?.source] || 0;
+    if (nextRank >= currRank) map.set(key, assg);
+  }
+  return Array.from(map.values());
+}
+
+function preferSingleAssignment(list) {
+  if (!Array.isArray(list) || list.length <= 1) return list || [];
+  const scored = [...list].sort((a, b) => {
+    const ar = SOURCE_PRIORITY[a?.source] || 0;
+    const br = SOURCE_PRIORITY[b?.source] || 0;
+    if (br !== ar) return br - ar;
+    if (!!b?.pinned !== !!a?.pinned) return (b?.pinned ? 1 : 0) - (a?.pinned ? 1 : 0);
+    return 0;
+  });
+  return [scored[0]];
+}
+
+function collectLeaveDays(leavesForPerson, year, month0) {
+  const out = new Set();
+  if (!leavesForPerson) return out;
+  const ym = `${year}-${pad2(month0 + 1)}`;
+  for (const [k, v] of Object.entries(leavesForPerson || {})) {
+    if (!v) continue;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(k)) {
+      if (!k.startsWith(ym)) continue;
+      const d = Number(k.slice(8, 10));
+      if (Number.isFinite(d)) out.add(d);
+      continue;
+    }
+    const d = Number(k);
+    if (Number.isFinite(d)) out.add(d);
+  }
+  return out;
+}
+
 function buildServiceLabelMap() {
   const map = new Map();
   const feed = (entry) => {
@@ -785,8 +852,28 @@ export default function PersonScheduleCalendar({
       merge(rosterPreviewAssignments);
     }
     merge(remoteAssignments);
+    const leaveDays = collectLeaveDays(leavesForPerson, year, month0);
+    for (const [day, list] of combined.entries()) {
+      const unique = dedupeAssignments(list);
+      const filtered = leaveDays.has(Number(day))
+        ? unique.filter((a) => a?.pinned)
+        : unique;
+      const capped = preferSingleAssignment(filtered);
+      if (capped.length) combined.set(day, capped);
+      else combined.delete(day);
+    }
     return combined;
-  }, [assignmentInfo?.map, bufferAssignments, aiPlanAssignments, rosterPreviewAssignments, remoteAssignments, remoteAssignmentsRaw]);
+  }, [
+    assignmentInfo?.map,
+    bufferAssignments,
+    aiPlanAssignments,
+    rosterPreviewAssignments,
+    remoteAssignments,
+    remoteAssignmentsRaw,
+    leavesForPerson,
+    year,
+    month0,
+  ]);
 
   const { cells } = useMemo(() => buildMonthDays(year, month0), [year, month0]);
 

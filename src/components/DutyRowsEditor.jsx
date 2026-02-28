@@ -19,7 +19,12 @@ import PinningModal from "./PinningModal.jsx";
 import useCrudModel from "../hooks/useCrudModel.js";
 import { parseAssignmentsFile } from "../lib/importExcel.js";
 import { getPeople, getAreas, getShifts, buildPeopleFromLeaves } from "../lib/dataResolver.js";
-import { getAllLeaves, getLeaveSuppress, leavesToUnavailable as leavesToUnavailableByPid } from "../lib/leaves.js";
+import {
+  getAllLeaves,
+  getLeaveSuppress,
+  leavesToUnavailable as leavesToUnavailableByPid,
+  buildNameUnavailability,
+} from "../lib/leaves.js";
 import { getMonthlySchedule, saveMonthlySchedule, generateSchedulerPlan, fetchPersonnel } from "../api/apiAdapter.js";
 
 /* ===== Toaster (opsiyonel) ===== */
@@ -130,22 +135,48 @@ function readDutyRulesFromLS() {
   }
 }
 
-function buildLeavesByPersonForMonth(year, month1) {
+function buildLeavesByPersonForMonth(year, month1, people = []) {
   const all = getAllLeaves();
   const ym = `${year}-${pad2(month1)}`;
   const out = {};
+  const ensure = (pid) => {
+    const key = String(pid);
+    out[key] ??= new Set();
+    return out[key];
+  };
+  const addDay = (pid, dayNum) => {
+    if (!pid) return;
+    const d = Number(dayNum);
+    if (!Number.isFinite(d) || d < 1 || d > 31) return;
+    ensure(pid).add(`${year}-${pad2(month1)}-${pad2(d)}`);
+  };
   for (const [pid, byYm] of Object.entries(all || {})) {
     const bucket = byYm?.[ym];
     if (!bucket) continue;
-    const dates = [];
     for (const dKey of Object.keys(bucket || {})) {
-      const d = Number(dKey);
-      if (!Number.isFinite(d) || d < 1 || d > 31) continue;
-      dates.push(`${year}-${pad2(month1)}-${pad2(d)}`);
+      addDay(pid, dKey);
     }
-    if (dates.length) out[String(pid)] = dates;
   }
-  return out;
+
+  if (Array.isArray(people) && people.length) {
+    const nameMap = buildNameUnavailability(people, year, month1);
+    for (const p of people) {
+      const pid = String(p?.id ?? "");
+      if (!pid) continue;
+      const canon = canonName(p?.name || p?.fullName || "");
+      if (!canon) continue;
+      const days = nameMap.get(canon);
+      if (!days || !days.size) continue;
+      for (const d of days) addDay(pid, d);
+    }
+  }
+
+  const normalized = {};
+  for (const [pid, set] of Object.entries(out)) {
+    const arr = Array.from(set.values());
+    if (arr.length) normalized[pid] = arr;
+  }
+  return normalized;
 }
 
 function buildWeekGrid(y, m0) {
@@ -1531,7 +1562,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     }).filter((s) => s.id && s.name);
 
     const dutyRules = readDutyRulesFromLS();
-    const leavesByPerson = buildLeavesByPersonForMonth(year, month1);
+    const leavesByPerson = buildLeavesByPersonForMonth(year, month1, staffPayload);
     const staffWithMetaCount = staffPayload.filter(
       (s) => (s.areas && s.areas.length) || (s.shiftCodes && s.shiftCodes.length)
     ).length;
