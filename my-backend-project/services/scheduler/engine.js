@@ -100,19 +100,23 @@ function runScheduler(context) {
   if (!context || !Array.isArray(context.days) || !Array.isArray(context.staff)) return context;
 
   for (const day of context.days) {
+    const usedOnDay = new Set();
     if (!day || !Array.isArray(day.shifts)) continue;
     for (const shift of day.shifts) {
       const need = Math.max(1, Number(shift.requiredCount || 1));
       if (!shift.assignedPersons) shift.assignedPersons = [];
 
       for (let i = 0; i < need; i++) {
-        const candidates = context.staff.filter((p) => isAvailable(p, day, context, shift));
+        const candidates = context.staff.filter(
+          (p) => isAvailable(p, day, context, shift) && !usedOnDay.has(p.id)
+        );
         if (!candidates.length) break;
         candidates.sort((a, b) =>
           calculateScore(a, day, shift, context) - calculateScore(b, day, shift, context)
         );
         const selected = candidates[0];
         assign(selected, day, shift, context);
+        if (selected?.id) usedOnDay.add(selected.id);
       }
 
       if (shift.assignedPersons.length < need) {
