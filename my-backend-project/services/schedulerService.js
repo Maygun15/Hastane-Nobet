@@ -301,6 +301,19 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     updatedBy: userId || null,
   });
 
+  // Atamaları MonthlySchedule'a da yaz (PersonScheduleCalendar okuyabilsin)
+  try {
+    if (scheduleDoc?._id) {
+      await MonthlySchedule.findByIdAndUpdate(
+        scheduleDoc._id,
+        { $set: { 'data.assignments': data.assignments || [], 'data.generatedAt': new Date().toISOString() } },
+        { new: true }
+      );
+    }
+  } catch (e) {
+    console.warn('[scheduler] MonthlySchedule assignments yazma hatası:', e.message);
+  }
+
   return { data, rules, weights, generatedId: String(doc._id) };
 }
 

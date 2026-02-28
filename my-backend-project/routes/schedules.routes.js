@@ -370,3 +370,31 @@ router.delete('/assign',
 );
 
 module.exports = router;
+
+/* =========================================================
+   GET /api/schedules/generated
+   Son generate edilmiş planı döndürür
+========================================================= */
+const GeneratedSchedule = require('../models/GeneratedSchedule');
+
+router.get('/generated', async (req, res) => {
+  try {
+    const { sectionId = 'calisma-cizelgesi', serviceId = '', role = '', year, month } = req.query;
+    const filter = { sectionId };
+    if (serviceId) filter.serviceId = serviceId;
+    if (role) filter.role = role;
+    if (year) filter.year = Number(year);
+    if (month) filter.month = Number(month);
+
+    const doc = await GeneratedSchedule
+      .findOne(filter)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (!doc) return res.json({ ok: true, data: null });
+    res.json({ ok: true, data: doc });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
