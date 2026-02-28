@@ -131,6 +131,15 @@ function isAvailable(person, day, context, shift) {
     if (daysBetween(person.lastShift.date,dayKey)===1) { if(logBlock)logBlock("NIGHT_NEXT_DAY_OFF"); return false; }
   }
 
+  // N veya V2 (24s) sonrası ertesi gün hiçbir vardiya yazılmasın
+  if (person.lastShift) {
+    const prevCode = normalizeCode(person.lastShift.code||person.lastShift.id||person.lastShift.shiftCode||"");
+    if ((prevCode==="N"||prevCode==="V2") && daysBetween(person.lastShift.date,dayKey)===1) {
+      if (logBlock) logBlock("NIGHT_24H_NEXT_DAY_BLOCK");
+      return false;
+    }
+  }
+
   if (rules.MIN_REST_HOURS&&person.lastShift) {
     const minRest = Number(rules.MIN_REST_HOURS);
     if (Number.isFinite(minRest)&&minRest>0) {

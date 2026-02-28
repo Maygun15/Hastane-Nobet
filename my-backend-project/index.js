@@ -379,7 +379,14 @@ app.use((err, _req, res, _next) => {
 });
 
 /* ============== SERVER ============== */
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🚀 Sunucu http://localhost:${PORT} üzerinde`);
   console.log('[BOOT] ENV:', { SKIP_DB, ALLOW_DEV, FRONTEND_ORIGIN: [...ALLOWED_ORIGINS] });
 });
+
+// SKIP_DB modunda bazı ortamlarda event loop erken boşalıyor → dev server'ı ayakta tut
+if (SKIP_DB) {
+  server.keepAliveTimeout = 65000;
+  server.headersTimeout = 70000;
+  setInterval(() => {}, 1 << 30);
+}

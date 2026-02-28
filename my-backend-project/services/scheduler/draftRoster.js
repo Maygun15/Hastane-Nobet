@@ -317,6 +317,15 @@ function generateDraftRoster({
     const usedToday = new Set();
     const jsDay = new Date(year, month0, d).getDay();
     const isWeekend = jsDay === 0 || jsDay === 6;
+    const prevNight24Canon = new Set();
+    if (d > 1) {
+      const prev = namedAssignments[d - 1] || {};
+      for (const rr of rows || []) {
+        const code = normalizeCode(rr?.shiftCode || "");
+        if (code !== "N" && code !== "V2") continue;
+        for (const nm of prev[rr.id] || []) prevNight24Canon.add(canonName(nm));
+      }
+    }
 
     // Servis sorumlusu satırları
     for (const r of rows || []) {
@@ -338,6 +347,7 @@ function generateDraftRoster({
       const names = [];
       const addIfOk = (person) => {
         if (!person) return false;
+        if (prevNight24Canon.has(person.nameCanon)) return false;
         if (leavePolicy !== "ignore" && isOnLeave(person, d)) return false;
         if (!isEligible(person, r, year, month0, d, requireEligibility)) return false;
         if (usedToday.has(person.id)) return false;
@@ -352,6 +362,7 @@ function generateDraftRoster({
       for (const pid of pinIds) {
         const person = id2person.get(String(pid));
         if (!person) continue;
+        if (prevNight24Canon.has(person.nameCanon)) continue;
         if (!(leavePolicy === "ignore")) {
           if (isOnLeave(person, d)) continue;
           if (!isEligible(person, r, year, month0, d, requireEligibility)) continue;
@@ -427,6 +438,7 @@ function generateDraftRoster({
       for (const pid of pinIds) {
         const person = id2person.get(String(pid));
         if (!person) continue;
+        if (prevNight24Canon.has(person.nameCanon)) continue;
         if (!(leavePolicy === "ignore")) {
           if (isOnLeave(person, d)) continue;
           if (!isEligible(person, r, year, month0, d, requireEligibility)) continue;
@@ -442,6 +454,9 @@ function generateDraftRoster({
         .filter((p) => !usedToday.has(p.id))
         .filter((p) => isEligible(p, r, year, month0, d, requireEligibility))
         .filter((p) => (leavePolicy === "ignore" ? true : !isOnLeave(p, d)));
+      if (prevNight24Canon.size) {
+        pool = pool.filter((p) => !prevNight24Canon.has(p.nameCanon));
+      }
 
       // gece üstüne gece yok
       const isNightToday = NIGHT.has(normalizeCode(r?.shiftCode || ""));

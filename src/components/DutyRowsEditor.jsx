@@ -24,6 +24,7 @@ import {
   getLeaveSuppress,
   leavesToUnavailable as leavesToUnavailableByPid,
   buildNameUnavailability,
+  loadLeavesFromBackend,
 } from "../lib/leaves.js";
 import { getMonthlySchedule, saveMonthlySchedule, generateSchedulerPlan, fetchPersonnel } from "../api/apiAdapter.js";
 
@@ -1524,6 +1525,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     // UI'yi bloklamamak için bir tick bekle
     await new Promise((r) => setTimeout(r, 0));
     try {
+    // İzinler backend'den gelebiliyor → build öncesi senkronize et
+    await loadLeavesFromBackend();
     const added = ensureRowsFromParameters();
     buildCommitThisMonth({ generateLocalRoster: false });
     await doSave({ silent: true });

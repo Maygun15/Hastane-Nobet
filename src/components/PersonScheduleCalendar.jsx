@@ -531,7 +531,7 @@ function collectAssignmentsFromRemote({ year, month0, personId, personCanon, ass
     const hasTargetId = !!targetPid;
     const hasPid = !!pid;
     const pidMatch = hasTargetId && hasPid && pid === targetPid;
-    const canonMatch = (!hasTargetId || !hasPid) && targetCanon && rowCanon === targetCanon;
+    const canonMatch = targetCanon && rowCanon === targetCanon;
     if (!pidMatch && !canonMatch) continue;
 
     const dateStr = String(item.date ?? item.day ?? "").slice(0, 10);
@@ -578,7 +578,8 @@ function formatLeaveValue(val) {
 
 function collapseLeaves(allLeaves, personId, canon, ymKey) {
   const base = (allLeaves?.[personId] || {})[ymKey] || {};
-  if (!canon) return base;
+  // PersonId varsa name-store yerine id bazlı izinleri esas al
+  if (!canon || personId) return base;
   const byName = (allLeaves?.[`__name__:${canon}`] || {})[ymKey] || {};
   return { ...byName, ...base };
 }
