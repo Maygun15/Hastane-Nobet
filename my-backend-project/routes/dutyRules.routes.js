@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const DutyRule = require('../models/DutyRule');
+const RuleEngine = require('../services/ruleEngine');
 const { requireAuth, requireRole } = require('../middleware/authz');
 const { DEFAULT_RULES, DEFAULT_WEIGHTS } = require('../services/schedulerService');
 
@@ -39,6 +40,20 @@ function buildRuleUpdate(body) {
   if (body?.enabled !== undefined) update.enabled = body.enabled !== false;
   Object.assign(update, pickExtendedFields(body));
   return update;
+}
+
+async function resolveRuleDoc(payload = {}) {
+  const ruleId = payload?.ruleId || payload?.id || null;
+  if (ruleId && mongoose.isValidObjectId(ruleId)) {
+    const doc = await DutyRule.findById(ruleId).lean();
+    return doc || null;
+  }
+  const sectionId = (payload?.sectionId || '').toString().trim();
+  if (!sectionId) return null;
+  const serviceId = (payload?.serviceId || '').toString().trim();
+  const role = (payload?.role || '').toString().trim();
+  const doc = await DutyRule.findOne({ sectionId, serviceId, role }).lean();
+  return doc || null;
 }
 
 router.get('/', requireAuth, async (req, res) => {
@@ -283,6 +298,69 @@ router.delete('/:id', requireAuth, requireRole('admin', 'authorized'), async (re
     const doc = await DutyRule.findByIdAndDelete(id).lean();
     if (!doc) return res.status(404).json({ ok: false, message: 'Kural bulunamadı' });
     return res.json({ ok: true, deleted: true, id: String(doc._id) });
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: err.message || 'Sunucu hatası' });
+  }
+});
+
+router.post('/test', requireAuth, requireRole('admin', 'authorized'), async (req, res) => {
+  try {
+    const doc = await resolveRuleDoc(req.body || {});
+    const engine = new RuleEngine(doc || {});
+    const person = req.body?.person || {};
+    const shifts = Array.isArray(req.body?.shifts) ? req.body.shifts : [];
+    const dates = Array.isArray(req.body?.dates) ? req.body.dates : [];
+    const context = req.body?.context || {};
+    const result = engine.testRules({ person, shifts, dates, context });
+    return res.json({ ok: true, result });
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: err.message || 'Sunucu hatası' });
+  }
+});
+
+router.post('/validate-shift', requireAuth, requireRole('admin', 'authorized'), async (req, res) => {
+  try {
+    const doc = await resolveRuleDoc(req.body || {});
+    const engine = new RuleEngine(doc || {});
+    const person = req.body?.person || {};
+    const date = req.body?.date || req.body?.day || '';
+    const shift =
+      req.body?.shift ||
+      {
+        code: req.body?.shiftCode,
+        id: req.body?.shiftId,
+        label: req.body?.taskCode || req.body?.taskName || '',
+        start: req.body?.start,
+        end: req.body?.end,
+        isNight: req.body?.isNight,
+      };
+    const context = req.body?.context || {};
+    const result = engine.validateShift(person, shift, date, context);
+    return res.json({ ok: true, result });
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: err.message || 'Sunucu hatası' });
+  }
+});
+
+router.post('/check-eligibility', requireAuth, requireRole('admin', 'authorized'), async (req, res) => {
+  try {
+    const doc = await resolveRuleDoc(req.body || {});
+    const engine = new RuleEngine(doc || {});
+    const person = req.body?.person || {};
+    const date = req.body?.date || req.body?.day || '';
+    const shift =
+      req.body?.shift ||
+      {
+        code: req.body?.shiftCode,
+        id: req.body?.shiftId,
+        label: req.body?.taskCode || req.body?.taskName || '',
+        start: req.body?.start,
+        end: req.body?.end,
+        isNight: req.body?.isNight,
+      };
+    const context = req.body?.context || {};
+    const result = engine.checkPersonEligibility(person, shift, date, context);
+    return res.json({ ok: true, result });
   } catch (err) {
     return res.status(500).json({ ok: false, message: err.message || 'Sunucu hatası' });
   }

@@ -271,7 +271,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   const engineMode = String(payload.engine || payload.mode || '').toLowerCase();
   const useDraft = engineMode === 'draft';
 
-  const { rules: dbRules, weights: dbWeights } = await fetchDutyRules({ sectionId, serviceId, role });
+  const { doc: ruleDoc, rules: dbRules, weights: dbWeights } = await fetchDutyRules({ sectionId, serviceId, role });
   const rules = { ...dbRules, ...(payload.rules || {}) };
   const weights = { ...dbWeights, ...(payload.weights || {}) };
 
@@ -301,6 +301,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
       getMonthlyShifts: async () => days,
       getLeaves: async () => leavesByPerson,
       getRequests: async () => requestsByPerson,
+      ruleEngineDoc: ruleDoc || null,
       rules,
       weights,
       targetHours,

@@ -310,6 +310,14 @@ export async function saveDutyRules({
   rules = {},
   weights = {},
   enabled = true,
+  departman,
+  description,
+  basicRules,
+  leaveRules,
+  shiftRules,
+  taskRequirements,
+  personnelRules,
+  metadata,
   token,
 } = {}) {
   if (!sectionId) throw new Error("sectionId gerekli");
@@ -321,10 +329,42 @@ export async function saveDutyRules({
     weights,
     enabled,
   };
+  if (departman !== undefined) body.departman = departman;
+  if (description !== undefined) body.description = description;
+  if (basicRules !== undefined) body.basicRules = basicRules;
+  if (leaveRules !== undefined) body.leaveRules = leaveRules;
+  if (shiftRules !== undefined) body.shiftRules = shiftRules;
+  if (taskRequirements !== undefined) body.taskRequirements = taskRequirements;
+  if (personnelRules !== undefined) body.personnelRules = personnelRules;
+  if (metadata !== undefined) body.metadata = metadata;
   const data = await httpRequest(`/api/duty-rules`, {
     method: "PUT",
     body,
     token,
   });
   return data;
+}
+
+export async function testDutyRules(payload = {}, { token } = {}) {
+  return httpRequest(`/api/duty-rules/test`, {
+    method: "POST",
+    body: payload,
+    token,
+  });
+}
+
+export async function validateDutyShift(payload = {}, { token } = {}) {
+  return httpRequest(`/api/duty-rules/validate-shift`, {
+    method: "POST",
+    body: payload,
+    token,
+  });
+}
+
+export async function checkDutyEligibility(payload = {}, { token } = {}) {
+  return httpRequest(`/api/duty-rules/check-eligibility`, {
+    method: "POST",
+    body: payload,
+    token,
+  });
 }

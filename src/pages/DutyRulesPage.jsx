@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import DutyRulesTabExplained from "../tabs/DutyRulesTab.Explained.jsx";
+import RuleEditor from "../components/RuleEditor.jsx";
 import { fetchDutyRules, saveDutyRules } from "../api/apiAdapter.js";
 
 const LS_KEY_RULES = "dutyRulesV2";
@@ -94,6 +95,7 @@ function applyBackendRulesToList(list, backendRules) {
 }
 
 export default function DutyRulesPage() {
+  const [mode, setMode] = useState("level2");
   const [rules, setRules] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(LS_KEY_RULES) || "[]");
@@ -172,13 +174,40 @@ export default function DutyRulesPage() {
         </div>
       </div>
 
+      <div className="flex gap-2">
+        <button
+          className={`px-3 py-1.5 rounded-lg text-xs border ${
+            mode === "level2"
+              ? "bg-sky-100 border-sky-200 text-sky-700"
+              : "bg-white border-slate-200 text-slate-600"
+          }`}
+          onClick={() => setMode("level2")}
+        >
+          Level 2 Editor
+        </button>
+        <button
+          className={`px-3 py-1.5 rounded-lg text-xs border ${
+            mode === "legacy"
+              ? "bg-sky-100 border-sky-200 text-sky-700"
+              : "bg-white border-slate-200 text-slate-600"
+          }`}
+          onClick={() => setMode("legacy")}
+        >
+          Legacy Editor
+        </button>
+      </div>
+
       {error && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           {error}
         </div>
       )}
 
-      <DutyRulesTabExplained rules={rules} setRules={setRules} />
+      {mode === "level2" ? (
+        <RuleEditor scope={RULE_SCOPE} />
+      ) : (
+        <DutyRulesTabExplained rules={rules} setRules={setRules} />
+      )}
     </div>
   );
 }

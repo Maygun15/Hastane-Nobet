@@ -1,5 +1,6 @@
 // services/scheduler/index.js
 const { runScheduler } = require("./engine");
+const RuleEngine = require("../ruleEngine");
 
 function buildContext({
   staff,
@@ -60,6 +61,7 @@ async function generateMonthlyPlan({
   getMonthlyShifts,
   getLeaves,
   getRequests,
+  ruleEngineDoc,
   rules,
   weights,
   targetHours,
@@ -85,6 +87,10 @@ async function generateMonthlyPlan({
     weights,
     debug: debug || {},
   });
+  if (ruleEngineDoc) {
+    const engine = new RuleEngine(ruleEngineDoc);
+    context.ruleEngine = engine;
+  }
   return runScheduler(context);
 }
 

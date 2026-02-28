@@ -92,6 +92,11 @@ function isAvailable(person, day, context, shift) {
     ? (r) => console.log("[SCHED-BLOCK]",r,{pid:person?.id,name:person?.name,date:dayKey,shift:shift?.code||"",area:shift?.label||""})
     : null;
 
+  if (context?.ruleEngine && shift) {
+    const allow = context.ruleEngine.checkPersonEligibility(person, shift, dayKey, context);
+    if (!allow?.eligible) { if(logBlock)logBlock(allow.reason||"RULE_ENGINE"); return false; }
+  }
+
   if (shift) {
     const areas = getPersonAreas(person);
     const shiftArea = getShiftArea(shift);
