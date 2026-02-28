@@ -8,6 +8,7 @@ export default function PinningModal({
   onAdd,
   onRemove,
   people = [],
+  loading = false,
   rows = [],
   daysInMonth,
 }) {
@@ -65,8 +66,9 @@ export default function PinningModal({
                 className="h-9 rounded border px-2 text-sm w-full"
                 value={form.personId}
                 onChange={(e) => setForm({ ...form, personId: e.target.value })}
+                disabled={loading}
               >
-                <option value="">Personel Seç...</option>
+                <option value="">{loading ? "Personel yükleniyor..." : "Personel Seç..."}</option>
                 {filteredPeople.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}

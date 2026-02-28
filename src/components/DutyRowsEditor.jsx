@@ -450,6 +450,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const lastSavedSignatureRef = useRef(null);
   const [autoSaveStatus, setAutoSaveStatus] = useState("idle");
   const [autoSaveError, setAutoSaveError] = useState(null);
+  const [staffLoading, setStaffLoading] = useState(true);
+  const [staffRevision, setStaffRevision] = useState(0);
 
   const normalizeOverridesForSignature = useCallback((ovr) => {
     return Object.fromEntries(
@@ -670,8 +672,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     setPreview({ header, rows: aoa.slice(1) });
 
     // personel yoksa yalnızca sayı listesi
-    const staffAll = ensureStaffInEngineStore(role);
-    const staff = (staffAll || []).filter((s) => !s.role || s.role === role);
+    const staff = staffForRole;
     if (!staff.length) {
       setRoster(null);
       return;
@@ -1222,33 +1223,55 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
   // Backend personelini yerel motora (solver) tanıtmak için senkronizasyon
   useEffect(() => {
+    let alive = true;
     async function syncStaffToLocal() {
+      setStaffLoading(true);
       try {
         const staff = await fetchPersonnel({ active: true });
-        if (staff && Array.isArray(staff)) {
-          // Tüm personeli genel havuza kaydet
-          localStorage.setItem('peopleV2', JSON.stringify(staff));
+        if (!alive) return;
+        const safe = Array.isArray(staff) ? staff : [];
 
-          // Solver'ın kullandığı anahtarlara (nurses/doctors) yazıyoruz
-          const nurses = staff.filter(p => {
-             const r = (p.role || "").toLowerCase();
-             const t = (p.title || "").toLowerCase();
-             return r === 'nurse' || r === 'hemşire' || t === 'hemşire' || t.includes('hemşire');
-          });
-          
-          const doctors = staff.filter(p => {
-             const r = (p.role || "").toLowerCase();
-             const t = (p.title || "").toLowerCase();
-             return r === 'doctor' || r === 'doktor' || t === 'doktor' || t.includes('doktor');
-          });
-          
-          if (nurses.length) localStorage.setItem('nurses', JSON.stringify(nurses));
-          if (doctors.length) localStorage.setItem('doctors', JSON.stringify(doctors));
-        }
-      } catch (e) { console.warn("Personel senkronizasyonu yapılamadı:", e); }
+        // Tüm personeli genel havuza kaydet
+        localStorage.setItem("peopleV2", JSON.stringify(safe));
+
+        // Solver'ın kullandığı anahtarlara (nurses/doctors) yazıyoruz
+        const nurses = safe.filter((p) => {
+          const r = (p.role || "").toLowerCase();
+          const t = (p.title || "").toLowerCase();
+          return r === "nurse" || r === "hemşire" || t === "hemşire" || t.includes("hemşire");
+        });
+
+        const doctors = safe.filter((p) => {
+          const r = (p.role || "").toLowerCase();
+          const t = (p.title || "").toLowerCase();
+          return r === "doctor" || r === "doktor" || t === "doktor" || t.includes("doktor");
+        });
+
+        localStorage.setItem("nurses", JSON.stringify(nurses));
+        localStorage.setItem("doctors", JSON.stringify(doctors));
+        try { window.dispatchEvent(new Event("people:changed")); } catch {}
+      } catch (e) {
+        console.warn("Personel senkronizasyonu yapılamadı:", e);
+      } finally {
+        if (!alive) return;
+        setStaffLoading(false);
+        setStaffRevision((v) => v + 1);
+      }
     }
     syncStaffToLocal();
+    return () => {
+      alive = false;
+    };
   }, []);
+
+  const staffAll = useMemo(
+    () => (staffLoading ? [] : ensureStaffInEngineStore(role)),
+    [role, staffLoading, staffRevision]
+  );
+  const staffForRole = useMemo(
+    () => (staffAll || []).filter((s) => !s.role || s.role === role),
+    [staffAll, role]
+  );
 
   const doSave = useCallback(async ({ silent = false } = {}) => {
     if (!sectionId) {
@@ -1445,8 +1468,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     const added = ensureRowsFromParameters();
     buildCommitThisMonth();
     await doSave({ silent: true });
-    const staffAll = ensureStaffInEngineStore(role);
-    const staff = (staffAll || []).filter((s) => !s.role || s.role === role);
+    const staff = staffForRole;
     const hasStaff = staff.length > 0;
 
     const staffPayload = staff.map((s) => {
@@ -1757,7 +1779,10 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                         needed += Math.max(0, Number(v) || 0);
                       }
                     });
-                    const st = ensureStaffInEngineStore(role).filter((s) => !s.role || s.role === role).length;
+                    const st = staffForRole.length;
+                    if (staffLoading) {
+                      return `Talep: ${needed} nöbet / Personel: yükleniyor...`;
+                    }
                     return `Talep: ${needed} nöbet / Personel: ${st} kişi (Ort: ${(st ? needed / st : 0).toFixed(1)})`;
                   })()}
                 </span>
@@ -2114,7 +2139,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         pins={pins}
         onAdd={(p) => setPins([...pins, p])}
         onRemove={(id) => setPins(pins.filter(p => p.id !== id))}
-        people={ensureStaffInEngineStore(role)}
+        people={staffAll}
+        loading={staffLoading}
         rows={rows}
         daysInMonth={daysInMonth}
       />
