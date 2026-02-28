@@ -452,6 +452,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const [autoSaveError, setAutoSaveError] = useState(null);
   const [staffLoading, setStaffLoading] = useState(true);
   const [staffRevision, setStaffRevision] = useState(0);
+  const [buildLoading, setBuildLoading] = useState(false);
 
   const normalizeOverridesForSignature = useCallback((ovr) => {
     return Object.fromEntries(
@@ -1465,6 +1466,14 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   }, [rows, daysInMonth]);
 
   const doBuild = async () => {
+    if (staffLoading) {
+      note("Personel listesi yükleniyor. Lütfen birkaç saniye sonra tekrar deneyin.", "info");
+      return;
+    }
+    setBuildLoading(true);
+    // UI'yi bloklamamak için bir tick bekle
+    await new Promise((r) => setTimeout(r, 0));
+    try {
     const added = ensureRowsFromParameters();
     buildCommitThisMonth();
     await doSave({ silent: true });
@@ -1558,6 +1567,9 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
     if (!hasStaff)
       note(`${added ? `${added} satır eklendi, ` : ""}Personel bulunamadı: Sadece sayısal liste üretildi.`, "info");
+    } finally {
+      setBuildLoading(false);
+    }
   };
   const doExport = () => exportXlsx();
   const doImport = (file) => file && importFromTemplate(file);
@@ -1594,6 +1606,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       </div>
       {showStatusBar && (
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+          {buildLoading && <span className="text-slate-600">Liste oluşturuluyor…</span>}
           {loadingRemote && <span>Sunucudan çizelge yükleniyor…</span>}
           {(saving || autoSaveStatus === "saving") && (
             <span className="text-sky-600">Otomatik kaydediliyor…</span>
