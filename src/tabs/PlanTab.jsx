@@ -71,21 +71,75 @@ function normalizePersonRecord(p, index) {
 function splitByRole(items) {
   const nurses = [];
   const doctors = [];
+  const seenNurses = new Map();
+  const seenDoctors = new Map();
   (items || []).forEach((p, idx) => {
     if (!p) return;
     const meta = p?.meta || {};
     const roleHint = String(meta.role || p.title || p.role || "").toLowerCase();
     const isDoctor = /doktor|doctor|hekim|tabip/.test(roleHint);
+    const idRaw = p.id || p._id || p.personId || String(idx + 1);
+    const nameRaw = p.fullName || p.name || p.displayName || "";
+    const name = nameRaw || String(idRaw);
+    const serviceId = String(p.serviceId || p.service || meta.serviceId || meta.service || "");
+    const areas =
+      p.areas ??
+      p.workAreas ??
+      meta.areas ??
+      meta.workAreas ??
+      p["ÇALIŞMA ALANLARI"] ??
+      p["CALISMA ALANLARI"] ??
+      "";
+    const shiftCodes =
+      p.shiftCodes ??
+      p.shifts ??
+      meta.shiftCodes ??
+      meta.shifts ??
+      p["VARDİYE KODLARI"] ??
+      p["VARDIYE KODLARI"] ??
+      "";
+    const code =
+      meta.code ??
+      p.code ??
+      p.kod ??
+      p.personCode ??
+      meta.personCode ??
+      meta.tc ??
+      p.tc ??
+      p.tcNo ??
+      "";
     const mapped = {
-      id: p.id || p._id || p.personId || String(idx + 1),
-      name: p.fullName || p.name || p.displayName || "",
-      fullName: p.fullName || p.name || p.displayName || "",
-      service: p.serviceId || p.service || meta.service || "",
+      id: String(idRaw),
+      name,
+      fullName: name,
+      service: serviceId,
+      serviceId,
+      areas,
+      shiftCodes,
+      code,
       meta,
+      canon: canonName(name),
     };
-    if (isDoctor) doctors.push(mapped);
-    else nurses.push(mapped);
+    const key = `${mapped.canon}::${mapped.serviceId || mapped.service || ""}`;
+    const targetList = isDoctor ? doctors : nurses;
+    const targetMap = isDoctor ? seenDoctors : seenNurses;
+    if (targetMap.has(key)) {
+      const existing = targetMap.get(key);
+      const score = (x) => {
+        const areaScore = Array.isArray(x?.areas) ? (x.areas.length ? 1 : 0) : (x?.areas ? 1 : 0);
+        const shiftScore = Array.isArray(x?.shiftCodes) ? (x.shiftCodes.length ? 1 : 0) : (x?.shiftCodes ? 1 : 0);
+        const codeScore = x?.code ? 1 : 0;
+        return areaScore + shiftScore + codeScore;
+      };
+      if (score(mapped) > score(existing)) {
+        targetMap.set(key, mapped);
+      }
+    } else {
+      targetMap.set(key, mapped);
+    }
   });
+  nurses.push(...seenNurses.values());
+  doctors.push(...seenDoctors.values());
   return { nurses, doctors };
 }
 

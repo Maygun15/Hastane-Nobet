@@ -9,6 +9,47 @@ import { collectRequestsByPerson } from "./requestParser.js";
 const norm = (s = "") => s.toString().trim().replace(/\s+/g, " ").toUpperCase();
 const normTR = (s = "") => s.toString().trim().replace(/\s+/g, " ").toLocaleUpperCase("tr-TR");
 const SPLIT_RE = /[,/;|]+/;
+const toList = (val) => {
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string") return val.split(SPLIT_RE);
+  return [];
+};
+const pickAreasRaw = (p) =>
+  p?.areas ??
+  p?.workAreas ??
+  p?.meta?.areas ??
+  p?.meta?.workAreas ??
+  p?.["ÇALIŞMA ALANLARI"] ??
+  p?.["CALISMA ALANLARI"];
+const pickShiftRaw = (p) =>
+  p?.shiftCodes ??
+  p?.shifts ??
+  p?.meta?.shiftCodes ??
+  p?.meta?.shifts ??
+  p?.meta?.vardiyaKodlari ??
+  p?.["VARDİYE KODLARI"] ??
+  p?.["VARDIYE KODLARI"];
+
+const areaKeywords = (label) => {
+  const g = normTR(label || "");
+  const map = {
+    "SERVİS SORUMLUSU": ["SERVİS SORUMLUSU"],
+    "SÜPERVİZÖR": ["SÜPERVİZÖR", "SV"],
+    "EKİP SORUMLUSU": ["EKİP SORUMLUSU"],
+    "RESÜSİTASYON": ["RESÜSİTASYON"],
+    "KIRMIZI VE SARI GÖREVLENDİRME": ["KIRMIZI", "SARI"],
+    KIRMIZI: ["KIRMIZI"],
+    SARI: ["SARI"],
+    ÇOCUK: ["ÇOCUK"],
+    YEŞİL: ["YEŞİL"],
+    ECZANE: ["ECZANE"],
+    "CERRAHİ MÜDAHELE": ["CERRAHİ MÜDAHELE", "CERRAHİ"],
+    AŞI: ["AŞI"],
+    TRİAJ: ["TRİAJ"],
+  };
+  for (const k of Object.keys(map)) if (g.includes(k)) return map[k];
+  return g ? [g.split(" ")[0]] : [];
+};
 const matchesRequestBucket = (bucket, shiftCode) => {
   if (!bucket) return false;
   if (bucket.all) return true;
@@ -584,17 +625,40 @@ export async function runPlannerOnce({
     return def ? shiftDurationHours(def.start, def.end) : 0;
   };
 
-  // uygunluk (Görev adı -> kişiler)
-  const byNorm = {};
-  (staff||[]).forEach(n=>{
-    let arr=[]; if (Array.isArray(n.areas)) arr=n.areas; else if (typeof n.areas==="string") arr=n.areas.split(SPLIT_RE);
-    arr.forEach(raw=>{
-      const a=(raw||"").toString().trim(); if (!a) return;
-      const k=normTR(a); if (!byNorm[k]) byNorm[k]=new Set(); byNorm[k].add(String(n.id));
-    });
+  // uygunluk (Görev adı -> kişiler) + vardiya filtre
+  const staffMeta = (staff || []).map((n) => {
+    const areas = toList(pickAreasRaw(n)).map((x) => normTR(x)).filter(Boolean);
+    const shifts = toList(pickShiftRaw(n)).map((x) => normTR(x)).filter(Boolean);
+    return { id: String(n.id), areas, shifts };
   });
   const eligibleByLabel = {};
-  (taskLines||[]).forEach(tl => { eligibleByLabel[tl.label] = Array.from(byNorm[normTR(tl.label)]||[]); });
+  (taskLines || []).forEach((tl) => {
+    const labelKeys = areaKeywords(tl?.label).map((x) => normTR(x)).filter(Boolean);
+    const shiftKey = normTR(tl?.shiftCode || "");
+
+    let pool = staffMeta.filter((s) => {
+      const areaOK = labelKeys.length
+        ? (s.areas.length ? labelKeys.some((k) => s.areas.includes(k)) : false)
+        : true;
+      const shiftOK = s.shifts.length ? s.shifts.includes(shiftKey) : true;
+      return areaOK && shiftOK;
+    }).map((s) => s.id);
+
+    if (!pool.length) {
+      // Alan eşleşmesi bulunamadıysa sadece vardiya filtrele
+      pool = staffMeta.filter((s) => {
+        const shiftOK = s.shifts.length ? s.shifts.includes(shiftKey) : true;
+        return shiftOK;
+      }).map((s) => s.id);
+    }
+
+    if (!pool.length) {
+      // Son çare: tüm personeli aday kabul et
+      pool = staffMeta.map((s) => s.id);
+    }
+
+    eligibleByLabel[tl.label] = pool;
+  });
 
   const taskLinesWithHours = (taskLines||[]).map(tl => ({ ...tl, hours: hoursOfShiftCode(tl.shiftCode) }));
 

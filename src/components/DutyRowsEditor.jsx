@@ -659,7 +659,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     return header;
   };
 
-  const buildCommitThisMonth = () => {
+  const buildCommitThisMonth = (opts = {}) => {
+    const { generateLocalRoster = true } = opts;
     const header = makeHeader();
     const aoa = [header];
     const committed = {};
@@ -684,6 +685,11 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
     setOverrides(committed);
     setPreview({ header, rows: aoa.slice(1) });
+
+    if (!generateLocalRoster) {
+      setRoster(null);
+      return;
+    }
 
     // personel yoksa yalnızca sayı listesi
     const staff = staffForRole;
@@ -1488,7 +1494,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     await new Promise((r) => setTimeout(r, 0));
     try {
     const added = ensureRowsFromParameters();
-    buildCommitThisMonth();
+    buildCommitThisMonth({ generateLocalRoster: false });
     await doSave({ silent: true });
     const staff = staffForRole;
     const hasStaff = staff.length > 0;
@@ -1546,13 +1552,19 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     const pinnedAssignments = pins.map(p => {
       const r = rows.find(row => String(row.id) === String(p.rowId));
       if (!r) return null;
+      const dayNum = Number(p.day);
+      const dayStr = `${year}-${String(month0 + 1).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
       return {
         personId: String(p.personId),
-        day: `${year}-${String(month0 + 1).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`,
+        day: dayStr,
+        dayNum: Number.isFinite(dayNum) ? dayNum : undefined,
+        rowId: String(r.id),
         roleLabel: r.label,
         shiftCode: r.shiftCode
       };
     }).filter(Boolean);
+    const supervisorConfig = LS.get("supervisorConfig", null);
+    const supervisorPool = LS.get("supervisorPool", null);
 
     try {
       const res = await generateSchedulerPlan({
@@ -1562,7 +1574,10 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         year,
         month: month1,
         dryRun: false,
+        engine: "draft",
         pins: pinnedAssignments, // Pinleri sunucuya gönder
+        ...(supervisorConfig ? { supervisorConfig } : {}),
+        ...(Array.isArray(supervisorPool) && supervisorPool.length ? { supervisorPool } : {}),
         ...(staffPayload.length ? { staff: staffPayload } : {}),
         ...(Object.keys(dutyRules || {}).length ? { rules: dutyRules } : {}),
         ...(Object.keys(leavesByPerson || {}).length ? { leavesByPerson } : {}),

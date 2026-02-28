@@ -3,6 +3,7 @@ const GeneratedSchedule = require('../models/GeneratedSchedule');
 const MonthlySchedule = require('../models/MonthlySchedule');
 const Person = require('../models/Person');
 const { generateMonthlyPlan } = require('./scheduler');
+const { generateDraftRoster } = require('./scheduler/draftRoster');
 
 const DEFAULT_RULES = {
   ONE_SHIFT_PER_DAY: true,
@@ -228,6 +229,14 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   if (serviceId) query.serviceId = serviceId;
   if (role) query.role = role;
   const scheduleDoc = await MonthlySchedule.findOne(query).lean();
+  const scheduleData = scheduleDoc?.data || {};
+  const defs = Array.isArray(scheduleData?.defs)
+    ? scheduleData.defs
+    : Array.isArray(scheduleData?.rows)
+    ? scheduleData.rows
+    : [];
+  const overrides = scheduleData?.overrides && typeof scheduleData.overrides === 'object' ? scheduleData.overrides : {};
+  const shiftOptions = Array.isArray(scheduleData?.shiftOptions) ? scheduleData.shiftOptions : [];
   const days =
     Array.isArray(payload.days) && payload.days.length
       ? payload.days
@@ -248,24 +257,47 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   const requestsByPerson = payload.requestsByPerson || {};
   const targetHours = Number(payload.targetHours || 0);
 
+  const engineMode = String(payload.engine || payload.mode || '').toLowerCase();
+  const useDraft = engineMode === 'draft';
+
   const { rules: dbRules, weights: dbWeights } = await fetchDutyRules({ sectionId, serviceId, role });
   const rules = { ...dbRules, ...(payload.rules || {}) };
   const weights = { ...dbWeights, ...(payload.weights || {}) };
 
-  const context = await generateMonthlyPlan({
-    year,
-    month,
-    getActiveStaff: async () => staff,
-    getMonthlyShifts: async () => days,
-    getLeaves: async () => leavesByPerson,
-    getRequests: async () => requestsByPerson,
-    rules,
-    weights,
-    targetHours,
-    debug: {
-      logBlocks: payload?.debug?.logBlocks || process.env.SCHEDULER_DEBUG === '1',
-    },
-  });
+  let context = null;
+  let draftResult = null;
+  if (useDraft) {
+    draftResult = generateDraftRoster({
+      year,
+      month,
+      rows: defs,
+      overrides,
+      staff,
+      leavesByPerson,
+      pins: Array.isArray(payload.pins) ? payload.pins : [],
+      supervisorConfig: payload.supervisorConfig || {},
+      supervisorPool: payload.supervisorPool || [],
+      leavePolicy: payload.leavePolicy || "hard",
+      requireEligibility: payload.requireEligibility !== false,
+      nightCodes: payload.nightShiftCodes || null,
+      shiftOptions,
+    });
+  } else {
+    context = await generateMonthlyPlan({
+      year,
+      month,
+      getActiveStaff: async () => staff,
+      getMonthlyShifts: async () => days,
+      getLeaves: async () => leavesByPerson,
+      getRequests: async () => requestsByPerson,
+      rules,
+      weights,
+      targetHours,
+      debug: {
+        logBlocks: payload?.debug?.logBlocks || process.env.SCHEDULER_DEBUG === '1',
+      },
+    });
+  }
 
   const shiftCount = days.reduce((sum, d) => sum + (d.shifts?.length || 0), 0);
   const requiredSlots = days.reduce(
@@ -274,13 +306,14 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   );
 
   const data = {
-    assignments: context.assignments || [],
-    issues: context.issues || [],
+    assignments: useDraft ? (draftResult?.assignments || []) : (context.assignments || []),
+    issues: useDraft ? (draftResult?.issues || []) : (context.issues || []),
     days: days.length,
     debug: {
       staff: staffPack.debug,
       shiftCount,
       requiredSlots,
+      engine: useDraft ? "draft" : "optimized",
     },
   };
 
