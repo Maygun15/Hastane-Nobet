@@ -1273,7 +1273,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     [staffAll, role]
   );
 
-  const doSave = useCallback(async ({ silent = false } = {}) => {
+  const doSave = useCallback(async ({ silent = false, payloadOverride = null } = {}) => {
     if (!sectionId) {
       if (!silent) note("Sekme kimliği bulunamadı.", "error");
       else setAutoSaveStatus("error");
@@ -1285,7 +1285,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     }
     setSaving(true);
     try {
-      const payload = {
+      const payload = payloadOverride || {
         version: 1,
         defs: rows,
         overrides,
@@ -1511,6 +1511,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         role,
         year,
         month: month1,
+        dryRun: false,
         pins: pinnedAssignments, // Pinleri sunucuya gönder
         ...(staffPayload.length ? { staff: staffPayload } : {}),
         ...(Object.keys(dutyRules || {}).length ? { rules: dutyRules } : {}),
@@ -1520,7 +1521,18 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       if (data?.assignments?.length) {
         const rosterFromServer = buildRosterFromBackend(data.assignments, data.issues);
         setRoster(rosterFromServer);
-        await doSave({ silent: true });
+        const payload = {
+          version: 1,
+          defs: rows,
+          overrides,
+          roster: rosterFromServer,
+          preview,
+          aiPlan,
+          pins,
+          rules,
+          generatedAt: new Date().toISOString(),
+        };
+        await doSave({ silent: true, payloadOverride: payload });
         try {
           const monthKey = `${year}-${String(month0 + 1).padStart(2, "0")}`;
           LS.set("scheduleBuildTrigger", { ym: monthKey, ts: Date.now() });

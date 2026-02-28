@@ -424,7 +424,10 @@ function SectionContent({
   const templateFileRef = useRef(null);
   const overtimeRef = useRef(null);
   const fileInputRef = useRef(null); // Toplu İzin içe aktar
-  const handleBuild = useCallback(() => generateScheduleFromLS(year, month), [year, month]);
+  const handleBuild = useCallback(() => {
+    if (editorRef.current?.build) return editorRef.current.build();
+    alert("Sunucu planlaması hazır değil. Lütfen sayfayı yenileyin.");
+  }, []);
 
   // Toplu İzin export (gerçek)
   const handleExportLeaves = useCallback(async () => {
@@ -571,7 +574,7 @@ function SectionContent({
             title="Çalışma Çizelgesi"
             {...commonToolbarProps}
             onAi={() => editorRef.current?.ai?.() ?? commonToolbarProps.onAi()}
-            onBuild={() => editorRef.current?.build?.() ?? handleBuild()}
+            onBuild={handleBuild}
             onExport={() => editorRef.current?.exportExcel?.() ?? commonToolbarProps.onExport()}
             onImport={triggerTemplateImport}
             onReset={() => editorRef.current?.reset?.() ?? commonToolbarProps.onReset()}
