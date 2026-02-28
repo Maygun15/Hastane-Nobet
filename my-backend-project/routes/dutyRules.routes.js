@@ -1,6 +1,7 @@
 // routes/dutyRules.routes.js
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const DutyRule = require('../models/DutyRule');
 const { requireAuth, requireRole } = require('../middleware/authz');
 const { DEFAULT_RULES, DEFAULT_WEIGHTS } = require('../services/schedulerService');
@@ -11,6 +12,33 @@ function parseQuery(req) {
   const role = (req.query.role || req.body?.role || '').toString().trim();
   if (!sectionId) throw new Error('sectionId gerekli');
   return { sectionId, serviceId, role };
+}
+
+function pickExtendedFields(body) {
+  const out = {};
+  const fields = [
+    'departman',
+    'description',
+    'basicRules',
+    'leaveRules',
+    'shiftRules',
+    'taskRequirements',
+    'personnelRules',
+    'metadata',
+  ];
+  for (const f of fields) {
+    if (body?.[f] !== undefined) out[f] = body[f];
+  }
+  return out;
+}
+
+function buildRuleUpdate(body) {
+  const update = {};
+  if (body?.rules && typeof body.rules === 'object') update.rules = body.rules;
+  if (body?.weights && typeof body.weights === 'object') update.weights = body.weights;
+  if (body?.enabled !== undefined) update.enabled = body.enabled !== false;
+  Object.assign(update, pickExtendedFields(body));
+  return update;
 }
 
 router.get('/', requireAuth, async (req, res) => {
@@ -30,6 +58,14 @@ router.get('/', requireAuth, async (req, res) => {
             rules,
             weights,
             enabled: doc.enabled !== false,
+            departman: doc.departman || '',
+            description: doc.description || '',
+            basicRules: doc.basicRules || {},
+            leaveRules: doc.leaveRules || {},
+            shiftRules: doc.shiftRules || {},
+            taskRequirements: doc.taskRequirements || {},
+            personnelRules: doc.personnelRules || {},
+            metadata: doc.metadata || {},
             createdAt: doc.createdAt,
             updatedAt: doc.updatedAt,
           }
@@ -41,6 +77,14 @@ router.get('/', requireAuth, async (req, res) => {
             rules,
             weights,
             enabled: true,
+            departman: '',
+            description: '',
+            basicRules: {},
+            leaveRules: {},
+            shiftRules: {},
+            taskRequirements: {},
+            personnelRules: {},
+            metadata: {},
           },
     });
   } catch (err) {
@@ -51,9 +95,10 @@ router.get('/', requireAuth, async (req, res) => {
 router.put('/', requireAuth, requireRole('admin', 'authorized'), async (req, res) => {
   try {
     const { sectionId, serviceId, role } = parseQuery(req);
-    const rules = req.body?.rules && typeof req.body.rules === 'object' ? req.body.rules : {};
-    const weights = req.body?.weights && typeof req.body.weights === 'object' ? req.body.weights : {};
-    const enabled = req.body?.enabled !== false;
+    const update = buildRuleUpdate(req.body || {});
+    if (!('rules' in update)) update.rules = {};
+    if (!('weights' in update)) update.weights = {};
+    if (!('enabled' in update)) update.enabled = req.body?.enabled !== false;
 
     const doc = await DutyRule.findOneAndUpdate(
       { sectionId, serviceId, role },
@@ -62,9 +107,7 @@ router.put('/', requireAuth, requireRole('admin', 'authorized'), async (req, res
           sectionId,
           serviceId,
           role,
-          rules,
-          weights,
-          enabled,
+          ...update,
           updatedBy: req.user?.uid || null,
         },
         $setOnInsert: {
@@ -84,6 +127,14 @@ router.put('/', requireAuth, requireRole('admin', 'authorized'), async (req, res
         rules: doc.rules || {},
         weights: doc.weights || {},
         enabled: doc.enabled !== false,
+        departman: doc.departman || '',
+        description: doc.description || '',
+        basicRules: doc.basicRules || {},
+        leaveRules: doc.leaveRules || {},
+        shiftRules: doc.shiftRules || {},
+        taskRequirements: doc.taskRequirements || {},
+        personnelRules: doc.personnelRules || {},
+        metadata: doc.metadata || {},
         createdAt: doc.createdAt,
         updatedAt: doc.updatedAt,
       },
@@ -97,9 +148,10 @@ router.put('/', requireAuth, requireRole('admin', 'authorized'), async (req, res
 router.post('/', requireAuth, requireRole('admin', 'authorized'), async (req, res) => {
   try {
     const { sectionId, serviceId, role } = parseQuery(req);
-    const rules = req.body?.rules && typeof req.body.rules === 'object' ? req.body.rules : {};
-    const weights = req.body?.weights && typeof req.body.weights === 'object' ? req.body.weights : {};
-    const enabled = req.body?.enabled !== false;
+    const update = buildRuleUpdate(req.body || {});
+    if (!('rules' in update)) update.rules = {};
+    if (!('weights' in update)) update.weights = {};
+    if (!('enabled' in update)) update.enabled = req.body?.enabled !== false;
 
     const exists = await DutyRule.findOne({ sectionId, serviceId, role }).lean();
     if (exists) {
@@ -110,9 +162,7 @@ router.post('/', requireAuth, requireRole('admin', 'authorized'), async (req, re
       sectionId,
       serviceId,
       role,
-      rules,
-      weights,
-      enabled,
+      ...update,
       createdBy: req.user?.uid || null,
     });
 
@@ -126,6 +176,14 @@ router.post('/', requireAuth, requireRole('admin', 'authorized'), async (req, re
         rules: doc.rules || {},
         weights: doc.weights || {},
         enabled: doc.enabled !== false,
+        departman: doc.departman || '',
+        description: doc.description || '',
+        basicRules: doc.basicRules || {},
+        leaveRules: doc.leaveRules || {},
+        shiftRules: doc.shiftRules || {},
+        taskRequirements: doc.taskRequirements || {},
+        personnelRules: doc.personnelRules || {},
+        metadata: doc.metadata || {},
         createdAt: doc.createdAt,
       },
     });
@@ -133,6 +191,99 @@ router.post('/', requireAuth, requireRole('admin', 'authorized'), async (req, re
     if (err?.message?.includes('duplicate key')) {
       return res.status(409).json({ ok: false, message: 'Kayıt zaten var (PUT kullanın)' });
     }
+    return res.status(500).json({ ok: false, message: err.message || 'Sunucu hatası' });
+  }
+});
+
+router.get('/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params || {};
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ ok: false, message: 'Geçersiz id' });
+    }
+    const doc = await DutyRule.findById(id).lean();
+    if (!doc) return res.status(404).json({ ok: false, message: 'Kural bulunamadı' });
+    return res.json({
+      ok: true,
+      rule: {
+        id: String(doc._id),
+        sectionId: doc.sectionId,
+        serviceId: doc.serviceId || '',
+        role: doc.role || '',
+        enabled: doc.enabled !== false,
+        departman: doc.departman || '',
+        description: doc.description || '',
+        rules: doc.rules || {},
+        weights: doc.weights || {},
+        basicRules: doc.basicRules || {},
+        leaveRules: doc.leaveRules || {},
+        shiftRules: doc.shiftRules || {},
+        taskRequirements: doc.taskRequirements || {},
+        personnelRules: doc.personnelRules || {},
+        metadata: doc.metadata || {},
+        createdAt: doc.createdAt,
+        updatedAt: doc.updatedAt,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: err.message || 'Sunucu hatası' });
+  }
+});
+
+router.put('/:id', requireAuth, requireRole('admin', 'authorized'), async (req, res) => {
+  try {
+    const { id } = req.params || {};
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ ok: false, message: 'Geçersiz id' });
+    }
+    const update = buildRuleUpdate(req.body || {});
+    if (!Object.keys(update).length) {
+      return res.status(400).json({ ok: false, message: 'Güncellenecek alan bulunamadı' });
+    }
+    update.updatedBy = req.user?.uid || null;
+    const doc = await DutyRule.findByIdAndUpdate(
+      id,
+      { $set: update },
+      { new: true }
+    ).lean();
+    if (!doc) return res.status(404).json({ ok: false, message: 'Kural bulunamadı' });
+    return res.json({
+      ok: true,
+      rule: {
+        id: String(doc._id),
+        sectionId: doc.sectionId,
+        serviceId: doc.serviceId || '',
+        role: doc.role || '',
+        enabled: doc.enabled !== false,
+        departman: doc.departman || '',
+        description: doc.description || '',
+        rules: doc.rules || {},
+        weights: doc.weights || {},
+        basicRules: doc.basicRules || {},
+        leaveRules: doc.leaveRules || {},
+        shiftRules: doc.shiftRules || {},
+        taskRequirements: doc.taskRequirements || {},
+        personnelRules: doc.personnelRules || {},
+        metadata: doc.metadata || {},
+        createdAt: doc.createdAt,
+        updatedAt: doc.updatedAt,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: err.message || 'Sunucu hatası' });
+  }
+});
+
+router.delete('/:id', requireAuth, requireRole('admin', 'authorized'), async (req, res) => {
+  try {
+    const { id } = req.params || {};
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ ok: false, message: 'Geçersiz id' });
+    }
+    const doc = await DutyRule.findByIdAndDelete(id).lean();
+    if (!doc) return res.status(404).json({ ok: false, message: 'Kural bulunamadı' });
+    return res.json({ ok: true, deleted: true, id: String(doc._id) });
+  } catch (err) {
     return res.status(500).json({ ok: false, message: err.message || 'Sunucu hatası' });
   }
 });
