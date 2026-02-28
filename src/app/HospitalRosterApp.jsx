@@ -28,6 +28,7 @@ import UsersTab from "../tabs/UsersTab.jsx";
 import PersonCalendar from "../tabs/PersonCalendar.jsx";
 import { getActiveYM, setActiveYM } from "../utils/activeYM.js";
 import { apiChangePassword, API, getToken } from "../lib/api.js";
+import { getAllLeaves, setLeavesStore } from "../lib/leaves.js";
 import { ROLE } from "../constants/enums.js";
 
 // Yedekleme butonları (yeni)
@@ -70,41 +71,7 @@ const navBase =
 const navActive = "bg-sky-600 text-white border-sky-600";
 const navIdle   = "bg-slate-100 hover:bg-slate-200 text-slate-800";
 
-const LEAVE_TYPES_LS_KEYS = ["leaveTypesV2", "leaveTypes", "izinTurleri"];
-function readLeaveTypesFromLS() {
-  if (typeof localStorage === "undefined") return [];
-  try {
-    for (const k of LEAVE_TYPES_LS_KEYS) {
-      const raw = localStorage.getItem(k);
-      if (!raw) continue;
-      const val = JSON.parse(raw);
-      if (Array.isArray(val)) return val;
-      if (val && typeof val === "object") {
-        if (Array.isArray(val.leaveTypes)) return val.leaveTypes;
-        if (Array.isArray(val.izinTurleri)) return val.izinTurleri;
-      }
-    }
-  } catch {}
-  return [];
-}
-function sameLeaveTypes(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b)) return false;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i += 1) {
-    const x = a[i] || {};
-    const y = b[i] || {};
-    if (
-      x.id !== y.id ||
-      x.code !== y.code ||
-      x.name !== y.name ||
-      !!x.countsAsWorked !== !!y.countsAsWorked ||
-      Number(x.hoursPerDay) !== Number(y.hoursPerDay)
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
+// Leave types artık yalnızca backend üzerinden gelir.
 
 /* ======================= APP ======================= */
 export default function HospitalRosterApp() {
@@ -147,16 +114,17 @@ export default function HospitalRosterApp() {
 
   const [activeTab, setActiveTab] = useState("plan");
 
-  /* ---- LS state’leri ---- */
-  const [workAreas, setWorkAreas] = useState(LS.get("workAreas", []));
-  const [nurses, setNurses] = useState(LS.get("nurses", []));
-  const [doctors, setDoctors] = useState(LS.get("doctors", []));
-  const [workingHours, setWorkingHours] = useState(LS.get("workingHours", []));
-  const [leaveTypes, setLeaveTypes] = useState(() => readLeaveTypesFromLS());
-  const [personLeaves, setPersonLeaves] = useState(LS.get("personLeaves", {}));
-  const [requestBox, setRequestBox] = useState(LS.get("requestBoxV1", []));
+  /* ---- Mongo-first state’ler (LS sadece cache) ---- */
+  const [workAreas, setWorkAreas] = useState([]);
+  const [nurses, setNurses] = useState([]);
+  const [doctors, setDoctors] = useState([]);
+  const [workingHours, setWorkingHours] = useState([]);
+  const [leaveTypes, setLeaveTypes] = useState([]);
+  const [personLeaves, setPersonLeaves] = useState({});
+  const [requestBox, setRequestBox] = useState([]);
 
   useEffect(() => {
+    if (!settingsLoadedRef.current) return;
     LS.set("workAreas", workAreas);
     try {
       window.dispatchEvent(new Event("workAreas:changed"));
@@ -164,14 +132,17 @@ export default function HospitalRosterApp() {
     } catch {}
   }, [workAreas]);
   useEffect(() => {
+    if (!personnelLoadedRef.current) return;
     LS.set("nurses", nurses);
     try { window.dispatchEvent(new Event("people:changed")); } catch {}
   }, [nurses]);
   useEffect(() => {
+    if (!personnelLoadedRef.current) return;
     LS.set("doctors", doctors);
     try { window.dispatchEvent(new Event("people:changed")); } catch {}
   }, [doctors]);
   useEffect(() => {
+    if (!settingsLoadedRef.current) return;
     LS.set("workingHours", workingHours);
     try {
       window.dispatchEvent(new Event("workingHours:changed"));
@@ -179,50 +150,54 @@ export default function HospitalRosterApp() {
     } catch {}
   }, [workingHours]);
   useEffect(() => {
+    if (!settingsLoadedRef.current) return;
     LS.set("leaveTypes", leaveTypes);
     LS.set("leaveTypesV2", leaveTypes);
     LS.set("izinTurleri", leaveTypes);
     try { window.dispatchEvent(new Event("leaveTypes:changed")); } catch {}
   }, [leaveTypes]);
-  useEffect(() => { LS.set("personLeaves", personLeaves); }, [personLeaves]);
-  useEffect(() => { LS.set("requestBoxV1", requestBox); }, [requestBox]);
+  useEffect(() => {
+    if (!settingsLoadedRef.current) return;
+    LS.set("personLeaves", personLeaves);
+  }, [personLeaves]);
+  useEffect(() => {
+    if (!settingsLoadedRef.current) return;
+    LS.set("requestBoxV1", requestBox);
+  }, [requestBox]);
 
   useEffect(() => {
-    const syncLeaveTypes = () => {
-      const next = readLeaveTypesFromLS();
-      setLeaveTypes((prev) => (sameLeaveTypes(prev, next) ? prev : next));
-    };
-    const onStorage = (e) => {
-      if (!e || !LEAVE_TYPES_LS_KEYS.includes(e.key)) return;
-      syncLeaveTypes();
-    };
-    window.addEventListener("leaveTypes:changed", syncLeaveTypes);
-    window.addEventListener("storage", onStorage);
-    return () => {
-      window.removeEventListener("leaveTypes:changed", syncLeaveTypes);
-      window.removeEventListener("storage", onStorage);
-    };
+    const syncLeaves = () => setPersonLeaves(getAllLeaves());
+    syncLeaves();
+    window.addEventListener("leaves:changed", syncLeaves);
+    return () => window.removeEventListener("leaves:changed", syncLeaves);
   }, []);
 
   /* ---- Backend parametre sync (online-only) ---- */
   const settingsLoadedRef = useRef(false);
+  const personnelLoadedRef = useRef(false);
   const saveTimersRef = useRef({ wa: null, wh: null, lt: null, rq: null });
 
   useEffect(() => {
     let alive = true;
     const token = getToken();
-    if (!token) return undefined;
+    if (!token) {
+      settingsLoadedRef.current = true;
+      return undefined;
+    }
     (async () => {
       try {
         const wa = await API.http.get(`/api/settings/workAreas?serviceId=`);
         const wh = await API.http.get(`/api/settings/workingHours?serviceId=`);
         const lt = await API.http.get(`/api/settings/leaveTypes?serviceId=`);
         const rq = await API.http.get(`/api/settings/requestBoxV1?serviceId=`);
+        const pl = await API.http.get(`/api/settings/personLeaves?serviceId=`);
         if (!alive) return;
         if (Array.isArray(wa?.value)) setWorkAreas(wa.value);
         if (Array.isArray(wh?.value)) setWorkingHours(wh.value);
         if (Array.isArray(lt?.value)) setLeaveTypes(lt.value);
         if (Array.isArray(rq?.value)) setRequestBox(rq.value);
+        if (pl?.value && typeof pl.value === "object") setLeavesStore(pl.value);
+        else setLeavesStore({});
       } catch (err) {
         console.warn("Settings fetch failed:", err?.message || err);
       } finally {
@@ -300,14 +275,22 @@ export default function HospitalRosterApp() {
   /* ---- Backend’den personel çek ---- */
   const reloadPersonnel = useCallback(async () => {
     const token = getToken();
-    if (!token) return;
+    if (!token) {
+      if (!personnelLoadedRef.current) personnelLoadedRef.current = true;
+      return;
+    }
     try {
       const role = roleOf(user);
       const serviceIds = Array.isArray(user?.serviceIds) ? user.serviceIds.map(String).filter(Boolean) : [];
       let items = [];
 
       if (role === "STAFF") {
-        if (!serviceIds.length) return;
+        if (!serviceIds.length) {
+          setNurses([]);
+          setDoctors([]);
+          personnelLoadedRef.current = true;
+          return;
+        }
         const results = await Promise.all(
           serviceIds.map((sid) =>
             API.http.get(`/api/personnel?page=1&size=2000&serviceId=${encodeURIComponent(sid)}`)
@@ -353,8 +336,14 @@ export default function HospitalRosterApp() {
 
       setNurses(mapped.filter((p) => p.role === ROLE.Nurse));
       setDoctors(mapped.filter((p) => p.role === ROLE.Doctor));
+      personnelLoadedRef.current = true;
     } catch (e) {
       console.warn("Personnel load error:", e?.message || e);
+      if (!personnelLoadedRef.current) {
+        setNurses([]);
+        setDoctors([]);
+        personnelLoadedRef.current = true;
+      }
     }
   }, [setNurses, setDoctors, user]);
 

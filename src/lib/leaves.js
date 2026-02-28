@@ -1,11 +1,12 @@
 // src/lib/leaves.js
-// Evrensel uyumluluk katmanı:
-// - Eski/alternatif depolama anahtarlarını okur (allLeavesV1, leavesV2, personLeaves, personLeavesV2, allLeaves)
-// - Tek şema döndürür: { [personId]: { "YYYY-MM": { [dayNumber]: {code, note?} } } }
-// - set/unset nesne parametreleriyle çalışır
+// Leaves store (Mongo-first):
+// - Kaynak: /api/settings/personLeaves
+// - Tek şema: { [personId]: { "YYYY-MM": { [dayNumber]: {code, note?} } } }
+// - set/unset nesne parametreleriyle çalışır (optimistic + debounce save)
 // - leavesToUnavailable => { [personId]: { [dayNumber]: true } }
 
 import { LS } from "../utils/storage";
+import { API, getToken } from "./api.js";
 
 const NAME_STORE_KEY = "allLeavesByNameV1";
 const SUPPRESS_KEY = "leaveSuppressV1";
@@ -37,142 +38,141 @@ function put(out, pid, year, month1, dayNum, rec) {
   out[pid][ym][String(dayNum)] = { code: val.code, ...(val.note ? { note: val.note } : {}) };
 }
 
-/* -------------------- tüm kaynakları oku + normalize et -------------------- */
-function readAllSourcesNormalized() {
+/* -------------------- cache + normalize -------------------- */
+let leavesCache = {};
+let leavesLoaded = false;
+let loadPromise = null;
+let saveTimer = null;
+let leavesDirty = false;
+
+function normalizeLeaves(raw) {
   const out = {};
+  if (!isObj(raw)) return out;
+  const keys = Object.keys(raw);
+  if (!keys.length) return out;
 
-  // 1) Legacy buckets first (so newer kaynaklar üzerine yazabilsin)
-  for (const KEY of ["personLeavesV2", "personLeaves", "allLeaves"]) {
-    try {
-      const v = LS.get(KEY);
-      if (!isObj(v)) continue;
+  const firstKey = keys[0];
+  const maybeYmFirst = firstKey.includes("-");
 
-      const maybeYmFirst = Object.keys(v)[0]?.includes("-");
-      const maybePidFirst = !maybeYmFirst;
+  if (maybeYmFirst) {
+    // "YYYY-MM" -> pid -> gün
+    for (const [ym, byPid] of Object.entries(raw)) {
+      const [Y, M] = ym.split("-").map((x) => parseInt(x, 10));
+      for (const [pid, days] of Object.entries(byPid || {})) {
+        for (const [d, rec] of Object.entries(days || {})) {
+          const day = parseInt(d, 10);
+          if (Number.isFinite(day)) put(out, String(pid), Y, M, day, rec);
+          else if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+            const dd = parseInt(d.slice(8, 10), 10);
+            if (Number.isFinite(dd)) put(out, String(pid), Y, M, dd, rec);
+          }
+        }
+      }
+    }
+  } else {
+    const sample = raw[firstKey];
+    const looksYearBuckets = sample && Object.keys(sample).some((k) => /^\d{4}$/.test(k));
 
-      if (maybeYmFirst) {
-        // "YYYY-MM" -> pid -> gün
-        for (const [ym, byPid] of Object.entries(v)) {
-          const [Y, M] = ym.split("-").map((x) => parseInt(x, 10));
-          for (const [pid, days] of Object.entries(byPid || {})) {
+    if (looksYearBuckets) {
+      // pid -> Y -> M -> gün
+      for (const [pid, byY] of Object.entries(raw)) {
+        for (const [Ystr, byM] of Object.entries(byY || {})) {
+          for (const [Mstr, days] of Object.entries(byM || {})) {
+            const Y = parseInt(Ystr, 10);
+            const M = parseInt(Mstr, 10);
             for (const [d, rec] of Object.entries(days || {})) {
               const day = parseInt(d, 10);
               if (Number.isFinite(day)) put(out, String(pid), Y, M, day, rec);
-              else if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
-                const dd = parseInt(d.slice(8, 10), 10);
-                if (Number.isFinite(dd)) put(out, String(pid), Y, M, dd, rec);
-              }
-            }
-          }
-        }
-      } else if (maybePidFirst) {
-        const sample = v[Object.keys(v)[0]];
-        const looksYearBuckets = sample && Object.keys(sample).some((k) => /^\d{4}$/.test(k));
-
-        if (looksYearBuckets) {
-          // pid -> Y -> M -> gün
-          for (const [pid, byY] of Object.entries(v)) {
-            for (const [Ystr, byM] of Object.entries(byY || {})) {
-              for (const [Mstr, days] of Object.entries(byM || {})) {
-                const Y = parseInt(Ystr, 10);
-                const M = parseInt(Mstr, 10);
-                for (const [d, rec] of Object.entries(days || {})) {
-                  const day = parseInt(d, 10);
-                  if (Number.isFinite(day)) put(out, String(pid), Y, M, day, rec);
-                }
-              }
-            }
-          }
-        } else {
-          // pid -> "YYYY-MM" -> gün
-          for (const [pid, byYm] of Object.entries(v)) {
-            for (const [ym, days] of Object.entries(byYm || {})) {
-              const [Y, M] = ym.split("-").map((x) => parseInt(x, 10));
-              for (const [d, rec] of Object.entries(days || {})) {
-                const day = parseInt(d, 10);
-                if (Number.isFinite(day)) put(out, String(pid), Y, M, day, rec);
-                else if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
-                  const dd = parseInt(d.slice(8, 10), 10);
-                  if (Number.isFinite(dd)) put(out, String(pid), Y, M, dd, rec);
-                }
-              }
             }
           }
         }
       }
-    } catch {}
+    } else {
+      // pid -> "YYYY-MM" -> gün
+      for (const [pid, byYm] of Object.entries(raw)) {
+        for (const [ym, days] of Object.entries(byYm || {})) {
+          const [Y, M] = ym.split("-").map((x) => parseInt(x, 10));
+          for (const [d, rec] of Object.entries(days || {})) {
+            const day = parseInt(d, 10);
+            if (Number.isFinite(day)) put(out, String(pid), Y, M, day, rec);
+            else if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+              const dd = parseInt(d.slice(8, 10), 10);
+              if (Number.isFinite(dd)) put(out, String(pid), Y, M, dd, rec);
+            }
+          }
+        }
+      }
+    }
   }
 
-  // 2) leavesV2 (orta nesil)
-  try {
-    const v = LS.get("leavesV2");
-    if (isObj(v)) {
-      for (const [pid, byYm] of Object.entries(v)) {
-        for (const [ym, days] of Object.entries(byYm || {})) {
-          const [Y, M] = ym.split("-").map((x) => parseInt(x, 10));
-          for (const [d, rec] of Object.entries(days || {})) {
-            const day = parseInt(d, 10);
-            if (Number.isFinite(day)) put(out, String(pid), Y, M, day, rec);
-            else if (/^\d{2}$/.test(d)) put(out, String(pid), Y, M, parseInt(d, 10), rec);
-            else if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
-              const dd = parseInt(d.slice(8, 10), 10);
-              if (Number.isFinite(dd)) put(out, String(pid), Y, M, dd, rec);
-            }
-          }
-        }
-      }
-    }
-  } catch {}
-
-  // 3) allLeavesV1 (en güncel kaynak, en sonda yazılsın ki override etsin)
-  try {
-    const v = LS.get("allLeavesV1");
-    if (isObj(v)) {
-      for (const [pid, byYm] of Object.entries(v)) {
-        for (const [ym, days] of Object.entries(byYm || {})) {
-          const [Y, M] = ym.split("-").map((x) => parseInt(x, 10));
-          for (const [d, rec] of Object.entries(days || {})) {
-            const day = parseInt(d, 10);
-            if (Number.isFinite(day)) put(out, String(pid), Y, M, day, rec);
-            else if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
-              const dd = parseInt(d.slice(8, 10), 10);
-              if (Number.isFinite(dd)) put(out, String(pid), Y, M, dd, rec);
-            }
-          }
-        }
-      }
-    }
-  } catch {}
-
-  // 4) Suppress kayıtlarını uygula (eski kaynaklardaki kalıntıları silebilmek için)
-  try {
-    const suppress = readSuppress();
-    const suppressIds = suppress?.ids && isObj(suppress.ids) ? suppress.ids : null;
-    if (suppressIds) {
-      for (const [pid, byYm] of Object.entries(suppressIds)) {
-        const bucket = out[pid];
-        if (!isObj(bucket)) continue;
-        for (const [ym, days] of Object.entries(byYm || {})) {
-          const monthObj = bucket?.[ym];
-          if (!isObj(monthObj)) continue;
-          for (const dayKey of Object.keys(days || {})) {
-            delete monthObj[dayKey];
-          }
-          if (!Object.keys(monthObj).length) delete bucket[ym];
-        }
-        if (!Object.keys(bucket).length) delete out[pid];
-      }
-    }
-  } catch {}
-
   return out;
+}
+
+function emitLeavesChanged() {
+  try { window.dispatchEvent(new Event("leaves:changed")); } catch {}
+}
+
+export function setLeavesStore(raw, { emit = true } = {}) {
+  leavesCache = normalizeLeaves(raw);
+  leavesLoaded = true;
+  leavesDirty = false;
+  if (emit) emitLeavesChanged();
+}
+
+export async function loadLeavesFromBackend() {
+  if (loadPromise) return loadPromise;
+  const token = getToken();
+  if (!token) {
+    leavesLoaded = true;
+    return Promise.resolve(leavesCache);
+  }
+  loadPromise = API.http
+    .get(`/api/settings/personLeaves?serviceId=`)
+    .then((res) => {
+      if (leavesDirty) return leavesCache;
+      const value = res?.value && typeof res.value === "object" ? res.value : {};
+      setLeavesStore(value);
+      return leavesCache;
+    })
+    .catch((err) => {
+      console.warn("Leaves fetch failed:", err?.message || err);
+      leavesLoaded = true;
+      return leavesCache;
+    })
+    .finally(() => {
+      loadPromise = null;
+    });
+  return loadPromise;
+}
+
+async function saveLeavesNow() {
+  const token = getToken();
+  if (!token) return;
+  try {
+    await API.http.req(`/api/settings/personLeaves`, {
+      method: "PUT",
+      body: { value: leavesCache, serviceId: "" },
+    });
+    leavesDirty = false;
+  } catch (err) {
+    console.warn("personLeaves save failed:", err?.message || err);
+  }
+}
+
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    saveLeavesNow();
+  }, 600);
 }
 
 /* -------------------- dışa açılan API -------------------- */
 
 // Tam normalize şema
 export function getAllLeaves() {
-  return readAllSourcesNormalized();
+  if (!leavesLoaded) loadLeavesFromBackend();
+  return leavesCache;
 }
 
 function readSuppress() {
@@ -243,12 +243,13 @@ export function setLeave({ personId, personName, year, month, day, code, note })
   if (!Number.isFinite(Y) || !Number.isFinite(M1) || !Number.isFinite(D) || !c) return;
 
   if (pid && pid !== "undefined" && pid !== "null" && pid !== "") {
-    const all = LS.get("allLeavesV1", {});
     const ym = ymKey(Y, M1);
-    all[pid] ??= {};
-    all[pid][ym] ??= {};
-    all[pid][ym][String(D)] = note ? { code: c, note } : { code: c };
-    LS.set("allLeavesV1", all);
+    leavesCache[pid] ??= {};
+    leavesCache[pid][ym] ??= {};
+    leavesCache[pid][ym][String(D)] = note ? { code: c, note } : { code: c };
+    leavesLoaded = true;
+    leavesDirty = true;
+    scheduleSave();
   }
 
   if ((!pid || pid === "undefined" || pid === "null" || pid === "") && !canon) {
@@ -262,7 +263,7 @@ export function setLeave({ personId, personName, year, month, day, code, note })
 
   updateSuppress({ pid, canon, year: Y, month: M1, day: D, suppress: false });
 
-  window.dispatchEvent(new Event("leaves:changed"));
+  emitLeavesChanged();
 }
 
 // Nesne-parametreli unset
@@ -276,13 +277,14 @@ export function unsetLeave({ personId, personName, year, month, day }) {
   if (!Number.isFinite(Y) || !Number.isFinite(M1) || !Number.isFinite(D)) return;
 
   if (pid && pid !== "undefined" && pid !== "null" && pid !== "") {
-    const all = LS.get("allLeavesV1", {});
     const ym = ymKey(Y, M1);
-    if (all?.[pid]?.[ym]) {
-      delete all[pid][ym][String(D)];
-      if (!Object.keys(all[pid][ym]).length) delete all[pid][ym];
-      if (!Object.keys(all[pid]).length) delete all[pid];
-      LS.set("allLeavesV1", all);
+    if (leavesCache?.[pid]?.[ym]) {
+      delete leavesCache[pid][ym][String(D)];
+      if (!Object.keys(leavesCache[pid][ym]).length) delete leavesCache[pid][ym];
+      if (!Object.keys(leavesCache[pid]).length) delete leavesCache[pid];
+      leavesLoaded = true;
+      leavesDirty = true;
+      scheduleSave();
     }
   }
 
@@ -292,7 +294,7 @@ export function unsetLeave({ personId, personName, year, month, day }) {
 
   updateSuppress({ pid, canon, year: Y, month: M1, day: D, suppress: true });
 
-  window.dispatchEvent(new Event("leaves:changed"));
+  emitLeavesChanged();
 }
 
 // Planlayıcıya uygun: { [pid]: { [day]: true } }

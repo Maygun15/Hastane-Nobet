@@ -1,6 +1,5 @@
 // src/tabs/PlanTab.jsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { LS } from "../utils/storage.js";
 import { useAuth } from "../auth/AuthContext.jsx";
 import useServiceScope from "../hooks/useServiceScope.js";
 import useActiveYM from "../hooks/useActiveYM.js";
@@ -312,7 +311,7 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
         nurses,
         doctors,
         workingHours,
-        personLeaves: {}, // TODO: backend leaves endpoint eklenince buraya bağla
+        personLeaves: allLeaves || {},
         taskLines,
       });
 

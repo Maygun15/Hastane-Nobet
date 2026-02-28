@@ -6,22 +6,30 @@ const APP_KEY = 'HNS'; // Hastane Nöbet Sistemi kısaltması
 // Geriye dönük anahtarlar dahil — sende olanları listeledim, yoksa otomatik atlar.
 export const LS_KEYS = [
   // kişiler & alanlar & vardiya şablonları
-  'people', 'areas', 'shifts',
+  'people', 'peopleAll', 'staff', 'nurses', 'doctors',
+  'areas', 'workAreas', 'workAreasV2',
+  'shifts', 'workingHours', 'workingHoursV2',
+  'scheduleTemplateRows', 'scheduleRowsV2',
 
   // servisler
   'services',
 
   // kurallar
-  'dutyRules',
+  'dutyRules', 'dutyRulesV2',
 
   // izinler (v2 öncelikli, eski adlar fallback)
   'personLeavesV2', 'personLeaves', 'allLeaves',
+  'leaveTypes', 'leaveTypesV2', 'izinTurleri',
+
+  // istek kutusu
+  'requestBoxV1', 'requestBox',
 
   // aktif yıl/ay ve takvimle ilgili muhtemel anahtarlar
   'activeYM', 'plannerYear', 'plannerMonth',
 
   // çizelge/plan çıktıları veya cache'ler (varsa)
-  'rosterCache', 'scheduleState', 'overtimeState'
+  'rosterCache', 'generatedRoster', 'generatedRosterFlat',
+  'scheduleState', 'overtimeState'
 ];
 
 // küçük yardımcılar

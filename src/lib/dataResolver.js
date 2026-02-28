@@ -199,9 +199,26 @@ function readPeopleFromBoards() {
   const bag = [];
   for (const k of keys) {
     if (!/people|person|nurs|hems|staff|flow|board|column|list|section/i.test(k)) continue;
+    // Çizelge/parametre sekme tanımlarını asla kişi sanma
+    if (/schedule|cizelg|parametre|params|tab|section/i.test(k) && !/person|staff/i.test(k)) {
+      continue;
+    }
     let v;
     try { v = JSON.parse(localStorage.getItem(k)); } catch { continue; }
     if (!v) continue;
+    // Sadece {id,name} gibi sekme listeleri → kişi değil
+    if (Array.isArray(v) && v.length && v.every((x) => {
+      if (!x || typeof x !== "object") return false;
+      const keys = Object.keys(x);
+      const hasLabel = "name" in x || "title" in x || "label" in x;
+      const hasId = "id" in x || "key" in x;
+      const hasStruct = "items" in x || "cards" in x || "lists" in x || "columns" in x || "sections" in x;
+      if (!hasLabel || !hasId || hasStruct) return false;
+      // Sadece küçük anahtar seti varsa sekme kabul et
+      return keys.every((kk) => ["id", "key", "name", "title", "label", "role"].includes(kk));
+    })) {
+      continue;
+    }
 
     for (const card of iterSectionLike(v)) {
       const p = normPerson(card, undefined);
