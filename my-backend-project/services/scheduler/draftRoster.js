@@ -9,6 +9,7 @@ const stripDiacritics = (str = "") =>
     .toString()
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "");
+const normalizeCode = (s) => stripDiacritics(U(s));
 const canonName = (s = "") =>
   stripDiacritics(U(s)).replace(/\s+/g, " ").trim();
 const arrFromAny = (v) => {
@@ -22,7 +23,7 @@ const pad2 = (n) => String(n).padStart(2, "0");
 const monIndex = (wdSun0) => (wdSun0 + 6) % 7;
 
 function areaKeywords(label) {
-  const s = U(label);
+  const s = normalizeCode(label);
   const map = {
     "SERVİS SORUMLUSU": ["SERVİS SORUMLUSU", "SORUMLU"],
     "SÜPERVİZÖR": ["SÜPERVİZÖR", "SUPERVISOR", "SV"],
@@ -39,7 +40,7 @@ function areaKeywords(label) {
     AŞI: ["AŞI"],
     TRİAJ: ["TRİAJ"],
   };
-  for (const k of Object.keys(map)) if (s.includes(k)) return map[k];
+  for (const k of Object.keys(map)) if (s.includes(normalizeCode(k))) return map[k].map(normalizeCode);
   return s ? [s.split(" ")[0]] : [];
 }
 
@@ -60,7 +61,7 @@ function buildStaffIndex(staffRaw) {
       s?.meta?.workAreas,
       s?.meta?.skills,
       s?.meta?.tags,
-    ].forEach((src) => arrFromAny(src).forEach((a) => areas.add(U(a))));
+    ].forEach((src) => arrFromAny(src).forEach((a) => areas.add(normalizeCode(a))));
 
     const shiftCodes = new Set();
     [
@@ -72,7 +73,7 @@ function buildStaffIndex(staffRaw) {
       s.vardiyalar,
       s?.meta?.shiftCodes,
       s?.meta?.shifts,
-    ].forEach((src) => arrFromAny(src).forEach((c) => shiftCodes.add(U(c))));
+    ].forEach((src) => arrFromAny(src).forEach((c) => shiftCodes.add(normalizeCode(c))));
 
     out.push({
       id,
@@ -95,8 +96,11 @@ function isEligible(person, row, year, month0, day, requireEligibility = true) {
   if (person.weekendOff && (wd === 0 || wd === 6)) return false;
   if (!requireEligibility) return true;
   const keys = areaKeywords(row.label);
-  if (person.areas?.size && !keys.some((k) => person.areas.has(U(k)))) return false;
-  if (row.shiftCode && person.shiftCodes?.size && !person.shiftCodes.has(U(row.shiftCode))) return false;
+  if (keys.length) {
+    if (!person.areas?.size) return false;
+    if (!keys.some((k) => person.areas.has(normalizeCode(k)))) return false;
+  }
+  if (row.shiftCode && person.shiftCodes?.size && !person.shiftCodes.has(normalizeCode(row.shiftCode))) return false;
   return true;
 }
 
@@ -281,7 +285,7 @@ function generateDraftRoster({
 }) {
   const month0 = month - 1;
   const rng = mulberry32(year * 100 + month);
-  const NIGHT = new Set(nightCodes && nightCodes.length ? nightCodes.map(U) : Array.from(NIGHT_DEFAULT));
+  const NIGHT = new Set(nightCodes && nightCodes.length ? nightCodes.map(normalizeCode) : Array.from(NIGHT_DEFAULT));
 
   const staffIdx = buildStaffIndex(staff);
   const id2person = new Map(staffIdx.map((p) => [p.id, p]));
@@ -440,12 +444,12 @@ function generateDraftRoster({
         .filter((p) => (leavePolicy === "ignore" ? true : !isOnLeave(p, d)));
 
       // gece üstüne gece yok
-      const isNightToday = NIGHT.has(U(r?.shiftCode || ""));
+      const isNightToday = NIGHT.has(normalizeCode(r?.shiftCode || ""));
       if (isNightToday && d > 1) {
         const prev = namedAssignments[d - 1] || {};
         const prevNightCanon = new Set();
         for (const rr of rows || []) {
-          if (!NIGHT.has(U(rr?.shiftCode || ""))) continue;
+          if (!NIGHT.has(normalizeCode(rr?.shiftCode || ""))) continue;
           for (const nm of prev[rr.id] || []) prevNightCanon.add(canonName(nm));
         }
         pool = pool.filter((p) => !prevNightCanon.has(p.nameCanon));
@@ -484,4 +488,3 @@ function generateDraftRoster({
 }
 
 module.exports = { generateDraftRoster };
-

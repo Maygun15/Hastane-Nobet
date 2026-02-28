@@ -1575,6 +1575,9 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         month: month1,
         dryRun: false,
         engine: "draft",
+        defs: rows,
+        overrides,
+        shiftOptions,
         pins: pinnedAssignments, // Pinleri sunucuya gönder
         ...(supervisorConfig ? { supervisorConfig } : {}),
         ...(Array.isArray(supervisorPool) && supervisorPool.length ? { supervisorPool } : {}),

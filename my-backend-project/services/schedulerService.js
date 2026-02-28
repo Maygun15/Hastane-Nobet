@@ -237,6 +237,17 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     : [];
   const overrides = scheduleData?.overrides && typeof scheduleData.overrides === 'object' ? scheduleData.overrides : {};
   const shiftOptions = Array.isArray(scheduleData?.shiftOptions) ? scheduleData.shiftOptions : [];
+  const payloadDefs = Array.isArray(payload?.defs)
+    ? payload.defs
+    : Array.isArray(payload?.rows)
+    ? payload.rows
+    : null;
+  const effectiveDefs = payloadDefs || defs;
+  const effectiveOverrides =
+    payload?.overrides && typeof payload.overrides === 'object' ? payload.overrides : overrides;
+  const effectiveShiftOptions = Array.isArray(payload?.shiftOptions)
+    ? payload.shiftOptions
+    : shiftOptions;
   const days =
     Array.isArray(payload.days) && payload.days.length
       ? payload.days
@@ -270,8 +281,8 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     draftResult = generateDraftRoster({
       year,
       month,
-      rows: defs,
-      overrides,
+      rows: effectiveDefs,
+      overrides: effectiveOverrides,
       staff,
       leavesByPerson,
       pins: Array.isArray(payload.pins) ? payload.pins : [],
@@ -280,7 +291,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
       leavePolicy: payload.leavePolicy || "hard",
       requireEligibility: payload.requireEligibility !== false,
       nightCodes: payload.nightShiftCodes || null,
-      shiftOptions,
+      shiftOptions: effectiveShiftOptions,
     });
   } else {
     context = await generateMonthlyPlan({
