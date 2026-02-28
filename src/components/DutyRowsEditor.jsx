@@ -121,7 +121,10 @@ function mapRulesToBackend(list) {
 function readDutyRulesFromLS() {
   try {
     const raw = JSON.parse(localStorage.getItem(DUTY_RULES_LS_KEY) || "[]");
-    return mapRulesToBackend(raw);
+    const out = mapRulesToBackend(raw);
+    // ONE_SHIFT_PER_DAY kapalı gelirse backend defaultuna bırak
+    if (out?.ONE_SHIFT_PER_DAY === false) delete out.ONE_SHIFT_PER_DAY;
+    return out;
   } catch {
     return {};
   }
@@ -1533,6 +1536,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       rows: rows.length,
       leaves: Object.keys(leavesByPerson || {}).length,
       rules: Object.keys(dutyRules || {}).length,
+      oneShiftPerDay: dutyRules?.ONE_SHIFT_PER_DAY,
     });
     if (staffPayload.length && staffWithMetaCount === 0) {
       note("Personel kartlarında alan/vardiya kodu yok. Uygunluk kontrolü sınırlı çalışır.", "warning");
