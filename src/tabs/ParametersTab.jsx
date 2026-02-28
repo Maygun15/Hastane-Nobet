@@ -324,7 +324,11 @@ export default function ParametersTab({
       {/* İçerik */}
       <div className="mt-2">
         {active === "calisma-alanlari" && (
-          <WorkAreasTab workAreas={workAreas} setWorkAreas={setWorkAreas} />
+          <WorkAreasTab
+            workAreas={workAreas}
+            setWorkAreas={setWorkAreas}
+            people={people}
+          />
         )}
         {active === "calisma-saatleri" && (
           <WorkingHoursTab workingHours={workingHours} setWorkingHours={setWorkingHours} />
