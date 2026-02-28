@@ -625,6 +625,16 @@ export default function PersonScheduleCalendar({
     () => options.find((opt) => String(opt.id) === String(selectedId)) || null,
     [options, selectedId]
   );
+  const effectiveServiceId = useMemo(() => {
+    const explicit = String(serviceId ?? "").trim();
+    if (explicit) return explicit;
+    const fallback =
+      selectedPerson?.raw?.serviceId ??
+      selectedPerson?.raw?.service ??
+      selectedPerson?.service ??
+      "";
+    return String(fallback || "").trim();
+  }, [serviceId, selectedPerson]);
 
   const filteredOptions = useMemo(() => {
     if (!searchQuery.trim()) return options;
@@ -692,7 +702,7 @@ export default function PersonScheduleCalendar({
       try {
         const schedule = await getMonthlySchedule({
           sectionId,
-          serviceId,
+          serviceId: effectiveServiceId,
           role: scheduleRole,
           year,
           month,
@@ -715,7 +725,7 @@ export default function PersonScheduleCalendar({
     return () => {
       active = false;
     };
-  }, [canManage, sectionId, serviceId, scheduleRole, year, month, remoteRevision]);
+  }, [canManage, sectionId, effectiveServiceId, scheduleRole, year, month, remoteRevision]);
 
   const remoteAssignments = useMemo(() => {
     if (!selectedPerson) return new Map();
@@ -884,7 +894,7 @@ export default function PersonScheduleCalendar({
         if (prevShiftId && prevShiftId !== shiftId) {
           await unassignSchedule({
             sectionId,
-            serviceId,
+            serviceId: effectiveServiceId,
             role: scheduleRole,
             date: assignModal.dateStr,
             shiftId: prevShiftId,
@@ -894,7 +904,7 @@ export default function PersonScheduleCalendar({
       }
       await assignSchedule({
         sectionId,
-        serviceId,
+        serviceId: effectiveServiceId,
         role: scheduleRole,
         date: assignModal.dateStr,
         shiftId,
@@ -923,7 +933,7 @@ export default function PersonScheduleCalendar({
     try {
       await unassignSchedule({
         sectionId,
-        serviceId,
+        serviceId: effectiveServiceId,
         role: scheduleRole,
         date: dateStr,
         shiftId,
