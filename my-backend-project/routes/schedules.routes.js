@@ -420,15 +420,30 @@ router.delete('/assign',
   sameServiceOrAdmin,
   async (req, res) => {
     try {
-      const query = {
+      const base = {
         sectionId: req.assignQuery.sectionId,
-        serviceId: req.assignQuery.serviceId,
-        role: req.assignQuery.role,
         year: req.assignQuery.year,
         month: req.assignQuery.month,
       };
+      const serviceId = req.assignQuery.serviceId || '';
+      const role = req.assignQuery.role || '';
+      const candidates = [
+        { ...base, serviceId, role },
+        { ...base, serviceId, role: '' },
+        { ...base, serviceId: '', role },
+        { ...base, serviceId: '', role: '' },
+      ];
 
-      const doc = await MonthlySchedule.findOne(query).lean();
+      let doc = null;
+      let query = null;
+      for (const q of candidates) {
+        const found = await MonthlySchedule.findOne(q).lean();
+        if (found) {
+          doc = found;
+          query = q;
+          break;
+        }
+      }
       if (!doc) {
         return res.json({ ok: true, assignments: [], removed: false });
       }
