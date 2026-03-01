@@ -158,31 +158,7 @@ export default function MonthStats({
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {/* Doldurulmuş Günler */}
-        <div className="rounded-lg bg-white/60 p-3 border border-emerald-100">
-          <div className="text-xs text-slate-500 font-medium mb-1">Doldurulmuş</div>
-          <div className="text-2xl font-bold text-emerald-700">
-            {stats.filledDays}
-            <span className="text-xs text-slate-400 ml-1 font-normal">/ {stats.totalDays}</span>
-          </div>
-        </div>
-
-        {/* Eksik Günler */}
-        <div className={`rounded-lg p-3 border ${
-          isCritical
-            ? "bg-white/60 border-red-100"
-            : "bg-white/60 border-slate-100"
-        }`}>
-          <div className="text-xs text-slate-500 font-medium mb-1">Eksik</div>
-          <div className={`text-2xl font-bold ${
-            isCritical ? "text-red-700" : "text-slate-400"
-          }`}>
-            {stats.missingDays}
-            {isCritical && <span className="text-sm ml-1">⚠️</span>}
-          </div>
-        </div>
-
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {/* Toplam Nöbet */}
         <div className="rounded-lg bg-white/60 p-3 border border-sky-100">
           <div className="text-xs text-slate-500 font-medium mb-1">Toplam Nöbet</div>
