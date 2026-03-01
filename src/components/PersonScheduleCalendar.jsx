@@ -1163,10 +1163,10 @@ export default function PersonScheduleCalendar({
             return <div key={`empty-${idx}`} className="h-32 rounded-xl bg-transparent" />;
           }
           const dayNum = dt.getDate();
+          const assignments = assignmentsByDay.get(dayNum) || [];
           const leaveCodeRaw =
             leavesForPerson[String(dayNum)] || leavesForPerson[`${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`];
-          const leaveCode = formatLeaveValue(leaveCodeRaw);
-          const assignments = assignmentsByDay.get(dayNum) || [];
+          const leaveCode = assignments.length ? "" : formatLeaveValue(leaveCodeRaw);
           const isWeekend = dt.getDay() === 0 || dt.getDay() === 6;
 
           return (

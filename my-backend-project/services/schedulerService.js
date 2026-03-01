@@ -22,6 +22,74 @@ const DEFAULT_WEIGHTS = {
   requestBonus: -5,
 };
 
+const NIGHT_24_CODES = new Set(['N', 'V2']);
+const normalizeCode = (s) => String(s || '').trim().toUpperCase();
+const prevDateStr = (dateStr) => {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+};
+
+function buildLeaveSet(leavesByPerson = {}) {
+  const out = new Map();
+  for (const [pidRaw, dates] of Object.entries(leavesByPerson || {})) {
+    const pid = String(pidRaw || '').trim();
+    if (!pid) continue;
+    const set = new Set();
+    if (Array.isArray(dates)) {
+      for (const d of dates) {
+        const ds = String(d || '').slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(ds)) set.add(ds);
+      }
+    } else if (dates && typeof dates === 'object') {
+      for (const k of Object.keys(dates)) {
+        const ds = String(k || '').slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(ds)) set.add(ds);
+      }
+    }
+    if (set.size) out.set(pid, set);
+  }
+  return out;
+}
+
+function applyHardConstraints(assignments = [], leavesByPerson = {}) {
+  const nightByPerson = new Map();
+  const leaveByPerson = buildLeaveSet(leavesByPerson);
+  for (const a of assignments || []) {
+    const pid = String(a?.personId || '').trim();
+    const dateStr = String(a?.date || a?.day || '').slice(0, 10);
+    if (!pid || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+    const code = normalizeCode(a?.shiftCode || a?.shiftId || a?.shift || a?.code || '');
+    if (!code || !NIGHT_24_CODES.has(code)) continue;
+    if (!nightByPerson.has(pid)) nightByPerson.set(pid, new Set());
+    nightByPerson.get(pid).add(dateStr);
+  }
+
+  const issues = [];
+  const filtered = [];
+  for (const a of assignments || []) {
+    const pid = String(a?.personId || '').trim();
+    const dateStr = String(a?.date || a?.day || '').slice(0, 10);
+    if (!pid || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      filtered.push(a);
+      continue;
+    }
+    const leaveSet = leaveByPerson.get(pid);
+    if (leaveSet && leaveSet.has(dateStr)) {
+      issues.push({ date: dateStr, shiftId: a?.shiftId || a?.shiftCode || '', reason: 'LEAVE_BLOCK' });
+      continue;
+    }
+    const prev = prevDateStr(dateStr);
+    if (prev && nightByPerson.get(pid)?.has(prev)) {
+      issues.push({ date: dateStr, shiftId: a?.shiftId || a?.shiftCode || '', reason: 'REST_AFTER_NIGHT' });
+      continue;
+    }
+    filtered.push(a);
+  }
+  return { assignments: filtered, issues };
+}
+
 const pad2 = (n) => String(n).padStart(2, '0');
 const monIndex = (wdSun0) => (wdSun0 + 6) % 7; // 0=Mon
 
@@ -317,15 +385,19 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     0
   );
 
+  const baseAssignments = useDraft ? (draftResult?.assignments || []) : (context.assignments || []);
+  const baseIssues = useDraft ? (draftResult?.issues || []) : (context.issues || []);
+  const hard = applyHardConstraints(baseAssignments, leavesByPerson);
   const data = {
-    assignments: useDraft ? (draftResult?.assignments || []) : (context.assignments || []),
-    issues: useDraft ? (draftResult?.issues || []) : (context.issues || []),
+    assignments: hard.assignments,
+    issues: [...baseIssues, ...(hard.issues || [])],
     days: days.length,
     debug: {
       staff: staffPack.debug,
       shiftCount,
       requiredSlots,
       engine: useDraft ? "draft" : "optimized",
+      hardFiltered: (baseAssignments.length || 0) - (hard.assignments.length || 0),
     },
   };
 
