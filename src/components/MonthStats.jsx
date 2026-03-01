@@ -204,30 +204,6 @@ export default function MonthStats({
         </div>
       )}
 
-      {/* Kritik Günler Listesi */}
-      {isCritical && stats.criticalDays.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-red-200">
-          <div className="text-xs font-semibold text-red-700 mb-2">
-            🔴 {stats.criticalDays.length} gün eksik nöbet var:
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {stats.criticalDays.slice(0, 10).map((item) => (
-              <span
-                key={item.day}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-100 text-red-700 text-xs font-medium"
-              >
-                {item.day}. gün
-                <span className="text-[10px] opacity-75">({item.needed} eksik)</span>
-              </span>
-            ))}
-            {stats.criticalDays.length > 10 && (
-              <span className="text-xs text-red-600">
-                +{stats.criticalDays.length - 10} daha...
-              </span>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
