@@ -6,6 +6,7 @@ import WorkingHoursTab from "./WorkingHoursTab.jsx";
 import LeaveTypesTab from "./LeaveTypesTab.jsx";
 import HolidayCalendarTab from "./HolidayCalendarTab.jsx";
 import DutyRulesTabExplained from "./DutyRulesTab.Explained.jsx"; // ✅ açıklamalı yeni bileşen
+import ScheduleRulesManager from "../components/ScheduleRulesManager.jsx";
 import RequestBoxTab from "./RequestBoxTab.jsx";
 import { API, getToken } from "../lib/api.js";
 
@@ -107,6 +108,7 @@ const SUBTABS = [
   { id: "izin-turleri",     label: "İzin Türleri" },
   { id: "tatil-takvimi",    label: "Tatil Takvimi" },
   { id: "nobet-kurallari",  label: "Nöbet Kuralları" },
+  { id: "nobet-yazma-kurallari",  label: "Nöbet Yazma Kuralları" },
   { id: "istek",            label: "İstek" },
 ];
 
@@ -339,6 +341,9 @@ export default function ParametersTab({
         {active === "tatil-takvimi"    && <HolidayCalendarTab />}
         {active === "nobet-kurallari"  && (
           <DutyRulesTabExplained rules={dutyRules} setRules={setDutyRules} />
+        )}
+        {active === "nobet-yazma-kurallari" && (
+          <ScheduleRulesManager sectionId="calisma-cizelgesi" />
         )}
         {active === "istek"            && (
           <RequestBoxTab
