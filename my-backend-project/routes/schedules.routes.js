@@ -132,6 +132,48 @@ function shiftMatchLoose(item, payload) {
   return false;
 }
 
+function applyDeleteFilter(assignments, payload, assignQuery) {
+  const key = assignmentKey(payload);
+  let filtered = assignments.filter(
+    (a) => assignmentKey(a) !== key && !matchesAssignForDelete(a, payload, assignQuery)
+  );
+
+  if (filtered.length === assignments.length) {
+    // Fallback: aynı gün + kişi bazlı tek atama varsa onu sil
+    const candidates = assignments.filter((a) =>
+      matchesByPersonAndDay(a, payload, assignQuery)
+    );
+    if (candidates.length === 1) {
+      const target = candidates[0];
+      filtered = assignments.filter((a) => a !== target);
+    } else if (candidates.length > 1) {
+      // Shift/label ile daraltmayı dene
+      const byShift = candidates.filter((a) => shiftMatchLoose(a, payload));
+      if (byShift.length === 1) {
+        const target = byShift[0];
+        filtered = assignments.filter((a) => a !== target);
+      } else if (payload?.roleLabel) {
+        const labelTarget = canonText(payload.roleLabel);
+        const byLabel = candidates.filter((a) =>
+          canonText(a?.roleLabel ?? a?.label ?? '') === labelTarget
+        );
+        if (byLabel.length === 1) {
+          const target = byLabel[0];
+          filtered = assignments.filter((a) => a !== target);
+        } else {
+          return { filtered: assignments, removed: false };
+        }
+      } else {
+        return { filtered: assignments, removed: false };
+      }
+    } else {
+      return { filtered: assignments, removed: false };
+    }
+  }
+
+  return { filtered, removed: filtered.length !== assignments.length };
+}
+
 function matchesAssignForDelete(item, payload, query) {
   const date = String(item?.date ?? item?.day ?? '').slice(0, 10);
   if (date !== query.dateStr) return false;
@@ -479,67 +521,47 @@ router.delete('/assign',
           break;
         }
       }
-      if (!doc) {
-        return res.json({ ok: true, assignments: [], removed: false });
-      }
+      const attemptRemove = async (targetDoc, targetQuery) => {
+        const data = targetDoc?.data && typeof targetDoc.data === 'object' ? targetDoc.data : {};
+        const assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
+        const { filtered, removed } = applyDeleteFilter(assignments, req.assignPayload, req.assignQuery);
+        if (!removed) return { removed: false };
 
-      const data = doc?.data && typeof doc.data === 'object' ? doc.data : {};
-      const assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
-      const key = assignmentKey(req.assignPayload);
-      let filtered = assignments.filter(
-        (a) => assignmentKey(a) !== key && !matchesAssignForDelete(a, req.assignPayload, req.assignQuery)
-      );
+        const saved = await MonthlySchedule.findOneAndUpdate(
+          targetQuery,
+          {
+            $set: {
+              data: { ...data, assignments: filtered },
+              updatedBy: req.user?.uid || null,
+            },
+          },
+          { new: true }
+        ).lean();
 
-      if (filtered.length === assignments.length) {
-        // Fallback: aynı gün + kişi bazlı tek atama varsa onu sil
-        const candidates = assignments.filter((a) =>
-          matchesByPersonAndDay(a, req.assignPayload, req.assignQuery)
-        );
-        if (candidates.length === 1) {
-          const target = candidates[0];
-          filtered = assignments.filter((a) => a !== target);
-        } else if (candidates.length > 1) {
-          // Shift/label ile daraltmayı dene
-          const byShift = candidates.filter((a) => shiftMatchLoose(a, req.assignPayload));
-          if (byShift.length === 1) {
-            const target = byShift[0];
-            filtered = assignments.filter((a) => a !== target);
-          } else if (req.assignPayload?.roleLabel) {
-            const labelTarget = canonText(req.assignPayload.roleLabel);
-            const byLabel = candidates.filter((a) =>
-              canonText(a?.roleLabel ?? a?.label ?? '') === labelTarget
-            );
-            if (byLabel.length === 1) {
-              const target = byLabel[0];
-              filtered = assignments.filter((a) => a !== target);
-            } else {
-              return res.json({ ok: true, assignments, removed: false });
-            }
-          } else {
-            return res.json({ ok: true, assignments, removed: false });
-          }
-        } else {
-          return res.json({ ok: true, assignments, removed: false });
+        return {
+          removed: true,
+          assignments: Array.isArray(saved?.data?.assignments) ? saved.data.assignments : filtered,
+          updatedAt: saved?.updatedAt || null,
+        };
+      };
+
+      if (doc && query) {
+        const res1 = await attemptRemove(doc, query);
+        if (res1.removed) {
+          return res.json({ ok: true, removed: true, ...res1 });
         }
       }
 
-      const saved = await MonthlySchedule.findOneAndUpdate(
-        query,
-        {
-          $set: {
-            data: { ...data, assignments: filtered },
-            updatedBy: req.user?.uid || null,
-          },
-        },
-        { new: true }
-      ).lean();
+      // Son çare: aynı ay için tüm schedule'larda ara
+      const allDocs = await MonthlySchedule.find(base).lean();
+      for (const d of allDocs) {
+        const res2 = await attemptRemove(d, { _id: d._id });
+        if (res2.removed) {
+          return res.json({ ok: true, removed: true, ...res2 });
+        }
+      }
 
-      return res.json({
-        ok: true,
-        assignments: Array.isArray(saved?.data?.assignments) ? saved.data.assignments : filtered,
-        removed: true,
-        updatedAt: saved?.updatedAt || null,
-      });
+      return res.json({ ok: true, assignments: doc?.data?.assignments || [], removed: false });
     } catch (err) {
       console.error('[DELETE /api/schedules/assign] ERR:', err);
       return res.status(500).json({ ok: false, message: 'Sunucu hatası' });
