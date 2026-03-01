@@ -897,22 +897,35 @@ export default function PersonScheduleCalendar({
         const candidates = canManage
           ? Array.from(new Set([effectiveServiceId, String(serviceId ?? "").trim(), ""]))
           : [effectiveServiceId];
+        const roleCandidates = canManage
+          ? [scheduleRole]
+          : Array.from(
+              new Set(
+                [scheduleRole, "Nurse", "Doctor", ""]
+                  .map((v) => String(v || "").trim())
+                  .filter(Boolean)
+              )
+            );
         let schedule = null;
         let pickedServiceId = "";
-        for (const sid of candidates) {
-          const s = await getMonthlySchedule({
-            sectionId,
-            serviceId: sid,
-            role: scheduleRole,
-            year,
-            month,
-          });
-          if (!s) continue;
-          schedule = s;
-          pickedServiceId = sid;
-          const hasAssignments = Array.isArray(s?.data?.assignments) && s.data.assignments.length > 0;
-          const hasDefs = Array.isArray(s?.data?.defs) && s.data.defs.length > 0;
-          if (hasAssignments || hasDefs) break;
+        const roleList = roleCandidates.length ? roleCandidates : [""];
+        for (const role of roleList) {
+          for (const sid of candidates) {
+            const s = await getMonthlySchedule({
+              sectionId,
+              serviceId: sid,
+              role,
+              year,
+              month,
+            });
+            if (!s) continue;
+            schedule = s;
+            pickedServiceId = sid;
+            const hasAssignments = Array.isArray(s?.data?.assignments) && s.data.assignments.length > 0;
+            const hasDefs = Array.isArray(s?.data?.defs) && s.data.defs.length > 0;
+            if (hasAssignments || hasDefs) break;
+          }
+          if (schedule) break;
         }
         if (!active) return;
         const data = schedule?.data || {};
@@ -993,7 +1006,7 @@ export default function PersonScheduleCalendar({
         combined.get(day).push(...list);
       }
     };
-    if (!hasRemote) {
+    if (canManage && !hasRemote) {
       if (assignmentInfo?.map instanceof Map) merge(assignmentInfo.map);
       merge(bufferAssignments);
       merge(aiPlanAssignments);
@@ -1021,6 +1034,7 @@ export default function PersonScheduleCalendar({
     leavesForPerson,
     year,
     month0,
+    canManage,
   ]);
 
   const { cells } = useMemo(() => buildMonthDays(year, month0), [year, month0]);
