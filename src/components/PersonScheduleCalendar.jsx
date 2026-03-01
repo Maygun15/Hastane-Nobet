@@ -1146,6 +1146,7 @@ export default function PersonScheduleCalendar({
     const dateStr = String(assg?.day || assg?.date || `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`).slice(0, 10);
     const shiftId = String(assg?.shiftId || assg?.shiftCode || assg?.shift || assg?.code || "").trim();
     const pid = String(assg?.personId || selectedPerson.id || "").trim();
+    const pname = String(assg?.personName || selectedPerson.name || "").trim();
     if (!dateStr || !shiftId || !pid) return;
     if (!window.confirm(`${selectedPerson.name} için ${dateStr} tarihli nöbet silinsin mi?`)) return;
     try {
@@ -1156,6 +1157,7 @@ export default function PersonScheduleCalendar({
         date: dateStr,
         shiftId,
         personId: pid,
+        personName: pname || undefined,
       });
       refreshRemote();
     } catch (err) {

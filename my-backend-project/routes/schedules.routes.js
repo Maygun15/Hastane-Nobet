@@ -86,6 +86,49 @@ function assignmentKey(a) {
   return `${date}|${personId}|${shiftId}`;
 }
 
+function canonName(str = '') {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLocaleUpperCase('tr-TR')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function matchesAssignForDelete(item, payload, query) {
+  const date = String(item?.date ?? item?.day ?? '').slice(0, 10);
+  if (date !== query.dateStr) return false;
+
+  const shiftCandidates = [
+    item?.shiftId,
+    item?.shiftCode,
+    item?.shift,
+    item?.code,
+  ]
+    .map((v) => (v == null ? '' : String(v).trim()))
+    .filter(Boolean);
+  const targetShifts = [
+    payload?.shiftId,
+    payload?.shiftCode,
+    payload?.shift,
+  ]
+    .map((v) => (v == null ? '' : String(v).trim()))
+    .filter(Boolean);
+  if (targetShifts.length && !targetShifts.some((s) => shiftCandidates.includes(s))) {
+    return false;
+  }
+
+  const pidItem = String(item?.personId ?? '').trim();
+  const pidTarget = String(payload?.personId ?? '').trim();
+  if (pidTarget && pidItem) return pidTarget === pidItem;
+
+  const nameItem = canonName(item?.personName ?? item?.name ?? '');
+  const nameTarget = canonName(payload?.personName ?? payload?.name ?? '');
+  if (nameTarget && nameItem) return nameTarget === nameItem;
+
+  return false;
+}
+
 function buildQuery(req) {
   const { sectionId, serviceId = '', role = '' } = req.method === 'GET'
     ? req.query
@@ -339,7 +382,9 @@ router.delete('/assign',
       const data = doc?.data && typeof doc.data === 'object' ? doc.data : {};
       const assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
       const key = assignmentKey(req.assignPayload);
-      const filtered = assignments.filter((a) => assignmentKey(a) !== key);
+      const filtered = assignments.filter(
+        (a) => assignmentKey(a) !== key && !matchesAssignForDelete(a, req.assignPayload, req.assignQuery)
+      );
 
       if (filtered.length === assignments.length) {
         return res.json({ ok: true, assignments, removed: false });
@@ -397,4 +442,3 @@ router.get('/generated', async (req, res) => {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
-

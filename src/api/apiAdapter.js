@@ -271,6 +271,7 @@ export async function unassignSchedule({
   shiftId,
   shiftCode,
   personId,
+  personName,
 } = {}) {
   if (!sectionId) throw new Error("sectionId gerekli");
   if (!date) throw new Error("date gerekli");
@@ -284,6 +285,7 @@ export async function unassignSchedule({
     shiftId: shiftId || shiftCode,
     shiftCode,
     personId,
+    ...(personName ? { personName } : {}),
   };
   return httpRequest("/api/schedules/assign", { method: "DELETE", body });
 }
