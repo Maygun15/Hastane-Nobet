@@ -935,10 +935,14 @@ export default function PersonScheduleCalendar({
     });
   }, [selectedPerson, year, month0, remoteAssignmentsRaw, remoteDefs]);
 
-  const shiftOptions = useMemo(() => {
+  const workingHoursRaw = useMemo(() => {
     const fromPropsRaw = Array.isArray(workingHours) ? workingHours : [];
     const fromLSRaw = readStorageList(WORKING_HOURS_KEYS);
-    const merged = normalizeWorkingHours([...fromPropsRaw, ...fromLSRaw]);
+    return [...fromPropsRaw, ...fromLSRaw];
+  }, [workingHours, settingsRevision]);
+
+  const shiftOptions = useMemo(() => {
+    const merged = normalizeWorkingHours(workingHoursRaw);
     if (merged.length) return merged;
     const map = new Map();
     (remoteDefs || []).forEach((def) => {
@@ -950,7 +954,7 @@ export default function PersonScheduleCalendar({
     return Array.from(map.values()).sort((a, b) =>
       String(a.label || a.code).localeCompare(String(b.label || b.code), "tr", { sensitivity: "base" })
     );
-  }, [remoteDefs, settingsRevision, workingHours]);
+  }, [remoteDefs, settingsRevision, workingHoursRaw]);
 
   const areaOptions = useMemo(() => {
     const fromPropsRaw = Array.isArray(workAreas) ? workAreas : [];
@@ -1301,6 +1305,7 @@ export default function PersonScheduleCalendar({
           cells={cells}
           assignments={assignmentsByDay}
           requiredPerDay={2}
+          workingHours={workingHoursRaw}
         />
       )}
 
