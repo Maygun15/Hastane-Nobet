@@ -17,6 +17,7 @@ const DEFAULT_RULES = {
 
 const DEFAULT_WEIGHTS = {
   hourBalance: 2,
+  shiftBalance: 3,
   weekdayBalance: 3,
   pairPenalty: 5,
   requestBonus: -5,
@@ -334,7 +335,39 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
 
   const leavesByPerson = payload.leavesByPerson || {};
   const requestsByPerson = payload.requestsByPerson || {};
-  const targetHours = Number(payload.targetHours || 0);
+
+  const staffCount = Array.isArray(staff) ? staff.length : 0;
+  const totalSlots = Array.isArray(days)
+    ? days.reduce(
+        (sum, d) => sum + (d.shifts || []).reduce((s, sh) => s + (Number(sh.requiredCount || 0) || 0), 0),
+        0
+      )
+    : 0;
+  const totalHoursCalc = Array.isArray(days)
+    ? days.reduce(
+        (sum, d) =>
+          sum +
+          (d.shifts || []).reduce((s, sh) => {
+            const need = Number(sh.requiredCount || 0) || 0;
+            const hours = Number(sh.hours || 0) || 0;
+            return s + need * hours;
+          }, 0),
+        0
+      )
+    : 0;
+
+  const targetHours =
+    Number(payload.targetHours || 0) > 0
+      ? Number(payload.targetHours || 0)
+      : staffCount > 0 && totalHoursCalc > 0
+      ? totalHoursCalc / staffCount
+      : 0;
+  const targetShifts =
+    Number(payload.targetShifts || 0) > 0
+      ? Number(payload.targetShifts || 0)
+      : staffCount > 0 && totalSlots > 0
+      ? totalSlots / staffCount
+      : 0;
 
   const engineMode = String(payload.engine || payload.mode || '').toLowerCase();
   const useDraft = engineMode === 'draft';
@@ -373,6 +406,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
       rules,
       weights,
       targetHours,
+      targetShifts,
       debug: {
         logBlocks: payload?.debug?.logBlocks || process.env.SCHEDULER_DEBUG === '1',
       },

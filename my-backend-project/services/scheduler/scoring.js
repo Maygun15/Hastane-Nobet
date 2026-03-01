@@ -5,7 +5,9 @@ function calculateScore(person, day, shift, context) {
 
   const weights = context?.weights || {};
   const target = Number(context?.targetHours || 0);
+  const targetShifts = Number(context?.targetShifts || 0);
   const totalHours = Number(person?.totalHours || 0);
+  const totalShifts = Number(person?.totalShifts || 0);
   const weekday = Number(day?.weekday ?? -1);
   const weekdayCount = person?.weekdayCount || {};
   const pairHistory = person?.pairHistory || {};
@@ -15,6 +17,12 @@ function calculateScore(person, day, shift, context) {
   if (Number.isFinite(target) && target > 0) {
     const w = Number(weights.hourBalance ?? 2);
     score += (totalHours - target) * w;
+  }
+
+  // Nöbet sayısı dengesi (saat yoksa da dengeler)
+  if (Number.isFinite(targetShifts) && targetShifts > 0) {
+    const w = Number(weights.shiftBalance ?? 3);
+    score += (totalShifts - targetShifts) * w;
   }
 
   // Haftanın günü dengesi

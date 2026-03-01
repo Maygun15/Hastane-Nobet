@@ -269,7 +269,29 @@ export function solveHourBalanced({
 
   /* ===== (A) Kişiye özel aylık hedef saat ===== */
   const workdaySet = new Set(days.filter(isWeekdayYmd));
-  const baseTarget = workdaySet.size * 8;
+  const totalSlotHours = (() => {
+    let sum = 0;
+    for (const day of days) {
+      const dnum = Number(day.slice(-2));
+      for (const tl of taskLines || []) {
+        const need = Math.max(0, tl?.counts?.[dnum] ?? tl?.defaultCount ?? 0);
+        if (need <= 0) continue;
+        let h = Number(tl.hours ?? hoursOfShiftCode(tl.shiftCode, shiftIndex));
+        if (!Number.isFinite(h) || h <= 0) h = 1; // saat bilinmiyorsa adil dağılım için 1 say
+        sum += need * h;
+      }
+    }
+    return sum;
+  })();
+  const avgTarget =
+    Array.isArray(people) && people.length && totalSlotHours > 0
+      ? totalSlotHours / people.length
+      : 0;
+  const baseTarget = Number(rules?.targetMonthlyHours || 0) > 0
+    ? Number(rules?.targetMonthlyHours || 0)
+    : avgTarget > 0
+    ? avgTarget
+    : workdaySet.size * 8;
 
   // Kişi başı reduceMonthlyTarget toplama (yalnız plan günlerinde)
   const reduceByPerson = new Map((people || []).map(p => [String(p.id), 0]));
@@ -454,11 +476,13 @@ export function solveHourBalanced({
     for (const tl of taskLines || []) {
       const need = Math.max(0, tl?.counts?.[dnum] ?? tl?.defaultCount ?? 0);
       for (let i = 0; i < need; i++) {
+        let slotH = Number(tl.hours ?? hoursOfShiftCode(tl.shiftCode, shiftIndex));
+        if (!Number.isFinite(slotH) || slotH <= 0) slotH = 1; // saat yoksa sayısal denge için 1
         slots.push({
           day,
           roleLabel: tl.label,
           shiftCode: tl.shiftCode,
-          hours: tl.hours || hoursOfShiftCode(tl.shiftCode, shiftIndex),
+          hours: slotH,
         });
       }
     }

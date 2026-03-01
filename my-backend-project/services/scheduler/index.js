@@ -8,6 +8,7 @@ function buildContext({
   leavesByPerson = {},
   requestsByPerson = {},
   targetHours = 0,
+  targetShifts = 0,
   rules = {},
   weights = {},
   debug = {},
@@ -28,6 +29,7 @@ function buildContext({
       areas,
       shiftCodes,
       totalHours: 0,
+      totalShifts: 0,
       weekdayCount: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
       pairHistory: {},
       assignedDays: [],
@@ -45,6 +47,7 @@ function buildContext({
     leavesByPerson,
     requestsByPerson,
     targetHours,
+    targetShifts,
     rules,
     weights,
     randomize: true,
@@ -65,6 +68,7 @@ async function generateMonthlyPlan({
   rules,
   weights,
   targetHours,
+  targetShifts,
   debug,
 } = {}) {
   if (!getActiveStaff || !getMonthlyShifts) {
@@ -77,12 +81,14 @@ async function generateMonthlyPlan({
   const requestsByPerson = (await (getRequests?.({ year, month }) || {})) || {};
 
   const ctxTarget = Number.isFinite(targetHours) ? targetHours : 0;
+  const ctxTargetShifts = Number.isFinite(targetShifts) ? targetShifts : 0;
   const context = buildContext({
     staff,
     days,
     leavesByPerson,
     requestsByPerson,
     targetHours: ctxTarget,
+    targetShifts: ctxTargetShifts,
     rules,
     weights,
     debug: debug || {},

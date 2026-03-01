@@ -36,6 +36,7 @@ function assign(person, day, shift, context) {
   const hours = Number(shift.hours || context.defaultShiftHours || 0);
 
   person.totalHours = Number(person.totalHours || 0) + (Number.isFinite(hours) ? hours : 0);
+  person.totalShifts = Number(person.totalShifts || 0) + 1;
   if (!Array.isArray(person.assignedDays)) person.assignedDays = [];
   if (!person.assignedDays.includes(day.date)) person.assignedDays.push(day.date);
 

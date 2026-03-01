@@ -499,22 +499,24 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
 
       // Plan çıktısını çalışma çizelgesine yaz (backend ile senkron)
       try {
-        if (scheduleRes?.schedule?.data) {
-          const data = {
-            ...(scheduleRes.schedule.data || {}),
-            assignments: Array.isArray(result.dpResult?.assignments) ? result.dpResult.assignments : [],
-            generatedAt: new Date().toISOString(),
-          };
-          await saveMonthlySchedule({
-            sectionId: "calisma-cizelgesi",
-            serviceId,
-            role: roleKey,
-            year,
-            month,
-            data,
-            meta: scheduleRes?.schedule?.meta || {},
-          });
-        }
+        const baseData =
+          scheduleRes?.schedule?.data && typeof scheduleRes.schedule.data === "object"
+            ? scheduleRes.schedule.data
+            : {};
+        const data = {
+          ...baseData,
+          assignments: Array.isArray(result.dpResult?.assignments) ? result.dpResult.assignments : [],
+          generatedAt: new Date().toISOString(),
+        };
+        await saveMonthlySchedule({
+          sectionId: "calisma-cizelgesi",
+          serviceId,
+          role: roleKey,
+          year,
+          month,
+          data,
+          meta: scheduleRes?.schedule?.meta || {},
+        });
       } catch (err) {
         console.warn("Planı backend'e yazma hatası:", err?.message || err);
       }
