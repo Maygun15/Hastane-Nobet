@@ -1,210 +1,404 @@
 // services/ruleEngine.js
-// Level-2 Rule Engine (minimal, non-breaking)
-
-const normalizeCode = (s) =>
-  (s || "")
-    .toString()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toUpperCase()
-    .trim();
-
-const parseTime = (s) => {
-  if (!s) return null;
-  const m = String(s).match(/^(\d{1,2}):(\d{2})$/);
-  if (!m) return null;
-  return Number(m[1]) * 60 + Number(m[2]);
-};
-
-const daysBetween = (a, b) => {
-  if (!a || !b) return null;
-  return Math.round((new Date(`${b}T00:00:00Z`) - new Date(`${a}T00:00:00Z`)) / 86400000);
-};
-
-const ymKey = (y, m) => `${y}-${String(m).padStart(2, "0")}`;
+const DutyRule = require('../models/DutyRule');
 
 class RuleEngine {
-  constructor(ruleDoc = {}) {
-    this.ruleDoc = ruleDoc || {};
-    this.basicRules = ruleDoc.basicRules || {};
-    this.leaveRules = ruleDoc.leaveRules || {};
-    this.shiftRules = ruleDoc.shiftRules || {};
-    this.taskRequirements = ruleDoc.taskRequirements || {};
-    this.personnelRules = ruleDoc.personnelRules || {};
+  constructor(rules) {
+    this.rules = rules || {};
   }
 
-  getShiftRule(shiftCode) {
-    const code = normalizeCode(shiftCode);
-    if (!code) return null;
-    const direct = this.shiftRules[code] || this.shiftRules[shiftCode] || null;
-    if (direct) return direct;
-    const found = Object.values(this.shiftRules || {}).find(
-      (r) => normalizeCode(r?.code || r?.id || "") === code
-    );
-    return found || null;
+  /**
+   * Kuralları yükle
+   */
+  static async loadRules(serviceId) {
+    try {
+      const rule = await DutyRule.findOne({ serviceId, 'metadata.isActive': true }).lean();
+      return new RuleEngine(rule);
+    } catch (err) {
+      console.error('[RuleEngine] Kural yükleme hatası:', err);
+      return new RuleEngine(null);
+    }
   }
 
-  isNightShift(shift) {
-    if (!shift) return false;
-    if (shift.isNight) return true;
-    const rule = this.getShiftRule(shift.code || shift.id || shift.shiftCode);
-    if (rule?.isNight) return true;
-    return String(shift.code || shift.id || "").toUpperCase().includes("N");
-  }
-
-  resolveLeaveCode({ personId, date, leavesByPerson }) {
-    if (!personId || !date || !leavesByPerson) return null;
-    const pid = String(personId);
-    const entry = leavesByPerson[pid];
-    if (!entry) return null;
-
-    if (Array.isArray(entry)) {
-      return entry.includes(date) ? "LEAVE" : null;
+  /**
+   * 1. Personeli görev için kontrol et
+   */
+  async checkPersonEligibility(person, taskCode, context = {}) {
+    if (!this.rules) {
+      return { eligible: true, reason: 'Kurallar yüklenmedi' };
     }
 
-    if (typeof entry === "object") {
-      const ym = date.slice(0, 7);
-      const day = date.slice(8, 10);
-      const byYm = entry[ym];
-      const raw = (byYm && (byYm[date] ?? byYm[String(Number(day))])) ?? entry[date];
-      if (!raw) return null;
-      if (typeof raw === "string") return raw;
-      if (typeof raw === "object") return raw.code || raw.type || raw.kind || "LEAVE";
-      return "LEAVE";
+    const { leaveRules, taskRequirements } = this.rules;
+
+    // İzin durumu kontrol
+    if (person.leaveType) {
+      const leaveRule = leaveRules?.get(person.leaveType);
+      if (leaveRule && !leaveRule.allowDuty) {
+        return {
+          eligible: false,
+          reason: `${leaveRule.name} nedeniyle nöbet yazılamaz`
+        };
+      }
     }
 
-    return null;
+    // Görev gereksinimlerini kontrol et
+    if (taskCode) {
+      const taskReq = taskRequirements?.get(taskCode);
+      if (taskReq?.allowedRoles && person.role) {
+        const isRoleAllowed = taskReq.allowedRoles.some(
+          role => role.toLowerCase() === person.role.toLowerCase()
+        );
+        if (!isRoleAllowed) {
+          return {
+            eligible: false,
+            reason: `${taskCode} görevi için ${person.role} yazılamaz`
+          };
+        }
+      }
+
+      // Spesifik personel kontrolü
+      if (taskReq?.allowedPersonnel?.length > 0) {
+        const isPersonnelAllowed = taskReq.allowedPersonnel.includes(person.id);
+        if (!isPersonnelAllowed) {
+          return {
+            eligible: false,
+            reason: `${person.name} bu görev için atanmaya uygun değil`
+          };
+        }
+      }
+    }
+
+    // Hamile personel gece nöbeti kontrol
+    if (person.pregnant && context.isNightShift) {
+      return {
+        eligible: false,
+        reason: 'Hamile personel gece nöbeti tutamaz'
+      };
+    }
+
+    // Rapor olanlar hafif görev
+    if (person.hasReport && context.taskType === 'heavy') {
+      return {
+        eligible: false,
+        reason: 'Rapor olanlar ağır görevlere yazılamaz'
+      };
+    }
+
+    return { eligible: true, reason: 'Uygun' };
   }
 
-  applyLeaveRules(person, date, context = {}) {
-    const code = this.resolveLeaveCode({
-      personId: person?.id,
-      date,
-      leavesByPerson: context.leavesByPerson || {},
-    });
-    if (!code) return { canWork: true, countsAsWorked: false, code: null };
+  /**
+   * 2. Ardışık çalışma günlerini kontrol et
+   */
+  async checkConsecutiveDays(person, assignments, context = {}) {
+    const { maxConsecutiveDays } = this.rules?.basicRules || { maxConsecutiveDays: 6 };
 
-    const rule = this.leaveRules?.[code] || null;
-    const allowDuty = rule?.allowDuty === false ? false : rule?.allowDuty === true ? true : false;
-    const countsAsWorked = rule?.countAsWorked === true;
+    if (!assignments || assignments.length === 0) {
+      return { canAssign: true, consecutive: 0, maxAllowed: maxConsecutiveDays };
+    }
+
+    let consecutive = 0;
+    let lastDate = null;
+
+    // Ters sırayla kontrol (son tarihten başla)
+    for (let i = assignments.length - 1; i >= 0; i--) {
+      const assign = assignments[i];
+      if (assign.personId !== person.id) continue;
+
+      const assignDate = new Date(assign.date);
+      
+      if (!lastDate) {
+        consecutive = 1;
+        lastDate = assignDate;
+      } else {
+        const dayDiff = Math.floor((lastDate - assignDate) / (1000 * 60 * 60 * 24));
+        if (dayDiff === 1) {
+          consecutive++;
+          lastDate = assignDate;
+        } else {
+          break; // Ardışık dizi kırıldı
+        }
+      }
+    }
+
+    const canAssign = consecutive < maxConsecutiveDays;
     return {
-      canWork: allowDuty,
-      countsAsWorked,
-      code,
-      reason: allowDuty ? "" : `LEAVE_${code}`,
+      canAssign,
+      consecutive,
+      maxAllowed: maxConsecutiveDays,
+      message: canAssign
+        ? `${consecutive} gün çalışmış (${maxConsecutiveDays} maksimum)`
+        : `${consecutive}/${maxConsecutiveDays} gün doldurdu`
     };
   }
 
-  checkConsecutiveDays(person, assignments = []) {
-    const max = Number(this.basicRules?.maxConsecutiveDays || 0);
-    if (!max || !person?.id) return { consecutive: 0, maxAllowed: max || 0, canAssign: true };
-    const pid = String(person.id);
-    const days = assignments
-      .filter((a) => String(a?.personId) === pid)
-      .map((a) => String(a?.date || a?.day || ""))
-      .filter(Boolean)
-      .sort();
-    let best = 0;
-    let run = 0;
-    let prev = null;
-    for (const d of days) {
-      const diff = prev ? daysBetween(prev, d) : null;
-      run = diff === 1 ? run + 1 : 1;
-      best = Math.max(best, run);
-      prev = d;
+  /**
+   * 3. Gece nöbeti kurallarını kontrol et
+   */
+  async checkNightShiftRules(person, date, assignments, context = {}) {
+    const { shiftRules } = this.rules;
+    if (!shiftRules) return { valid: true };
+
+    const nightCodes = ['N', 'V2'];
+    const dateObj = new Date(date);
+    const prevDateObj = new Date(dateObj);
+    prevDateObj.setDate(prevDateObj.getDate() - 1);
+    const prevDateStr = prevDateObj.toISOString().split('T')[0];
+
+    // Önceki gün gece nöbeti yapıp yapmadığını kontrol et
+    const hadNightPrevDay = assignments?.some(
+      a => a.personId === person.id &&
+           a.date === prevDateStr &&
+           nightCodes.includes(a.shiftCode)
+    );
+
+    if (hadNightPrevDay) {
+      return {
+        valid: false,
+        reason: 'Gece üstüne gece nöbeti yasak (Önceki gün gece tuttu)',
+        conflict: 'NIGHT_CONSECUTIVE'
+      };
     }
-    return { consecutive: best, maxAllowed: max, canAssign: best < max };
+
+    return { valid: true };
   }
 
-  calculateHours(person, assignments = [], dateStr, shift) {
-    const pid = String(person?.id || "");
-    if (!pid) return { dailyHours: 0, weeklyHours: 0, monthlyHours: 0, withinLimits: true };
-    const hoursOf = (a) =>
-      Number(a?.hours) ||
-      Number(this.getShiftRule(a?.shiftCode || a?.shiftId)?.hours) ||
-      Number(shift?.hours) ||
-      0;
-    const monthKey = dateStr ? dateStr.slice(0, 7) : "";
-    let daily = 0;
-    let weekly = 0;
-    let monthly = 0;
-    for (const a of assignments) {
-      if (String(a?.personId) !== pid) continue;
-      const d = String(a?.date || a?.day || "");
-      const h = hoursOf(a);
-      if (d === dateStr) daily += h;
-      if (monthKey && d.startsWith(monthKey)) monthly += h;
-      if (dateStr && daysBetween(d, dateStr) <= 6 && daysBetween(d, dateStr) >= 0) weekly += h;
-    }
-    const maxWeekly = Number(this.basicRules?.maxWeeklyHours || 0);
-    const maxDaily = Number(this.basicRules?.maxDailyHours || 0);
-    const withinLimits =
-      (!maxWeekly || weekly <= maxWeekly) && (!maxDaily || daily <= maxDaily);
-    return { dailyHours: daily, weeklyHours: weekly, monthlyHours: monthly, withinLimits };
+  /**
+   * 4. Saatlik limitleri kontrol et
+   */
+  async calculateAndCheckHours(person, newShiftHours, assignments, context = {}) {
+    const {
+      maxDailyHours,
+      maxWeeklyHours,
+      maxConsecutiveDays
+    } = this.rules?.basicRules || {
+      maxDailyHours: 24,
+      maxWeeklyHours: 72,
+      maxConsecutiveDays: 6
+    };
+
+    const date = context.date || new Date().toISOString().split('T')[0];
+    const dateObj = new Date(date);
+    const weekStart = new Date(dateObj);
+    weekStart.setDate(weekStart.getDate() - dateObj.getDay());
+
+    // Günlük saatleri hesapla
+    const dailyHours = (assignments || [])
+      .filter(a => a.personId === person.id && a.date === date)
+      .reduce((sum, a) => sum + (Number(a.hours) || 0), 0);
+
+    const dailyTotal = dailyHours + (Number(newShiftHours) || 0);
+
+    // Haftalık saatleri hesapla
+    const weeklyHours = (assignments || [])
+      .filter(a => {
+        const aDate = new Date(a.date);
+        return a.personId === person.id &&
+               aDate >= weekStart &&
+               aDate <= dateObj;
+      })
+      .reduce((sum, a) => sum + (Number(a.hours) || 0), 0);
+
+    const weeklyTotal = weeklyHours + (Number(newShiftHours) || 0);
+
+    return {
+      dailyHours: dailyTotal,
+      weeklyHours: weeklyTotal,
+      withinDailyLimit: dailyTotal <= maxDailyHours,
+      withinWeeklyLimit: weeklyTotal <= maxWeeklyHours,
+      dailyWarning: dailyTotal > maxDailyHours
+        ? `Günlük limit aşacak: ${dailyTotal}/${maxDailyHours}h`
+        : null,
+      weeklyWarning: weeklyTotal > maxWeeklyHours
+        ? `Haftalık limit aşacak: ${weeklyTotal}/${maxWeeklyHours}h`
+        : null
+    };
   }
 
-  validateShift(person, shift, date, context = {}) {
+  /**
+   * 5. Tüm çakışmaları bul
+   */
+  async getConflicts(person, shift, date, assignments, context = {}) {
     const conflicts = [];
-    if (!shift || !date) return { valid: true, conflicts };
-    if (this.basicRules?.nightShiftFollowUp && this.isNightShift(shift)) {
-      // night follow-up checks are handled in scheduler constraints; keep as info
+
+    // Aynı gün çakışması
+    const sameDayAssignment = assignments?.find(
+      a => a.personId === person.id && a.date === date
+    );
+    if (sameDayAssignment) {
+      conflicts.push({
+        type: 'SAME_DAY_CONFLICT',
+        severity: 'critical',
+        message: `${date} gün: Zaten "${sameDayAssignment.shiftCode}" vardiyası var`
+      });
     }
-    const rest = Number(this.basicRules?.minRestHours || 0);
-    if (rest && person?.lastShift?.date && person?.lastShift?.end && shift?.start) {
-      const prevEnd = parseTime(person.lastShift.end);
-      const currStart = parseTime(shift.start);
-      if (prevEnd != null && currStart != null) {
-        const diff = daysBetween(person.lastShift.date, date);
-        const restHours = diff === 0 ? (currStart - prevEnd) / 60 : diff * 24 + (currStart - prevEnd) / 60;
-        if (restHours < rest) conflicts.push("MIN_REST_HOURS");
+
+    // Ardışık gün kontrolü
+    const consecutive = await this.checkConsecutiveDays(person, assignments);
+    if (!consecutive.canAssign) {
+      conflicts.push({
+        type: 'CONSECUTIVE_LIMIT',
+        severity: 'warning',
+        message: `Ardışık ${consecutive.consecutive} gün: Maksimum ${consecutive.maxAllowed} gün`
+      });
+    }
+
+    // Gece nöbeti kontrolü
+    const nightCheck = await this.checkNightShiftRules(person, date, assignments);
+    if (!nightCheck.valid) {
+      conflicts.push({
+        type: nightCheck.conflict,
+        severity: 'critical',
+        message: nightCheck.reason
+      });
+    }
+
+    // Saatlik limitler
+    const hours = await this.calculateAndCheckHours(person, shift?.hours || 8, assignments, { date });
+    if (!hours.withinDailyLimit) {
+      conflicts.push({
+        type: 'DAILY_HOUR_LIMIT',
+        severity: 'critical',
+        message: hours.dailyWarning
+      });
+    }
+    if (!hours.withinWeeklyLimit) {
+      conflicts.push({
+        type: 'WEEKLY_HOUR_LIMIT',
+        severity: 'warning',
+        message: hours.weeklyWarning
+      });
+    }
+
+    return {
+      hasConflicts: conflicts.length > 0,
+      conflicts,
+      criticalCount: conflicts.filter(c => c.severity === 'critical').length,
+      warningCount: conflicts.filter(c => c.severity === 'warning').length
+    };
+  }
+
+  /**
+   * 6. İzin kurallarını uygula
+   */
+  async applyLeaveRules(person, date, context = {}) {
+    if (!person.leaveType) {
+      return { canWork: true, countsAsWorked: false };
+    }
+
+    const leaveRule = this.rules?.leaveRules?.get(person.leaveType);
+    if (!leaveRule) {
+      return { canWork: true, countsAsWorked: false };
+    }
+
+    return {
+      canWork: leaveRule.allowDuty || false,
+      countsAsWorked: leaveRule.countAsWorked || false,
+      leaveType: person.leaveType,
+      name: leaveRule.name
+    };
+  }
+
+  /**
+   * 7. Vardiya geçişlerini kontrol et
+   */
+  async validateShiftTransition(person, currentShift, nextShift, gap = 0) {
+    if (!this.rules?.shiftRules) {
+      return { valid: true };
+    }
+
+    const currentShiftRule = this.rules.shiftRules.get(currentShift);
+    if (!currentShiftRule) {
+      return { valid: true };
+    }
+
+    const { minRestAfter, nextDayOptions } = currentShiftRule;
+
+    // Dinlenme süresi kontrol
+    if (minRestAfter && gap < minRestAfter) {
+      return {
+        valid: false,
+        reason: `Yeterli dinlenme yok: ${gap}h < ${minRestAfter}h`,
+        conflict: 'INSUFFICIENT_REST'
+      };
+    }
+
+    // Ertesi gün vardiya seçenekleri
+    if (nextDayOptions && nextDayOptions.length > 0) {
+      if (!nextDayOptions.includes(nextShift)) {
+        return {
+          valid: false,
+          reason: `${currentShift} sonrası ${nextShift} yazılamaz`,
+          validOptions: nextDayOptions,
+          conflict: 'INVALID_NEXT_SHIFT'
+        };
       }
     }
-    return { valid: conflicts.length === 0, conflicts };
+
+    return { valid: true };
   }
 
-  checkPersonEligibility(person, shift, date, context = {}) {
-    const leave = this.applyLeaveRules(person, date, context);
-    if (!leave.canWork) {
-      return { eligible: false, reason: leave.reason || "LEAVE" };
+  /**
+   * 8. Kuralları test et (Simulator)
+   */
+  async testRules(testScenario) {
+    const results = {
+      passed: 0,
+      failed: 0,
+      warnings: [],
+      errors: [],
+      details: []
+    };
+
+    const { personId, shifts, dates, person } = testScenario;
+
+    if (!person) {
+      results.errors.push('Personel bilgisi eksik');
+      return results;
     }
-    const task = this.taskRequirements?.[shift?.label || shift?.name || ""];
-    if (task?.allowedRoles?.length) {
-      const role = (person?.meta?.role || person?.role || "").toLowerCase();
-      const ok = task.allowedRoles.some((r) => role.includes(String(r).toLowerCase()));
-      if (!ok) return { eligible: false, reason: "ROLE_MISMATCH" };
-    }
-    return { eligible: true, reason: "OK" };
-  }
 
-  getConflicts(person, shift, date, context = {}) {
-    const conflicts = [];
-    const elig = this.checkPersonEligibility(person, shift, date, context);
-    if (!elig.eligible) conflicts.push({ rule: "eligibility", conflict: elig.reason });
-    const v = this.validateShift(person, shift, date, context);
-    v.conflicts.forEach((c) => conflicts.push({ rule: "shift", conflict: c }));
-    const cons = this.checkConsecutiveDays(person, context.assignments || []);
-    if (!cons.canAssign) conflicts.push({ rule: "maxConsecutiveDays", conflict: cons.consecutive });
-    const hours = this.calculateHours(person, context.assignments || [], date, shift);
-    if (!hours.withinLimits) conflicts.push({ rule: "hours", conflict: "LIMIT_EXCEEDED" });
-    return conflicts;
-  }
-
-  testRules({ person, shifts = [], dates = [], context = {} } = {}) {
-    const report = [];
-    let passed = 0;
-    let failed = 0;
-    for (let i = 0; i < shifts.length; i++) {
+    // Her shift'i test et
+    for (let i = 0; i < (shifts || []).length; i++) {
       const shift = shifts[i];
-      const date = dates[i] || dates[0];
-      const conflicts = this.getConflicts(person, shift, date, context);
-      if (conflicts.length) {
-        failed += 1;
-        report.push({ date, shift, conflicts });
+      const date = dates[i];
+
+      const conflicts = await this.getConflicts(person, { code: shift, hours: 8 }, date, []);
+
+      if (conflicts.hasConflicts) {
+        results.failed++;
+        results.details.push({
+          date,
+          shift,
+          status: 'FAIL',
+          conflicts: conflicts.conflicts
+        });
       } else {
-        passed += 1;
+        results.passed++;
+        results.details.push({
+          date,
+          shift,
+          status: 'PASS'
+        });
       }
     }
-    return { passed, failed, report };
+
+    return results;
+  }
+
+  /**
+   * Kuralları string olarak getir (Admin UI için)
+   */
+  getRulesAsJSON() {
+    if (!this.rules) return null;
+
+    return {
+      departman: this.rules.departman,
+      basicRules: this.rules.basicRules,
+      leaveRules: Object.fromEntries(this.rules.leaveRules || []),
+      shiftRules: Object.fromEntries(this.rules.shiftRules || []),
+      taskRequirements: Object.fromEntries(this.rules.taskRequirements || []),
+      personnelRules: this.rules.personnelRules,
+      metadata: this.rules.metadata
+    };
   }
 }
 

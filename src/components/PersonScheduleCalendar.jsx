@@ -192,6 +192,66 @@ function normalizeWorkAreas(input) {
   return Array.from(set.values()).sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
 }
 
+function splitAreaTokens(value) {
+  return String(value || "")
+    .split(/[,;]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function extractAreasFromPerson(person) {
+  const out = [];
+  const candidates = [
+    person?.areas,
+    person?.workAreas,
+    person?.workareas,
+    person?.meta?.areas,
+    person?.meta?.workAreas,
+    person?.meta?.workareas,
+    person?.raw?.areas,
+    person?.raw?.workAreas,
+    person?.raw?.workareas,
+    person?.raw?.meta?.areas,
+    person?.raw?.meta?.workAreas,
+    person?.["ÇALIŞMA ALANLARI"],
+    person?.["CALISMA ALANLARI"],
+    person?.raw?.["ÇALIŞMA ALANLARI"],
+    person?.raw?.["CALISMA ALANLARI"],
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (Array.isArray(candidate)) {
+      for (const item of candidate) {
+        if (!item) continue;
+        if (typeof item === "string") {
+          out.push(...splitAreaTokens(item));
+        } else if (typeof item === "object") {
+          const label = item.name ?? item.label ?? item.title ?? item.code ?? item.id ?? "";
+          if (label) out.push(...splitAreaTokens(label));
+        }
+      }
+      continue;
+    }
+    if (typeof candidate === "string") {
+      out.push(...splitAreaTokens(candidate));
+      continue;
+    }
+    if (typeof candidate === "object") {
+      const label = candidate.name ?? candidate.label ?? candidate.title ?? candidate.code ?? candidate.id ?? "";
+      if (label) out.push(...splitAreaTokens(label));
+    }
+  }
+  return out;
+}
+
+function collectAreasFromPeople(list) {
+  const out = [];
+  (Array.isArray(list) ? list : []).forEach((person) => {
+    out.push(...extractAreasFromPerson(person));
+  });
+  return out;
+}
+
 function normalizeWorkingHours(input) {
   const map = new Map();
   (Array.isArray(input) ? input : []).forEach((item) => {
@@ -853,7 +913,8 @@ export default function PersonScheduleCalendar({
   const areaOptions = useMemo(() => {
     const fromPropsRaw = Array.isArray(workAreas) ? workAreas : [];
     const fromLSRaw = readStorageList(AREA_STORAGE_KEYS);
-    const merged = normalizeWorkAreas([...fromPropsRaw, ...fromLSRaw]);
+    const fromPeopleRaw = collectAreasFromPeople(people);
+    const merged = normalizeWorkAreas([...fromPropsRaw, ...fromLSRaw, ...fromPeopleRaw]);
     if (merged.length) return merged;
     const set = new Set();
     (remoteDefs || []).forEach((def) => {
@@ -861,7 +922,7 @@ export default function PersonScheduleCalendar({
       if (label) set.add(label);
     });
     return Array.from(set.values()).sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
-  }, [remoteDefs, settingsRevision, workAreas]);
+  }, [remoteDefs, settingsRevision, workAreas, people]);
 
   const assignmentsByDay = useMemo(() => {
     const combined = new Map();
