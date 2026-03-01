@@ -1257,7 +1257,7 @@ export default function PersonScheduleCalendar({
           dönemine ait. {year}-{pad2(month0 + 1)} için nöbet verisi bulunamadı.
         </div>
       )}
-      {remoteError && (
+      {canManage && remoteError && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3 text-sm">
           {remoteError}
         </div>

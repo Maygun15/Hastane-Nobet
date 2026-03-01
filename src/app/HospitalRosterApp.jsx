@@ -498,8 +498,8 @@ export default function HospitalRosterApp() {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
-              {/* Yedekleme butonları (yeni) */}
-              <BackupButtons />
+              {/* Yedekleme butonları (basic kullanıcıda gizle) */}
+              {!isBasicUser && <BackupButtons />}
 
               <UserBadge
                 user={user}

@@ -7,6 +7,14 @@ const ScheduleRules = require('../models/ScheduleRules');
 const { validateAssignment } = require('../utils/rulesValidator');
 const { requireAuth, sameServiceOrAdmin, requireRole } = require('../middleware/authz');
 
+function allowMonthlyRead(req, res, next) {
+  const role = String(req.user?.role || '').toLowerCase();
+  if (req.method === 'GET' && (role === 'user' || role === 'staff' || role === 'standard')) {
+    return next();
+  }
+  return sameServiceOrAdmin(req, res, next);
+}
+
 function parseIntSafe(val, def = null) {
   const n = Number(val);
   return Number.isFinite(n) ? n : def;
@@ -282,7 +290,7 @@ router.get('/monthly',
       return res.status(400).json({ ok: false, message: err.message || 'Geçersiz istek' });
     }
   },
-  sameServiceOrAdmin,
+  allowMonthlyRead,
   async (req, res) => {
     try {
       const query = req.scheduleQuery;
