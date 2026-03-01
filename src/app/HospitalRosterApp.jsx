@@ -112,6 +112,12 @@ export default function HospitalRosterApp() {
   const canSeeUsersTab    = isAdmin;                   // Kullanıcılar: yalnız Admin
 
   const [activeTab, setActiveTab] = useState("plan");
+  useEffect(() => {
+    if (isBasicUser && activeTab !== "plan") {
+      setActiveTab("plan");
+      pushUrl("/");
+    }
+  }, [isBasicUser, activeTab]);
 
   /* ---- Mongo-first state’ler (LS sadece cache) ---- */
   const [workAreas, setWorkAreas] = useState([]);
@@ -522,6 +528,8 @@ export default function HospitalRosterApp() {
                 {isBasicUser ? "Takvimim" : "Planlama"}
               </NavBtn>
 
+              {!isBasicUser && (
+                <>
               {/* PERSONEL — admin & yetkili */}
               {canSeePersonnel && (
                 <div
@@ -664,6 +672,8 @@ export default function HospitalRosterApp() {
                 >
                   Kullanıcılar
                 </NavBtn>
+              )}
+                </>
               )}
             </nav>
           </div>

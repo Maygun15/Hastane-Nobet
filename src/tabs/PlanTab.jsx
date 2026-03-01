@@ -9,6 +9,7 @@ import PersonScheduleCalendar from "../components/PersonScheduleCalendar.jsx";
 import { API } from "../lib/api.js";
 import { runPlannerOnce } from "../lib/runPlannerOnce.js";
 import { saveMonthlySchedule } from "../api/apiAdapter.js";
+import { services as STATIC_SERVICES } from "../constants/enums.js";
 
 const MONTH_LABEL = (year, month) =>
   `${Intl.DateTimeFormat("tr-TR", { month: "long" }).format(new Date(year, month - 1, 1))} ${year}`;
@@ -18,6 +19,9 @@ function stripDiacritics(str = "") {
 }
 function canonName(str = "") {
   return stripDiacritics(str).toLocaleUpperCase("tr-TR").replace(/\s+/g, " ").trim();
+}
+function canonService(str = "") {
+  return stripDiacritics(String(str || "")).toLocaleUpperCase("tr-TR").replace(/\s+/g, " ").trim();
 }
 
 function normalizePersonRecord(p, index) {
@@ -234,6 +238,27 @@ function matchPersonToUser(user, options) {
 export default function PlanTab({ workAreas = [], workingHours = [] }) {
   const { user } = useAuth();
   const scope = useServiceScope();
+  const normalizeServiceId = useCallback(
+    (raw) => {
+      const val = String(raw || "").trim();
+      if (!val) return "";
+      if (scope?.servicesById?.has(val)) return val;
+      const canon = canonService(val);
+      for (const [id, svc] of scope?.servicesById?.entries?.() || []) {
+        const name = svc?.name || svc?.label || svc?.title || svc?.code || id;
+        const code = svc?.code || "";
+        if (canonService(name) === canon || canonService(code) === canon) return String(id);
+      }
+      for (const svc of STATIC_SERVICES || []) {
+        const id = String(svc?.id || "").trim();
+        const name = String(svc?.name || "").trim();
+        if (!id && !name) continue;
+        if (canonService(id) === canon || canonService(name) === canon) return id || val;
+      }
+      return val;
+    },
+    [scope?.servicesById]
+  );
   const { ym, setYear, setMonth } = useActiveYM();
   const { year, month } = ym;
   const [activeRole, setActiveRole] = useState("Nurse");
@@ -269,9 +294,7 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
   const isStaffUser = roleKey === "STAFF";
   const isAuthorizedUser =
     !isAdminUser && !isStaffUser &&
-    (roleKey === "AUTHORIZED" ||
-      roleKey === "MANAGER" ||
-      (Array.isArray(user?.serviceIds) && user.serviceIds.length > 0));
+    (roleKey === "AUTHORIZED" || roleKey === "MANAGER");
   const isStandardUser = !!user && !isAdminUser && !isAuthorizedUser;
   const canManage = isAdminUser || isAuthorizedUser;
 
@@ -281,6 +304,10 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
   }, [scope.defaultServiceId]);
 
   const scopedPeople = useMemo(() => scope.filterByScope(peopleAll), [peopleAll, scope]);
+  const matchPool = useMemo(
+    () => (canManage ? scopedPeople : peopleAll),
+    [canManage, scopedPeople, peopleAll]
+  );
 
   const peopleForService = useMemo(() => {
     if (!selectedService) return scopedPeople;
@@ -290,8 +317,8 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
   }, [scopedPeople, selectedService, scope]);
 
   const matchedPerson = useMemo(
-    () => matchPersonToUser(user, scopedPeople),
-    [user, scopedPeople]
+    () => matchPersonToUser(user, matchPool),
+    [user, matchPool]
   );
 
   const fallbackPerson = useMemo(() => {
@@ -300,34 +327,66 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
       user?.fullName ||
       user?.name ||
       user?.displayName ||
+      user?.username ||
+      user?.userName ||
+      user?.identifier ||
       user?.email ||
+      user?.tc ||
+      user?.tcNo ||
+      user?.tcno ||
       "";
     if (!name) return null;
-    const serviceId = String(
+    const serviceId = normalizeServiceId(
       user?.serviceId ||
       (Array.isArray(user?.serviceIds) ? user.serviceIds[0] : "") ||
       ""
-    ).trim();
+    );
     const roleHint =
       user?.roleLabel ||
       user?.title ||
       user?.jobTitle ||
       user?.position ||
       "";
+    const fallbackId =
+      String(
+        user?.personId ||
+        user?.person_id ||
+        user?.staffId ||
+        user?.id ||
+        user?.userId ||
+        user?.email ||
+        name ||
+        ""
+      ).trim() || "me";
     return {
-      id: "",
+      id: fallbackId,
       name,
       canon: canonName(name),
       raw: { serviceId, role: roleHint },
       service: serviceId,
     };
-  }, [isStandardUser, user]);
+  }, [isStandardUser, user, normalizeServiceId]);
+
+  const normalizedMatchedPerson = useMemo(() => {
+    if (!matchedPerson) return null;
+    const serviceId = normalizeServiceId(
+      matchedPerson?.service ||
+      matchedPerson?.raw?.serviceId ||
+      matchedPerson?.raw?.service ||
+      ""
+    );
+    return {
+      ...matchedPerson,
+      service: serviceId,
+      raw: { ...(matchedPerson.raw || {}), serviceId },
+    };
+  }, [matchedPerson, normalizeServiceId]);
 
   const calendarPeople = useMemo(() => {
     if (isAdminUser || isAuthorizedUser) return peopleForService;
-    if (matchedPerson) return [matchedPerson];
+    if (normalizedMatchedPerson) return [normalizedMatchedPerson];
     return fallbackPerson ? [fallbackPerson] : [];
-  }, [isAdminUser, isAuthorizedUser, peopleForService, matchedPerson, fallbackPerson]);
+  }, [isAdminUser, isAuthorizedUser, peopleForService, normalizedMatchedPerson, fallbackPerson]);
 
   const serviceOptions = useMemo(() => {
     const items = [];
@@ -343,6 +402,14 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
   }, [scope.allowedIds, scope.servicesById, isAdminUser]);
 
   const showServiceSelect = canManage;
+  const effectiveServiceId = useMemo(() => {
+    if (canManage) return selectedService || "";
+    const fromMatched =
+      normalizedMatchedPerson?.service ||
+      normalizedMatchedPerson?.raw?.serviceId ||
+      "";
+    return fromMatched || fallbackPerson?.service || fallbackPerson?.raw?.serviceId || "";
+  }, [canManage, selectedService, normalizedMatchedPerson, fallbackPerson]);
 
   const roleInfo = {
     isAdmin: isAdminUser,
@@ -352,7 +419,7 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
 
   useEffect(() => {
     if (!isStandardUser) return;
-    const src = matchedPerson || fallbackPerson;
+    const src = normalizedMatchedPerson || fallbackPerson;
     if (!src) return;
     const hint = String(
       src?.raw?.meta?.role ||
@@ -363,7 +430,7 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
     ).toLowerCase();
     const inferred = /doktor|doctor|hekim|tabip/.test(hint) ? "Doctor" : "Nurse";
     setActiveRole(inferred);
-  }, [isStandardUser, matchedPerson, fallbackPerson]);
+  }, [isStandardUser, normalizedMatchedPerson, fallbackPerson]);
 
   const handleRunPlanner = useCallback(async () => {
     try {
@@ -517,7 +584,7 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
           user={user}
           role={roleInfo}
           sectionId="calisma-cizelgesi"
-          serviceId={selectedService || ""}
+          serviceId={effectiveServiceId}
           scheduleRole={activeRole}
           workAreas={workAreas}
           workingHours={workingHours}

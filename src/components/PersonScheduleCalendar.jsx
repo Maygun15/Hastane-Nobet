@@ -332,6 +332,10 @@ function resolveUserPerson(user, options) {
     user.fullName,
     user.name,
     user.displayName,
+    user.username,
+    user.userName,
+    user.identifier,
+    user.email,
     [user.firstName, user.lastName].filter(Boolean).join(" "),
   ]
     .map((v) => (v == null ? "" : String(v).trim()))
@@ -721,7 +725,7 @@ export default function PersonScheduleCalendar({
   );
 
   const initialPersonId = useMemo(() => {
-    if (!canManage) return userPersonId || "";
+    if (!canManage) return userPersonId || options[0]?.id || "";
     return options[0]?.id || "";
   }, [canManage, userPersonId, options]);
 
