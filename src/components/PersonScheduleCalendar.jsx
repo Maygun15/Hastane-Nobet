@@ -576,11 +576,29 @@ function collectAssignmentsFromRosterPreview({ year, month0, personId, personCan
   return map;
 }
 
-function collectAssignmentsFromRemote({ year, month0, personId, personCanon, assignments }) {
+function buildDefsIndex(defs) {
+  const byId = new Map();
+  const byShift = new Map();
+  (Array.isArray(defs) ? defs : []).forEach((def) => {
+    if (!def) return;
+    const id = def.id ?? def.rowId ?? def._id ?? def.shiftId ?? def.code ?? null;
+    if (id != null && String(id).trim()) {
+      byId.set(String(id).trim(), def);
+    }
+    const shiftCode = String(def.shiftCode ?? def.code ?? "").trim();
+    if (shiftCode) {
+      byShift.set(shiftCode, def);
+    }
+  });
+  return { byId, byShift };
+}
+
+function collectAssignmentsFromRemote({ year, month0, personId, personCanon, assignments, defs }) {
   const map = new Map();
   if (!Array.isArray(assignments)) return map;
   const targetPid = personId ? String(personId) : "";
   const targetCanon = personCanon ? canonName(personCanon) : "";
+  const defIndex = buildDefsIndex(defs);
   for (const item of assignments) {
     if (!item) continue;
     const pidRaw = item.personId ?? item.personID ?? item.staffId ?? item.pid ?? "";
@@ -601,11 +619,34 @@ function collectAssignmentsFromRemote({ year, month0, personId, personCanon, ass
     if (yy !== Number(year) || mm !== Number(month0 + 1)) continue;
     const dayNum = dd;
 
+    let shiftId = item.shiftId ?? item.shiftCode ?? item.shift ?? item.code ?? undefined;
+    let shiftCode = item.shiftCode ?? item.shiftId ?? item.shift ?? item.code ?? undefined;
+    let roleLabel = item.roleLabel ?? item.role ?? item.label ?? undefined;
+
+    const shiftIdKey = shiftId != null ? String(shiftId).trim() : "";
+    const shiftCodeKey = shiftCode != null ? String(shiftCode).trim() : "";
+    let def = null;
+    if (shiftIdKey && defIndex.byId.has(shiftIdKey)) {
+      def = defIndex.byId.get(shiftIdKey);
+    } else if (shiftCodeKey && defIndex.byId.has(shiftCodeKey)) {
+      def = defIndex.byId.get(shiftCodeKey);
+    } else if (shiftCodeKey && defIndex.byShift.has(shiftCodeKey)) {
+      def = defIndex.byShift.get(shiftCodeKey);
+    }
+    if (def) {
+      const defId = def.id ?? def.rowId ?? def._id ?? def.shiftId ?? def.code ?? "";
+      const defShift = String(def.shiftCode ?? def.code ?? "").trim();
+      const defLabel = String(def.label ?? def.name ?? def.area ?? "").trim();
+      if (!shiftIdKey && defId) shiftId = String(defId);
+      if ((!shiftCodeKey || defIndex.byId.has(shiftCodeKey)) && defShift) shiftCode = defShift;
+      if (!roleLabel && defLabel) roleLabel = defLabel;
+    }
+
     const assignment = {
       day: dateStr,
-      shiftId: item.shiftId ?? item.shiftCode ?? item.shift ?? item.code ?? undefined,
-      shiftCode: item.shiftCode ?? item.shiftId ?? item.shift ?? item.code ?? undefined,
-      roleLabel: item.roleLabel ?? item.role ?? item.label ?? undefined,
+      shiftId,
+      shiftCode,
+      roleLabel,
       personId: pid || (targetPid || undefined),
       personName: nameRaw || undefined,
       note: item.note || undefined,
@@ -890,8 +931,9 @@ export default function PersonScheduleCalendar({
       personId: selectedPerson.id,
       personCanon: selectedPerson.canon,
       assignments: remoteAssignmentsRaw,
+      defs: remoteDefs,
     });
-  }, [selectedPerson, year, month0, remoteAssignmentsRaw]);
+  }, [selectedPerson, year, month0, remoteAssignmentsRaw, remoteDefs]);
 
   const shiftOptions = useMemo(() => {
     const fromPropsRaw = Array.isArray(workingHours) ? workingHours : [];
