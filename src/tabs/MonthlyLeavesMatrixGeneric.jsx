@@ -100,7 +100,7 @@ export default function MonthlyLeavesMatrixGeneric({
     const fromProp = personLeaves && typeof personLeaves === "object" ? personLeaves : {};
     const fromLive = liveLeaves && typeof liveLeaves === "object" ? liveLeaves : {};
     return { ...fromProp, ...fromLive };
-  }, [personLeaves, liveLeaves, ym]);
+  }, [personLeaves, liveLeaves, ym, version]);
 
   useEffect(() => {
     const refresh = () => {
