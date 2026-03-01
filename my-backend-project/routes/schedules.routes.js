@@ -129,6 +129,21 @@ function matchesAssignForDelete(item, payload, query) {
   return false;
 }
 
+function matchesByPersonAndDay(item, payload, query) {
+  const date = String(item?.date ?? item?.day ?? '').slice(0, 10);
+  if (date !== query.dateStr) return false;
+
+  const pidItem = String(item?.personId ?? '').trim();
+  const pidTarget = String(payload?.personId ?? '').trim();
+  if (pidTarget && pidItem) return pidTarget === pidItem;
+
+  const nameItem = canonName(item?.personName ?? item?.name ?? '');
+  const nameTarget = canonName(payload?.personName ?? payload?.name ?? '');
+  if (nameTarget && nameItem) return nameTarget === nameItem;
+
+  return false;
+}
+
 function buildQuery(req) {
   const { sectionId, serviceId = '', role = '' } = req.method === 'GET'
     ? req.query
@@ -382,12 +397,21 @@ router.delete('/assign',
       const data = doc?.data && typeof doc.data === 'object' ? doc.data : {};
       const assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
       const key = assignmentKey(req.assignPayload);
-      const filtered = assignments.filter(
+      let filtered = assignments.filter(
         (a) => assignmentKey(a) !== key && !matchesAssignForDelete(a, req.assignPayload, req.assignQuery)
       );
 
       if (filtered.length === assignments.length) {
-        return res.json({ ok: true, assignments, removed: false });
+        // Fallback: aynı gün + kişi bazlı tek atama varsa onu sil
+        const candidates = assignments.filter((a) =>
+          matchesByPersonAndDay(a, req.assignPayload, req.assignQuery)
+        );
+        if (candidates.length === 1) {
+          const target = candidates[0];
+          filtered = assignments.filter((a) => a !== target);
+        } else {
+          return res.json({ ok: true, assignments, removed: false });
+        }
       }
 
       const saved = await MonthlySchedule.findOneAndUpdate(
