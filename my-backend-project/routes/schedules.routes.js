@@ -97,6 +97,41 @@ function canonName(str = '') {
     .trim();
 }
 
+function canonText(str = '') {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLocaleUpperCase('tr-TR')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function shiftMatchLoose(item, payload) {
+  const shiftCandidates = [
+    item?.shiftId,
+    item?.shiftCode,
+    item?.shift,
+    item?.code,
+  ]
+    .map((v) => (v == null ? '' : String(v).trim()))
+    .filter(Boolean);
+  const targetShifts = [
+    payload?.shiftId,
+    payload?.shiftCode,
+    payload?.shift,
+  ]
+    .map((v) => (v == null ? '' : String(v).trim()))
+    .filter(Boolean);
+  if (!targetShifts.length) return false;
+  const candSet = new Set(shiftCandidates);
+  for (const t of targetShifts) {
+    if (candSet.has(t)) return true;
+    const tNorm = t.toUpperCase();
+    if ([...candSet].some((c) => c.toUpperCase() === tNorm)) return true;
+  }
+  return false;
+}
+
 function matchesAssignForDelete(item, payload, query) {
   const date = String(item?.date ?? item?.day ?? '').slice(0, 10);
   if (date !== query.dateStr) return false;
@@ -463,6 +498,26 @@ router.delete('/assign',
         if (candidates.length === 1) {
           const target = candidates[0];
           filtered = assignments.filter((a) => a !== target);
+        } else if (candidates.length > 1) {
+          // Shift/label ile daraltmayı dene
+          const byShift = candidates.filter((a) => shiftMatchLoose(a, req.assignPayload));
+          if (byShift.length === 1) {
+            const target = byShift[0];
+            filtered = assignments.filter((a) => a !== target);
+          } else if (req.assignPayload?.roleLabel) {
+            const labelTarget = canonText(req.assignPayload.roleLabel);
+            const byLabel = candidates.filter((a) =>
+              canonText(a?.roleLabel ?? a?.label ?? '') === labelTarget
+            );
+            if (byLabel.length === 1) {
+              const target = byLabel[0];
+              filtered = assignments.filter((a) => a !== target);
+            } else {
+              return res.json({ ok: true, assignments, removed: false });
+            }
+          } else {
+            return res.json({ ok: true, assignments, removed: false });
+          }
         } else {
           return res.json({ ok: true, assignments, removed: false });
         }
