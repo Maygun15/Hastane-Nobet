@@ -700,6 +700,7 @@ export default function PersonScheduleCalendar({
 }) {
   const month0 = Math.max(0, Math.min(11, Number(month) - 1 || 0));
   const ymKey = `${year}-${pad2(month0 + 1)}`;
+  const canManage = role.isAdmin || role.isAuthorized;
 
   const options = useMemo(() => {
     const rows = [];
@@ -714,13 +715,15 @@ export default function PersonScheduleCalendar({
     return rows;
   }, [people]);
 
+  const userPersonId = useMemo(
+    () => resolveUserPerson(user, options),
+    [user, options]
+  );
+
   const initialPersonId = useMemo(() => {
-    if (role.isStandard) {
-      const match = resolveUserPerson(user, options);
-      if (match) return match;
-    }
+    if (!canManage) return userPersonId || "";
     return options[0]?.id || "";
-  }, [role.isStandard, user, options]);
+  }, [canManage, userPersonId, options]);
 
   const [selectedId, setSelectedId] = useState(initialPersonId);
   const [dpRevision, setDpRevision] = useState(0);
@@ -799,8 +802,6 @@ export default function PersonScheduleCalendar({
     };
   }, []);
 
-  const canManage = role.isAdmin || role.isAuthorized;
-
   const selectedPerson = useMemo(
     () => options.find((opt) => String(opt.id) === String(selectedId)) || null,
     [options, selectedId]
@@ -870,7 +871,15 @@ export default function PersonScheduleCalendar({
 
   useEffect(() => {
     let active = true;
-    if (!canManage || !sectionId) {
+    if (!sectionId) {
+      setRemoteAssignmentsRaw([]);
+      setRemoteDefs([]);
+      setRemoteError("");
+      setRemoteLoading(false);
+      setRemoteServiceIdUsed("");
+      return () => {};
+    }
+    if (!canManage && !effectiveServiceId) {
       setRemoteAssignmentsRaw([]);
       setRemoteDefs([]);
       setRemoteError("");
@@ -881,9 +890,9 @@ export default function PersonScheduleCalendar({
     setRemoteLoading(true);
     (async () => {
       try {
-        const candidates = Array.from(
-          new Set([effectiveServiceId, String(serviceId ?? "").trim(), ""])
-        );
+        const candidates = canManage
+          ? Array.from(new Set([effectiveServiceId, String(serviceId ?? "").trim(), ""]))
+          : [effectiveServiceId];
         let schedule = null;
         let pickedServiceId = "";
         for (const sid of candidates) {
@@ -1213,7 +1222,7 @@ export default function PersonScheduleCalendar({
             </select>
           </label>
         )}
-        {role.isStandard && selectedPerson && (
+        {!canManage && selectedPerson && (
           <div className="text-sm text-slate-600">
             Personel: <span className="font-medium text-slate-800">{selectedPerson.name}</span>
           </div>
@@ -1238,19 +1247,13 @@ export default function PersonScheduleCalendar({
         </div>
       )}
 
-      {selectedPerson && role.isStandard && !resolveUserPerson(user, options) && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-800 px-4 py-3 text-sm">
-          Hesabınızla eşleşen personel kaydı bulunamadı. Şu an listeden ilk kayıt gösteriliyor.
-        </div>
-      )}
-
       {assignmentInfo.mismatch && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-800 px-4 py-3 text-sm">
           Son oluşturulan plan {assignmentInfo.mismatch?.year}-{pad2(Number(assignmentInfo.mismatch?.month) + 1)}{" "}
           dönemine ait. {year}-{pad2(month0 + 1)} için nöbet verisi bulunamadı.
         </div>
       )}
-      {remoteError && canManage && (
+      {remoteError && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3 text-sm">
           {remoteError}
         </div>

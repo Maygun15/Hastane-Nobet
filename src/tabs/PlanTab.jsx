@@ -266,13 +266,14 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
 
   const roleKey = String(user?.role || user?.roleKey || user?.type || "").toUpperCase();
   const isAdminUser = roleKey === "ADMIN";
+  const isStaffUser = roleKey === "STAFF";
   const isAuthorizedUser =
-    !isAdminUser &&
+    !isAdminUser && !isStaffUser &&
     (roleKey === "AUTHORIZED" ||
       roleKey === "MANAGER" ||
-      roleKey === "STAFF" ||
       (Array.isArray(user?.serviceIds) && user.serviceIds.length > 0));
   const isStandardUser = !!user && !isAdminUser && !isAuthorizedUser;
+  const canManage = isAdminUser || isAuthorizedUser;
 
   const [selectedService, setSelectedService] = useState(scope.defaultServiceId || "");
   useEffect(() => {
@@ -293,10 +294,40 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
     [user, scopedPeople]
   );
 
+  const fallbackPerson = useMemo(() => {
+    if (!isStandardUser) return null;
+    const name =
+      user?.fullName ||
+      user?.name ||
+      user?.displayName ||
+      user?.email ||
+      "";
+    if (!name) return null;
+    const serviceId = String(
+      user?.serviceId ||
+      (Array.isArray(user?.serviceIds) ? user.serviceIds[0] : "") ||
+      ""
+    ).trim();
+    const roleHint =
+      user?.roleLabel ||
+      user?.title ||
+      user?.jobTitle ||
+      user?.position ||
+      "";
+    return {
+      id: "",
+      name,
+      canon: canonName(name),
+      raw: { serviceId, role: roleHint },
+      service: serviceId,
+    };
+  }, [isStandardUser, user]);
+
   const calendarPeople = useMemo(() => {
     if (isAdminUser || isAuthorizedUser) return peopleForService;
-    return matchedPerson ? [matchedPerson] : [];
-  }, [isAdminUser, isAuthorizedUser, peopleForService, matchedPerson]);
+    if (matchedPerson) return [matchedPerson];
+    return fallbackPerson ? [fallbackPerson] : [];
+  }, [isAdminUser, isAuthorizedUser, peopleForService, matchedPerson, fallbackPerson]);
 
   const serviceOptions = useMemo(() => {
     const items = [];
@@ -311,13 +342,28 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
     return items;
   }, [scope.allowedIds, scope.servicesById, isAdminUser]);
 
-  const showServiceSelect = isAdminUser || isAuthorizedUser;
+  const showServiceSelect = canManage;
 
   const roleInfo = {
     isAdmin: isAdminUser,
     isAuthorized: isAuthorizedUser,
     isStandard: isStandardUser,
   };
+
+  useEffect(() => {
+    if (!isStandardUser) return;
+    const src = matchedPerson || fallbackPerson;
+    if (!src) return;
+    const hint = String(
+      src?.raw?.meta?.role ||
+      src?.raw?.title ||
+      src?.raw?.role ||
+      src?.role ||
+      ""
+    ).toLowerCase();
+    const inferred = /doktor|doctor|hekim|tabip/.test(hint) ? "Doctor" : "Nurse";
+    setActiveRole(inferred);
+  }, [isStandardUser, matchedPerson, fallbackPerson]);
 
   const handleRunPlanner = useCallback(async () => {
     try {
@@ -417,14 +463,14 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
   return (
     <div className="p-4 space-y-4">
       <ScheduleToolbar
-        title={`Planlama • ${MONTH_LABEL(year, month)}`}
+        title={`${canManage ? "Planlama" : "Takvimim"} • ${MONTH_LABEL(year, month)}`}
         year={year}
         month={month}
         setYear={setYear}
         setMonth={setMonth}
-        onBuild={handleRunPlanner}
-        role={activeRole}
-        onRoleChange={setActiveRole}
+        onBuild={canManage ? handleRunPlanner : undefined}
+        role={canManage ? activeRole : undefined}
+        onRoleChange={canManage ? setActiveRole : undefined}
       />
 
       {plannerStatus === "error" && (
@@ -455,7 +501,7 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
         </div>
       )}
 
-      {isStandardUser && !matchedPerson && (
+      {isStandardUser && !matchedPerson && !fallbackPerson && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
           Kullanıcı bilgilerinizle eşleşen bir personel kaydı bulunamadı. Personel listesinde kimlik bilgilerinizi
           güncelledikten sonra tekrar deneyin.

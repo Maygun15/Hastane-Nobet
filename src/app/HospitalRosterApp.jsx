@@ -94,14 +94,13 @@ export default function HospitalRosterApp() {
     has(PERMISSIONS.SERVICES_WRITE);
 
   // Yetkili tanımı (STAFF eklendi)
+  const isStaff = roleOf(user) === "STAFF";
   const isAuthorized =
-    !isAdmin && (
+    !isAdmin && !isStaff && (
       roleOf(user) === "AUTHORIZED" ||
       roleOf(user) === "MANAGER"   ||
-      roleOf(user) === "STAFF"     ||
       has(PERMISSIONS.SCHEDULE_WRITE) ||
-      has(PERMISSIONS.LEAVES_WRITE) ||
-      (Array.isArray(user?.serviceIds) && user.serviceIds.length > 0)
+      has(PERMISSIONS.LEAVES_WRITE)
     );
 
   const isBasicUser  = !!user && !isAdmin && !isAuthorized;
@@ -672,20 +671,16 @@ export default function HospitalRosterApp() {
 
         <main className="flex-1 w-full px-6 py-6 space-y-6 overflow-auto max-w-[1400px] mx-auto">
           {activeTab === "plan" && (
-            isBasicUser ? (
-              <MyCalendarBox me={user} leaveTypes={leaveTypes} />
-            ) : (
-              <PlanTab
-                workAreas={workAreas}
-                nurses={nurses}
-                doctors={doctors}
-                peopleAll={peopleAll}
-                leaveTypes={leaveTypes}
-                personLeaves={personLeaves}
-                setPersonLeaves={setPersonLeaves}
-                workingHours={workingHours}
-              />
-            )
+            <PlanTab
+              workAreas={workAreas}
+              nurses={nurses}
+              doctors={doctors}
+              peopleAll={peopleAll}
+              leaveTypes={leaveTypes}
+              personLeaves={personLeaves}
+              setPersonLeaves={setPersonLeaves}
+              workingHours={workingHours}
+            />
           )}
 
           {activeTab === "personnel" && (
