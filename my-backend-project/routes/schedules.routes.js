@@ -3,7 +3,9 @@ const express = require('express');
 const router = express.Router();
 
 const MonthlySchedule = require('../models/MonthlySchedule');
-const { requireAuth, sameServiceOrAdmin } = require('../middleware/authz');
+const ScheduleRules = require('../models/ScheduleRules');
+const { validateAssignment } = require('../utils/rulesValidator');
+const { requireAuth, sameServiceOrAdmin, requireRole } = require('../middleware/authz');
 
 function parseIntSafe(val, def = null) {
   const n = Number(val);
@@ -165,6 +167,32 @@ function buildQuery(req) {
   };
 }
 
+async function loadRules(req, res, next) {
+  try {
+    const src = req.method === 'GET' ? req.query : req.body;
+    const sectionId = String(src?.sectionId || '').trim();
+    const serviceId = src?.serviceId != null ? String(src.serviceId).trim() : '';
+    const role = src?.role != null ? String(src.role).trim() : '';
+    if (!sectionId) {
+      req.scheduleRules = { enabled: false };
+      return next();
+    }
+    const rules = await ScheduleRules.findOne({
+      sectionId,
+      $or: [
+        { serviceId, role },
+        { serviceId, role: '' },
+        { serviceId: '', role: '' },
+      ],
+    }).lean();
+    req.scheduleRules = rules || { enabled: false };
+    return next();
+  } catch (err) {
+    req.scheduleRules = { enabled: false };
+    return next();
+  }
+}
+
 router.get('/monthly',
   requireAuth,
   (req, res, next) => {
@@ -303,6 +331,7 @@ router.post('/assign',
     }
   },
   sameServiceOrAdmin,
+  loadRules,
   async (req, res) => {
     try {
       const query = {
@@ -318,6 +347,16 @@ router.post('/assign',
       const assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
 
       const payload = req.assignPayload;
+
+      const validation = validateAssignment(req.scheduleRules, payload, assignments);
+      if (!validation.valid) {
+        return res.status(400).json({
+          ok: false,
+          message: 'Nöbet yazma kuralı ihlali',
+          errors: validation.errors,
+        });
+      }
+
       const key = assignmentKey(payload);
       const idx = assignments.findIndex((a) => assignmentKey(a) === key);
       if (idx === -1) {
@@ -434,6 +473,89 @@ router.delete('/assign',
     } catch (err) {
       console.error('[DELETE /api/schedules/assign] ERR:', err);
       return res.status(500).json({ ok: false, message: 'Sunucu hatası' });
+    }
+  }
+);
+
+// Kuralları getir
+router.get('/rules',
+  requireAuth,
+  (req, res, next) => {
+    req.targetServiceId = req.query?.serviceId || '';
+    next();
+  },
+  sameServiceOrAdmin,
+  async (req, res) => {
+    try {
+      const { sectionId, serviceId = '', role = '' } = req.query || {};
+      if (!sectionId) {
+        return res.status(400).json({ ok: false, message: 'sectionId gerekli' });
+      }
+      const rules = await ScheduleRules.findOne({
+        sectionId,
+        serviceId: String(serviceId || ''),
+        role: String(role || ''),
+      }).lean();
+      return res.json({ ok: true, rules: rules || null });
+    } catch (err) {
+      return res.status(500).json({ ok: false, message: err.message });
+    }
+  }
+);
+
+// Kuralları güncelle (ADMIN)
+router.put('/rules',
+  requireAuth,
+  requireRole('admin'),
+  async (req, res) => {
+    try {
+      const { sectionId, serviceId = '', role = '', ...ruleData } = req.body || {};
+      if (!sectionId) {
+        return res.status(400).json({ ok: false, message: 'sectionId gerekli' });
+      }
+      const update = {
+        sectionId,
+        serviceId: String(serviceId || ''),
+        role: String(role || ''),
+        ...ruleData,
+        updatedAt: new Date(),
+        updatedBy: req.user?.uid || null,
+        createdBy: req.user?.uid || null,
+      };
+      const rules = await ScheduleRules.findOneAndUpdate(
+        { sectionId, serviceId: String(serviceId || ''), role: String(role || '') },
+        { $set: update },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      ).lean();
+      return res.json({ ok: true, rules });
+    } catch (err) {
+      return res.status(500).json({ ok: false, message: err.message });
+    }
+  }
+);
+
+// Kuralları etkinleştir/devre dışı bırak (ADMIN)
+router.patch('/rules/toggle',
+  requireAuth,
+  requireRole('admin'),
+  async (req, res) => {
+    try {
+      const { sectionId, serviceId = '', role = '', enabled } = req.body || {};
+      if (!sectionId) {
+        return res.status(400).json({ ok: false, message: 'sectionId gerekli' });
+      }
+      const rules = await ScheduleRules.findOneAndUpdate(
+        { sectionId, serviceId: String(serviceId || ''), role: String(role || '') },
+        { $set: { enabled: !!enabled, updatedAt: new Date() } },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      ).lean();
+      return res.json({
+        ok: true,
+        rules,
+        message: enabled ? 'Kurallar etkinleştirildi' : 'Kurallar devre dışı bırakıldı',
+      });
+    } catch (err) {
+      return res.status(500).json({ ok: false, message: err.message });
     }
   }
 );
