@@ -6,6 +6,9 @@ import { assignSchedule, getMonthlySchedule, unassignSchedule } from "../api/api
 import DayCard from "./DayCard.jsx";
 import MonthStats from "./MonthStats.jsx";
 import Modal from "./Modal.jsx";
+import { overtimeHours } from "../utils/overtime.js";
+import { SHIFT_HOURS, LEAVE_RULES } from "../constants/rules.js";
+import { buildLeaveCreditRules } from "../utils/leaveTypeRules.js";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const stripDiacritics = (str = "") =>
@@ -999,31 +1002,6 @@ export default function PersonScheduleCalendar({
     return [...fromPropsRaw, ...fromLSRaw];
   }, [workingHours, settingsRevision]);
 
-  const requiredMonthlyHours = useMemo(() => {
-    try {
-      const ym = `${year}-${pad2(month0 + 1)}`;
-      const rows = JSON.parse(localStorage.getItem(`monthlyHoursSheet/${ym}`) || "null");
-      if (Array.isArray(rows) && selectedPerson) {
-        const targetCanon = selectedPerson.canon;
-        const targetId = selectedPerson.id ? String(selectedPerson.id) : "";
-        const row = rows.find((r) => {
-          if (targetId && r.tckn && String(r.tckn).trim() === targetId) return true;
-          if (r.adsoyad && canonName(r.adsoyad) === targetCanon) return true;
-          return false;
-        });
-        const val = Number(row?.aylikCalisilacak);
-        if (Number.isFinite(val) && val > 0) return val;
-      }
-    } catch {
-      /* ignore */
-    }
-    for (const key of REQUIRED_HOURS_KEYS) {
-      const val = Number(LS.get(key, null));
-      if (Number.isFinite(val) && val > 0) return val;
-    }
-    return null;
-  }, [selectedPerson, year, month0, settingsRevision]);
-
   const shiftOptions = useMemo(() => {
     const merged = normalizeWorkingHours(workingHoursRaw);
     if (merged.length) return merged;
@@ -1093,6 +1071,82 @@ export default function PersonScheduleCalendar({
     month0,
     canManage,
   ]);
+
+  const requiredMonthlyHours = useMemo(() => {
+    if (!selectedPerson) return null;
+    const ym = `${year}-${pad2(month0 + 1)}`;
+    try {
+      const g8cfg = LS.get("g8_cfg", {});
+      const officialHolidays = new Set(g8cfg.officialHolidays || []);
+      const arifeDays = new Set(g8cfg.arifeDays || []);
+
+      const personLeavesByDay = {};
+      for (const [k, v] of Object.entries(leavesForPerson || {})) {
+        if (!v) continue;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(k)) {
+          if (!k.startsWith(ym)) continue;
+          const d = Number(k.slice(8, 10));
+          if (Number.isFinite(d)) personLeavesByDay[d] = v;
+          continue;
+        }
+        const d = Number(k);
+        if (Number.isFinite(d)) personLeavesByDay[d] = v;
+      }
+
+      const personShiftsByDay = {};
+      for (const [dayNum, list] of assignmentsByDay.entries()) {
+        const assg = list?.[0];
+        const code = String(assg?.shiftCode ?? assg?.shift ?? assg?.code ?? "").trim();
+        if (!code) continue;
+        const d = Number(dayNum);
+        if (Number.isFinite(d)) personShiftsByDay[d] = code;
+      }
+
+      const leaveRules = buildLeaveCreditRules(
+        LS.get("leaveTypesV2", []),
+        LEAVE_RULES
+      );
+
+      const calc = overtimeHours({
+        year: Number(year),
+        month1to12: month0 + 1,
+        officialHolidaysYmd: officialHolidays,
+        arifeDaysYmd: arifeDays,
+        personLeavesByDay,
+        leaveRules,
+        personShiftsByDay,
+        shiftHoursMap: SHIFT_HOURS,
+      });
+
+      const val = Number(calc?.requiredFinal);
+      if (Number.isFinite(val) && val > 0) return val;
+    } catch {
+      /* ignore */
+    }
+
+    try {
+      const rows = JSON.parse(localStorage.getItem(`monthlyHoursSheet/${ym}`) || "null");
+      if (Array.isArray(rows) && selectedPerson) {
+        const targetCanon = selectedPerson.canon;
+        const targetId = selectedPerson.id ? String(selectedPerson.id) : "";
+        const row = rows.find((r) => {
+          if (targetId && r.tckn && String(r.tckn).trim() === targetId) return true;
+          if (r.adsoyad && canonName(r.adsoyad) === targetCanon) return true;
+          return false;
+        });
+        const val = Number(row?.aylikCalisilacak);
+        if (Number.isFinite(val) && val > 0) return val;
+      }
+    } catch {
+      /* ignore */
+    }
+
+    for (const key of REQUIRED_HOURS_KEYS) {
+      const val = Number(LS.get(key, null));
+      if (Number.isFinite(val) && val > 0) return val;
+    }
+    return null;
+  }, [selectedPerson, year, month0, leavesForPerson, assignmentsByDay, settingsRevision]);
 
   const { cells } = useMemo(() => buildMonthDays(year, month0), [year, month0]);
 
