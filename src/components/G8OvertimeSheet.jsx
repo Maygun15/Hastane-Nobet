@@ -83,13 +83,13 @@ export default function G8OvertimeSheet({
       const calc = overtimeHours({
         year: cfg.year,
         month1to12: cfg.month,
-        shiftBased: true,
         officialHolidaysYmd: off,
         arifeDaysYmd: arife,
         personLeavesByDay: leavesDays,
         leaveRules: effectiveLeaveRules,
         personShiftsByDay: shiftsDays,
         shiftHoursMap,
+        leaveCountsWeekend: true,
       });
       return { ...r, ...calc };
     });
