@@ -82,7 +82,7 @@ export function workedLikeLeaveHours(
   month1to12,
   personLeavesByDay = {},
   leaveRules = {},
-  { shiftBased = false } = {}
+  { leaveCountsWeekend = false } = {}
 ) {
   let sum = 0;
   const total = daysInMonth(year, month1to12);
@@ -93,9 +93,9 @@ export function workedLikeLeaveHours(
     if (!code) continue;
     const rule = leaveRules[code];
     if (!rule?.countsAsWorked) continue;
-    if (!shiftBased) {
-      const date = new Date(year, month1to12 - 1, d);
-      if (WEEKEND_SET.has(date.getDay())) continue;
+    if (!leaveCountsWeekend) {
+      const dow = new Date(year, month1to12 - 1, d).getDay();
+      if (dow === 0 || dow === 6) continue; // Pazar=0, Cumartesi=6
     }
     sum += Number.isFinite(rule.hoursPerDay) ? rule.hoursPerDay : 8; // varsayılan 8s
   }
@@ -138,21 +138,15 @@ export function overtimeHours({
   leaveRules = {},
   personShiftsByDay = {},
   shiftHoursMap = {},
-  shiftBased = false,
+  leaveCountsWeekend = false,
 }) {
-  const requiredBase = requiredHoursBase(
-    year,
-    month1to12,
-    officialHolidaysYmd,
-    arifeDaysYmd,
-    { shiftBased }
-  );
+  const requiredBase = requiredHoursBase(year, month1to12, officialHolidaysYmd, arifeDaysYmd);
   const leaveCredit  = workedLikeLeaveHours(
     year,
     month1to12,
     personLeavesByDay,
     leaveRules,
-    { shiftBased }
+    { leaveCountsWeekend }
   );
   const requiredFinal = Math.max(0, requiredBase - leaveCredit); // negatife düşmesin
   const worked = actualWorkedHours(year, month1to12, personShiftsByDay, shiftHoursMap);

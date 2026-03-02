@@ -1102,7 +1102,7 @@ export default function PersonScheduleCalendar({
         leaveRules,
         personShiftsByDay,
         shiftHoursMap,
-        shiftBased: true,
+        leaveCountsWeekend: true,
       });
     } catch {
       return null;
