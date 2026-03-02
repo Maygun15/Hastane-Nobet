@@ -291,25 +291,23 @@ router.get('/me', async (req, res) => {
     if (!user) return res.status(401).json({ message: 'Yetkisiz' });
 
     const Person = require('../models/Person');
+    let person = null;
 
-    let person = user.personId
-      ? await Person.findById(user.personId).lean()
-      : null;
+    // 1) Önce kayıtlı userId ile bak
+    person = await Person.findOne({ userId: user._id }).lean();
 
+    // 2) Yoksa tc / email / phone ile eşleştir
     if (!person) {
-      const orClauses = [];
-      if (user.tc)    orClauses.push({ tc: user.tc });
-      if (user.email) orClauses.push({ email: user.email.toLowerCase() });
-      if (user.phone) orClauses.push({ phone: user.phone });
-      if (orClauses.length) {
-        person = await Person.findOne({ $or: orClauses }).lean();
-      }
+      const or = [];
+      if (user.tc)    or.push({ tc: user.tc });
+      if (user.email) or.push({ email: user.email });
+      if (user.phone) or.push({ phone: user.phone });
+      if (or.length)  person = await Person.findOne({ $or: or }).lean();
     }
 
-    // Lazy bağlantı: bir kez eşleşince kalıcı yaz
-    if (person && !String(person.userId || '') ) {
+    // 3) Eşleşme bulduysa bağlantıyı kalıcı yaz (lazy fix)
+    if (person && !person.userId) {
       await Person.findByIdAndUpdate(person._id, { userId: user._id });
-      await User.findByIdAndUpdate(user._id, { personId: person._id });
     }
 
     res.json({
@@ -322,9 +320,9 @@ router.get('/me', async (req, res) => {
       active:             user.active,
       serviceIds:         user.serviceIds || [],
       mustChangePassword: !!user.mustChangePassword,
-      personId:           person ? String(person._id)        : null,
-      personName:         person ? person.name               : null,
-      serviceId:          person ? (person.serviceId || '')  : null,
+      personId:           person ? String(person._id)       : null,
+      personName:         person ? person.name              : null,
+      serviceId:          person ? (person.serviceId || '') : null,
     });
   } catch {
     res.status(401).json({ message: 'Yetkisiz' });
