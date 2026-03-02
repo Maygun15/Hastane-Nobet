@@ -1000,12 +1000,29 @@ export default function PersonScheduleCalendar({
   }, [workingHours, settingsRevision]);
 
   const requiredMonthlyHours = useMemo(() => {
+    try {
+      const ym = `${year}-${pad2(month0 + 1)}`;
+      const rows = JSON.parse(localStorage.getItem(`monthlyHoursSheet/${ym}`) || "null");
+      if (Array.isArray(rows) && selectedPerson) {
+        const targetCanon = selectedPerson.canon;
+        const targetId = selectedPerson.id ? String(selectedPerson.id) : "";
+        const row = rows.find((r) => {
+          if (targetId && r.tckn && String(r.tckn).trim() === targetId) return true;
+          if (r.adsoyad && canonName(r.adsoyad) === targetCanon) return true;
+          return false;
+        });
+        const val = Number(row?.aylikCalisilacak);
+        if (Number.isFinite(val) && val > 0) return val;
+      }
+    } catch {
+      /* ignore */
+    }
     for (const key of REQUIRED_HOURS_KEYS) {
       const val = Number(LS.get(key, null));
       if (Number.isFinite(val) && val > 0) return val;
     }
     return null;
-  }, [settingsRevision]);
+  }, [selectedPerson, year, month0, settingsRevision]);
 
   const shiftOptions = useMemo(() => {
     const merged = normalizeWorkingHours(workingHoursRaw);
