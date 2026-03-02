@@ -1,6 +1,6 @@
 // src/components/MonthStats.jsx
 import React, { useMemo } from "react";
-import { AlertTriangle, CheckCircle, Clock } from "lucide-react";
+import { AlertTriangle, CheckCircle } from "lucide-react";
 import { shiftDurationHours } from "../utils/date.js";
 
 function formatHours(val) {
@@ -16,7 +16,6 @@ export default function MonthStats({
   requiredPerDay = 1,
   onlyMissingDays = false,
   workingHours = [],
-  requiredMonthlyHours = null,
 }) {
   const stats = useMemo(() => {
     if (!Array.isArray(cells)) return null;
@@ -97,17 +96,6 @@ export default function MonthStats({
     });
 
     const roundedTotal = Math.round(totalHours * 100) / 100;
-    // null veya 0 gelirse "Gereken" kartı gizle
-    const reqHours =
-      requiredMonthlyHours !== null &&
-      requiredMonthlyHours !== undefined &&
-      Number(requiredMonthlyHours) > 0
-        ? Number(requiredMonthlyHours)
-        : null;
-    const overtime =
-      reqHours !== null
-        ? Math.round((roundedTotal - reqHours) * 100) / 100
-        : null;
 
     return {
       totalDays,
@@ -118,10 +106,8 @@ export default function MonthStats({
       totalHours: roundedTotal,
       shiftStats,
       fillPercentage,
-      reqHours,
-      overtime,
     };
-  }, [cells, assignments, requiredPerDay, workingHours, requiredMonthlyHours]);
+  }, [cells, assignments, requiredPerDay, workingHours]);
 
   if (!stats) {
     return (
@@ -132,31 +118,6 @@ export default function MonthStats({
   }
 
   const isCritical = stats.missingDays > 0;
-
-  const overtimeSign =
-    stats.overtime !== null
-      ? stats.overtime > 0
-        ? "+"
-        : stats.overtime < 0
-        ? ""
-        : "±"
-      : null;
-  const overtimeColor =
-    stats.overtime === null
-      ? "text-slate-400"
-      : stats.overtime > 0
-      ? "text-emerald-700"
-      : stats.overtime < 0
-      ? "text-red-600"
-      : "text-slate-600";
-  const overtimeBorder =
-    stats.overtime === null
-      ? "border-slate-100"
-      : stats.overtime > 0
-      ? "border-emerald-100"
-      : stats.overtime < 0
-      ? "border-red-100"
-      : "border-slate-100";
 
   return (
     <div
@@ -220,33 +181,6 @@ export default function MonthStats({
           </div>
         </div>
 
-        {/* Gereken Saat — yalnızca > 0 ise göster */}
-        {stats.reqHours !== null && (
-          <div className="rounded-lg bg-white/60 p-3 border border-indigo-100">
-            <div className="text-xs text-slate-500 font-medium mb-1 flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              Gereken
-            </div>
-            <div className="text-2xl font-bold text-indigo-700">
-              {formatHours(stats.reqHours)}
-              <span className="text-xs text-slate-400 ml-1 font-normal">s</span>
-            </div>
-          </div>
-        )}
-
-        {/* Fazla / Eksik Mesai */}
-        {stats.overtime !== null && (
-          <div className={`rounded-lg bg-white/60 p-3 border ${overtimeBorder}`}>
-            <div className="text-xs text-slate-500 font-medium mb-1">
-              {stats.overtime >= 0 ? "Fazla Mesai" : "Eksik Mesai"}
-            </div>
-            <div className={`text-2xl font-bold ${overtimeColor}`}>
-              {overtimeSign}
-              {formatHours(Math.abs(stats.overtime))}
-              <span className="text-xs text-slate-400 ml-1 font-normal">s</span>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Vardiya İstatistikleri */}
