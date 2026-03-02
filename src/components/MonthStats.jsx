@@ -1,6 +1,6 @@
 // src/components/MonthStats.jsx
 import React, { useMemo } from "react";
-import { AlertTriangle, CheckCircle, TrendingUp } from "lucide-react";
+import { AlertTriangle, CheckCircle, Clock, TrendingUp } from "lucide-react";
 import { shiftDurationHours } from "../utils/date.js";
 
 function formatHours(val) {
@@ -16,6 +16,7 @@ export default function MonthStats({
   requiredPerDay = 1,
   onlyMissingDays = false,
   workingHours = [],
+  requiredMonthlyHours = null,   // ← YENİ: aylık zorunlu saat (ör. 164)
 }) {
   const stats = useMemo(() => {
     if (!Array.isArray(cells)) return null;
@@ -81,10 +82,7 @@ export default function MonthStats({
         filledDays++;
       } else {
         missingDays++;
-        criticalDays.push({
-          day: dayNum,
-          needed: requiredPerDay - count,
-        });
+        criticalDays.push({ day: dayNum, needed: requiredPerDay - count });
       }
     });
 
@@ -95,18 +93,28 @@ export default function MonthStats({
       return String(a.label).localeCompare(String(b.label), "tr", { sensitivity: "base" });
     });
 
+    // ── Fazla mesai hesabı ──────────────────────────────────────────────────
+    const roundedTotal = Math.round(totalHours * 100) / 100;
+    const reqHours = Number.isFinite(Number(requiredMonthlyHours))
+      ? Number(requiredMonthlyHours)
+      : null;
+    const overtime = reqHours !== null ? Math.round((roundedTotal - reqHours) * 100) / 100 : null;
+    // ────────────────────────────────────────────────────────────────────────
+
     return {
       totalDays,
       filledDays,
       missingDays,
       criticalDays,
       totalShifts,
-      totalHours: Math.round(totalHours * 100) / 100,
+      totalHours: roundedTotal,
       shiftStats,
       avgShiftsPerDay,
       fillPercentage,
+      reqHours,    // ← YENİ
+      overtime,    // ← YENİ: pozitif = fazla, negatif = eksik
     };
-  }, [cells, assignments, requiredPerDay, workingHours]);
+  }, [cells, assignments, requiredPerDay, workingHours, requiredMonthlyHours]);
 
   if (!stats) {
     return (
@@ -117,6 +125,27 @@ export default function MonthStats({
   }
 
   const isCritical = stats.missingDays > 0;
+
+  // Fazla mesai renk/işaret mantığı
+  const overtimeSign = stats.overtime !== null
+    ? stats.overtime > 0 ? "+" : stats.overtime < 0 ? "" : "±"
+    : null;
+  const overtimeColor =
+    stats.overtime === null
+      ? "text-slate-400"
+      : stats.overtime > 0
+      ? "text-emerald-700"
+      : stats.overtime < 0
+      ? "text-red-600"
+      : "text-slate-600";
+  const overtimeBorder =
+    stats.overtime === null
+      ? "border-slate-100"
+      : stats.overtime > 0
+      ? "border-emerald-100"
+      : stats.overtime < 0
+      ? "border-red-100"
+      : "border-slate-100";
 
   return (
     <div
@@ -182,6 +211,33 @@ export default function MonthStats({
             <span className="text-xs text-slate-400 ml-1 font-normal">s</span>
           </div>
         </div>
+
+        {/* YENİ — Gereken Saat */}
+        {stats.reqHours !== null && (
+          <div className="rounded-lg bg-white/60 p-3 border border-indigo-100">
+            <div className="text-xs text-slate-500 font-medium mb-1 flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              Gereken
+            </div>
+            <div className="text-2xl font-bold text-indigo-700">
+              {formatHours(stats.reqHours)}
+              <span className="text-xs text-slate-400 ml-1 font-normal">s</span>
+            </div>
+          </div>
+        )}
+
+        {/* YENİ — Fazla / Eksik Mesai */}
+        {stats.overtime !== null && (
+          <div className={`rounded-lg bg-white/60 p-3 border ${overtimeBorder}`}>
+            <div className="text-xs text-slate-500 font-medium mb-1">
+              {stats.overtime >= 0 ? "Fazla Mesai" : "Eksik Mesai"}
+            </div>
+            <div className={`text-2xl font-bold ${overtimeColor}`}>
+              {overtimeSign}{formatHours(Math.abs(stats.overtime))}
+              <span className="text-xs text-slate-400 ml-1 font-normal">s</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Vardiya İstatistikleri */}
@@ -203,7 +259,6 @@ export default function MonthStats({
           </div>
         </div>
       )}
-
     </div>
   );
 }

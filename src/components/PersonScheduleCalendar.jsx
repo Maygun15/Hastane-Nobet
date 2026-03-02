@@ -701,6 +701,7 @@ export default function PersonScheduleCalendar({
   scheduleRole = "",
   workAreas = [],
   workingHours = [],
+  requiredMonthlyHours = null,
 }) {
   const month0 = Math.max(0, Math.min(11, Number(month) - 1 || 0));
   const ymKey = `${year}-${pad2(month0 + 1)}`;
@@ -1353,7 +1354,8 @@ export default function PersonScheduleCalendar({
           cells={cells}
           assignments={assignmentsByDay}
           requiredPerDay={2}
-          workingHours={workingHoursRaw}
+          workingHours={shiftOptions}
+          requiredMonthlyHours={requiredMonthlyHours}
         />
       )}
 
