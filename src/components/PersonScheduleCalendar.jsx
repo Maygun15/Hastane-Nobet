@@ -6,7 +6,6 @@ import { assignSchedule, getMonthlySchedule, unassignSchedule } from "../api/api
 import DayCard from "./DayCard.jsx";
 import MonthStats from "./MonthStats.jsx";
 import Modal from "./Modal.jsx";
-import { overtimeHours } from "../utils/overtime.js";
 import { LEAVE_RULES } from "../constants/rules.js";
 import { buildLeaveCreditRules } from "../utils/leaveTypeRules.js";
 
@@ -1070,40 +1069,46 @@ export default function PersonScheduleCalendar({
   const overtimeStats = useMemo(() => {
     if (!selectedPerson) return null;
     try {
-      const g8cfg = LS.get("g8_cfg", {});
-      const officialHolidaysYmd = new Set(g8cfg.officialHolidays || []);
-      const arifeDaysYmd = new Set(g8cfg.arifeDays || []);
+      const ym = `${year}-${pad2(month0 + 1)}`;
 
-      const shiftHoursMap = {};
-      for (const sh of shiftOptions || []) {
-        if (sh?.start && sh?.end) {
-          shiftHoursMap[sh.code] = shiftDurationHours(sh.start, sh.end);
-        }
-      }
-
-      const personShiftsByDay = {};
-      for (const [dayNum, list] of assignmentsByDay.entries()) {
-        const assg = list?.[0];
-        const code = String(assg?.shiftCode ?? assg?.shift ?? assg?.code ?? "").trim();
-        if (code) personShiftsByDay[dayNum] = code;
-      }
+      const storedBase = Number(localStorage.getItem(`monthlyHoursSheet/stdHours/${ym}`));
+      const requiredBase = Number.isFinite(storedBase) && storedBase > 0 ? storedBase : null;
+      if (!requiredBase) return null;
 
       const leaveRules = buildLeaveCreditRules(
         LS.get("leaveTypesV2", []),
         LEAVE_RULES
       );
 
-      return overtimeHours({
-        year: Number(year),
-        month1to12: month0 + 1,
-        officialHolidaysYmd,
-        arifeDaysYmd,
-        personLeavesByDay: leavesForPerson,
-        leaveRules,
-        personShiftsByDay,
-        shiftHoursMap,
-        leaveCountsWeekend: true,
-      });
+      let leaveCredit = 0;
+      for (const [key, rec] of Object.entries(leavesForPerson || {})) {
+        const d = parseInt(key, 10);
+        if (!Number.isFinite(d)) continue;
+        const code = typeof rec === "string" ? rec : rec?.code;
+        if (!code) continue;
+        const rule = leaveRules[code];
+        if (!rule?.countsAsWorked) continue;
+        leaveCredit += Number.isFinite(rule.hoursPerDay) ? rule.hoursPerDay : 8;
+      }
+
+      const shiftHoursMap = {};
+      for (const sh of shiftOptions || []) {
+        if (sh?.start && sh?.end) {
+          shiftHoursMap[sh.code.toUpperCase()] = shiftDurationHours(sh.start, sh.end);
+        }
+      }
+
+      let worked = 0;
+      for (const [dayNum, list] of assignmentsByDay.entries()) {
+        const assg = list?.[0];
+        const code = String(assg?.shiftCode ?? assg?.shift ?? assg?.code ?? "").trim().toUpperCase();
+        if (code && shiftHoursMap[code]) worked += shiftHoursMap[code];
+      }
+
+      const requiredFinal = Math.max(0, requiredBase - leaveCredit);
+      const overtime = worked - requiredFinal;
+
+      return { requiredBase, leaveCredit, requiredFinal, worked, overtime };
     } catch {
       return null;
     }
