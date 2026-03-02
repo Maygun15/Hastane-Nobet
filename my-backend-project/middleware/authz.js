@@ -14,7 +14,7 @@ function requireRole(...roles) {
 
 // target serviceId => body/query/param içinden alınır
 function sameServiceOrAdmin(req, res, next) {
-  const me = req.user; // {_id, role, serviceIds: [..]}
+  const me = req.user;
   if (me?.role === 'admin' || me?.role === 'authorized') return next();
 
   const targetServiceId =
@@ -29,6 +29,16 @@ function sameServiceOrAdmin(req, res, next) {
     if (!has) return res.status(403).json({ error: 'Servis kapsamı dışı' });
     return next();
   }
+
+  // user rolü: sadece kendi Person kaydını görebilmesi için
+  // personnel listesine salt-okunur erişim ver
+  if (me?.role === 'user') {
+    // GET isteği ise izin ver (sadece okuma)
+    if (req.method === 'GET') return next();
+    // POST/PUT/DELETE → yasak
+    return res.status(403).json({ error: 'Yetki yok' });
+  }
+
   return res.status(403).json({ error: 'Yetki yok' });
 }
 
