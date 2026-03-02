@@ -12,7 +12,10 @@ const ENV_PROD_BASE = String(RAW_PROD_BASE || DEFAULT_PROD_BASE).replace(/\/+$/,
 const ENV_STAGING_BASE = String(RAW_STAGING_BASE || "").replace(/\/+$/, "");
 const ENV_DEFAULT = String(import.meta.env?.VITE_API_ENV || "prod").toLowerCase();
 const ENV_ONLINE_ONLY = String(import.meta.env?.VITE_ONLINE_ONLY || "true").toLowerCase() === "true";
-const ENV_PROD_WRITE_ROLES = String(import.meta.env?.VITE_PROD_WRITE_ROLES || "ADMIN,admin,authorized,AUTHORIZED");
+const ENV_PROD_WRITE_ROLES = String(
+  import.meta.env?.VITE_PROD_WRITE_ROLES ||
+  "ADMIN,admin,authorized,AUTHORIZED,staff,STAFF,user,USER"
+);
 const API_ENV_KEY = "apiEnv";
 
 export function isOnlineOnly() {
@@ -100,6 +103,7 @@ const WRITE_ALLOWLIST = [
   /^\/admin\/accept-invite/,
   /^\/api\/staff\/accept-invite/,
   /^\/staff\/accept-invite/,
+  /^\/api\/requests/,
 ];
 
 export function assertProdWriteAllowed(path, method) {
