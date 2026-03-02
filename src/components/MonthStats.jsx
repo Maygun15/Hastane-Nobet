@@ -1,6 +1,6 @@
 // src/components/MonthStats.jsx
 import React, { useMemo } from "react";
-import { AlertTriangle, CheckCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle, Clock, TrendingDown, TrendingUp } from "lucide-react";
 import { shiftDurationHours } from "../utils/date.js";
 
 function formatHours(val) {
@@ -16,6 +16,7 @@ export default function MonthStats({
   requiredPerDay = 1,
   onlyMissingDays = false,
   workingHours = [],
+  overtimeStats = null,
 }) {
   const stats = useMemo(() => {
     if (!Array.isArray(cells)) return null;
@@ -30,11 +31,7 @@ export default function MonthStats({
       const end = String(item.end ?? "").trim();
       const labelRaw = String(item.label ?? item.name ?? "").trim();
       const hours = start && end ? shiftDurationHours(start, end) : null;
-      workingHoursMap.set(code.toUpperCase(), {
-        code,
-        label: labelRaw || code,
-        hours,
-      });
+      workingHoursMap.set(code.toUpperCase(), { code, label: labelRaw || code, hours });
     });
 
     const daysWithDates = cells.filter((dt) => dt instanceof Date);
@@ -51,61 +48,41 @@ export default function MonthStats({
       const dayNum = dt.getDate();
       const assignmentList = assignments.get?.(dayNum) || [];
       const count = assignmentList.length || 0;
-
       totalShifts += count;
 
       for (const assg of assignmentList) {
-        const shiftRaw =
-          assg?.shiftCode ?? assg?.shiftId ?? assg?.shift ?? assg?.code ?? "";
+        const shiftRaw = assg?.shiftCode ?? assg?.shiftId ?? assg?.shift ?? assg?.code ?? "";
         const shiftCode = String(shiftRaw || "").trim();
         const shiftKey = shiftCode ? shiftCode.toUpperCase() : "__UNKNOWN__";
         const wh = shiftKey === "__UNKNOWN__" ? null : workingHoursMap.get(shiftKey);
-        const label =
-          shiftKey === "__UNKNOWN__"
-            ? "Bilinmiyor"
-            : wh?.label || shiftCode || "Bilinmiyor";
+        const label = shiftKey === "__UNKNOWN__" ? "Bilinmiyor" : wh?.label || shiftCode || "Bilinmiyor";
         const hours = Number.isFinite(wh?.hours) ? wh.hours : 0;
 
         totalHours += hours;
-        const existing = shiftStatsMap.get(shiftKey) || {
-          key: shiftKey,
-          label,
-          count: 0,
-          hours: 0,
-        };
+        const existing = shiftStatsMap.get(shiftKey) || { key: shiftKey, label, count: 0, hours: 0 };
         existing.count += 1;
         existing.hours = Math.round((existing.hours + hours) * 100) / 100;
         shiftStatsMap.set(shiftKey, existing);
       }
 
-      if (count >= requiredPerDay) {
-        filledDays++;
-      } else {
+      if (count >= requiredPerDay) filledDays++;
+      else {
         missingDays++;
         criticalDays.push({ day: dayNum, needed: requiredPerDay - count });
       }
     });
 
-    const fillPercentage =
-      totalDays > 0 ? Math.round((filledDays / totalDays) * 100) : 0;
+    const fillPercentage = totalDays > 0 ? Math.round((filledDays / totalDays) * 100) : 0;
     const shiftStats = Array.from(shiftStatsMap.values()).sort((a, b) => {
       if (b.count !== a.count) return b.count - a.count;
-      return String(a.label).localeCompare(String(b.label), "tr", {
-        sensitivity: "base",
-      });
+      return String(a.label).localeCompare(String(b.label), "tr", { sensitivity: "base" });
     });
 
-    const roundedTotal = Math.round(totalHours * 100) / 100;
-
     return {
-      totalDays,
-      filledDays,
-      missingDays,
-      criticalDays,
+      totalDays, filledDays, missingDays, criticalDays,
       totalShifts,
-      totalHours: roundedTotal,
-      shiftStats,
-      fillPercentage,
+      totalHours: Math.round(totalHours * 100) / 100,
+      shiftStats, fillPercentage,
     };
   }, [cells, assignments, requiredPerDay, workingHours]);
 
@@ -119,26 +96,20 @@ export default function MonthStats({
 
   const isCritical = stats.missingDays > 0;
 
+  const ot = overtimeStats?.overtime ?? null;
+  const otColor = ot === null ? "text-slate-400" : ot > 0 ? "text-emerald-700" : ot < 0 ? "text-red-600" : "text-slate-600";
+  const otBorder = ot === null ? "border-slate-100" : ot > 0 ? "border-emerald-100" : ot < 0 ? "border-red-100" : "border-slate-100";
+  const otSign = ot === null ? "" : ot > 0 ? "+" : "";
+  const OtIcon = ot !== null && ot >= 0 ? TrendingUp : TrendingDown;
+
   return (
-    <div
-      className={`rounded-xl border-2 p-4 ${
-        isCritical
-          ? "bg-red-50 border-red-200"
-          : "bg-emerald-50 border-emerald-200"
-      }`}
-    >
+    <div className={`rounded-xl border-2 p-4 ${isCritical ? "bg-red-50 border-red-200" : "bg-emerald-50 border-emerald-200"}`}>
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold text-slate-800 flex items-center gap-2">
           {isCritical ? (
-            <>
-              <AlertTriangle className="w-4 h-4 text-red-600" />
-              <span className="text-red-700">Ayın Özeti - Uyarı</span>
-            </>
+            <><AlertTriangle className="w-4 h-4 text-red-600" /><span className="text-red-700">Ayın Özeti - Uyarı</span></>
           ) : (
-            <>
-              <CheckCircle className="w-4 h-4 text-emerald-600" />
-              <span className="text-emerald-700">Ayın Özeti</span>
-            </>
+            <><CheckCircle className="w-4 h-4 text-emerald-600" /><span className="text-emerald-700">Ayın Özeti</span></>
           )}
         </h3>
         <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-600">
@@ -146,59 +117,71 @@ export default function MonthStats({
         </span>
       </div>
 
-      {/* İlerleme Çubuğu */}
       <div className="mb-4">
         <div className="h-2 bg-white rounded-full overflow-hidden border border-slate-200">
-          <div
-            className={`h-full transition-all ${
-              isCritical ? "bg-red-500" : "bg-emerald-500"
-            }`}
-            style={{ width: `${stats.fillPercentage}%` }}
-          />
+          <div className={`h-full transition-all ${isCritical ? "bg-red-500" : "bg-emerald-500"}`}
+            style={{ width: `${stats.fillPercentage}%` }} />
         </div>
       </div>
 
-      {/* Stats Grid — "Ort. Nöbet" kartı kaldırıldı */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        {/* Toplam Nöbet */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="rounded-lg bg-white/60 p-3 border border-sky-100">
-          <div className="text-xs text-slate-500 font-medium mb-1">
-            Toplam Nöbet
-          </div>
-          <div className="text-2xl font-bold text-sky-700">
-            {stats.totalShifts}
-          </div>
+          <div className="text-xs text-slate-500 font-medium mb-1">Toplam Nöbet</div>
+          <div className="text-2xl font-bold text-sky-700">{stats.totalShifts}</div>
         </div>
 
-        {/* Toplam Çalışma Saati */}
         <div className="rounded-lg bg-white/60 p-3 border border-amber-100">
-          <div className="text-xs text-slate-500 font-medium mb-1">
-            Toplam Saat
-          </div>
+          <div className="text-xs text-slate-500 font-medium mb-1">Toplam Saat</div>
           <div className="text-2xl font-bold text-amber-700">
             {formatHours(stats.totalHours)}
             <span className="text-xs text-slate-400 ml-1 font-normal">s</span>
           </div>
         </div>
 
+        <div className="rounded-lg bg-white/60 p-3 border border-rose-100">
+          <div className="text-xs text-slate-500 font-medium mb-1">İzin (ÇS)</div>
+          <div className="text-2xl font-bold text-rose-600">
+            {overtimeStats ? formatHours(overtimeStats.leaveCredit) : "—"}
+            {overtimeStats && <span className="text-xs text-slate-400 ml-1 font-normal">s</span>}
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-white/60 p-3 border border-indigo-100">
+          <div className="text-xs text-slate-500 font-medium mb-1 flex items-center gap-1">
+            <Clock className="w-3 h-3" />Gereken
+          </div>
+          <div className="text-2xl font-bold text-indigo-700">
+            {overtimeStats ? formatHours(overtimeStats.requiredFinal) : "—"}
+            {overtimeStats && <span className="text-xs text-slate-400 ml-1 font-normal">s</span>}
+          </div>
+        </div>
+
+        {overtimeStats && (
+          <div className={`rounded-lg bg-white/60 p-3 border col-span-2 md:col-span-4 ${otBorder}`}>
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-slate-500 font-medium flex items-center gap-1">
+                <OtIcon className="w-3 h-3" />
+                {ot >= 0 ? "Fazla Mesai" : "Eksik Mesai"}
+              </div>
+              <div className={`text-2xl font-bold ${otColor}`}>
+                {otSign}{formatHours(Math.abs(ot))}
+                <span className="text-xs text-slate-400 ml-1 font-normal">s</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Vardiya İstatistikleri */}
       {stats.shiftStats.length > 0 && (
         <div className="mt-4 pt-4 border-t border-slate-200">
-          <div className="text-xs font-semibold text-slate-600 mb-2">
-            Vardiya Dağılımı
-          </div>
+          <div className="text-xs font-semibold text-slate-600 mb-2">Vardiya Dağılımı</div>
           <div className="flex flex-wrap gap-2">
             {stats.shiftStats.map((item) => (
-              <span
-                key={item.key}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-medium"
-              >
+              <span key={item.key}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-medium">
                 {item.label}
                 <span className="text-[10px] opacity-70">
-                  ({item.count} nöbet
-                  {item.hours ? `, ${formatHours(item.hours)}s` : ""})
+                  ({item.count} nöbet{item.hours ? `, ${formatHours(item.hours)}s` : ""})
                 </span>
               </span>
             ))}
