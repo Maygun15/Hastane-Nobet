@@ -82,6 +82,11 @@ const userSchema = new mongoose.Schema({
   resetTokenExp: { type: Date },
 
   serviceIds:    { type: [String], default: [] },
+  personId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Person',
+    default: null,
+  },
 }, { timestamps: true });
 
 /* =========================

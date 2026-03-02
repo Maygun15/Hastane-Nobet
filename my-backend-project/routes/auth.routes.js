@@ -290,16 +290,41 @@ router.get('/me', async (req, res) => {
     const user = await User.findById(decoded.uid).lean();
     if (!user) return res.status(401).json({ message: 'Yetkisiz' });
 
+    const Person = require('../models/Person');
+
+    let person = user.personId
+      ? await Person.findById(user.personId).lean()
+      : null;
+
+    if (!person) {
+      const orClauses = [];
+      if (user.tc)    orClauses.push({ tc: user.tc });
+      if (user.email) orClauses.push({ email: user.email.toLowerCase() });
+      if (user.phone) orClauses.push({ phone: user.phone });
+      if (orClauses.length) {
+        person = await Person.findOne({ $or: orClauses }).lean();
+      }
+    }
+
+    // Lazy bağlantı: bir kez eşleşince kalıcı yaz
+    if (person && !String(person.userId || '') ) {
+      await Person.findByIdAndUpdate(person._id, { userId: user._id });
+      await User.findByIdAndUpdate(user._id, { personId: person._id });
+    }
+
     res.json({
-      id: String(user._id),
-      name: user.name,
-      email: user.email,
-      tc: user.tc,
-      phone: user.phone,
-      role: user.role,
-      active: user.active,
-      serviceIds: user.serviceIds || [],
+      id:                 String(user._id),
+      name:               user.name,
+      email:              user.email,
+      tc:                 user.tc,
+      phone:              user.phone,
+      role:               user.role,
+      active:             user.active,
+      serviceIds:         user.serviceIds || [],
       mustChangePassword: !!user.mustChangePassword,
+      personId:           person ? String(person._id)        : null,
+      personName:         person ? person.name               : null,
+      serviceId:          person ? (person.serviceId || '')  : null,
     });
   } catch {
     res.status(401).json({ message: 'Yetkisiz' });

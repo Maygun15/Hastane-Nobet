@@ -17,6 +17,14 @@ const personSchema = new mongoose.Schema({
   // Ek bilgiler
   meta:  { type: Object, default: {} },
 
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    index: true,
+    sparse: true,
+  },
+
   createdBy: { type: String }
 }, { timestamps: true });
 

@@ -883,7 +883,7 @@ export default function PersonScheduleCalendar({
       setRemoteServiceIdUsed("");
       return () => {};
     }
-    if (!canManage && !effectiveServiceId) {
+    if (!canManage && !effectiveServiceId && !selectedPerson) {
       setRemoteAssignmentsRaw([]);
       setRemoteDefs([]);
       setRemoteError("");
@@ -894,9 +894,9 @@ export default function PersonScheduleCalendar({
     setRemoteLoading(true);
     (async () => {
       try {
-        const candidates = canManage
-          ? Array.from(new Set([effectiveServiceId, String(serviceId ?? "").trim(), ""]))
-          : Array.from(new Set([effectiveServiceId, ""]));
+        const candidates = Array.from(
+          new Set([effectiveServiceId, String(serviceId ?? "").trim(), ""].filter(v => v !== undefined))
+        );
         const roleCandidates = canManage
           ? [scheduleRole]
           : Array.from(

@@ -114,6 +114,7 @@ function AssignServicesModal({ open, initialIds = [], onClose, onSave }) {
 /* ---------------- Kullanıcılar sekmesi ---------------- */
 export default function UsersTab() {
   const [list, setList] = useState([]);
+  const [personnel, setPersonnel] = useState([]);
   const [q, setQ] = useState("");
   const [assignFor, setAssignFor] = useState(null);
   const [backendError, setBackendError] = useState("");
@@ -172,6 +173,12 @@ export default function UsersTab() {
   useEffect(() => {
     refresh();
   }, [hasBackend]);
+
+  useEffect(() => {
+    API.http.get('/api/personnel?size=500')
+      .then((d) => setPersonnel(Array.isArray(d?.items) ? d.items : []))
+      .catch(() => {});
+  }, []);
 
   const downloadTemplate = async () => {
     try {
@@ -400,6 +407,29 @@ export default function UsersTab() {
                 <div>Mail: {u.email || "-"}</div>
                 <div>Rol: {roleBadge(u.role)}</div>
                 <div>Servisler: {formatServiceNames(currentServiceIds)}</div>
+                <div className="pt-1">
+                  <select
+                    value={u.personId || ''}
+                    onChange={async (e) => {
+                      await API.http.req(`/api/users/${u.id}/link-person`, {
+                        method: 'PUT',
+                        body: { personId: e.target.value || null }
+                      });
+                      refresh();
+                    }}
+                    className="text-sm border rounded px-2 py-1 text-slate-700"
+                  >
+                    <option value="">— Personel bağla —</option>
+                    {personnel.map((p) => {
+                      const pid = p.id || p._id;
+                      return (
+                        <option key={pid} value={pid}>
+                          {p.fullName || p.name}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2">

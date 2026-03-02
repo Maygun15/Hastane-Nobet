@@ -5,12 +5,14 @@ const router  = express.Router();
 const crypto = require('crypto');
 const User    = require('../models/User');
 const Person  = require('../models/Person');
-const { requireAuth } = require('../middleware/authz');
+const { requireAuth, requireRole } = require('../middleware/authz');
 const { sendMail, isConfigured } = require('../utils/mailer');
 
 const XLSX = require('xlsx');
 const multer = require('multer');
 const upload = multer();
+
+const requireAdmin = requireRole('admin');
 
 /* ---------------------------
    Basit alan kontrolü
@@ -44,7 +46,7 @@ router.get('/', requireAuth, async (req, res) => {
     }
 
     const users = await User.find({})
-      .select('name email phone tc role active serviceIds')
+      .select('name email phone tc role active serviceIds personId')
       .lean();
 
     const rows = users.map(u => ({
@@ -57,12 +59,34 @@ router.get('/', requireAuth, async (req, res) => {
       active: !!u.active,
       status: u.active ? 'active' : 'pending',
       serviceIds: u.serviceIds || [],
+      personId: u.personId ? String(u.personId) : null,
     }));
 
     return res.json(rows);
   } catch (err) {
     console.error('GET /api/users ERR:', err);
     return res.status(500).json({ error: 'Liste alınamadı' });
+  }
+});
+
+/* ---------------------------
+   Admin: kullanıcı-personel bağla
+   PUT /api/users/:userId/link-person
+---------------------------- */
+router.put('/:userId/link-person', requireAdmin, async (req, res) => {
+  try {
+    const { personId } = req.body;
+
+    await Person.updateMany({ userId: req.params.userId }, { $set: { userId: null } });
+    await User.findByIdAndUpdate(req.params.userId, { personId: null });
+
+    if (personId) {
+      await Person.findByIdAndUpdate(personId, { userId: req.params.userId });
+      await User.findByIdAndUpdate(req.params.userId, { personId });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
