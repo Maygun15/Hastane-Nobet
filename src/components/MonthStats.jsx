@@ -1,6 +1,6 @@
 // src/components/MonthStats.jsx
 import React, { useMemo } from "react";
-import { AlertTriangle, CheckCircle, Clock, TrendingUp } from "lucide-react";
+import { AlertTriangle, CheckCircle, Clock } from "lucide-react";
 import { shiftDurationHours } from "../utils/date.js";
 
 function formatHours(val) {
@@ -16,7 +16,7 @@ export default function MonthStats({
   requiredPerDay = 1,
   onlyMissingDays = false,
   workingHours = [],
-  requiredMonthlyHours = null,   // ← YENİ: aylık zorunlu saat (ör. 164)
+  requiredMonthlyHours = null,
 }) {
   const stats = useMemo(() => {
     if (!Array.isArray(cells)) return null;
@@ -57,11 +57,7 @@ export default function MonthStats({
 
       for (const assg of assignmentList) {
         const shiftRaw =
-          assg?.shiftCode ??
-          assg?.shiftId ??
-          assg?.shift ??
-          assg?.code ??
-          "";
+          assg?.shiftCode ?? assg?.shiftId ?? assg?.shift ?? assg?.code ?? "";
         const shiftCode = String(shiftRaw || "").trim();
         const shiftKey = shiftCode ? shiftCode.toUpperCase() : "__UNKNOWN__";
         const wh = shiftKey === "__UNKNOWN__" ? null : workingHoursMap.get(shiftKey);
@@ -72,7 +68,12 @@ export default function MonthStats({
         const hours = Number.isFinite(wh?.hours) ? wh.hours : 0;
 
         totalHours += hours;
-        const existing = shiftStatsMap.get(shiftKey) || { key: shiftKey, label, count: 0, hours: 0 };
+        const existing = shiftStatsMap.get(shiftKey) || {
+          key: shiftKey,
+          label,
+          count: 0,
+          hours: 0,
+        };
         existing.count += 1;
         existing.hours = Math.round((existing.hours + hours) * 100) / 100;
         shiftStatsMap.set(shiftKey, existing);
@@ -86,20 +87,27 @@ export default function MonthStats({
       }
     });
 
-    const avgShiftsPerDay = totalDays > 0 ? (totalShifts / totalDays).toFixed(1) : 0;
-    const fillPercentage = totalDays > 0 ? Math.round((filledDays / totalDays) * 100) : 0;
+    const fillPercentage =
+      totalDays > 0 ? Math.round((filledDays / totalDays) * 100) : 0;
     const shiftStats = Array.from(shiftStatsMap.values()).sort((a, b) => {
       if (b.count !== a.count) return b.count - a.count;
-      return String(a.label).localeCompare(String(b.label), "tr", { sensitivity: "base" });
+      return String(a.label).localeCompare(String(b.label), "tr", {
+        sensitivity: "base",
+      });
     });
 
-    // ── Fazla mesai hesabı ──────────────────────────────────────────────────
     const roundedTotal = Math.round(totalHours * 100) / 100;
-    const reqHours = Number.isFinite(Number(requiredMonthlyHours))
-      ? Number(requiredMonthlyHours)
-      : null;
-    const overtime = reqHours !== null ? Math.round((roundedTotal - reqHours) * 100) / 100 : null;
-    // ────────────────────────────────────────────────────────────────────────
+    // null veya 0 gelirse "Gereken" kartı gizle
+    const reqHours =
+      requiredMonthlyHours !== null &&
+      requiredMonthlyHours !== undefined &&
+      Number(requiredMonthlyHours) > 0
+        ? Number(requiredMonthlyHours)
+        : null;
+    const overtime =
+      reqHours !== null
+        ? Math.round((roundedTotal - reqHours) * 100) / 100
+        : null;
 
     return {
       totalDays,
@@ -109,10 +117,9 @@ export default function MonthStats({
       totalShifts,
       totalHours: roundedTotal,
       shiftStats,
-      avgShiftsPerDay,
       fillPercentage,
-      reqHours,    // ← YENİ
-      overtime,    // ← YENİ: pozitif = fazla, negatif = eksik
+      reqHours,
+      overtime,
     };
   }, [cells, assignments, requiredPerDay, workingHours, requiredMonthlyHours]);
 
@@ -126,10 +133,14 @@ export default function MonthStats({
 
   const isCritical = stats.missingDays > 0;
 
-  // Fazla mesai renk/işaret mantığı
-  const overtimeSign = stats.overtime !== null
-    ? stats.overtime > 0 ? "+" : stats.overtime < 0 ? "" : "±"
-    : null;
+  const overtimeSign =
+    stats.overtime !== null
+      ? stats.overtime > 0
+        ? "+"
+        : stats.overtime < 0
+        ? ""
+        : "±"
+      : null;
   const overtimeColor =
     stats.overtime === null
       ? "text-slate-400"
@@ -186,33 +197,30 @@ export default function MonthStats({
         </div>
       </div>
 
-      {/* Stats Grid */}
+      {/* Stats Grid — "Ort. Nöbet" kartı kaldırıldı */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {/* Toplam Nöbet */}
         <div className="rounded-lg bg-white/60 p-3 border border-sky-100">
-          <div className="text-xs text-slate-500 font-medium mb-1">Toplam Nöbet</div>
-          <div className="text-2xl font-bold text-sky-700">{stats.totalShifts}</div>
-        </div>
-
-        {/* Ortalama Nöbet/Gün */}
-        <div className="rounded-lg bg-white/60 p-3 border border-purple-100">
           <div className="text-xs text-slate-500 font-medium mb-1">
-            <TrendingUp className="w-3 h-3 inline mr-1" />
-            Ort. Nöbet
+            Toplam Nöbet
           </div>
-          <div className="text-2xl font-bold text-purple-700">{stats.avgShiftsPerDay}</div>
+          <div className="text-2xl font-bold text-sky-700">
+            {stats.totalShifts}
+          </div>
         </div>
 
         {/* Toplam Çalışma Saati */}
         <div className="rounded-lg bg-white/60 p-3 border border-amber-100">
-          <div className="text-xs text-slate-500 font-medium mb-1">Toplam Saat</div>
+          <div className="text-xs text-slate-500 font-medium mb-1">
+            Toplam Saat
+          </div>
           <div className="text-2xl font-bold text-amber-700">
             {formatHours(stats.totalHours)}
             <span className="text-xs text-slate-400 ml-1 font-normal">s</span>
           </div>
         </div>
 
-        {/* YENİ — Gereken Saat */}
+        {/* Gereken Saat — yalnızca > 0 ise göster */}
         {stats.reqHours !== null && (
           <div className="rounded-lg bg-white/60 p-3 border border-indigo-100">
             <div className="text-xs text-slate-500 font-medium mb-1 flex items-center gap-1">
@@ -226,14 +234,15 @@ export default function MonthStats({
           </div>
         )}
 
-        {/* YENİ — Fazla / Eksik Mesai */}
+        {/* Fazla / Eksik Mesai */}
         {stats.overtime !== null && (
           <div className={`rounded-lg bg-white/60 p-3 border ${overtimeBorder}`}>
             <div className="text-xs text-slate-500 font-medium mb-1">
               {stats.overtime >= 0 ? "Fazla Mesai" : "Eksik Mesai"}
             </div>
             <div className={`text-2xl font-bold ${overtimeColor}`}>
-              {overtimeSign}{formatHours(Math.abs(stats.overtime))}
+              {overtimeSign}
+              {formatHours(Math.abs(stats.overtime))}
               <span className="text-xs text-slate-400 ml-1 font-normal">s</span>
             </div>
           </div>
@@ -243,7 +252,9 @@ export default function MonthStats({
       {/* Vardiya İstatistikleri */}
       {stats.shiftStats.length > 0 && (
         <div className="mt-4 pt-4 border-t border-slate-200">
-          <div className="text-xs font-semibold text-slate-600 mb-2">Vardiya Dağılımı</div>
+          <div className="text-xs font-semibold text-slate-600 mb-2">
+            Vardiya Dağılımı
+          </div>
           <div className="flex flex-wrap gap-2">
             {stats.shiftStats.map((item) => (
               <span
@@ -252,7 +263,8 @@ export default function MonthStats({
               >
                 {item.label}
                 <span className="text-[10px] opacity-70">
-                  ({item.count} nöbet{item.hours ? `, ${formatHours(item.hours)}s` : ""})
+                  ({item.count} nöbet
+                  {item.hours ? `, ${formatHours(item.hours)}s` : ""})
                 </span>
               </span>
             ))}

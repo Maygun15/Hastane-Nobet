@@ -263,7 +263,7 @@ function normalizeWorkingHours(input) {
     const labelRaw = String(item.label ?? item.name ?? "").trim();
     const time = start && end ? `${start}-${end}` : "";
     const label = labelRaw || (time ? `${code} (${time})` : code);
-    map.set(code, { code, label });
+    map.set(code, { code, label, start, end });
   });
   return Array.from(map.values()).sort((a, b) =>
     String(a.label || a.code).localeCompare(String(b.label || b.code), "tr", { sensitivity: "base" })
