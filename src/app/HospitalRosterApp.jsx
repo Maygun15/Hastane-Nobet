@@ -23,6 +23,8 @@ import { PERMISSIONS } from "../constants/roles.js";
 // Sayfalar
 import ServicesTab from "../tabs/ServicesTab.jsx";
 import UsersTab from "../tabs/UsersTab.jsx";
+import MyRequestsTab from "../tabs/MyRequestsTab.jsx";
+import RequestsManagementTab from "../tabs/RequestsManagementTab.jsx";
 
 // Normal kullanıcı takvimi
 import PersonCalendar from "../tabs/PersonCalendar.jsx";
@@ -113,7 +115,7 @@ export default function HospitalRosterApp() {
 
   const [activeTab, setActiveTab] = useState("plan");
   useEffect(() => {
-    if (isBasicUser && activeTab !== "plan") {
+    if (isBasicUser && activeTab !== "plan" && activeTab !== "myRequests") {
       setActiveTab("plan");
       pushUrl("/");
     }
@@ -441,6 +443,15 @@ export default function HospitalRosterApp() {
         if (activeTab !== "services") setActiveTab("services");
         return;
       }
+      if (pathname.startsWith("/isteklerim")) {
+        if (activeTab !== "myRequests") setActiveTab("myRequests");
+        return;
+      }
+      if (pathname.startsWith("/talepler")) {
+        if (!isAdmin && !isStaff) return setActiveTab("plan");
+        if (activeTab !== "requests") setActiveTab("requests");
+        return;
+      }
       if (activeTab !== "plan") setActiveTab("plan");
     };
     syncFromLocation();
@@ -452,7 +463,7 @@ export default function HospitalRosterApp() {
       window.removeEventListener("popstate", syncFromLocation);
       window.removeEventListener("hashchange", syncFromLocation);
     };
-  }, [activeTab, canSeePersonnel, canSeeSchedules, canSeeParameters, canSeeServicesTab, canSeeUsersTab]);
+  }, [activeTab, canSeePersonnel, canSeeSchedules, canSeeParameters, canSeeServicesTab, canSeeUsersTab, isAdmin, isStaff]);
 
   /* ---- Nav helpers ---- */
   const goSchedules = useCallback((secId) => {
@@ -526,6 +537,14 @@ export default function HospitalRosterApp() {
                 }}
               >
                 {isBasicUser ? "Takvimim" : "Planlama"}
+              </NavBtn>
+
+              {/* İSTEKLERİM — tüm kullanıcılar */}
+              <NavBtn
+                active={activeTab === "myRequests"}
+                onClick={() => { setActiveTab("myRequests"); pushUrl("/isteklerim"); }}
+              >
+                İsteklerim
               </NavBtn>
 
               {!isBasicUser && (
@@ -673,6 +692,14 @@ export default function HospitalRosterApp() {
                   Kullanıcılar
                 </NavBtn>
               )}
+              {(isAdmin || isStaff) && (
+                <NavBtn
+                  active={activeTab === "requests"}
+                  onClick={() => { setActiveTab("requests"); pushUrl("/talepler"); }}
+                >
+                  Talepler
+                </NavBtn>
+              )}
                 </>
               )}
             </nav>
@@ -733,6 +760,9 @@ export default function HospitalRosterApp() {
           {activeTab === "users" && (
             canSeeUsersTab ? <UsersTab /> : <NeedAdmin />
           )}
+
+          {activeTab === "myRequests" && <MyRequestsTab />}
+          {activeTab === "requests" && (isAdmin || isStaff) && <RequestsManagementTab />}
         </main>
       </div>
     </ErrorBoundary>

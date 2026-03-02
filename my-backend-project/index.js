@@ -277,6 +277,14 @@ try {
   console.error('PERSONNEL ROUTE LOAD ERROR:', e);
 }
 
+/* ============== REQUESTS ROUTES ============== */
+try {
+  const requestsRouter = require('./routes/requests.routes');
+  app.use('/api/requests', requestsRouter);
+} catch (e) {
+  console.error('REQUESTS ROUTE LOAD ERROR:', e);
+}
+
 /* ============== SCHEDULES ROUTER ============== */
 try {
   const schedulesRoutes = require('./routes/schedules.routes.js');

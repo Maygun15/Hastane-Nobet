@@ -370,3 +370,20 @@ export async function checkDutyEligibility(payload = {}, { token } = {}) {
     token,
   });
 }
+
+// ===== REQUESTS =====
+export async function getMyRequests() {
+  return httpRequest('/api/requests');
+}
+
+export async function createRequest(payload = {}) {
+  return httpRequest('/api/requests', { method: 'POST', body: payload });
+}
+
+export async function updateRequest(id, payload = {}) {
+  return httpRequest(`/api/requests/${id}`, { method: 'PUT', body: payload });
+}
+
+export async function getUnreadRequestCount() {
+  return httpRequest('/api/requests/unread-count');
+}
