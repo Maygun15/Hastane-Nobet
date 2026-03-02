@@ -22,7 +22,12 @@ export function daysInMonth(year, month1to12) {
  * Ay ızgarası üretir.
  * @returns {Array<{d:number,date:Date,ymd:string,isWeekend:boolean,isOfficialHoliday:boolean,isWorkday:boolean}>}
  */
-export function buildMonthGrid(year, month1to12, officialHolidaysYmd = new Set()) {
+export function buildMonthGrid(
+  year,
+  month1to12,
+  officialHolidaysYmd = new Set(),
+  { shiftBased = false } = {}
+) {
   const total = daysInMonth(year, month1to12);
   const out = [];
   for (let d = 1; d <= total; d++) {
@@ -31,7 +36,9 @@ export function buildMonthGrid(year, month1to12, officialHolidaysYmd = new Set()
     const ymd = `${year}-${String(month1to12).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const isWeekend = WEEKEND_SET.has(dow);
     const isOfficialHoliday = officialHolidaysYmd.has(ymd);
-    const isWorkday = !isWeekend && !isOfficialHoliday;
+    const isWorkday = shiftBased
+      ? !isOfficialHoliday
+      : !isWeekend && !isOfficialHoliday;
     out.push({ d, date, ymd, isWeekend, isOfficialHoliday, isWorkday });
   }
   return out;
@@ -48,8 +55,14 @@ export function buildMonthGrid(year, month1to12, officialHolidaysYmd = new Set()
  * @param {Set<string>} arifeDaysYmd         - "YYYY-MM-DD"
  * @returns {number} hours
  */
-export function requiredHoursBase(year, month1to12, officialHolidaysYmd = new Set(), arifeDaysYmd = new Set()) {
-  const grid = buildMonthGrid(year, month1to12, officialHolidaysYmd);
+export function requiredHoursBase(
+  year,
+  month1to12,
+  officialHolidaysYmd = new Set(),
+  arifeDaysYmd = new Set(),
+  { shiftBased = false } = {}
+) {
+  const grid = buildMonthGrid(year, month1to12, officialHolidaysYmd, { shiftBased });
   let hours = 0;
   for (const g of grid) {
     if (!g.isWorkday) continue;                 // hafta sonu / resmi tatil -> 0
@@ -64,7 +77,13 @@ export function requiredHoursBase(year, month1to12, officialHolidaysYmd = new Se
  * personLeavesByDay: { [day:number]: string | {code:string} }
  * leaveRules: { [code]: { countsAsWorked:boolean, hoursPerDay?:number } }
  */
-export function workedLikeLeaveHours(year, month1to12, personLeavesByDay = {}, leaveRules = {}) {
+export function workedLikeLeaveHours(
+  year,
+  month1to12,
+  personLeavesByDay = {},
+  leaveRules = {},
+  { shiftBased = false } = {}
+) {
   let sum = 0;
   const total = daysInMonth(year, month1to12);
   for (let d = 1; d <= total; d++) {
@@ -73,9 +92,12 @@ export function workedLikeLeaveHours(year, month1to12, personLeavesByDay = {}, l
     const code = typeof rec === "string" ? rec : rec.code;
     if (!code) continue;
     const rule = leaveRules[code];
-    if (rule && rule.countsAsWorked) {
-      sum += Number.isFinite(rule.hoursPerDay) ? rule.hoursPerDay : 8; // varsayılan 8s
+    if (!rule?.countsAsWorked) continue;
+    if (!shiftBased) {
+      const date = new Date(year, month1to12 - 1, d);
+      if (WEEKEND_SET.has(date.getDay())) continue;
     }
+    sum += Number.isFinite(rule.hoursPerDay) ? rule.hoursPerDay : 8; // varsayılan 8s
   }
   return sum;
 }
@@ -116,9 +138,22 @@ export function overtimeHours({
   leaveRules = {},
   personShiftsByDay = {},
   shiftHoursMap = {},
+  shiftBased = false,
 }) {
-  const requiredBase = requiredHoursBase(year, month1to12, officialHolidaysYmd, arifeDaysYmd);
-  const leaveCredit  = workedLikeLeaveHours(year, month1to12, personLeavesByDay, leaveRules);
+  const requiredBase = requiredHoursBase(
+    year,
+    month1to12,
+    officialHolidaysYmd,
+    arifeDaysYmd,
+    { shiftBased }
+  );
+  const leaveCredit  = workedLikeLeaveHours(
+    year,
+    month1to12,
+    personLeavesByDay,
+    leaveRules,
+    { shiftBased }
+  );
   const requiredFinal = Math.max(0, requiredBase - leaveCredit); // negatife düşmesin
   const worked = actualWorkedHours(year, month1to12, personShiftsByDay, shiftHoursMap);
   const overtime = worked - requiredFinal;
