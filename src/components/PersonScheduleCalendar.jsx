@@ -896,7 +896,7 @@ export default function PersonScheduleCalendar({
       try {
         const candidates = canManage
           ? Array.from(new Set([effectiveServiceId, String(serviceId ?? "").trim(), ""]))
-          : [effectiveServiceId];
+          : Array.from(new Set([effectiveServiceId, ""]));
         const roleCandidates = canManage
           ? [scheduleRole]
           : Array.from(
@@ -906,8 +906,26 @@ export default function PersonScheduleCalendar({
                   .filter(Boolean)
               )
             );
+        const targetPid = selectedPerson?.id ? String(selectedPerson.id) : "";
+        const targetCanon = selectedPerson?.canon ? String(selectedPerson.canon) : "";
+        const hasPersonMatch = (s) => {
+          if (canManage) return true;
+          if (!targetPid && !targetCanon) return true;
+          const list = Array.isArray(s?.data?.assignments) ? s.data.assignments : [];
+          for (const item of list) {
+            if (!item) continue;
+            const pidRaw = item.personId ?? item.personID ?? item.staffId ?? item.pid ?? "";
+            const pid = pidRaw == null ? "" : String(pidRaw).trim();
+            if (targetPid && pid && pid === targetPid) return true;
+            const nameRaw = item.personName ?? item.fullName ?? item.name ?? "";
+            if (targetCanon && nameRaw && canonName(nameRaw) === targetCanon) return true;
+          }
+          return false;
+        };
         let schedule = null;
         let pickedServiceId = "";
+        let fallbackSchedule = null;
+        let fallbackServiceId = "";
         const roleList = roleCandidates.length ? roleCandidates : [""];
         for (const role of roleList) {
           for (const sid of candidates) {
@@ -919,13 +937,22 @@ export default function PersonScheduleCalendar({
               month,
             });
             if (!s) continue;
-            schedule = s;
-            pickedServiceId = sid;
+            if (!fallbackSchedule) {
+              fallbackSchedule = s;
+              fallbackServiceId = sid;
+            }
             const hasAssignments = Array.isArray(s?.data?.assignments) && s.data.assignments.length > 0;
             const hasDefs = Array.isArray(s?.data?.defs) && s.data.defs.length > 0;
+            if (!hasPersonMatch(s)) continue;
+            schedule = s;
+            pickedServiceId = sid;
             if (hasAssignments || hasDefs) break;
           }
           if (schedule) break;
+        }
+        if (!schedule && fallbackSchedule) {
+          schedule = fallbackSchedule;
+          pickedServiceId = fallbackServiceId;
         }
         if (!active) return;
         const data = schedule?.data || {};
