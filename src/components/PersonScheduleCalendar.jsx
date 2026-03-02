@@ -21,6 +21,11 @@ const emptyAssignments = { map: new Map(), mismatch: null };
 
 const AREA_STORAGE_KEYS = ["workAreasV2", "workAreas"];
 const WORKING_HOURS_KEYS = ["workingHoursV2", "workingHours"];
+const REQUIRED_HOURS_KEYS = [
+  "monthlyRequiredHours",
+  "requiredMonthlyHours",
+  "stdMonthlyHours",
+];
 
 const SOURCE_PRIORITY = {
   remote: 3,
@@ -701,7 +706,6 @@ export default function PersonScheduleCalendar({
   scheduleRole = "",
   workAreas = [],
   workingHours = [],
-  requiredMonthlyHours = null,
 }) {
   const month0 = Math.max(0, Math.min(11, Number(month) - 1 || 0));
   const ymKey = `${year}-${pad2(month0 + 1)}`;
@@ -994,6 +998,14 @@ export default function PersonScheduleCalendar({
     const fromLSRaw = readStorageList(WORKING_HOURS_KEYS);
     return [...fromPropsRaw, ...fromLSRaw];
   }, [workingHours, settingsRevision]);
+
+  const requiredMonthlyHours = useMemo(() => {
+    for (const key of REQUIRED_HOURS_KEYS) {
+      const val = Number(LS.get(key, null));
+      if (Number.isFinite(val) && val > 0) return val;
+    }
+    return null;
+  }, [settingsRevision]);
 
   const shiftOptions = useMemo(() => {
     const merged = normalizeWorkingHours(workingHoursRaw);

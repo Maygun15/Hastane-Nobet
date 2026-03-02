@@ -333,7 +333,31 @@ export default function ParametersTab({
           />
         )}
         {active === "calisma-saatleri" && (
-          <WorkingHoursTab workingHours={workingHours} setWorkingHours={setWorkingHours} />
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-medium text-slate-600">
+                Aylık Zorunlu Çalışma Saati
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                defaultValue={Number(localStorage.getItem("monthlyRequiredHours")) || ""}
+                placeholder="örn. 160"
+                className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (val > 0) {
+                    localStorage.setItem("monthlyRequiredHours", String(val));
+                  } else {
+                    localStorage.removeItem("monthlyRequiredHours");
+                  }
+                  window.dispatchEvent(new Event("settings:changed"));
+                }}
+              />
+            </div>
+            <WorkingHoursTab workingHours={workingHours} setWorkingHours={setWorkingHours} />
+          </div>
         )}
         {active === "izin-turleri"     && (
           <LeaveTypesTab leaveTypes={leaveTypes} setLeaveTypes={setLeaveTypes} />
