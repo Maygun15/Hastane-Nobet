@@ -97,8 +97,11 @@ export default function MonthStats({
   const isCritical = stats.missingDays > 0;
 
   const ot = overtimeStats?.overtime ?? null;
+  const requiredBase = overtimeStats?.requiredBase ?? null;
+  const leaveCredit = overtimeStats?.leaveCredit ?? null;
+  const requiredFinal = overtimeStats?.requiredFinal ?? null;
+  const workedHours = Number.isFinite(overtimeStats?.worked) ? overtimeStats.worked : stats.totalHours;
   const otColor = ot === null ? "text-slate-400" : ot > 0 ? "text-emerald-700" : ot < 0 ? "text-red-600" : "text-slate-600";
-  const otBorder = ot === null ? "border-slate-100" : ot > 0 ? "border-emerald-100" : ot < 0 ? "border-red-100" : "border-slate-100";
   const otSign = ot === null ? "" : ot > 0 ? "+" : "";
   const OtIcon = ot !== null && ot >= 0 ? TrendingUp : TrendingDown;
 
@@ -124,52 +127,56 @@ export default function MonthStats({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <div className="rounded-lg bg-white/60 p-3 border border-sky-100">
           <div className="text-xs text-slate-500 font-medium mb-1">Toplam Nöbet</div>
           <div className="text-2xl font-bold text-sky-700">{stats.totalShifts}</div>
         </div>
 
         <div className="rounded-lg bg-white/60 p-3 border border-amber-100">
-          <div className="text-xs text-slate-500 font-medium mb-1">Toplam Saat</div>
+          <div className="text-xs text-slate-500 font-medium mb-1">Aylık Gereken</div>
           <div className="text-2xl font-bold text-amber-700">
-            {formatHours(stats.totalHours)}
-            <span className="text-xs text-slate-400 ml-1 font-normal">s</span>
+            {requiredBase !== null ? formatHours(requiredBase) : "—"}
+            {requiredBase !== null && <span className="text-xs text-slate-400 ml-1 font-normal">s</span>}
           </div>
         </div>
 
         <div className="rounded-lg bg-white/60 p-3 border border-rose-100">
           <div className="text-xs text-slate-500 font-medium mb-1">İzin (ÇS)</div>
           <div className="text-2xl font-bold text-rose-600">
-            {overtimeStats ? formatHours(overtimeStats.leaveCredit) : "—"}
-            {overtimeStats && <span className="text-xs text-slate-400 ml-1 font-normal">s</span>}
+            {leaveCredit !== null ? formatHours(leaveCredit) : "—"}
+            {leaveCredit !== null && <span className="text-xs text-slate-400 ml-1 font-normal">s</span>}
           </div>
         </div>
 
         <div className="rounded-lg bg-white/60 p-3 border border-indigo-100">
           <div className="text-xs text-slate-500 font-medium mb-1 flex items-center gap-1">
-            <Clock className="w-3 h-3" />Gereken
+            <Clock className="w-3 h-3" />Kişinin Gerekeni
           </div>
           <div className="text-2xl font-bold text-indigo-700">
-            {overtimeStats ? formatHours(overtimeStats.requiredFinal) : "—"}
-            {overtimeStats && <span className="text-xs text-slate-400 ml-1 font-normal">s</span>}
+            {requiredFinal !== null ? formatHours(requiredFinal) : "—"}
+            {requiredFinal !== null && <span className="text-xs text-slate-400 ml-1 font-normal">s</span>}
           </div>
         </div>
 
-        {overtimeStats && (
-          <div className={`rounded-lg bg-white/60 p-3 border col-span-2 md:col-span-4 ${otBorder}`}>
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-slate-500 font-medium flex items-center gap-1">
-                <OtIcon className="w-3 h-3" />
-                {ot >= 0 ? "Fazla Mesai" : "Eksik Mesai"}
-              </div>
-              <div className={`text-2xl font-bold ${otColor}`}>
-                {otSign}{formatHours(Math.abs(ot))}
-                <span className="text-xs text-slate-400 ml-1 font-normal">s</span>
-              </div>
-            </div>
+        <div className="rounded-lg bg-white/60 p-3 border border-emerald-100">
+          <div className="text-xs text-slate-500 font-medium mb-1">Çalıştığı Toplam</div>
+          <div className="text-2xl font-bold text-emerald-700">
+            {formatHours(workedHours)}
+            <span className="text-xs text-slate-400 ml-1 font-normal">s</span>
           </div>
-        )}
+        </div>
+
+        <div className="rounded-lg bg-white/60 p-3 border border-slate-100">
+          <div className="text-xs text-slate-500 font-medium mb-1 flex items-center gap-1">
+            <OtIcon className="w-3 h-3" />
+            {ot !== null && ot < 0 ? "Eksik Mesai" : "Fazla Mesai"}
+          </div>
+          <div className={`text-2xl font-bold ${otColor}`}>
+            {ot !== null ? `${otSign}${formatHours(Math.abs(ot))}` : "—"}
+            {ot !== null && <span className="text-xs text-slate-400 ml-1 font-normal">s</span>}
+          </div>
+        </div>
       </div>
 
       {stats.shiftStats.length > 0 && (
