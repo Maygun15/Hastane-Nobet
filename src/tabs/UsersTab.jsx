@@ -1,5 +1,6 @@
 // src/tabs/UsersTab.jsx
 import React, { useEffect, useMemo, useState, useRef } from "react";
+import { maskTC } from "../utils/format.js";
 import useServicesModel from "../hooks/useServicesModel.js";
 import { API, getToken, REQUIRE_BACKEND } from "../lib/api.js";
 
@@ -402,7 +403,7 @@ export default function UsersTab() {
               </div>
 
               <div className="mt-2 text-[12px] space-y-1">
-                <div>TC: {u.tc || "-"}</div>
+                <div>TC: {maskTC(u.tc)}</div>
                 <div>Tel: {u.phone || "-"}</div>
                 <div>Mail: {u.email || "-"}</div>
                 <div>Rol: {roleBadge(u.role)}</div>
