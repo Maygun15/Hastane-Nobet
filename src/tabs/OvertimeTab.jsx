@@ -215,8 +215,8 @@ const makeBlankRow = (y, m) => ({
 });
 
 /* ================ Rules: Holidays & Required Hours ================ */
-const dayStandardHours = (y, m, d, hmap) => {
-  if (isWeekend(y, m, d)) return 0;
+const dayStandardHours = (y, m, d, hmap, { includeWeekend = false } = {}) => {
+  if (!includeWeekend && isWeekend(y, m, d)) return 0;
   const k = hmap.get(iso(y, m, d));
   if (k === "full") return 0;
   if (k === "arife" || k === "half") return 4;
@@ -231,7 +231,15 @@ const computeMonthlyStdHours = (year, month, holidays) => {
 };
 
 /* ================ Leaves → Credited Hours ================ */
-function creditedLeaveHoursForMonth({ year, month, leaves, holidays, codesByDay, leaveRules = {} }) {
+function creditedLeaveHoursForMonth({
+  year,
+  month,
+  leaves,
+  holidays,
+  codesByDay,
+  leaveRules = {},
+  leaveCountsWeekend = false,
+}) {
   if (!leaves?.length && !codesByDay) return 0;
   const hmap = new Map(holidays.map((h) => [h.date, h.kind]));
   const dim = daysInMonth(year, month);
@@ -239,7 +247,7 @@ function creditedLeaveHoursForMonth({ year, month, leaves, holidays, codesByDay,
 
   const addCredit = (y, m, d, credit) => {
     if (y !== year || m !== month) return;
-    const std = dayStandardHours(y, m, d, hmap);
+    const std = dayStandardHours(y, m, d, hmap, { includeWeekend: leaveCountsWeekend });
     if (std === 0) return;
     const idx = d - 1;
     const c = Math.min(std, Math.max(0, Number(credit) || 0));
@@ -256,7 +264,7 @@ function creditedLeaveHoursForMonth({ year, month, leaves, holidays, codesByDay,
     for (const lv of leaves) {
       eachDay(lv.start, lv.end, (dt) => {
         const y = dt.getFullYear(), m = dt.getMonth() + 1, d = dt.getDate();
-        const std = dayStandardHours(y, m, d, hmap);
+        const std = dayStandardHours(y, m, d, hmap, { includeWeekend: leaveCountsWeekend });
         if (std === 0) return;
 
         let credit = 0;
@@ -428,6 +436,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
         holidays,
         codesByDay: localCodes,
         leaveRules,
+        leaveCountsWeekend: true,
       });
       return { id: r.id, credited };
     });
