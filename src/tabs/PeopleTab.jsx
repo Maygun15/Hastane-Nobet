@@ -2,6 +2,7 @@
 import React, { useRef, useState, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
 import IDCard from "../components/IDCard.jsx";
+import { maskTC } from "../utils/format.js";
 import { API, getToken, REQUIRE_BACKEND } from "../lib/api.js";
 import { useServices } from "../hooks/useServicesModel.js";
 import useServiceScope from "../hooks/useServiceScope.js";
@@ -237,9 +238,11 @@ export default function PeopleTab({
     const nextId = saved?.id || id;
     const nextRow = {
       ...row,
-      id: nextId,
+      id: saved?._id || saved?.id || id,
+      personId: saved?._id || saved?.id || "",
       name: saved?.name || row.name,
       service: saved?.serviceId || row.service,
+      tc: saved?.tc || row.tc,
       meta: saved?.meta || row.meta,
     };
 
@@ -752,7 +755,7 @@ export default function PeopleTab({
                 </button>
               </div>
             </div>
-            <IDCard person={p} />
+            <IDCard person={{ ...p, tc: maskTC(p.tc) }} />
           </div>
         ))}
         {people.length === 0 && (
@@ -797,7 +800,7 @@ export default function PeopleTab({
                       >
                         <div className="text-sm font-medium">{p.name}</div>
                         <div className="text-xs text-slate-500">
-                          {p.tc || "-"} · {p.phone || "-"} · {p.mail || "-"}
+                          {maskTC(p.tc)} · {p.phone || "-"} · {p.mail || "-"}
                         </div>
                       </li>
                     ))}

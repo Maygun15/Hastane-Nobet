@@ -1,5 +1,6 @@
 // src/components/IDCard.jsx
 import React from "react";
+import { maskTC } from "../utils/format.js";
 
 /* Kimlik Kartı – alt çizgi kaldırıldı */
 export default function IDCard({ person }) {
@@ -83,7 +84,7 @@ export default function IDCard({ person }) {
           <Value>{person?.title || person?.unvan || "-"}</Value>
 
           <Label>T.C. KİMLİK NO</Label>
-          <Value>{person?.tc || person?.tckn || "-"}</Value>
+          <Value>{maskTC(person?.tc || person?.tckn)}</Value>
 
           <Label>AD SOYAD</Label>
           <Value strong>{person?.name || person?.fullName || "-"}</Value>
