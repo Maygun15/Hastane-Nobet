@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 
 /* === utils === */
 import { buildMonthDays } from "../utils/date.js";
+import { maskTC } from "../utils/format.js";
 import { LS } from "../utils/storage.js";
 
 /* AY/YIL tek kaynak (hook) */
@@ -246,7 +247,7 @@ export default function WorkingHoursTimesheet({
                 <tr key={r.personId || idx} className="border-t">
                   <td className="px-2 py-1 text-center">{idx + 1}</td>
                   <td className="px-2 py-1">{r.role || ""}</td>
-                  <td className="px-2 py-1">{r.tckn || ""}</td>
+                  <td className="px-2 py-1">{maskTC(r.tckn)}</td>
                   <td className="px-2 py-1">{r.name || ""}</td>
                   {days.map((d) => (
                     <td key={d.day} className="px-1 py-1">
