@@ -78,8 +78,13 @@ export default function G8OvertimeSheet({
     const off = new Set(cfg.officialHolidays || []);
     const arife = new Set(cfg.arifeDays || []);
     return rows.map((r) => {
-      const leavesDays = (allLeaves?.[r.personId]?.[ymk]) ?? r.leaves ?? {};
-      const shiftsDays = (allShifts?.[r.personId]?.[ymk]) ?? r.shifts ?? {};
+      const hasPid = r.personId && String(r.personId).trim() !== "";
+      const leavesDays = hasPid
+        ? ((allLeaves?.[r.personId]?.[ymk]) ?? r.leaves ?? {})
+        : (r.leaves ?? {});
+      const shiftsDays = hasPid
+        ? ((allShifts?.[r.personId]?.[ymk]) ?? r.shifts ?? {})
+        : (r.shifts ?? {});
       const calc = overtimeHours({
         year: cfg.year,
         month1to12: cfg.month,
