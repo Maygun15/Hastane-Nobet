@@ -424,8 +424,9 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
       return { id: r.id, work };
     });
     const perRowLeave = rows.map((r) => {
-      const leaves = leavesByPerson[r.personId] || [];
-      const byId = allLocalLeaves?.[r.personId]?.[ym] || {};
+      const hasPid = !!(r.personId && String(r.personId).trim());
+      const leaves = hasPid ? (leavesByPerson[r.personId] || []) : [];
+      const byId = hasPid ? (allLocalLeaves?.[r.personId]?.[ym] || {}) : {};
       const canon = canonName(r.person || r.fullName || r.name || r.adsoyad || "");
       const byName = canon ? (nameStore?.[canon]?.[ym] || {}) : {};
       const localCodes = { ...byName, ...byId }; // id varsa öncelik id'de
