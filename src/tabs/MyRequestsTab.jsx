@@ -73,7 +73,7 @@ export default function MyRequestsTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="font-semibold text-[15px]">İsteklerim</div>
+        <div className="font-semibold text-[15px]">Taleplerim</div>
         <button
           className="px-3 py-2 rounded-lg bg-sky-600 text-white text-sm hover:bg-sky-700"
           onClick={() => setOpen(true)}

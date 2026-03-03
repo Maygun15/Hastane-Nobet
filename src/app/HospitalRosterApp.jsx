@@ -448,8 +448,11 @@ export default function HospitalRosterApp() {
         return;
       }
       if (pathname.startsWith("/talepler")) {
-        if (!isAdmin && !isStaff) return setActiveTab("plan");
-        if (activeTab !== "requests") setActiveTab("requests");
+        if (isAdmin || isStaff) {
+          if (activeTab !== "requests") setActiveTab("requests");
+        } else {
+          if (activeTab !== "myRequests") setActiveTab("myRequests");
+        }
         return;
       }
       if (activeTab !== "plan") setActiveTab("plan");
@@ -539,12 +542,19 @@ export default function HospitalRosterApp() {
                 {isBasicUser ? "Takvimim" : "Planlama"}
               </NavBtn>
 
-              {/* İSTEKLERİM — tüm kullanıcılar */}
+              {/* TALEPLER — tüm kullanıcılar */}
               <NavBtn
-                active={activeTab === "myRequests"}
-                onClick={() => { setActiveTab("myRequests"); pushUrl("/isteklerim"); }}
+                active={activeTab === (isAdmin || isStaff ? "requests" : "myRequests")}
+                onClick={() => {
+                  const target = (isAdmin || isStaff) ? "requests" : "myRequests";
+                  setActiveTab(target);
+                  pushUrl("/talepler");
+                  closePersonnelDd();
+                  closeSchedulesDd();
+                  closeParamsDd();
+                }}
               >
-                İsteklerim
+                Talepler
               </NavBtn>
 
               {!isBasicUser && (
@@ -690,14 +700,6 @@ export default function HospitalRosterApp() {
                   onClick={() => { setActiveTab("users"); pushUrl("/kullanicilar"); }}
                 >
                   Kullanıcılar
-                </NavBtn>
-              )}
-              {(isAdmin || isStaff) && (
-                <NavBtn
-                  active={activeTab === "requests"}
-                  onClick={() => { setActiveTab("requests"); pushUrl("/talepler"); }}
-                >
-                  Talepler
                 </NavBtn>
               )}
                 </>
