@@ -1,141 +1,131 @@
 // src/hooks/useServicesModel.js
-// Backend /api/services endpoint'inden servisleri çeker.
-// Backend erişilemezse localStorage fallback kullanır.
+import { useState, useCallback, useEffect } from "react";
 
-import { useState, useEffect, useCallback } from "react";
-import { API } from "../lib/api.js";
+const BASE = "/api/services";
 
-const LS_KEY = "services:model:v1";
-
-function readLS() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    return raw ? JSON.parse(raw) : { items: [] };
-  } catch {
-    return { items: [] };
-  }
-}
-function writeLS(items) {
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify({ items }));
-  } catch {}
+function getToken() {
+  return localStorage.getItem("authToken") || localStorage.getItem("token") || "";
 }
 
-async function apiFetch(path, opts = {}) {
-  const method = (opts.method || "GET").toUpperCase();
-  const body = opts.body;
-  return API.http.req(path, { method, body });
+function authHeaders() {
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${getToken()}`,
+  };
 }
 
-// React hook — bileşenlerde kullan
+let _cache = [];
+let _listeners = new Set();
+let _loaded = false;
+function notifyAll() {
+  _listeners.forEach((fn) => fn());
+}
+
 export function useServices() {
-  const [items, setItems] = useState(() => readLS().items || []);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [, tick] = useState(0);
+
+  useEffect(() => {
+    const fn = () => tick((v) => v + 1);
+    _listeners.add(fn);
+    return () => _listeners.delete(fn);
+  }, []);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
     try {
-      const data = await apiFetch("/api/services");
-      const list = data?.data || [];
-      setItems(list);
-      writeLS(list);
+      const res = await fetch(BASE, { headers: authHeaders() });
+      const json = await res.json();
+      if (json?.ok) {
+        _cache = Array.isArray(json.data) ? json.data : [];
+        _loaded = true;
+        notifyAll();
+      }
     } catch (e) {
-      setError(e.message);
-      // Fallback: localStorage'daki eski liste kalsın
-      setItems(readLS().items || []);
-    } finally {
-      setLoading(false);
+      console.error("Servisler yüklenemedi:", e);
     }
   }, []);
 
   useEffect(() => {
-    refresh();
+    if (!_loaded) refresh();
   }, [refresh]);
 
-  const add = useCallback(async (payload) => {
-    const data = await apiFetch("/api/services", {
-      method: "POST",
-      body: payload,
-    });
-    await refresh();
-    return data?.data;
-  }, [refresh]);
-
-  const update = useCallback(async (id, patch) => {
-    await apiFetch(`/api/services/${id}`, {
-      method: "PATCH",
-      body: patch,
-    });
-    await refresh();
-  }, [refresh]);
-
-  const remove = useCallback(async (id) => {
-    await apiFetch(`/api/services/${id}`, { method: "DELETE" });
-    await refresh();
-  }, [refresh]);
-
-  return { items, loading, error, refresh, add, update, remove };
+  return { items: _cache, refresh };
 }
 
-// Eski senkron model API'si (ServicesTab.jsx geriye dönük uyum için)
 export default function useServicesModel() {
-  const list = () => readLS().items || [];
+  const [, tick] = useState(0);
 
-  const add = async (payload) => {
+  useEffect(() => {
+    const fn = () => tick((v) => v + 1);
+    _listeners.add(fn);
+    return () => _listeners.delete(fn);
+  }, []);
+
+  const list = useCallback(() => _cache, []);
+
+  const add = useCallback(async (payload) => {
     try {
-      const data = await apiFetch("/api/services", {
+      const res = await fetch(BASE, {
         method: "POST",
-        body: payload,
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
       });
-      const item = data?.data;
-      if (item) {
-        const current = readLS().items || [];
-        writeLS([...current, item]);
+      const json = await res.json();
+      if (json?.ok) {
+        _cache = [..._cache, json.data];
+        _loaded = true;
+        notifyAll();
+        return json.data;
       }
-      return item;
-    } catch {
-      // Fallback: localStorage
-      const current = readLS().items || [];
-      const item = {
-        id: "local_" + Math.random().toString(36).slice(2),
-        name: payload.name ?? "Yeni Servis",
-        code: (payload.code ?? "YENI_SERVIS").toUpperCase(),
-        active: payload.active !== false,
-      };
-      writeLS([...current, item]);
-      return item;
+      alert("Hata: " + (json?.error || "Servis eklenemedi"));
+    } catch (e) {
+      alert("Bağlantı hatası: " + e.message);
     }
-  };
+  }, []);
 
-  const update = async (id, patch) => {
+  const update = useCallback(async (id, patch) => {
     try {
-      await apiFetch(`/api/services/${id}`, {
+      const res = await fetch(`${BASE}/${id}`, {
         method: "PATCH",
-        body: patch,
+        headers: authHeaders(),
+        body: JSON.stringify(patch),
       });
-    } catch {}
-    // localStorage'ı da güncelle
-    const st = readLS();
-    const i = st.items.findIndex((x) => x.id === id || x._id === id);
-    if (i !== -1) {
-      st.items[i] = { ...st.items[i], ...patch, code: (patch.code ?? st.items[i].code)?.toUpperCase() };
-      writeLS(st.items);
+      const json = await res.json();
+      if (json?.ok) {
+        _cache = _cache.map((s) => (s._id === id || s.id === id ? json.data : s));
+        _loaded = true;
+        notifyAll();
+      } else {
+        alert("Hata: " + (json?.error || "Güncellenemedi"));
+      }
+    } catch (e) {
+      alert("Bağlantı hatası: " + e.message);
     }
-  };
+  }, []);
 
-  const remove = async (id) => {
+  const remove = useCallback(async (id) => {
     try {
-      await apiFetch(`/api/services/${id}`, { method: "DELETE" });
-    } catch {}
-    const st = readLS();
-    writeLS(st.items.filter((x) => x.id !== id && x._id !== id));
-  };
+      const res = await fetch(`${BASE}/${id}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      const json = await res.json();
+      if (json?.ok) {
+        _cache = _cache.filter((s) => s._id !== id && s.id !== id);
+        _loaded = true;
+        notifyAll();
+      } else {
+        alert("Hata: " + (json?.error || "Silinemedi"));
+      }
+    } catch (e) {
+      alert("Bağlantı hatası: " + e.message);
+    }
+  }, []);
 
-  const importItems = (newItems) => {
-    writeLS(newItems.map((x) => ({ ...x, code: (x.code || "").toUpperCase() })));
-  };
+  const toggle = useCallback(async (id) => {
+    const item = _cache.find((s) => s._id === id || s.id === id);
+    if (!item) return;
+    await update(id, { active: !item.active });
+  }, [update]);
 
-  return { list, add, update, remove, importItems };
+  return { list, add, update, remove, toggle };
 }

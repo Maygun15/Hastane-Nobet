@@ -524,27 +524,30 @@ export default function ServicesTab() {
       {/* Kartlar */}
       {rows.length > 0 && (
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-          {rows.map((row) => (
-            <ServiceCard
-              key={row.id}
-              row={row}
-              canManage={canManage}
-              onEdit={() => {
-                setEditing(row);
-                setModalOpen(true);
-              }}
-              onDelete={() => {
-                if (confirm(`“${row.name || row.code}” silinsin mi?`)) {
-                  m.remove(row.id);
+          {rows.map((row) => {
+            const rowId = row._id || row.id;
+            return (
+              <ServiceCard
+                key={rowId}
+                row={row}
+                canManage={canManage}
+                onEdit={() => {
+                  setEditing(row);
+                  setModalOpen(true);
+                }}
+                onDelete={() => {
+                  if (confirm(`“${row.name || row.code}” silinsin mi?`)) {
+                    m.remove(rowId);
+                    bump();
+                  }
+                }}
+                onToggle={() => {
+                  m.toggle(rowId);
                   bump();
-                }
-              }}
-              onToggle={() => {
-                m.toggle(row.id);
-                bump();
-              }}
-            />
-          ))}
+                }}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -562,9 +565,8 @@ export default function ServicesTab() {
         initial={editing}
         onSubmit={(payload) => {
           if (editing) {
-            const { name, code } = payload;
-            if (name !== editing.name) m.update(editing.id, { name });
-            if (code !== editing.code) m.update(editing.id, { code });
+            const id = editing._id || editing.id;
+            m.update(id, payload);
           } else {
             m.add({ ...payload, active: true });
           }
