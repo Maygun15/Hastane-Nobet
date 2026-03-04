@@ -755,7 +755,18 @@ export default function PeopleTab({
                 </button>
               </div>
             </div>
-            <IDCard person={{ ...p, tc: maskTC(p.tc) }} />
+            {(() => {
+              const svcName =
+                serviceOptions.find((s) => s.id === p.service)?.name ||
+                p.service ||
+                "";
+              return (
+                <IDCard
+                  person={p}
+                  serviceNames={svcName ? [svcName] : []}
+                />
+              );
+            })()}
           </div>
         ))}
         {people.length === 0 && (

@@ -92,6 +92,94 @@ router.put('/:userId/link-person', requireAdmin, async (req, res) => {
 });
 
 /* ---------------------------
+   Hızlı kullanıcı oluştur (admin/staff)
+   POST /api/users/quick-create
+---------------------------- */
+router.post('/quick-create', requireAdminOrStaff, async (req, res) => {
+  try {
+    const { name, tc, phone, email, role } = req.body || {};
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ message: 'Ad Soyad zorunlu.' });
+    }
+
+    const or = [];
+    if (email) or.push({ email: String(email).toLowerCase().trim() });
+    if (phone) or.push({ phone: String(phone).trim() });
+    if (tc) or.push({ tc: String(tc).trim() });
+    if (or.length) {
+      const exists = await User.findOne({ $or: or }).lean();
+      if (exists) return res.status(409).json({ message: 'Bu e-posta/telefon/TC zaten kayıtlı olabilir' });
+    }
+
+    const user = new User({
+      name: String(name).trim(),
+      tc: tc ? String(tc).trim() : '',
+      phone: phone ? String(phone).trim() : '',
+      email: email ? String(email).toLowerCase().trim() : '',
+      role: role || 'user',
+      active: true,
+      serviceIds: [],
+    });
+    const tempPassword = (tc ? String(tc).trim() : '') || 'Hastane2026!';
+    await user.setPassword(tempPassword);
+    user.mustChangePassword = true;
+    await user.save();
+
+    return res.json({ ok: true, user: { id: String(user._id) } });
+  } catch (err) {
+    console.error('POST /api/users/quick-create ERR:', err);
+    return res.status(500).json({ message: 'Kullanıcı oluşturulamadı' });
+  }
+});
+
+/* ---------------------------
+   Personelden toplu kullanıcı oluştur (admin)
+   POST /api/users/bulk-from-personnel
+---------------------------- */
+router.post('/bulk-from-personnel', requireAdmin, async (req, res) => {
+  try {
+    const personIds = Array.isArray(req.body?.personIds) ? req.body.personIds : [];
+    if (!personIds.length) return res.json({ created: 0, skipped: 0 });
+
+    const persons = await Person.find({ _id: { $in: personIds } }).lean();
+    let created = 0;
+    let skipped = 0;
+
+    for (const p of persons) {
+      const or = [{ personId: p._id }];
+      if (p.tc) or.push({ tc: p.tc });
+      if (p.email) or.push({ email: p.email });
+      if (p.phone) or.push({ phone: p.phone });
+      const exists = await User.findOne({ $or: or }).lean();
+      if (exists) { skipped++; continue; }
+
+      const user = new User({
+        name: p.name || '',
+        tc: p.tc || '',
+        phone: p.phone || '',
+        email: p.email || '',
+        role: 'user',
+        active: true,
+        serviceIds: p.serviceId ? [String(p.serviceId)] : [],
+        personId: p._id,
+      });
+      const tempPassword = p.tc || 'Hastane2026!';
+      await user.setPassword(tempPassword);
+      user.mustChangePassword = true;
+      await user.save();
+
+      await Person.findByIdAndUpdate(p._id, { userId: user._id });
+      created++;
+    }
+
+    return res.json({ created, skipped });
+  } catch (err) {
+    console.error('POST /api/users/bulk-from-personnel ERR:', err);
+    return res.status(500).json({ message: 'Toplu oluşturma başarısız' });
+  }
+});
+
+/* ---------------------------
    Profil güncelle (self/admin)
    PATCH /api/users/:id/profile
    body: { phone?, email? }

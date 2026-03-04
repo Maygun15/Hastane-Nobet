@@ -112,12 +112,92 @@ function AssignServicesModal({ open, initialIds = [], onClose, onSave }) {
   );
 }
 
+/* ---------------- Hızlı kullanıcı ekleme ---------------- */
+function QuickAddModal({ open, onClose, onSave }) {
+  const [form, setForm] = useState({ name: "", tc: "", phone: "", email: "", role: "user" });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const f = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) return setMsg("Ad Soyad zorunlu.");
+    setSaving(true);
+    setMsg("");
+    try {
+      await API.http.post("/api/users/quick-create", form);
+      setMsg("✅ Kullanıcı oluşturuldu.");
+      setForm({ name: "", tc: "", phone: "", email: "", role: "user" });
+      onSave?.();
+    } catch (e) {
+      setMsg(`❌ ${e?.message || "Kaydedilemedi"}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+        <div className="px-5 py-4 border-b flex items-center justify-between">
+          <div className="font-semibold">Hızlı Kullanıcı Ekle</div>
+          <button className="px-3 py-1 rounded-lg border text-sm" onClick={onClose}>Kapat</button>
+        </div>
+        <form onSubmit={save} className="px-5 py-4 space-y-3">
+          {[
+            { label: "Ad Soyad *", key: "name", type: "text" },
+            { label: "TC Kimlik No", key: "tc", type: "text", maxLength: 11 },
+            { label: "Telefon", key: "phone", type: "tel" },
+            { label: "E-posta", key: "email", type: "email" },
+          ].map(({ label, key, type, maxLength }) => (
+            <div key={key}>
+              <label className="text-xs text-slate-500">{label}</label>
+              <input
+                type={type}
+                className="w-full border rounded-lg px-3 py-2 mt-1 text-sm"
+                value={form[key]}
+                onChange={f(key)}
+                maxLength={maxLength}
+              />
+            </div>
+          ))}
+          <div>
+            <label className="text-xs text-slate-500">Rol</label>
+            <select
+              className="w-full border rounded-lg px-3 py-2 mt-1 text-sm"
+              value={form.role}
+              onChange={f("role")}
+            >
+              <option value="user">Standart</option>
+              <option value="staff">Yetkili</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          {msg && <div className="text-sm">{msg}</div>}
+          <div className="flex gap-2 pt-1">
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 py-2 rounded-lg bg-sky-600 text-white text-sm disabled:opacity-50"
+            >
+              {saving ? "Kaydediliyor..." : "Kaydet"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Kullanıcılar sekmesi ---------------- */
 export default function UsersTab() {
   const [list, setList] = useState([]);
   const [personnel, setPersonnel] = useState([]);
   const [q, setQ] = useState("");
   const [assignFor, setAssignFor] = useState(null);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [backendError, setBackendError] = useState("");
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
@@ -146,6 +226,16 @@ export default function UsersTab() {
     }
     return L;
   }, [list, q]);
+
+  const linkedPersonIds = useMemo(
+    () => new Set((list || []).map((u) => u.personId).filter(Boolean).map(String)),
+    [list]
+  );
+  const unlinkedPersonnel = useMemo(
+    () =>
+      (personnel || []).filter((p) => !linkedPersonIds.has(String(p.id || p._id || ""))),
+    [personnel, linkedPersonIds]
+  );
 
   const refresh = async () => {
     if (REQUIRE_BACKEND && !getToken()) {
@@ -340,6 +430,26 @@ export default function UsersTab() {
     }
   };
 
+  const handleBulkFromPersonnel = async () => {
+    const unlinked = unlinkedPersonnel;
+    if (!unlinked.length) return alert("Tüm personelin zaten kullanıcısı var.");
+
+    const ok = confirm(
+      `${unlinked.length} personel için otomatik kullanıcı oluşturulsun mu?\nGeçici şifre: TC numarası (TC yoksa Hastane2026!)`
+    );
+    if (!ok) return;
+
+    try {
+      const res = await API.http.post("/api/users/bulk-from-personnel", {
+        personIds: unlinked.map((p) => p.id || p._id),
+      });
+      alert(`✅ ${res.created || 0} kullanıcı oluşturuldu. ${res.skipped || 0} atlandı.`);
+      refresh();
+    } catch (e) {
+      alert(e?.message || "Hata oluştu.");
+    }
+  };
+
   const handleLinkPerson = async (user, nextPersonId) => {
     if (!hasBackend) {
       alert("Backend gerekli. Lütfen giriş yapın.");
@@ -380,6 +490,18 @@ export default function UsersTab() {
     <div className="space-y-4">
       {/* arama */}
       <div className="flex items-center gap-2">
+        <button
+          className="h-10 px-3 rounded-lg bg-sky-600 text-white text-sm"
+          onClick={() => setQuickAddOpen(true)}
+        >
+          + Kullanıcı Ekle
+        </button>
+        <button
+          className="h-10 px-3 rounded-lg border text-sm"
+          onClick={handleBulkFromPersonnel}
+        >
+          Personelden Oluştur ({unlinkedPersonnel.length})
+        </button>
         <input
           className="h-10 px-3 rounded-lg border w-80"
           placeholder="Ara: ad / tc / tel / mail / rol / durum"
@@ -574,6 +696,15 @@ export default function UsersTab() {
           } catch (e) {
             alert(e.message || "Kaydedilemedi");
           }
+        }}
+      />
+
+      <QuickAddModal
+        open={quickAddOpen}
+        onClose={() => setQuickAddOpen(false)}
+        onSave={async () => {
+          setQuickAddOpen(false);
+          await refresh();
         }}
       />
     </div>
