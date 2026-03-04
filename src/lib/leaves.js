@@ -10,6 +10,7 @@ import { API, getToken } from "./api.js";
 
 const NAME_STORE_KEY = "allLeavesByNameV1";
 const SUPPRESS_KEY = "leaveSuppressV1";
+const PERSONNEL_STORE_KEY = "appStoreV1";
 
 function stripDiacritics(str) {
   return (str || "")
@@ -44,6 +45,29 @@ let leavesLoaded = false;
 let loadPromise = null;
 let saveTimer = null;
 let leavesDirty = false;
+let knownIdsCache = { ts: 0, ids: null };
+
+function readKnownPersonnelIds() {
+  const now = Date.now();
+  if (knownIdsCache.ids && now - knownIdsCache.ts < 2000) return knownIdsCache.ids;
+  const store = LS.get(PERSONNEL_STORE_KEY, null);
+  const byId = store?.state?.personnelById || store?.personnelById;
+  if (byId && typeof byId === "object") {
+    const keys = Object.keys(byId);
+    if (keys.length) {
+      knownIdsCache = { ts: now, ids: new Set(keys.map(String)) };
+      return knownIdsCache.ids;
+    }
+  }
+  knownIdsCache = { ts: now, ids: null };
+  return null;
+}
+
+function isKnownPersonId(pid) {
+  const ids = readKnownPersonnelIds();
+  if (!ids) return true; // personel listesi yüklenmediyse bloklama yapma
+  return ids.has(String(pid));
+}
 
 function normalizeLeaves(raw) {
   const out = {};
@@ -242,7 +266,10 @@ export function setLeave({ personId, personName, year, month, day, code, note })
   const canon = personName ? canonName(personName) : null;
   if (!Number.isFinite(Y) || !Number.isFinite(M1) || !Number.isFinite(D) || !c) return;
 
-  if (pid && pid !== "undefined" && pid !== "null" && pid !== "") {
+  const pidSet = pid && pid !== "undefined" && pid !== "null" && pid !== "";
+  const pidOk = pidSet ? isKnownPersonId(pid) : false;
+
+  if (pidSet && pidOk) {
     const ym = ymKey(Y, M1);
     leavesCache[pid] ??= {};
     leavesCache[pid][ym] ??= {};
@@ -250,9 +277,16 @@ export function setLeave({ personId, personName, year, month, day, code, note })
     leavesLoaded = true;
     leavesDirty = true;
     scheduleSave();
+  } else if (pidSet && !pidOk) {
+    if (leavesCache?.[pid]) {
+      delete leavesCache[pid];
+      leavesLoaded = true;
+      leavesDirty = true;
+      scheduleSave();
+    }
   }
 
-  if ((!pid || pid === "undefined" || pid === "null" || pid === "") && !canon) {
+  if ((!pidSet) && !canon) {
     return;
   }
 
@@ -261,7 +295,7 @@ export function setLeave({ personId, personName, year, month, day, code, note })
     setNameLeave({ canon, year: Y, month: M1, day: D, rec });
   }
 
-  updateSuppress({ pid, canon, year: Y, month: M1, day: D, suppress: false });
+  updateSuppress({ pid: pidOk ? pid : "", canon, year: Y, month: M1, day: D, suppress: false });
 
   emitLeavesChanged();
 }
@@ -276,12 +310,22 @@ export function unsetLeave({ personId, personName, year, month, day }) {
   const canon = personName ? canonName(personName) : null;
   if (!Number.isFinite(Y) || !Number.isFinite(M1) || !Number.isFinite(D)) return;
 
-  if (pid && pid !== "undefined" && pid !== "null" && pid !== "") {
+  const pidSet = pid && pid !== "undefined" && pid !== "null" && pid !== "";
+  const pidOk = pidSet ? isKnownPersonId(pid) : false;
+
+  if (pidSet && pidOk) {
     const ym = ymKey(Y, M1);
     if (leavesCache?.[pid]?.[ym]) {
       delete leavesCache[pid][ym][String(D)];
       if (!Object.keys(leavesCache[pid][ym]).length) delete leavesCache[pid][ym];
       if (!Object.keys(leavesCache[pid]).length) delete leavesCache[pid];
+      leavesLoaded = true;
+      leavesDirty = true;
+      scheduleSave();
+    }
+  } else if (pidSet && !pidOk) {
+    if (leavesCache?.[pid]) {
+      delete leavesCache[pid];
       leavesLoaded = true;
       leavesDirty = true;
       scheduleSave();
@@ -292,7 +336,7 @@ export function unsetLeave({ personId, personName, year, month, day }) {
     setNameLeave({ canon, year: Y, month: M1, day: D, rec: null });
   }
 
-  updateSuppress({ pid, canon, year: Y, month: M1, day: D, suppress: true });
+  updateSuppress({ pid: pidOk ? pid : "", canon, year: Y, month: M1, day: D, suppress: true });
 
   emitLeavesChanged();
 }

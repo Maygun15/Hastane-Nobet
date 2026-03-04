@@ -13,6 +13,7 @@ const multer = require('multer');
 const upload = multer();
 
 const requireAdmin = requireRole('admin');
+const requireAdminOrStaff = requireRole('admin', 'staff');
 
 /* ---------------------------
    Basit alan kontrolü
@@ -87,6 +88,99 @@ router.put('/:userId/link-person', requireAdmin, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+});
+
+/* ---------------------------
+   Profil güncelle (self/admin)
+   PATCH /api/users/:id/profile
+   body: { phone?, email? }
+---------------------------- */
+router.patch('/:id/profile', requireAuth, async (req, res) => {
+  try {
+    const { phone, email, serviceId } = req.body || {};
+    const userId = String(req.params.id || '').trim();
+    if (!userId) return res.status(400).json({ error: 'id gerekli' });
+
+    const isSelf = String(req.user?.uid || '') === userId;
+    const role = String(req.user?.role || '').toLowerCase();
+    const isAdminOrStaff = role === 'admin' || role === 'staff';
+    if (!isSelf && !isAdminOrStaff) {
+      return res.status(403).json({ error: 'Yetkisiz' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+
+    if (phone !== undefined) user.phone = phone;
+    if (email !== undefined) user.email = email;
+    if (serviceId !== undefined && isAdminOrStaff) {
+      const sid = String(serviceId || '').trim();
+      user.serviceIds = sid ? [sid] : [];
+    }
+    await user.save();
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('PATCH /api/users/:id/profile ERR:', err);
+    return res.status(500).json({ error: 'Profil güncellenemedi' });
+  }
+});
+
+/* ---------------------------
+   Kimlik güncelle (admin/staff)
+   PATCH /api/users/:id/identity
+   body: { name?, tc? }
+---------------------------- */
+router.patch('/:id/identity', requireAdminOrStaff, async (req, res) => {
+  try {
+    const { name, tc } = req.body || {};
+    const userId = String(req.params.id || '').trim();
+    if (!userId) return res.status(400).json({ error: 'id gerekli' });
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+
+    if (name) user.name = String(name).trim();
+    if (tc) user.tc = String(tc).trim();
+    await user.save();
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('PATCH /api/users/:id/identity ERR:', err);
+    return res.status(500).json({ error: 'Kimlik güncellenemedi' });
+  }
+});
+
+/* ---------------------------
+   Şifre değiştir (self)
+   POST /api/users/change-password
+   body: { currentPassword, newPassword }
+---------------------------- */
+router.post('/change-password', requireAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Mevcut ve yeni şifre gerekli' });
+    }
+
+    const userId = String(req.user?.uid || '').trim();
+    if (!userId) return res.status(401).json({ error: 'Yetkisiz' });
+
+    const user = await User.findById(userId).select('+password');
+    if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+
+    const ok = await user.comparePassword(currentPassword);
+    if (!ok) return res.status(400).json({ error: 'Mevcut şifre yanlış.' });
+
+    await user.setPassword(newPassword);
+    user.mustChangePassword = false;
+    await user.save();
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /api/users/change-password ERR:', err);
+    return res.status(500).json({ error: 'Şifre güncellenemedi' });
   }
 });
 

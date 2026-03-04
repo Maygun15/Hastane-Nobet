@@ -340,6 +340,42 @@ export default function UsersTab() {
     }
   };
 
+  const handleLinkPerson = async (user, nextPersonId) => {
+    if (!hasBackend) {
+      alert("Backend gerekli. Lütfen giriş yapın.");
+      return;
+    }
+    const userId = String(user?.id || user?._id || "");
+    if (!userId) {
+      alert("Geçersiz kullanıcı id.");
+      return;
+    }
+    const payloadId = nextPersonId ? String(nextPersonId) : null;
+
+    // Optimistik güncelle
+    setList((prev) =>
+      (prev || []).map((u) =>
+        String(u.id || u._id) === userId ? { ...u, personId: payloadId } : u
+      )
+    );
+
+    try {
+      await API.http.req(`/api/users/${userId}/link-person`, {
+        method: "PUT",
+        body: { personId: payloadId },
+      });
+    } catch (e) {
+      // rollback
+      setList((prev) =>
+        (prev || []).map((u) =>
+          String(u.id || u._id) === userId ? { ...u, personId: user?.personId || null } : u
+        )
+      );
+      alert(e?.message || "Personel bağlanamadı.");
+      return;
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* arama */}
@@ -412,11 +448,7 @@ export default function UsersTab() {
                   <select
                     value={u.personId || ''}
                     onChange={async (e) => {
-                      await API.http.req(`/api/users/${u.id}/link-person`, {
-                        method: 'PUT',
-                        body: { personId: e.target.value || null }
-                      });
-                      refresh();
+                      await handleLinkPerson(u, e.target.value || null);
                     }}
                     className="text-sm border rounded px-2 py-1 text-slate-700"
                   >
