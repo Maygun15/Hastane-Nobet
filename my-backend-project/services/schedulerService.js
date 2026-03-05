@@ -2,6 +2,7 @@ const DutyRule = require('../models/DutyRule');
 const GeneratedSchedule = require('../models/GeneratedSchedule');
 const MonthlySchedule = require('../models/MonthlySchedule');
 const Person = require('../models/Person');
+const { listHolidays } = require('./holidayService');
 const { generateMonthlyPlan } = require('./scheduler');
 const { generateDraftRoster } = require('./scheduler/draftRoster');
 
@@ -25,6 +26,7 @@ const DEFAULT_WEIGHTS = {
 
 const NIGHT_24_CODES = new Set(['N', 'V2']);
 const normalizeCode = (s) => String(s || '').trim().toUpperCase();
+const isSupervisorLabel = (label = '') => /servis\s*sorumlu|ekip\s*sorumlu|sorumlu/i.test(String(label || ''));
 const prevDateStr = (dateStr) => {
   const d = new Date(`${dateStr}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return null;
@@ -233,6 +235,18 @@ function buildDaysFromScheduleData({ year, month, data }) {
   return days;
 }
 
+function applySupervisorHolidayRules(days = [], holidayKindByDate = {}) {
+  return (days || []).map((day) => {
+    const weekday = Number(day?.weekday);
+    const date = String(day?.date || '').slice(0, 10);
+    const holidayKind = String(holidayKindByDate?.[date] || '').toLowerCase();
+    const blockSupervisor = weekday === 0 || weekday === 6 || holidayKind === 'full';
+    if (!blockSupervisor) return day;
+    const shifts = (day?.shifts || []).filter((shift) => !isSupervisorLabel(shift?.area || shift?.label || shift?.name || ''));
+    return { ...day, shifts };
+  });
+}
+
 async function fetchDutyRules({ sectionId, serviceId = '', role = '' }) {
   // Önce en spesifik kuralı ara; yoksa daha genel kuralı kullan
   const fallbacks = [
@@ -328,6 +342,12 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     throw new Error('Vardiya şablonu bulunamadı (MonthlySchedule.data.defs bekleniyor).');
   }
 
+  const holidays = await listHolidays({ year, month });
+  const holidayKindByDate = Object.fromEntries(
+    (holidays || []).map((row) => [String(row.date || '').slice(0, 10), String(row.kind || 'full').toLowerCase()])
+  );
+  const effectiveDays = applySupervisorHolidayRules(days, holidayKindByDate);
+
   const staffPack = Array.isArray(payload.staff) && payload.staff.length
     ? { staff: payload.staff, debug: { rawCount: payload.staff.length, filteredCount: payload.staff.length, usedFallback: false, roleTokens: [] } }
     : await buildStaff({ serviceId, role });
@@ -337,14 +357,14 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   const requestsByPerson = payload.requestsByPerson || {};
 
   const staffCount = Array.isArray(staff) ? staff.length : 0;
-  const totalSlots = Array.isArray(days)
-    ? days.reduce(
+  const totalSlots = Array.isArray(effectiveDays)
+    ? effectiveDays.reduce(
         (sum, d) => sum + (d.shifts || []).reduce((s, sh) => s + (Number(sh.requiredCount || 0) || 0), 0),
         0
       )
     : 0;
-  const totalHoursCalc = Array.isArray(days)
-    ? days.reduce(
+  const totalHoursCalc = Array.isArray(effectiveDays)
+    ? effectiveDays.reduce(
         (sum, d) =>
           sum +
           (d.shifts || []).reduce((s, sh) => {
@@ -399,7 +419,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
       year,
       month,
       getActiveStaff: async () => staff,
-      getMonthlyShifts: async () => days,
+      getMonthlyShifts: async () => effectiveDays,
       getLeaves: async () => leavesByPerson,
       getRequests: async () => requestsByPerson,
       ruleEngineDoc: ruleDoc || null,
@@ -413,8 +433,8 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     });
   }
 
-  const shiftCount = days.reduce((sum, d) => sum + (d.shifts?.length || 0), 0);
-  const requiredSlots = days.reduce(
+  const shiftCount = effectiveDays.reduce((sum, d) => sum + (d.shifts?.length || 0), 0);
+  const requiredSlots = effectiveDays.reduce(
     (sum, d) => sum + (d.shifts || []).reduce((s, sh) => s + (Number(sh.requiredCount || 0) || 0), 0),
     0
   );

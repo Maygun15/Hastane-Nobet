@@ -307,6 +307,7 @@ function normalizePerson(person) {
     canon: canonName(name || id),
     raw: person,
     service: person.service || person.serviceId || person.department || "",
+    aliasIds: Array.isArray(person.aliasIds) ? person.aliasIds.map((v) => String(v).trim()).filter(Boolean) : [],
   };
 }
 
@@ -683,12 +684,21 @@ function formatLeaveValue(val) {
   return String(val);
 }
 
-function collapseLeaves(allLeaves, personId, canon, ymKey) {
-  const base = (allLeaves?.[personId] || {})[ymKey] || {};
-  // PersonId varsa name-store yerine id bazlı izinleri esas al
-  if (!canon || personId) return base;
-  const byName = (allLeaves?.[`__name__:${canon}`] || {})[ymKey] || {};
-  return { ...byName, ...base };
+function collapseLeaves(allLeaves, personId, canon, ymKey, aliasIds = []) {
+  const merged = {};
+  const ids = new Set(
+    [personId, ...(Array.isArray(aliasIds) ? aliasIds : [])]
+      .map((v) => (v == null ? "" : String(v).trim()))
+      .filter(Boolean)
+  );
+  for (const id of ids) {
+    Object.assign(merged, (allLeaves?.[id] || {})[ymKey] || {});
+  }
+  if (canon) {
+    const byName = (allLeaves?.[`__name__:${canon}`] || {})[ymKey] || {};
+    return { ...byName, ...merged };
+  }
+  return merged;
 }
 
 export default function PersonScheduleCalendar({
@@ -831,7 +841,13 @@ export default function PersonScheduleCalendar({
 
   const leavesForPerson = useMemo(() => {
     if (!selectedPerson) return {};
-    return collapseLeaves(allLeaves, selectedPerson.id, selectedPerson.canon, ymKey);
+    return collapseLeaves(
+      allLeaves,
+      selectedPerson.id,
+      selectedPerson.canon,
+      ymKey,
+      selectedPerson.aliasIds || selectedPerson.raw?.aliasIds || []
+    );
   }, [allLeaves, selectedPerson, ymKey]);
 
   const assignmentInfo = useMemo(() => {

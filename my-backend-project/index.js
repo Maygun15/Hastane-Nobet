@@ -303,6 +303,14 @@ try {
   app.use('/api/settings', auth, ensureActive, settingsRoutes);
 } catch {}
 
+/* ============== LEAVES ROUTES ============== */
+try {
+  const leavesRoutes = require('./routes/leaves.routes.js');
+  app.use('/api/leaves', auth, ensureActive, leavesRoutes);
+} catch (e) {
+  console.error('LEAVES ROUTE LOAD ERROR:', e);
+}
+
 /* ============== PARAMETERS ROUTES ============== */
 try {
   const parametersRoutes = require('./routes/parameters.routes.js');

@@ -161,6 +161,30 @@ function buildCountsFromPattern(def, year, month0) {
   return counts;
 }
 
+function isSupervisorTaskLabel(label = "") {
+  return /servis\s*sorumlu|ekip\s*sorumlu|sorumlu/i.test(String(label || ""));
+}
+
+function applySupervisorDayRules(taskLine, year, month0, holidayKindByDate = {}) {
+  if (!taskLine || !isSupervisorTaskLabel(taskLine.label)) return taskLine;
+  const daysInMonth = new Date(year, month0 + 1, 0).getDate();
+  const counts = { ...(taskLine.counts || {}) };
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateKey = `${year}-${String(month0 + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const weekday = new Date(year, month0, d).getDay();
+    const isWeekend = weekday === 0 || weekday === 6;
+    const kind = String(holidayKindByDate?.[dateKey] || "").toLowerCase();
+    if (isWeekend || kind === "full") {
+      counts[d] = 0;
+    }
+  }
+  return {
+    ...taskLine,
+    weekendOff: true,
+    counts,
+  };
+}
+
 function readPeopleAll() {
   const sources = [
     "peopleV2",
@@ -235,6 +259,44 @@ function matchPersonToUser(user, options) {
   return null;
 }
 
+function withAliasIds(person, pool = []) {
+  if (!person) return null;
+  const canon = canonName(person.canon || person.name || person.fullName || "");
+  const aliases = new Set();
+  const addId = (val) => {
+    const id = val == null ? "" : String(val).trim();
+    if (id) aliases.add(id);
+  };
+  addId(person.id);
+  addId(person.personId);
+  addId(person.raw?.id);
+  addId(person.raw?._id);
+  addId(person.raw?.personId);
+
+  (pool || []).forEach((candidate) => {
+    if (!candidate) return;
+    const sameCanon = canon && canonName(candidate.canon || candidate.name || "") === canon;
+    const sameTc =
+      person?.raw?.tc &&
+      candidate?.raw?.tc &&
+      String(person.raw.tc).trim() === String(candidate.raw.tc).trim();
+    const sameEmail =
+      person?.raw?.email &&
+      candidate?.raw?.email &&
+      String(person.raw.email).trim().toLowerCase() === String(candidate.raw.email).trim().toLowerCase();
+    if (!(sameCanon || sameTc || sameEmail)) return;
+    addId(candidate.id);
+    addId(candidate.raw?.id);
+    addId(candidate.raw?._id);
+    addId(candidate.raw?.personId);
+  });
+
+  return {
+    ...person,
+    aliasIds: Array.from(aliases),
+  };
+}
+
 export default function PlanTab({ workAreas = [], workingHours = [] }) {
   const { user } = useAuth();
   const scope = useServiceScope();
@@ -277,6 +339,10 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
   }, []);
 
   const [apiMatchedPerson, setApiMatchedPerson] = useState(null);
+
+  useEffect(() => {
+    setApiMatchedPerson(null);
+  }, [user?.id, user?.personId, year, month]);
 
   const [allLeaves, setAllLeaves] = useState(() => getAllLeaves());
   useEffect(() => {
@@ -387,30 +453,10 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
         raw: { ...(hit.raw || {}), serviceId },
       };
     }
-    const name =
-      user?.fullName ||
-      user?.name ||
-      user?.displayName ||
-      user?.username ||
-      user?.userName ||
-      user?.identifier ||
-      user?.email ||
-      user?.tc ||
-      user?.tcNo ||
-      user?.tcno ||
-      "";
-    const serviceId = normalizeServiceId(
-      user?.serviceId ||
-      (Array.isArray(user?.serviceIds) ? user.serviceIds[0] : "") ||
-      ""
-    );
-    return {
-      id: pid,
-      name: name || pid,
-      canon: canonName(name || pid),
-      raw: { serviceId },
-      service: serviceId,
-    };
+    // Token'dan gelen personId tek başına yeterli değil.
+    // Yerelde/serviste çözümlenemiyorsa bunu zorla kullanma; gerçek eşleşmeyi
+    // backend personel listesi veya isim eşleştirmesi bulsun.
+    return null;
   }, [isStandardUser, user, peopleAll, normalizeServiceId]);
 
   const normalizedMatchedPerson = useMemo(() => {
@@ -421,20 +467,35 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
       matchedPerson?.raw?.service ||
       ""
     );
-    return {
+    return withAliasIds({
       ...matchedPerson,
       service: serviceId,
       raw: { ...(matchedPerson.raw || {}), serviceId },
-    };
-  }, [matchedPerson, normalizeServiceId]);
+    }, peopleAll);
+  }, [matchedPerson, normalizeServiceId, peopleAll]);
+
+  const normalizedFallbackPerson = useMemo(
+    () => withAliasIds(fallbackPerson, peopleAll),
+    [fallbackPerson, peopleAll]
+  );
+
+  const normalizedForcedPerson = useMemo(
+    () => withAliasIds(forcedPerson, peopleAll),
+    [forcedPerson, peopleAll]
+  );
+
+  const normalizedApiMatchedPerson = useMemo(
+    () => withAliasIds(apiMatchedPerson, peopleAll),
+    [apiMatchedPerson, peopleAll]
+  );
 
   const calendarPeople = useMemo(() => {
     if (isAdminUser || isAuthorizedUser) return peopleForService;
-    if (forcedPerson) return [forcedPerson];
-    if (apiMatchedPerson) return [apiMatchedPerson];
+    if (normalizedForcedPerson) return [normalizedForcedPerson];
+    if (normalizedApiMatchedPerson) return [normalizedApiMatchedPerson];
     if (normalizedMatchedPerson) return [normalizedMatchedPerson];
-    return fallbackPerson ? [fallbackPerson] : [];
-  }, [isAdminUser, isAuthorizedUser, peopleForService, forcedPerson, apiMatchedPerson, normalizedMatchedPerson, fallbackPerson]);
+    return normalizedFallbackPerson ? [normalizedFallbackPerson] : [];
+  }, [isAdminUser, isAuthorizedUser, peopleForService, normalizedForcedPerson, normalizedApiMatchedPerson, normalizedMatchedPerson, normalizedFallbackPerson]);
 
   const serviceOptions = useMemo(() => {
     const items = [];
@@ -514,7 +575,7 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
       const serviceId = selectedService || "";
       const month0 = Math.min(11, Math.max(0, Number(month) - 1));
 
-      const [personnelRes, hoursRes, scheduleRes] = await Promise.all([
+      const [personnelRes, hoursRes, scheduleRes, holidaysRes] = await Promise.all([
         API.http.get(`/api/personnel?page=1&size=2000`),
         API.http.get(`/api/settings/workingHours?serviceId=`),
         API.http.get(
@@ -522,11 +583,18 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
             serviceId
           )}&role=${encodeURIComponent(roleKey)}&year=${year}&month=${month}`
         ),
+        API.http.get(`/api/holidays?y=${year}&m=${month}`),
       ]);
 
       const items = Array.isArray(personnelRes?.items) ? personnelRes.items : [];
       const { nurses, doctors } = splitByRole(items);
       const workingHours = Array.isArray(hoursRes?.value) ? hoursRes.value : [];
+      const holidays = Array.isArray(holidaysRes?.items) ? holidaysRes.items : [];
+      const holidayKindByDate = Object.fromEntries(
+        holidays
+          .filter((row) => row?.date)
+          .map((row) => [String(row.date).slice(0, 10), String(row.kind || "full").toLowerCase()])
+      );
 
       const defs = scheduleRes?.schedule?.data?.defs || [];
       const taskLines = (Array.isArray(defs) ? defs : [])
@@ -535,12 +603,12 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
           const shiftCode = (d?.shiftCode || "").toString().trim();
           if (!label || !shiftCode) return null;
           const counts = buildCountsFromPattern(d, year, month0);
-          return {
+          return applySupervisorDayRules({
             label,
             shiftCode,
             defaultCount: Number(d?.defaultCount ?? 0) || 0,
             counts,
-          };
+          }, year, month0, holidayKindByDate);
         })
         .filter(Boolean);
 
