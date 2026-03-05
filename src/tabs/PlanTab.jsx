@@ -276,6 +276,8 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
     };
   }, []);
 
+  const [apiMatchedPerson, setApiMatchedPerson] = useState(null);
+
   const [allLeaves, setAllLeaves] = useState(() => getAllLeaves());
   useEffect(() => {
     const refreshLeaves = () => setAllLeaves(getAllLeaves());
@@ -355,9 +357,9 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
         user?.id ||
         user?.userId ||
         user?.email ||
-        name ||
-        ""
-      ).trim() || "me";
+      name ||
+      ""
+    ).trim() || "me";
     return {
       id: fallbackId,
       name,
@@ -366,6 +368,50 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
       service: serviceId,
     };
   }, [isStandardUser, user, normalizeServiceId]);
+
+  const forcedPerson = useMemo(() => {
+    if (!isStandardUser) return null;
+    const pid = String(user?.personId || "").trim();
+    if (!pid) return null;
+    const hit = peopleAll.find((p) => String(p?.id) === pid);
+    if (hit) {
+      const serviceId = normalizeServiceId(
+        hit?.service ||
+        hit?.raw?.serviceId ||
+        hit?.raw?.service ||
+        ""
+      );
+      return {
+        ...hit,
+        service: serviceId,
+        raw: { ...(hit.raw || {}), serviceId },
+      };
+    }
+    const name =
+      user?.fullName ||
+      user?.name ||
+      user?.displayName ||
+      user?.username ||
+      user?.userName ||
+      user?.identifier ||
+      user?.email ||
+      user?.tc ||
+      user?.tcNo ||
+      user?.tcno ||
+      "";
+    const serviceId = normalizeServiceId(
+      user?.serviceId ||
+      (Array.isArray(user?.serviceIds) ? user.serviceIds[0] : "") ||
+      ""
+    );
+    return {
+      id: pid,
+      name: name || pid,
+      canon: canonName(name || pid),
+      raw: { serviceId },
+      service: serviceId,
+    };
+  }, [isStandardUser, user, peopleAll, normalizeServiceId]);
 
   const normalizedMatchedPerson = useMemo(() => {
     if (!matchedPerson) return null;
@@ -384,9 +430,11 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
 
   const calendarPeople = useMemo(() => {
     if (isAdminUser || isAuthorizedUser) return peopleForService;
+    if (forcedPerson) return [forcedPerson];
+    if (apiMatchedPerson) return [apiMatchedPerson];
     if (normalizedMatchedPerson) return [normalizedMatchedPerson];
     return fallbackPerson ? [fallbackPerson] : [];
-  }, [isAdminUser, isAuthorizedUser, peopleForService, normalizedMatchedPerson, fallbackPerson]);
+  }, [isAdminUser, isAuthorizedUser, peopleForService, forcedPerson, apiMatchedPerson, normalizedMatchedPerson, fallbackPerson]);
 
   const serviceOptions = useMemo(() => {
     const items = [];
@@ -416,6 +464,31 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
     isAuthorized: isAuthorizedUser,
     isStandard: isStandardUser,
   };
+
+  useEffect(() => {
+    let alive = true;
+    const shouldFetch =
+      isStandardUser &&
+      !forcedPerson &&
+      !normalizedMatchedPerson &&
+      !apiMatchedPerson;
+    if (!shouldFetch) return undefined;
+    (async () => {
+      try {
+        const res = await API.http.get(`/api/personnel?size=2000`);
+        if (!alive) return;
+        const items = Array.isArray(res?.items) ? res.items : [];
+        const list = items
+          .map((row, idx) => normalizePersonRecord(row, idx))
+          .filter(Boolean);
+        const hit = matchPersonToUser(user, list);
+        if (hit) setApiMatchedPerson(hit);
+      } catch (err) {
+        console.warn("personnel fetch failed:", err?.message || err);
+      }
+    })();
+    return () => { alive = false; };
+  }, [isStandardUser, forcedPerson, normalizedMatchedPerson, apiMatchedPerson, user]);
 
   useEffect(() => {
     if (!isStandardUser) return;
