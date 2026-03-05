@@ -37,6 +37,7 @@ export const LEAVE_RULES = {
   R:  { countsAsWorked: false, hoursPerDay: 0 }, // Rapor
   RE: { countsAsWorked: false, hoursPerDay: 0 },
   S:  { countsAsWorked: false, hoursPerDay: 0 },
+  "ÇŞ": { countsAsWorked: true,  hoursPerDay: 8 }, // Çalışılmış sayılan izin
   Sİ: { countsAsWorked: false, hoursPerDay: 0 },
   SÜ: { countsAsWorked: false, hoursPerDay: 0 }, // Süt izni (saatlikse ayrıca ele alınır)
   SÜ1:{ countsAsWorked: false, hoursPerDay: 0 },
