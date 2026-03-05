@@ -18,7 +18,16 @@ const DEV_PASSWORD = String(process.env.ADMIN_PASSWORD || '1234');
 /* ============ Helpers ============ */
 const normalize = (s) => (s ?? '').toString().trim();
 const lc = (s) => normalize(s).toLowerCase();
-const makeToken = (uid) => jwt.sign({ uid }, JWT_SECRET, { expiresIn: '7d' });
+const makeToken = (userOrId, extra = {}) => {
+  if (typeof userOrId === 'string') {
+    return jwt.sign({ uid: userOrId, ...extra }, JWT_SECRET, { expiresIn: '7d' });
+  }
+  const uid = String(userOrId?._id || userOrId?.id || '');
+  const payload = { uid };
+  if (userOrId?.role) payload.role = userOrId.role;
+  if (userOrId?.personId) payload.personId = String(userOrId.personId);
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+};
 
 // Frontend bazen "identifier", bazen "kimlik", bazen "tc" gönderiyor olabilir
 function pickIdentifier(body) {
@@ -64,7 +73,7 @@ router.post('/register', async (req, res) => {
       serviceIds: [],
     });
 
-    const token = makeToken(String(user._id));
+    const token = makeToken(user);
     return res.json({
       token,
       user: {
@@ -75,7 +84,8 @@ router.post('/register', async (req, res) => {
         phone: user.phone,
         role: user.role,
         active: user.active,
-                mustChangePassword: !!user.mustChangePassword,
+        mustChangePassword: !!user.mustChangePassword,
+        personId: user.personId ? String(user.personId) : null,
       },
     });
   } catch (err) {
@@ -99,7 +109,7 @@ router.post('/login', async (req, res) => {
     if (!dbReady && ALLOW_DEV) {
       const idLc = String(identifier || '').toLowerCase();
       if ((idLc === DEV_EMAIL || identifier === '17047689518') && password === DEV_PASSWORD) {
-        const token = makeToken('dev1');
+        const token = makeToken({ _id: 'dev1', role: 'admin', personId: null });
         return res.json({
           token,
           user: {
@@ -108,6 +118,7 @@ router.post('/login', async (req, res) => {
             email: DEV_EMAIL,
             role: 'admin',
             active: true,
+            personId: null,
           },
         });
       }
@@ -115,7 +126,7 @@ router.post('/login', async (req, res) => {
 
     // identifier email ise email’e, değilse tc/phone’a bak
     const user = await User.findByIdentifier(identifier)
-      .select('passwordHash +password active role name email tc phone serviceIds mustChangePassword');
+      .select('passwordHash +password active role name email tc phone serviceIds mustChangePassword personId');
 
     if (!user) return res.status(401).json({ message: 'Kullanıcı bulunamadı' });
 
@@ -134,7 +145,7 @@ router.post('/login', async (req, res) => {
 
     if (user.active === false) return res.status(403).json({ message: 'Hesap pasif' });
 
-    const token = makeToken(String(user._id));
+    const token = makeToken(user);
     return res.json({
       token,
       user: {
@@ -145,7 +156,8 @@ router.post('/login', async (req, res) => {
         phone: user.phone,
         role: user.role,
         active: user.active,
-              mustChangePassword: !!user.mustChangePassword,
+        mustChangePassword: !!user.mustChangePassword,
+        personId: user.personId ? String(user.personId) : null,
       },
     });
   } catch (err) {
