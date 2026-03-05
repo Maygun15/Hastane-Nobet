@@ -1081,14 +1081,17 @@ export default function PersonScheduleCalendar({
       );
 
       let leaveCredit = 0;
-      for (const [key, rec] of Object.entries(leavesForPerson || {})) {
-        const d = parseInt(key, 10);
-        if (!Number.isFinite(d)) continue;
-        const code = typeof rec === "string" ? rec : rec?.code;
-        if (!code) continue;
-        const rule = leaveRules[code];
-        if (!rule?.countsAsWorked) continue;
-        leaveCredit += Number.isFinite(rule.hoursPerDay) ? rule.hoursPerDay : 8;
+      for (const [ymKey, days] of Object.entries(leavesForPerson || {})) {
+        if (!days || typeof days !== "object") continue;
+        for (const [dayNum, val] of Object.entries(days)) {
+          const d = parseInt(dayNum, 10);
+          if (!Number.isFinite(d)) continue;
+          const code = typeof val === "string" ? val : val?.code;
+          if (!code) continue;
+          const rule = leaveRules[code];
+          if (!rule?.countsAsWorked) continue;
+          leaveCredit += Number.isFinite(rule.hoursPerDay) ? rule.hoursPerDay : 8;
+        }
       }
 
       const shiftHoursMap = {};

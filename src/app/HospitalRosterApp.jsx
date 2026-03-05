@@ -941,6 +941,12 @@ function MyCalendarBox({ me, leaveTypes }) {
   const [ym, setYm] = useState(() => getActiveYM());
   const year = ym.year;
   const monthIndex = ym.month - 1;
+  const personId =
+    me?.personId ||
+    me?.person_id ||
+    me?.person?.id ||
+    me?.person?._id ||
+    "";
 
   const goto = (delta) => {
     const dt = new Date(year, monthIndex, 1);
@@ -951,10 +957,10 @@ function MyCalendarBox({ me, leaveTypes }) {
   };
 
   const person = useMemo(() => ({
-    id: String(me?.id ?? me?.userId ?? me?.email ?? "me"),
+    id: String(personId || me?.id || me?.userId || me?.email || "me"),
     name: me?.name || me?.fullName || me?.email || "Ben",
     role: me?.role || "USER",
-  }), [me]);
+  }), [me, personId]);
 
   return (
     <div className="space-y-4">
@@ -968,6 +974,11 @@ function MyCalendarBox({ me, leaveTypes }) {
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm p-4">
+        {!personId && (
+          <div className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+            Personel kaydınız bağlı değil. İzinlerin görünmesi için hesabınızı bir personele bağlayın.
+          </div>
+        )}
         <PersonCalendar person={person} year={year} month={monthIndex} leaveTypes={leaveTypes} />
       </div>
     </div>
