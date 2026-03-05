@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const Person = require('../models/Person');
+const User = require('../models/User');
 const { requireAuth, requireRole, sameServiceOrAdmin } = require('../middleware/authz');
 
 function parseIntSafe(val, def = null) {
@@ -69,7 +70,8 @@ router.post('/',
         meta = {},
         tc = '',
         phone = '',
-        email = ''
+        email = '',
+        userId = ''
       } = req.body;
 
       if (!name || !String(name).trim()) {
@@ -86,13 +88,37 @@ router.post('/',
         createdBy: req.user?.uid || null
       });
 
+      // opsiyonel: kullanıcı ile otomatik bağla
+      try {
+        if (userId) {
+          await User.findByIdAndUpdate(userId, { personId: person._id });
+          await Person.findByIdAndUpdate(person._id, { userId });
+        } else {
+          const or = [];
+          if (tc) or.push({ tc: String(tc).trim() });
+          if (email) or.push({ email: String(email).toLowerCase().trim() });
+          if (phone) or.push({ phone: String(phone).trim() });
+          if (or.length) {
+            const u = await User.findOne({ $or: or }).lean();
+            if (u && !u.personId) {
+              await User.findByIdAndUpdate(u._id, { personId: person._id });
+              await Person.findByIdAndUpdate(person._id, { userId: u._id });
+            }
+          }
+        }
+      } catch (linkErr) {
+        console.warn('POST /api/personnel link warning:', linkErr?.message || linkErr);
+      }
+
       return res.json({
         ok: true,
         person: {
           id: String(person._id),
           name: person.name,
           serviceId: person.serviceId,
-          meta: person.meta || {}
+          meta: person.meta || {},
+          personId: String(person._id),
+          userId: person.userId ? String(person.userId) : null
         }
       });
     } catch (err) {

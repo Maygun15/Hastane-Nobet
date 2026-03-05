@@ -305,10 +305,17 @@ router.get('/me', async (req, res) => {
     const Person = require('../models/Person');
     let person = null;
 
-    // 1) Önce kayıtlı userId ile bak
-    person = await Person.findOne({ userId: user._id }).lean();
+    // 1) User.personId varsa onu kullan (tek kaynak)
+    if (user.personId) {
+      person = await Person.findById(user.personId).lean();
+    }
 
-    // 2) Yoksa tc / email / phone ile eşleştir
+    // 2) Yoksa Person.userId ile bak
+    if (!person) {
+      person = await Person.findOne({ userId: user._id }).lean();
+    }
+
+    // 3) Hala yoksa tc / email / phone ile eşleştir
     if (!person) {
       const or = [];
       if (user.tc)    or.push({ tc: user.tc });
@@ -317,9 +324,14 @@ router.get('/me', async (req, res) => {
       if (or.length)  person = await Person.findOne({ $or: or }).lean();
     }
 
-    // 3) Eşleşme bulduysa bağlantıyı kalıcı yaz (lazy fix)
-    if (person && !person.userId) {
-      await Person.findByIdAndUpdate(person._id, { userId: user._id });
+    // 4) Eşleşme varsa iki tarafı da düzelt (lazy fix)
+    if (person) {
+      if (!user.personId || String(user.personId) !== String(person._id)) {
+        await User.findByIdAndUpdate(user._id, { personId: person._id });
+      }
+      if (!person.userId || String(person.userId) !== String(user._id)) {
+        await Person.findByIdAndUpdate(person._id, { userId: user._id });
+      }
     }
 
     res.json({
