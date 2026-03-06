@@ -224,6 +224,32 @@ function buildSupervisorTaskLines(taskLine, year, month0, holidayKindByDate = {}
   }];
 }
 
+function sanitizeSupervisorAssignments(assignments = [], year, month0, holidayKindByDate = {}, workingHours = []) {
+  const aShift = (workingHours || []).find((row) => String(row?.code || "").trim().toUpperCase() === "A");
+  const aHours = Number(aShift?.hours);
+  return (assignments || [])
+    .map((item) => {
+      const label = String(item?.roleLabel || item?.label || "").trim();
+      if (!isSupervisorTaskLabel(label)) return item;
+      const dateStr = String(item?.day || item?.date || "").slice(0, 10);
+      if (!dateStr) return item;
+      const dayNum = Number(dateStr.slice(8, 10));
+      const weekday = Number.isFinite(dayNum) ? new Date(year, month0, dayNum).getDay() : NaN;
+      const kind = String(holidayKindByDate?.[dateStr] || "").toLowerCase();
+      if (weekday === 0 || weekday === 6 || kind === "full") return null;
+      if (kind === "arife" || kind === "half") {
+        return {
+          ...item,
+          shiftCode: "A",
+          shiftId: "A",
+          hours: Number.isFinite(aHours) ? aHours : item?.hours,
+        };
+      }
+      return item;
+    })
+    .filter(Boolean);
+}
+
 function readPeopleAll() {
   const sources = [
     "peopleV2",
@@ -663,14 +689,29 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
         taskLines,
       });
 
+      const cleanedAssignments = sanitizeSupervisorAssignments(
+        result?.dpResult?.assignments || [],
+        year,
+        month0,
+        holidayKindByDate,
+        workingHours
+      );
+      const cleanedResult = {
+        ...result,
+        dpResult: {
+          ...(result?.dpResult || {}),
+          assignments: cleanedAssignments,
+        },
+      };
+
       const ctx = {
-        year: result.year,
-        month: result.month,
-        role: result.role,
+        year: cleanedResult.year,
+        month: cleanedResult.month,
+        role: cleanedResult.role,
         serviceId: result.serviceId,
-        result: result.dpResult,
-        taskLines: result.taskLines,
-        workingHours: result.workingHours,
+        result: cleanedResult.dpResult,
+        taskLines: cleanedResult.taskLines,
+        workingHours: cleanedResult.workingHours,
       };
       try {
         localStorage.setItem("dpResultLast", JSON.stringify(ctx));
@@ -685,7 +726,7 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
             : {};
         const data = {
           ...baseData,
-          assignments: Array.isArray(result.dpResult?.assignments) ? result.dpResult.assignments : [],
+          assignments: Array.isArray(cleanedResult.dpResult?.assignments) ? cleanedResult.dpResult.assignments : [],
           generatedAt: new Date().toISOString(),
         };
         await saveMonthlySchedule({

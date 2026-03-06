@@ -278,6 +278,31 @@ function applySupervisorHolidayRules(days = [], holidayKindByDate = {}, shiftMet
   });
 }
 
+function sanitizeSupervisorAssignments(assignments = [], holidayKindByDate = {}, shiftMetaByCode = {}) {
+  return (assignments || [])
+    .map((item) => {
+      const label = String(item?.roleLabel || item?.label || item?.area || '').trim();
+      if (!isSupervisorLabel(label)) return item;
+      const date = String(item?.date || item?.day || '').slice(0, 10);
+      if (!date) return item;
+      const dt = new Date(`${date}T00:00:00`);
+      const weekday = Number.isNaN(dt.getTime()) ? NaN : dt.getDay();
+      const kind = String(holidayKindByDate?.[date] || '').toLowerCase();
+      if (weekday === 0 || weekday === 6 || kind === 'full') return null;
+      if (kind === 'arife' || kind === 'half') {
+        const aMeta = shiftMetaByCode.A || {};
+        return {
+          ...item,
+          shiftCode: 'A',
+          shiftId: 'A',
+          hours: Number.isFinite(Number(aMeta.hours)) ? Number(aMeta.hours) : item?.hours,
+        };
+      }
+      return item;
+    })
+    .filter(Boolean);
+}
+
 async function fetchDutyRules({ sectionId, serviceId = '', role = '' }) {
   // Önce en spesifik kuralı ara; yoksa daha genel kuralı kullan
   const fallbacks = [
@@ -471,7 +496,8 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     0
   );
 
-  const baseAssignments = useDraft ? (draftResult?.assignments || []) : (context.assignments || []);
+  const baseAssignmentsRaw = useDraft ? (draftResult?.assignments || []) : (context.assignments || []);
+  const baseAssignments = sanitizeSupervisorAssignments(baseAssignmentsRaw, holidayKindByDate, shiftMetaByCode);
   const baseIssues = useDraft ? (draftResult?.issues || []) : (context.issues || []);
   const hard = applyHardConstraints(baseAssignments, leavesByPerson);
   const data = {
