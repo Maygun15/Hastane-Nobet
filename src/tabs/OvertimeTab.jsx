@@ -267,12 +267,20 @@ function creditedLeaveHoursForMonth({
         const std = dayStandardHours(y, m, d, hmap, { includeWeekend: leaveCountsWeekend });
         if (std === 0) return;
 
+        const code = String(lv.code || lv.type || "").trim().toLocaleUpperCase("tr-TR");
+        const rule = code ? leaveRules?.[code] : null;
+        if (rule && !rule.countsAsWorked) return;
+
+        const baseCredit = rule && Number.isFinite(rule.hoursPerDay)
+          ? Math.min(std, rule.hoursPerDay)
+          : std;
+
         let credit = 0;
         const partial = (lv.partial || "none").toLowerCase();
-        if (partial === "none") credit = std;
-        else if (partial === "half_am" || "half_pm") credit = std / 2;
-        else if (partial === "hours") credit = Math.min(Number(lv.hours || 0), std);
-        else credit = std;
+        if (partial === "none") credit = baseCredit;
+        else if (partial === "half_am" || partial === "half_pm") credit = baseCredit / 2;
+        else if (partial === "hours") credit = Math.min(Number(lv.hours || 0), baseCredit);
+        else credit = baseCredit;
 
         addCredit(y, m, d, credit);
       });
@@ -428,8 +436,8 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
       const leaves = hasPid ? (leavesByPerson[r.personId] || []) : [];
       const byId = hasPid ? (allLocalLeaves?.[r.personId]?.[ym] || {}) : {};
       const canon = canonName(r.person || r.fullName || r.name || r.adsoyad || "");
-      const byName = canon ? (nameStore?.[canon]?.[ym] || {}) : {};
-      const localCodes = { ...byName, ...byId }; // id varsa öncelik id'de
+      const byName = !hasPid && canon ? (nameStore?.[canon]?.[ym] || {}) : {};
+      const localCodes = hasPid ? byId : byName;
       const credited = creditedLeaveHoursForMonth({
         year,
         month,
