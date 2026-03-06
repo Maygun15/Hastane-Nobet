@@ -787,6 +787,25 @@ export default function SchedulesTab() {
       window.removeEventListener("people:changed", refreshPeople);
     };
   }, []);
+  useEffect(() => {
+    const token = localStorage.getItem("token") || localStorage.getItem("authToken");
+    if (!token) return;
+
+    fetch("/api/personnel?size=500&active=true", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        const items = Array.isArray(d) ? d : Array.isArray(d?.items) ? d.items : [];
+        if (!items.length) return;
+        try {
+          localStorage.setItem("peopleV2", JSON.stringify(items));
+          window.dispatchEvent(new Event("people:changed"));
+        } catch {}
+        setPeopleAll(items);
+      })
+      .catch((err) => console.warn("Personnel fetch failed:", err));
+  }, []);
 
   const [allLeaves, setAllLeaves] = useState(() => getAllLeaves());
   useEffect(() => {
