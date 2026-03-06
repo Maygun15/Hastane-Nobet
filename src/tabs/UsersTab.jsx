@@ -191,12 +191,98 @@ function QuickAddModal({ open, onClose, onSave }) {
   );
 }
 
+function EditUserModal({ open, user, onClose, onSave }) {
+  const [form, setForm] = useState({ name: "", tc: "", phone: "", email: "" });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    if (!open || !user) return;
+    setForm({
+      name: user.name || "",
+      tc: user.tc || "",
+      phone: user.phone || "",
+      email: user.email || "",
+    });
+    setMsg("");
+    setSaving(false);
+  }, [open, user]);
+
+  if (!open || !user) return null;
+
+  const setField = (key) => (e) => setForm((prev) => ({ ...prev, [key]: e.target.value }));
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    const userId = String(user.id || user._id || "");
+    if (!userId) {
+      setMsg("❌ Geçersiz kullanıcı id.");
+      return;
+    }
+    setSaving(true);
+    setMsg("");
+    try {
+      await API.http.req(`/api/users/${userId}/identity`, {
+        method: "PATCH",
+        body: { name: form.name, tc: form.tc },
+      });
+      await API.http.req(`/api/users/${userId}/profile`, {
+        method: "PATCH",
+        body: { phone: form.phone, email: form.email },
+      });
+      setMsg("✅ Güncellendi.");
+      await onSave?.();
+    } catch (err) {
+      setMsg(`❌ ${err?.message || "Güncellenemedi"}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+        <div className="px-5 py-4 border-b flex items-center justify-between">
+          <div className="font-semibold">Kullanıcı Bilgilerini Düzenle</div>
+          <button className="px-3 py-1 rounded-lg border text-sm" onClick={onClose}>Kapat</button>
+        </div>
+        <form onSubmit={handleSave} className="px-5 py-4 space-y-3">
+          <div>
+            <label className="text-xs text-slate-500">Ad Soyad</label>
+            <input className="w-full border rounded-lg px-3 py-2 mt-1 text-sm" value={form.name} onChange={setField("name")} />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500">TC Kimlik No</label>
+            <input className="w-full border rounded-lg px-3 py-2 mt-1 text-sm" value={form.tc} onChange={setField("tc")} maxLength={11} />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500">Telefon</label>
+            <input className="w-full border rounded-lg px-3 py-2 mt-1 text-sm" value={form.phone} onChange={setField("phone")} />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500">E-posta</label>
+            <input className="w-full border rounded-lg px-3 py-2 mt-1 text-sm" value={form.email} onChange={setField("email")} />
+          </div>
+          {msg && <div className="text-sm">{msg}</div>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" className="px-3 h-9 rounded-lg border" onClick={onClose}>İptal</button>
+            <button type="submit" disabled={saving} className="px-4 h-9 rounded-lg bg-sky-600 text-white disabled:opacity-50">
+              {saving ? "Kaydediliyor..." : "Kaydet"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Kullanıcılar sekmesi ---------------- */
 export default function UsersTab() {
   const [list, setList] = useState([]);
   const [personnel, setPersonnel] = useState([]);
   const [q, setQ] = useState("");
   const [assignFor, setAssignFor] = useState(null);
+  const [editUser, setEditUser] = useState(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [backendError, setBackendError] = useState("");
   const [importing, setImporting] = useState(false);
@@ -625,6 +711,13 @@ export default function UsersTab() {
 
                 <button
                   className="text-[12px] px-3 py-1 rounded border"
+                  onClick={() => setEditUser(u)}
+                >
+                  Düzenle
+                </button>
+
+                <button
+                  className="text-[12px] px-3 py-1 rounded border"
                   onClick={() =>
                     setAssignFor({
                       id: userId,
@@ -705,6 +798,16 @@ export default function UsersTab() {
         onSave={async () => {
           setQuickAddOpen(false);
           await refresh();
+        }}
+      />
+
+      <EditUserModal
+        open={Boolean(editUser)}
+        user={editUser}
+        onClose={() => setEditUser(null)}
+        onSave={async () => {
+          await refresh();
+          setEditUser(null);
         }}
       />
     </div>
