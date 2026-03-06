@@ -188,13 +188,13 @@ export function getScheduleModelSync({ year, month, people = [] }) {
   return model || { assignments: {}, byName: {} };
 }
 
-export async function getScheduleModel({ sectionId, serviceId, year, month, people = [] }) {
+export async function getScheduleModel({ sectionId, serviceId, role = "", year, month, people = [] }) {
   const ym = `${year}-${pad2(month)}`;
   let backendData = null;
 
   try {
     if (sectionId) {
-      backendData = await getMonthlySchedule({ sectionId, serviceId, year, month });
+      backendData = await getMonthlySchedule({ sectionId, serviceId, role, year, month });
       if (backendData) LS.set(`schedule::${ym}`, backendData);
     }
   } catch {

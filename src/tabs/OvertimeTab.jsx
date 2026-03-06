@@ -9,8 +9,8 @@ import {
   fetchMonthlySchedule,
   fetchHolidayCalendar,
   fetchLeaves,
-  getMonthlySchedule,
 } from "../api/apiAdapter";
+import { getScheduleModel } from "../store/monthlyScheduleModel.js";
 import { getPeople } from "../lib/dataResolver.js";
 import { STAFF_KEY } from "../engine/rosterEngine.js";
 import useActiveYM from "../hooks/useActiveYM.js";
@@ -624,64 +624,37 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
       };
 
       for (const role of rolesToTry) {
-        const schedule = await getMonthlySchedule({
+        const model = await getScheduleModel({
           sectionId: "calisma-cizelgesi",
           serviceId: cfg.unitId || "",
           role,
           year,
           month,
+          people,
         }).catch((err) => {
-          if (err?.status !== 404) console.error("getMonthlySchedule err:", err);
+          if (err?.status !== 404) console.error("getScheduleModel err:", err);
           return null;
         });
-        const data = schedule?.data || schedule || {};
-        let named = data?.roster?.namedAssignments;
-        if (!named && Array.isArray(data?.assignments)) {
-          const built = {};
-          (data.assignments || []).forEach((a) => {
-            const date = a?.date;
-            if (!date) return;
-            const dayNum = Number(String(date).slice(8, 10));
-            if (!Number.isFinite(dayNum) || dayNum < 1 || dayNum > dcount) return;
-            const rowId = String(a.shiftId || a.rowId || a.shiftCode || "");
-            if (!rowId) return;
-            const nm = a.personName || a.name || "";
-            if (!nm || isGroupLabel(nm)) return;
-            if (!built[dayNum]) built[dayNum] = {};
-            if (!built[dayNum][rowId]) built[dayNum][rowId] = [];
-            built[dayNum][rowId].push(nm);
-          });
-          named = built;
-        }
-        if (!named || !Object.keys(named).length) continue;
-        const defsSrc = Array.isArray(data?.defs) ? data.defs : Array.isArray(data?.rows) ? data.rows : [];
-        const shiftByRow = new Map();
-        const labelByRow = new Map();
-        defsSrc.forEach((def) => {
-          const rowId = String(def?.id ?? def?.rowId ?? "");
-          if (!rowId) return;
-          shiftByRow.set(rowId, def?.shiftCode || "");
-          labelByRow.set(rowId, def?.label || "");
-        });
+        if (!model) continue;
 
-        Object.entries(named).forEach(([dayStr, perRow]) => {
-          const day = Number(dayStr);
-          if (!Number.isFinite(day) || day < 1 || day > dcount) return;
-          Object.entries(perRow || {}).forEach(([rowId, list]) => {
-            const names = Array.isArray(list) ? list : [];
-            const shiftCode = shiftByRow.get(String(rowId)) || "";
-            const rowLabel = labelByRow.get(String(rowId)) || "";
+        Object.entries(model.byName || {}).forEach(([nameKey, days]) => {
+          Object.entries(days || {}).forEach(([dayStr, entry]) => {
+            const day = Number(dayStr);
+            if (!Number.isFinite(day) || day < 1 || day > dcount) return;
+            const name = (people || []).find(
+              (p) => canonName(p.fullName || p.name || "") === nameKey
+            )?.fullName || nameKey;
+            if (!name || isGroupLabel(name)) return;
+            const shiftCode = entry?.shiftCode || "";
+            const rowLabel = entry?.rowLabel || "";
             const hours = resolveShiftHours(shiftCode, rowLabel);
-            names.forEach((nm) => {
-              if (!nm || isGroupLabel(nm)) return;
-              assignments.push({
-                name: nm,
-                day,
-                hours,
-                shiftCode,
-                rowLabel,
-                role,
-              });
+            assignments.push({
+              name,
+              day,
+              hours,
+              shiftCode,
+              rowLabel,
+              role,
             });
           });
         });
