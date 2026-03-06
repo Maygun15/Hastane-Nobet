@@ -278,11 +278,25 @@ function applySupervisorHolidayRules(days = [], holidayKindByDate = {}, shiftMet
   });
 }
 
-function sanitizeSupervisorAssignments(assignments = [], holidayKindByDate = {}, shiftMetaByCode = {}) {
+function buildSupervisorRowIdSet(defs = []) {
+  const set = new Set();
+  for (const row of defs || []) {
+    const id = String(row?.id || row?.rowId || '').trim();
+    const label = String(row?.label || row?.area || row?.name || '').trim();
+    if (!id || !label) continue;
+    if (isSupervisorLabel(label)) set.add(id);
+  }
+  return set;
+}
+
+function sanitizeSupervisorAssignments(assignments = [], holidayKindByDate = {}, shiftMetaByCode = {}, defs = []) {
+  const supervisorRowIds = buildSupervisorRowIdSet(defs);
   return (assignments || [])
     .map((item) => {
+      const shiftId = String(item?.shiftId || item?.rowId || '').trim();
       const label = String(item?.roleLabel || item?.label || item?.area || '').trim();
-      if (!isSupervisorLabel(label)) return item;
+      const isSupervisor = supervisorRowIds.has(shiftId) || isSupervisorLabel(label);
+      if (!isSupervisor) return item;
       const date = String(item?.date || item?.day || '').slice(0, 10);
       if (!date) return item;
       const dt = new Date(`${date}T00:00:00`);
@@ -497,7 +511,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   );
 
   const baseAssignmentsRaw = useDraft ? (draftResult?.assignments || []) : (context.assignments || []);
-  const baseAssignments = sanitizeSupervisorAssignments(baseAssignmentsRaw, holidayKindByDate, shiftMetaByCode);
+  const baseAssignments = sanitizeSupervisorAssignments(baseAssignmentsRaw, holidayKindByDate, shiftMetaByCode, effectiveDefs);
   const baseIssues = useDraft ? (draftResult?.issues || []) : (context.issues || []);
   const hard = applyHardConstraints(baseAssignments, leavesByPerson);
   const data = {
