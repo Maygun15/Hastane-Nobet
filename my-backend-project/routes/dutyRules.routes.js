@@ -4,6 +4,73 @@ const router = express.Router();
 const DutyRule = require('../models/DutyRule');
 const RuleEngine = require('../services/ruleEngine');
 
+// GET /api/duty-rules?serviceId=&sectionId=&role=
+router.get('/', async (req, res) => {
+  try {
+    const serviceId = String(req.query.serviceId || req.query.sectionId || req.query.unitId || '').trim();
+    const role = String(req.query.role || '').trim();
+    const doc = await DutyRule.findOne({ serviceId, role }).lean();
+    return res.json({
+      ok: true,
+      rule: doc ?? { serviceId, sectionId: serviceId, role, rules: [], weights: {} },
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT /api/duty-rules
+router.put('/', async (req, res) => {
+  try {
+    const {
+      serviceId,
+      sectionId,
+      role,
+      rules,
+      weights,
+      basicRules,
+      leaveRules,
+      shiftRules,
+      taskRequirements,
+      personnelRules,
+      metadata,
+      departman,
+      description,
+    } = req.body || {};
+    const sid = String(serviceId || sectionId || '').trim();
+    const roleKey = String(role || '').trim();
+    const doc = await DutyRule.findOneAndUpdate(
+      { serviceId: sid, role: roleKey },
+      {
+        $set: {
+          serviceId: sid,
+          sectionId: String(sectionId || sid || '').trim(),
+          role: roleKey,
+          rules: rules ?? [],
+          weights: weights ?? {},
+          departman: departman || 'Acil Servis',
+          ...(description !== undefined ? { description } : {}),
+          ...(basicRules !== undefined ? { basicRules } : {}),
+          ...(leaveRules !== undefined ? { leaveRules } : {}),
+          ...(shiftRules !== undefined ? { shiftRules } : {}),
+          ...(taskRequirements !== undefined ? { taskRequirements } : {}),
+          ...(personnelRules !== undefined ? { personnelRules } : {}),
+          ...(metadata !== undefined ? { metadata } : {}),
+          updatedBy: req.user?.uid || null,
+          updatedAt: new Date(),
+        },
+        $setOnInsert: {
+          createdBy: req.user?.uid || null,
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean();
+    return res.json({ ok: true, rule: doc });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
 /**
  * GET /api/duty-rules/:serviceId
  * Kuralları getir

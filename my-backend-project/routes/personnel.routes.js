@@ -28,6 +28,8 @@ router.get('/',
       const query = {};
       if (unitId) query.serviceId = String(unitId);
       if (q) query.name = new RegExp(q, 'i');
+      if (req.query.active === 'true') query.active = { $ne: false };
+      if (req.query.active === 'false') query.active = false;
 
       const skip = Math.max(0, (page - 1) * size);
       const limit = Math.max(1, Math.min(size, 2000));
@@ -46,6 +48,7 @@ router.get('/',
         service: p.meta?.service || p.meta?.department || p.serviceId || '',
         serviceId: p.serviceId || '',
         tc: p.tc || '',
+        active: p.active !== false,
         phone: p.phone || '',
         email: p.email || '',
         areas: p.meta?.areas || [],

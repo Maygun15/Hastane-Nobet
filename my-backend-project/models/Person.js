@@ -13,6 +13,7 @@ const personSchema = new mongoose.Schema({
   tc:    { type: String, trim: true },
   phone: { type: String, trim: true },
   email: { type: String, trim: true, lowercase: true },
+  active: { type: Boolean, default: true, index: true },
 
   // Ek bilgiler
   meta:  { type: Object, default: {} },

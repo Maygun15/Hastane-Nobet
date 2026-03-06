@@ -14,7 +14,27 @@ const DutyRuleSchema = new mongoose.Schema(
       type: String,
       required: true
     },
+    sectionId: {
+      type: String,
+      default: ''
+    },
+    role: {
+      type: String,
+      default: ''
+    },
     description: String,
+    rules: [
+      new mongoose.Schema({
+        id: { type: String },
+        type: { type: String },
+        enabled: { type: Boolean, default: true },
+        value: { type: mongoose.Schema.Types.Mixed }
+      }, { _id: false })
+    ],
+    weights: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
+    },
 
     // TEMEL KURALLAR
     basicRules: {

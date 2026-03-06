@@ -30,7 +30,7 @@ import RequestsManagementTab from "../tabs/RequestsManagementTab.jsx";
 import PersonCalendar from "../tabs/PersonCalendar.jsx";
 import { getActiveYM, setActiveYM } from "../utils/activeYM.js";
 import { apiChangePassword, API, getToken } from "../lib/api.js";
-import { getAllLeaves, setLeavesStore } from "../lib/leaves.js";
+import { getAllLeaves } from "../lib/leaves.js";
 import { ROLE } from "../constants/enums.js";
 
 // Yedekleme butonları (yeni)
@@ -197,14 +197,11 @@ export default function HospitalRosterApp() {
         const wh = await API.http.get(`/api/settings/workingHours?serviceId=`);
         const lt = await API.http.get(`/api/settings/leaveTypes?serviceId=`);
         const rq = await API.http.get(`/api/settings/requestBoxV1?serviceId=`);
-        const pl = await API.http.get(`/api/settings/personLeaves?serviceId=`);
         if (!alive) return;
         if (Array.isArray(wa?.value)) setWorkAreas(wa.value);
         if (Array.isArray(wh?.value)) setWorkingHours(wh.value);
         if (Array.isArray(lt?.value)) setLeaveTypes(lt.value);
         if (Array.isArray(rq?.value)) setRequestBox(rq.value);
-        if (pl?.value && typeof pl.value === "object") setLeavesStore(pl.value);
-        else setLeavesStore({});
       } catch (err) {
         console.warn("Settings fetch failed:", err?.message || err);
       } finally {
