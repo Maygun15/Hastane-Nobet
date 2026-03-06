@@ -73,10 +73,6 @@ router.get('/', async (req, res) => {
 router.put('/', async (req, res) => {
   try {
     const role = String(req.user?.role || '').toLowerCase();
-    if (!['admin', 'staff', 'authorized'].includes(role)) {
-      return res.status(403).json({ ok: false, error: 'Yetersiz yetki' });
-    }
-
     const serviceId = String(req.body?.serviceId || '').trim();
     const personId = String(req.body?.personId || '').trim();
     const year = Number(req.body?.year);
@@ -94,9 +90,17 @@ router.put('/', async (req, res) => {
       return res.status(404).json({ ok: false, error: 'Person bulunamadı' });
     }
 
+    if (!['admin', 'staff', 'authorized'].includes(role)) {
+      const userId = String(req.user?.uid || req.user?.id || req.user?._id || '').trim();
+      const ownPerson = userId ? await Person.findOne({ userId }).lean() : null;
+      if (!ownPerson || String(ownPerson._id) !== personId) {
+        return res.status(403).json({ ok: false, error: 'Sadece kendi izninizi yazabilirsiniz' });
+      }
+    }
+
     let doc = await findLeavesDoc(serviceId);
     if (!doc) {
-      doc = new Setting({ key: 'personLeaves', serviceId, value: {} });
+      doc = new Setting({ key: 'leavesV2', serviceId, value: {} });
     }
 
     const ym = monthKey(year, month);
