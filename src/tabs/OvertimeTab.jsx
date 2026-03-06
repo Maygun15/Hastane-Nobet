@@ -421,6 +421,45 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
     };
   }, []);
 
+  useEffect(() => {
+    const pids = Array.from(
+      new Set(
+        rows
+          .map((r) => String(r?.personId || "").trim())
+          .filter(Boolean)
+      )
+    );
+    if (!pids.length) return;
+
+    const missing = pids.filter((pid) => !(pid in leavesByPerson));
+    if (!missing.length) return;
+
+    let cancelled = false;
+    Promise.all(
+      missing.map(async (pid) => {
+        try {
+          const lv = await fetchLeaves({ personId: pid, year, month });
+          return [pid, Array.isArray(lv) ? lv : []];
+        } catch {
+          return [pid, []];
+        }
+      })
+    ).then((entries) => {
+      if (cancelled) return;
+      setLeavesByPerson((prev) => {
+        const next = { ...prev };
+        entries.forEach(([pid, arr]) => {
+          next[pid] = arr;
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [year, month, rows, leavesByPerson]);
+
   /* hesaplar */
   const computed = useMemo(() => {
     const stdMonthly = computeMonthlyStdHours(year, month, holidays); // kişi başı
