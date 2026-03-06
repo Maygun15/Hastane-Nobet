@@ -489,7 +489,7 @@ function SectionContent({
       );
 
       let updates = 0;
-      const conflicts = [];
+      const conflictLog = [];
       rows.forEach((cols) => {
         let pid = idxId >= 0 ? String(cols[idxId] || "").trim() : "";
         let personMeta = null;
@@ -521,7 +521,7 @@ function SectionContent({
               day: d,
             });
             if (conflict.hasConflict) {
-              conflicts.push(conflict.message);
+              conflictLog.push(conflict.message);
               try {
                 window.dispatchEvent(new CustomEvent("leave:conflict", { detail: conflict }));
               } catch {}
@@ -532,10 +532,16 @@ function SectionContent({
         }
       });
 
-      const conflictText = conflicts.length
-        ? `\nÇakışma uyarısı: ${conflicts.length} kayıt vardiyalı güne yazıldı.\n${conflicts.slice(0, 3).join("\n")}${conflicts.length > 3 ? "\n..." : ""}`
-        : "";
-      alert(`İçe aktarma tamamlandı. Güncellenen hücre: ${updates}${conflictText}`);
+      if (conflictLog.length) {
+        alert(
+          `İçe aktarma tamamlandı. Güncellenen hücre: ${updates}\n\n` +
+          `⚠️ ${conflictLog.length} çakışma tespit edildi:\n` +
+          conflictLog.slice(0, 10).join("\n") +
+          (conflictLog.length > 10 ? `\n... ve ${conflictLog.length - 10} tane daha` : "")
+        );
+      } else {
+        alert(`İçe aktarma tamamlandı. Güncellenen hücre: ${updates}`);
+      }
       try { window.dispatchEvent(new Event("leaves:changed")); } catch {}
     } catch (e) {
       console.error(e);
