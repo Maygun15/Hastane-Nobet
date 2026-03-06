@@ -89,6 +89,30 @@ const MONTHS_TR = [
   "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
 ];
 
+function normName(value = "") {
+  return String(value || "")
+    .trim()
+    .toLocaleUpperCase("tr-TR")
+    .replace(/\s+/g, " ");
+}
+
+function readPersonnelIndex() {
+  const store = LS.get("appStoreV1", null);
+  const byId = store?.state?.personnelById || store?.personnelById || {};
+  const idMap = new Map();
+  const nameMap = new Map();
+
+  Object.values(byId || {}).forEach((p) => {
+    const pid = String(p?.id || p?._id || "").trim();
+    const name = normName(p?.fullName || p?.name || "");
+    const tckn = String(p?.tckn || p?.tc || p?.TCKN || p?.tcNo || "").trim();
+    if (pid) idMap.set(pid, tckn);
+    if (name && tckn) nameMap.set(name, tckn);
+  });
+
+  return { idMap, nameMap };
+}
+
 export default function WorkingHoursTimesheet({
   serviceId = "hemsire",
   title = "Aylık Çalışma ve Mesai Saatleri Çizelgesi — Hemşireler",
@@ -111,11 +135,29 @@ export default function WorkingHoursTimesheet({
   /* === 3) Satırlar === */
   const [rows, setRows] = useState([]);
   useEffect(() => {
+    const { idMap, nameMap } = readPersonnelIndex();
     setRows(
       (people || []).map((p, i) => ({
         order: i + 1,
         personId: p.id || p.tc || p.tckn || p.pid || p.TCKN,
-        tckn: p.tc || p.tckn || p.TCKN || "",
+        tckn:
+          p.tc ||
+          p.tckn ||
+          p.TCKN ||
+          p.tcNo ||
+          p.meta?.tc ||
+          p.meta?.tckn ||
+          p.meta?.TCKN ||
+          idMap.get(String(p.id || p.personId || "")) ||
+          nameMap.get(
+            normName(
+              p.name ||
+              p.fullName ||
+              p.adSoyad ||
+              `${p.ad || ""} ${p.soyad || ""}`.trim()
+            )
+          ) ||
+          "",
         name:
           p.name ||
           p.fullName ||

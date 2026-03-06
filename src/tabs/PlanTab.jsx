@@ -165,24 +165,63 @@ function isSupervisorTaskLabel(label = "") {
   return /servis\s*sorumlu|ekip\s*sorumlu|sorumlu/i.test(String(label || ""));
 }
 
-function applySupervisorDayRules(taskLine, year, month0, holidayKindByDate = {}) {
-  if (!taskLine || !isSupervisorTaskLabel(taskLine.label)) return taskLine;
+function buildSupervisorTaskLines(taskLine, year, month0, holidayKindByDate = {}) {
+  if (!taskLine) return [];
+  if (!isSupervisorTaskLabel(taskLine.label)) return [taskLine];
+
   const daysInMonth = new Date(year, month0 + 1, 0).getDate();
-  const counts = { ...(taskLine.counts || {}) };
+  const regularCounts = {};
+  const arifeCounts = {};
+
   for (let d = 1; d <= daysInMonth; d++) {
     const dateKey = `${year}-${String(month0 + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const weekday = new Date(year, month0, d).getDay();
     const isWeekend = weekday === 0 || weekday === 6;
     const kind = String(holidayKindByDate?.[dateKey] || "").toLowerCase();
+    const need = Number.isFinite(taskLine?.counts?.[d]) ? Number(taskLine.counts[d]) : Number(taskLine?.defaultCount || 0);
     if (isWeekend || kind === "full") {
-      counts[d] = 0;
+      regularCounts[d] = 0;
+      arifeCounts[d] = 0;
+      continue;
     }
+    if (kind === "arife" || kind === "half") {
+      regularCounts[d] = 0;
+      arifeCounts[d] = need;
+      continue;
+    }
+    regularCounts[d] = need;
+    arifeCounts[d] = 0;
   }
-  return {
+
+  const hasPositive = (obj) => Object.values(obj || {}).some((v) => Number(v) > 0);
+  const lines = [];
+
+  if (hasPositive(regularCounts)) {
+    lines.push({
+      ...taskLine,
+      weekendOff: true,
+      defaultCount: 0,
+      counts: regularCounts,
+    });
+  }
+
+  if (hasPositive(arifeCounts)) {
+    lines.push({
+      ...taskLine,
+      shiftCode: "A",
+      weekendOff: true,
+      defaultCount: 0,
+      counts: arifeCounts,
+    });
+  }
+
+  if (lines.length) return lines;
+  return [{
     ...taskLine,
     weekendOff: true,
-    counts,
-  };
+    defaultCount: 0,
+    counts: regularCounts,
+  }];
 }
 
 function readPeopleAll() {
@@ -598,19 +637,19 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
 
       const defs = scheduleRes?.schedule?.data?.defs || [];
       const taskLines = (Array.isArray(defs) ? defs : [])
-        .map((d) => {
+        .flatMap((d) => {
           const label = (d?.label || "").toString().trim();
           const shiftCode = (d?.shiftCode || "").toString().trim();
-          if (!label || !shiftCode) return null;
+          if (!label || !shiftCode) return [];
           const counts = buildCountsFromPattern(d, year, month0);
-          return applySupervisorDayRules({
+          return buildSupervisorTaskLines({
             label,
             shiftCode,
             defaultCount: Number(d?.defaultCount ?? 0) || 0,
             counts,
           }, year, month0, holidayKindByDate);
         })
-        .filter(Boolean);
+        .filter((line) => line && line.label && line.shiftCode);
 
       const result = await runPlannerOnce({
         year,

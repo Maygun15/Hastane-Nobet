@@ -151,10 +151,10 @@ export async function loadLeavesFromBackend() {
     return Promise.resolve(leavesCache);
   }
   loadPromise = API.http
-    .get(`/api/settings/personLeaves?serviceId=`)
+    .get(`/api/leaves?serviceId=`)
     .then((res) => {
       if (leavesDirty) return leavesCache;
-      const value = res?.value && typeof res.value === "object" ? res.value : {};
+      const value = res?.data && typeof res.data === "object" ? res.data : {};
       setLeavesStore(value);
       return leavesCache;
     })
@@ -173,13 +173,13 @@ async function saveLeavesNow() {
   const token = getToken();
   if (!token) return;
   try {
-    await API.http.req(`/api/settings/personLeaves`, {
+    await API.http.req(`/api/settings/leavesV2`, {
       method: "PUT",
       body: { value: leavesCache, serviceId: "" },
     });
     leavesDirty = false;
   } catch (err) {
-    console.warn("personLeaves save failed:", err?.message || err);
+    console.warn("leavesV2 save failed:", err?.message || err);
   }
 }
 

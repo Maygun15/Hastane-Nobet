@@ -27,6 +27,20 @@ const DEFAULT_WEIGHTS = {
 const NIGHT_24_CODES = new Set(['N', 'V2']);
 const normalizeCode = (s) => String(s || '').trim().toUpperCase();
 const isSupervisorLabel = (label = '') => /servis\s*sorumlu|ekip\s*sorumlu|sorumlu/i.test(String(label || ''));
+const buildShiftMetaLookup = (shiftOptions = []) => {
+  const out = Object.create(null);
+  for (const item of shiftOptions || []) {
+    const code = normalizeCode(item?.code || item?.id || '');
+    if (!code) continue;
+    out[code] = {
+      hours: item?.hours,
+      start: item?.start || null,
+      end: item?.end || null,
+      isNight: !!item?.isNight,
+    };
+  }
+  return out;
+};
 const prevDateStr = (dateStr) => {
   const d = new Date(`${dateStr}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return null;
@@ -235,14 +249,31 @@ function buildDaysFromScheduleData({ year, month, data }) {
   return days;
 }
 
-function applySupervisorHolidayRules(days = [], holidayKindByDate = {}) {
+function applySupervisorHolidayRules(days = [], holidayKindByDate = {}, shiftMetaByCode = {}) {
   return (days || []).map((day) => {
     const weekday = Number(day?.weekday);
     const date = String(day?.date || '').slice(0, 10);
     const holidayKind = String(holidayKindByDate?.[date] || '').toLowerCase();
     const blockSupervisor = weekday === 0 || weekday === 6 || holidayKind === 'full';
-    if (!blockSupervisor) return day;
-    const shifts = (day?.shifts || []).filter((shift) => !isSupervisorLabel(shift?.area || shift?.label || shift?.name || ''));
+    const shifts = (day?.shifts || []).flatMap((shift) => {
+      const label = shift?.area || shift?.label || shift?.name || '';
+      if (!isSupervisorLabel(label)) return [shift];
+      if (blockSupervisor) return [];
+      if (holidayKind === 'arife' || holidayKind === 'half') {
+        const aMeta = shiftMetaByCode.A || {};
+        return [{
+          ...shift,
+          id: String(shift?.id || shift?.code || 'A'),
+          code: 'A',
+          hours: aMeta.hours ?? shift?.hours,
+          start: aMeta.start ?? shift?.start ?? null,
+          end: aMeta.end ?? shift?.end ?? null,
+          isNight: aMeta.isNight ?? false,
+        }];
+      }
+      return [shift];
+    });
+    if (!blockSupervisor && holidayKind !== 'arife' && holidayKind !== 'half') return day;
     return { ...day, shifts };
   });
 }
@@ -346,7 +377,8 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   const holidayKindByDate = Object.fromEntries(
     (holidays || []).map((row) => [String(row.date || '').slice(0, 10), String(row.kind || 'full').toLowerCase()])
   );
-  const effectiveDays = applySupervisorHolidayRules(days, holidayKindByDate);
+  const shiftMetaByCode = buildShiftMetaLookup(effectiveShiftOptions);
+  const effectiveDays = applySupervisorHolidayRules(days, holidayKindByDate, shiftMetaByCode);
 
   const staffPack = Array.isArray(payload.staff) && payload.staff.length
     ? { staff: payload.staff, debug: { rawCount: payload.staff.length, filteredCount: payload.staff.length, usedFallback: false, roleTokens: [] } }

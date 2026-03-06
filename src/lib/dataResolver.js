@@ -64,12 +64,27 @@ function normPerson(p, roleHint = null, idx = 0) {
     p.code ??
     `P_${Date.now()}_${idx}`;
 
+  const tckn =
+    p.tckn ??
+    p.tc ??
+    p.tcNo ??
+    p.TCKN ??
+    p.tcKimlik ??
+    p.nationalId ??
+    p.meta?.tckn ??
+    p.meta?.tc ??
+    p.meta?.tcNo ??
+    p.meta?.TCKN ??
+    "";
+
   return {
     id,
     fullName,
     name: fullName,
     role: normRole(p.role || p.departmentRole || p.title, roleHint) || roleHint,
     unit: p.unit || p.area || p.service || p.department || null,
+    tc: tckn,
+    tckn,
     skills: p.skills || p.tags || [],
     meta: p,
   };
