@@ -8,6 +8,7 @@ import OvertimeTab from "./OvertimeTab.jsx";
 import MonthlyLeavesMatrixGeneric from "./MonthlyLeavesMatrixGeneric.jsx";
 import { getAllLeaves, setLeave, unsetLeave, buildNameUnavailability } from "../lib/leaves.js";
 import { collectRequestsByPerson } from "../lib/requestParser.js";
+import { checkLeaveShiftConflict } from "../utils/conflictChecker.js";
 import useActiveYM from "../hooks/useActiveYM.js";
 import useServiceScope from "../hooks/useServiceScope.js"; // ⬅️ YENİ: servis kapsamı
 
@@ -488,6 +489,7 @@ function SectionContent({
       );
 
       let updates = 0;
+      const conflicts = [];
       rows.forEach((cols) => {
         let pid = idxId >= 0 ? String(cols[idxId] || "").trim() : "";
         let personMeta = null;
@@ -510,12 +512,30 @@ function SectionContent({
 
         for (const [d, iCol] of dayColsClean) {
           const val = String(cols[iCol] || "").trim();
-          if (val) { setLeave({ personId: pid, personName, year, month: month1, day: d, code: val }); updates++; }
+          if (val) {
+            const conflict = checkLeaveShiftConflict({
+              personId: pid,
+              personName,
+              year,
+              month: month1,
+              day: d,
+            });
+            if (conflict.hasConflict) {
+              conflicts.push(conflict.message);
+              try {
+                window.dispatchEvent(new CustomEvent("leave:conflict", { detail: conflict }));
+              } catch {}
+            }
+            setLeave({ personId: pid, personName, year, month: month1, day: d, code: val }); updates++;
+          }
           else     { unsetLeave({ personId: pid, personName, year, month: month1, day: d }); }
         }
       });
 
-      alert(`İçe aktarma tamamlandı. Güncellenen hücre: ${updates}`);
+      const conflictText = conflicts.length
+        ? `\nÇakışma uyarısı: ${conflicts.length} kayıt vardiyalı güne yazıldı.\n${conflicts.slice(0, 3).join("\n")}${conflicts.length > 3 ? "\n..." : ""}`
+        : "";
+      alert(`İçe aktarma tamamlandı. Güncellenen hücre: ${updates}${conflictText}`);
       try { window.dispatchEvent(new Event("leaves:changed")); } catch {}
     } catch (e) {
       console.error(e);

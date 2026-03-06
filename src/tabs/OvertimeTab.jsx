@@ -321,6 +321,52 @@ function creditedLeaveHoursForMonth({
   return dayCredit.reduce((a, b) => a + b, 0);
 }
 
+function collectLeaveDaysForMonth({ year, month, leaves, codesByDay }) {
+  const out = new Set();
+
+  const markDay = (y, m, d) => {
+    if (y === year && m === month && Number.isFinite(d) && d >= 1 && d <= 31) {
+      out.add(d);
+    }
+  };
+
+  const eachDay = (startIso, endIso, cb) => {
+    const s = new Date(startIso);
+    const e = new Date(endIso ?? startIso);
+    for (let dt = new Date(s); dt <= e; dt.setDate(dt.getDate() + 1)) cb(new Date(dt));
+  };
+
+  if (Array.isArray(leaves)) {
+    for (const lv of leaves) {
+      const code = String(lv?.code || lv?.type || "").trim();
+      if (!code) continue;
+      eachDay(lv.start, lv.end, (dt) => {
+        markDay(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
+      });
+    }
+  }
+
+  if (codesByDay && typeof codesByDay === "object") {
+    for (const [k, rec] of Object.entries(codesByDay)) {
+      const code = typeof rec === "string" ? rec : rec?.code;
+      if (!String(code || "").trim()) continue;
+      if (Number.isFinite(Number(k))) {
+        out.add(Number(k));
+        continue;
+      }
+      const s = String(k || "").trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+        const y = Number(s.slice(0, 4));
+        const m = Number(s.slice(5, 7));
+        const d = Number(s.slice(8, 10));
+        markDay(y, m, d);
+      }
+    }
+  }
+
+  return out;
+}
+
 /* ================ Component ================ */
 const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref) {
   // Tek AY/YIL kaynağı
@@ -466,10 +512,6 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
     const ym = ymKey(year, month);
     const allLocalLeaves = getAllLeaves();
     const nameStore = LS.get("allLeavesByNameV1", {});
-    const perRowBase = rows.map((r) => {
-      const work = (r.days || []).reduce((a, b) => a + (Number(b) || 0), 0);
-      return { id: r.id, work };
-    });
     const perRowLeave = rows.map((r) => {
       const hasPid = !!(r.personId && String(r.personId).trim());
       const leaves = hasPid ? (leavesByPerson[r.personId] || []) : [];
@@ -477,6 +519,12 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
       const canon = canonName(r.person || r.fullName || r.name || r.adsoyad || "");
       const byName = !hasPid && canon ? (nameStore?.[canon]?.[ym] || {}) : {};
       const localCodes = hasPid ? byId : byName;
+      const leaveDays = collectLeaveDaysForMonth({
+        year,
+        month,
+        leaves,
+        codesByDay: localCodes,
+      });
       const credited = creditedLeaveHoursForMonth({
         year,
         month,
@@ -486,18 +534,43 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
         leaveRules,
         leaveCountsWeekend: true,
       });
-      return { id: r.id, credited };
+      let ignoredHours = 0;
+      (r.days || []).forEach((val, idx) => {
+        if (!leaveDays.has(idx + 1)) return;
+        ignoredHours += Number(val) || 0;
+      });
+      return { id: r.id, credited, leaveDays, ignoredHours };
     });
     const perRow = rows.map((r) => {
-      const work = perRowBase.find((x) => x.id === r.id)?.work || 0;
-      const credited = perRowLeave.find((x) => x.id === r.id)?.credited || 0;
+      const leaveMeta = perRowLeave.find((x) => x.id === r.id) || { credited: 0, leaveDays: new Set(), ignoredHours: 0 };
+      const work = (r.days || []).reduce((sum, val, idx) => {
+        if (leaveMeta.leaveDays.has(idx + 1)) return sum;
+        return sum + (Number(val) || 0);
+      }, 0);
+      const credited = leaveMeta.credited || 0;
       const required = Math.max(0, stdMonthly - credited);
       const overtime = Math.max(0, work - required);
-      return { id: r.id, work, credited, required, overtime };
+      return {
+        id: r.id,
+        work,
+        credited,
+        required,
+        overtime,
+        ignoredHours: leaveMeta.ignoredHours || 0,
+        conflictDays: Array.from(leaveMeta.leaveDays.values()).filter((day) => (Number(r.days?.[day - 1]) || 0) > 0),
+      };
     });
     const grandWork = perRow.reduce((a, b) => a + b.work, 0);
     const grandOT = perRow.reduce((a, b) => a + b.overtime, 0);
-    return { stdMonthly, perRow, grandWork, grandOT };
+    const conflicts = perRow
+      .filter((row) => row.ignoredHours > 0)
+      .map((row) => ({
+        id: row.id,
+        ignoredHours: row.ignoredHours,
+        days: row.conflictDays || [],
+        person: rows.find((r) => r.id === row.id)?.person || "",
+      }));
+    return { stdMonthly, perRow, grandWork, grandOT, conflicts };
   }, [rows, year, month, holidays, leavesByPerson, leaveRules, leaveVersion]);
 
   /* helpers */
@@ -851,6 +924,15 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
           GENEL TOPLAM ÇALIŞMA: <span className="font-semibold">{computed.grandWork}</span>
         </div>
       </div>
+
+      {computed.conflicts?.length > 0 && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          İzinli günlere yazılmış çalışma saatleri hesap dışı bırakıldı.
+          {" "}
+          {computed.conflicts.slice(0, 3).map((item) => `${item.person || "Personel"} (${item.days.join(",")})`).join(" • ")}
+          {computed.conflicts.length > 3 ? ` • +${computed.conflicts.length - 3} kişi daha` : ""}
+        </div>
+      )}
 
       {/* tablo */}
       <div className="rounded-2xl border overflow-auto">

@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getAllLeaves, setLeave, unsetLeave } from "../lib/leaves.js";
 import { LS } from "../utils/storage.js"; // ← localStorage yardımcıları
+import { checkLeaveShiftConflict } from "../utils/conflictChecker.js";
 
 /* ===== Görsel sabitler ===== */
 const MONTHS_TR = [
@@ -149,6 +150,20 @@ export default function MonthlyLeavesMatrixGeneric({
 
   /* ---- Yaz / Sil ---- */
   const applySet = (pid, name, d, code) => {
+    const conflict = checkLeaveShiftConflict({
+      personId: pid,
+      personName: name,
+      year,
+      month: m0 + 1,
+      day: d,
+    });
+    if (conflict.hasConflict) {
+      const ok = window.confirm(`${conflict.message}\n\nYine de izin eklensin mi?`);
+      if (!ok) return;
+      try {
+        window.dispatchEvent(new CustomEvent("leave:conflict", { detail: conflict }));
+      } catch {}
+    }
     setLeave({ personId: pid, personName: name, year, month: m0 + 1, day: d, code });
     setVersion((v) => v + 1);
   };

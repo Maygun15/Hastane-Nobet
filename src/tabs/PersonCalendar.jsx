@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ymKey } from "../utils/storage.js";
 import { getAllLeaves, upsertLeave, removeLeave } from "../lib/leaves.js";
+import { checkLeaveShiftConflict } from "../utils/conflictChecker.js";
 
 /* === Son kullanılan kod (MonthlyLeavesMatrix ile ortak) === */
 const LAST_CODE_KEY = "lastLeaveCodeV1";
@@ -85,6 +86,23 @@ export default function PersonCalendar({
     const current =
       monthly[ymd] ?? monthly[pad2(day)] ?? monthly[String(day)] ?? null;
     const curCode = asCode(current);
+    const shouldWrite = !curCode || curCode !== selCode;
+    if (shouldWrite) {
+      const conflict = checkLeaveShiftConflict({
+        personId: person.id,
+        personName: person?.fullName || person?.name || "",
+        year,
+        month: month + 1,
+        day,
+      });
+      if (conflict.hasConflict) {
+        const ok = window.confirm(`${conflict.message}\n\nYine de izin eklensin mi?`);
+        if (!ok) return;
+        try {
+          window.dispatchEvent(new CustomEvent("leave:conflict", { detail: conflict }));
+        } catch {}
+      }
+    }
     if (!curCode) upsertLeave(person.id, ymd, selCode);
     else if (curCode === selCode) removeLeave(person.id, ymd);
     else upsertLeave(person.id, ymd, selCode);
