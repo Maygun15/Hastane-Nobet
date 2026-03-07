@@ -26,7 +26,7 @@ const DEFAULT_WEIGHTS = {
 
 const NIGHT_24_CODES = new Set(['N', 'V2']);
 const normalizeCode = (s) => String(s || '').trim().toUpperCase();
-const isSupervisorLabel = (label = '') => /servis\s*sorumlu|ekip\s*sorumlu|sorumlu/i.test(String(label || ''));
+const isServiceSupervisorLabel = (label = '') => /servis\s*sorumlu/i.test(String(label || ''));
 const buildShiftMetaLookup = (shiftOptions = []) => {
   const out = Object.create(null);
   for (const item of shiftOptions || []) {
@@ -257,7 +257,7 @@ function applySupervisorHolidayRules(days = [], holidayKindByDate = {}, shiftMet
     const blockSupervisor = weekday === 0 || weekday === 6 || holidayKind === 'full';
     const shifts = (day?.shifts || []).flatMap((shift) => {
       const label = shift?.area || shift?.label || shift?.name || '';
-      if (!isSupervisorLabel(label)) return [shift];
+      if (!isServiceSupervisorLabel(label)) return [shift];
       if (blockSupervisor) return [];
       if (holidayKind === 'arife' || holidayKind === 'half') {
         const aMeta = shiftMetaByCode.A || {};
@@ -284,7 +284,7 @@ function buildSupervisorRowIdSet(defs = []) {
     const id = String(row?.id || row?.rowId || '').trim();
     const label = String(row?.label || row?.area || row?.name || '').trim();
     if (!id || !label) continue;
-    if (isSupervisorLabel(label)) set.add(id);
+    if (isServiceSupervisorLabel(label)) set.add(id);
   }
   return set;
 }
@@ -295,7 +295,7 @@ function sanitizeSupervisorAssignments(assignments = [], holidayKindByDate = {},
     .map((item) => {
       const shiftId = String(item?.shiftId || item?.rowId || '').trim();
       const label = String(item?.roleLabel || item?.label || item?.area || '').trim();
-      const isSupervisor = supervisorRowIds.has(shiftId) || isSupervisorLabel(label);
+      const isSupervisor = supervisorRowIds.has(shiftId) || isServiceSupervisorLabel(label);
       if (!isSupervisor) return item;
       const date = String(item?.date || item?.day || '').slice(0, 10);
       if (!date) return item;

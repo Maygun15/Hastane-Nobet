@@ -161,13 +161,13 @@ function buildCountsFromPattern(def, year, month0) {
   return counts;
 }
 
-function isSupervisorTaskLabel(label = "") {
-  return /servis\s*sorumlu|ekip\s*sorumlu|sorumlu/i.test(String(label || ""));
+function isServiceSupervisorTaskLabel(label = "") {
+  return /servis\s*sorumlu/i.test(String(label || ""));
 }
 
 function buildSupervisorTaskLines(taskLine, year, month0, holidayKindByDate = {}) {
   if (!taskLine) return [];
-  if (!isSupervisorTaskLabel(taskLine.label)) return [taskLine];
+  if (!isServiceSupervisorTaskLabel(taskLine.label)) return [taskLine];
 
   const daysInMonth = new Date(year, month0 + 1, 0).getDate();
   const regularCounts = {};
@@ -230,7 +230,7 @@ function sanitizeSupervisorAssignments(assignments = [], year, month0, holidayKi
   return (assignments || [])
     .map((item) => {
       const label = String(item?.roleLabel || item?.label || "").trim();
-      if (!isSupervisorTaskLabel(label)) return item;
+      if (!isServiceSupervisorTaskLabel(label)) return item;
       const dateStr = String(item?.day || item?.date || "").slice(0, 10);
       if (!dateStr) return item;
       const dayNum = Number(dateStr.slice(8, 10));
