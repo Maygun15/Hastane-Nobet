@@ -27,7 +27,7 @@ import MyRequestsTab from "../tabs/MyRequestsTab.jsx";
 import RequestsManagementTab from "../tabs/RequestsManagementTab.jsx";
 
 // Normal kullanıcı takvimi
-import PersonCalendar from "../tabs/PersonCalendar.jsx";
+import PersonScheduleCalendar from "../components/PersonScheduleCalendar.jsx";
 import { getActiveYM, setActiveYM } from "../utils/activeYM.js";
 import { apiChangePassword, API, getToken } from "../lib/api.js";
 import { getAllLeaves } from "../lib/leaves.js";
@@ -707,16 +707,26 @@ export default function HospitalRosterApp() {
 
         <main className="flex-1 w-full px-6 py-6 space-y-6 overflow-auto max-w-[1400px] mx-auto">
           {activeTab === "plan" && (
-            <PlanTab
-              workAreas={workAreas}
-              nurses={nurses}
-              doctors={doctors}
-              peopleAll={peopleAll}
-              leaveTypes={leaveTypes}
-              personLeaves={personLeaves}
-              setPersonLeaves={setPersonLeaves}
-              workingHours={workingHours}
-            />
+            isBasicUser ? (
+              <MyCalendarBox
+                me={user}
+                people={peopleAll}
+                allLeaves={personLeaves}
+                workAreas={workAreas}
+                workingHours={workingHours}
+              />
+            ) : (
+              <PlanTab
+                workAreas={workAreas}
+                nurses={nurses}
+                doctors={doctors}
+                peopleAll={peopleAll}
+                leaveTypes={leaveTypes}
+                personLeaves={personLeaves}
+                setPersonLeaves={setPersonLeaves}
+                workingHours={workingHours}
+              />
+            )
           )}
 
           {activeTab === "personnel" && (
@@ -934,10 +944,10 @@ function ChangePasswordModal({ open, onClose, force = false, onChanged }) {
 
 
 /* ---------------- Normal kullanıcı: “Takvimim” ---------------- */
-function MyCalendarBox({ me, leaveTypes }) {
+function MyCalendarBox({ me, people = [], allLeaves = {}, workAreas = [], workingHours = [] }) {
   const [ym, setYm] = useState(() => getActiveYM());
   const year = ym.year;
-  const monthIndex = ym.month - 1;
+  const month = ym.month;
   const personId =
     me?.personId ||
     me?.person_id ||
@@ -946,18 +956,21 @@ function MyCalendarBox({ me, leaveTypes }) {
     "";
 
   const goto = (delta) => {
-    const dt = new Date(year, monthIndex, 1);
+    const dt = new Date(year, month - 1, 1);
     dt.setMonth(dt.getMonth() + delta);
     const next = { year: dt.getFullYear(), month: dt.getMonth() + 1 };
     setYm(next);
     setActiveYM(next);
   };
 
-  const person = useMemo(() => ({
-    id: String(personId || me?.id || me?.userId || me?.email || "me"),
-    name: me?.name || me?.fullName || me?.email || "Ben",
-    role: me?.role || "USER",
-  }), [me, personId]);
+  const roleInfo = useMemo(
+    () => ({
+      isAdmin: false,
+      isAuthorized: false,
+      isStandard: true,
+    }),
+    []
+  );
 
   return (
     <div className="space-y-4">
@@ -965,7 +978,7 @@ function MyCalendarBox({ me, leaveTypes }) {
         <div className="font-semibold">Takvimim</div>
         <div className="flex items-center gap-2 text-sm">
           <button onClick={() => goto(-1)} className="px-2 py-1 rounded bg-slate-100">Önceki Ay</button>
-          <div className="text-slate-500">{(monthIndex + 1)}.{year}</div>
+          <div className="text-slate-500">{month}.{year}</div>
           <button onClick={() => goto(1)} className="px-2 py-1 rounded bg-slate-100">Sonraki Ay</button>
         </div>
       </div>
@@ -976,7 +989,19 @@ function MyCalendarBox({ me, leaveTypes }) {
             Personel kaydınız bağlı değil. İzinlerin görünmesi için hesabınızı bir personele bağlayın.
           </div>
         )}
-        <PersonCalendar person={person} year={year} month={monthIndex} leaveTypes={leaveTypes} />
+        <PersonScheduleCalendar
+          year={year}
+          month={month}
+          people={people}
+          allLeaves={allLeaves}
+          user={me}
+          role={roleInfo}
+          sectionId="calisma-cizelgesi"
+          serviceId=""
+          scheduleRole=""
+          workAreas={workAreas}
+          workingHours={workingHours}
+        />
       </div>
     </div>
   );
