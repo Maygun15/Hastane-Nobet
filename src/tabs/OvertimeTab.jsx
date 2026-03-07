@@ -28,7 +28,7 @@ const iso = (y, m, d) => `${y}-${pad2(m)}-${pad2(d)}`;
 const BUILD_TRIGGER_KEY = "scheduleBuildTrigger";
 const BUILD_HANDLED_KEY = "scheduleBuildHandledOvertime";
 const isWeekend = (y, m, d) => {
-  const dow = new Date(y, m - 1, d).getDay(); // 0=Pa,6=Cts
+  const dow = new Date(y, m - 1, d).getDay();
   return dow === 0 || dow === 6;
 };
 const isGroupLabel = (nm) =>
@@ -61,9 +61,7 @@ function readArrayLS(key) {
       });
       return out;
     }
-  } catch {
-    /* no-op */
-  }
+  } catch { /* no-op */ }
   return [];
 }
 
@@ -75,70 +73,34 @@ function buildPersonMetaIndex() {
   ];
   const peopleExtra = getPeople();
   if (Array.isArray(peopleExtra)) combined.push(...peopleExtra);
-
   const byId = new Map();
   const byCanon = new Map();
-
   const capture = (entry, fallbackId) => {
     if (!entry) return;
-    const name =
-      entry.fullName ||
-      entry.name ||
-      entry.displayName ||
-      entry["AD SOYAD"] ||
-      entry.personName ||
-      entry.title ||
-      "";
+    const name = entry.fullName || entry.name || entry.displayName || entry["AD SOYAD"] || entry.personName || entry.title || "";
     if (!name || isGroupLabel(name)) return;
-    const id =
-      entry.id ??
-      entry.personId ??
-      entry.uid ??
-      entry.pid ??
-      entry.tc ??
-      entry.tcNo ??
-      entry.code ??
-      entry.employeeId ??
-      fallbackId ??
-      null;
+    const id = entry.id ?? entry.personId ?? entry.uid ?? entry.pid ?? entry.tc ?? entry.tcNo ?? entry.code ?? entry.employeeId ?? fallbackId ?? null;
     const info = {
       id: id != null ? String(id) : null,
       name,
-      title:
-        entry.title ||
-        entry.unvan ||
-        entry.position ||
-        entry.role ||
-        (entry.meta && (entry.meta.title || entry.meta.role)) ||
-        "",
-      service:
-        entry.service ||
-        entry.unit ||
-        entry.department ||
-        entry.branch ||
-        (entry.meta && (entry.meta.service || entry.meta.unit || entry.meta.department)) ||
-        "",
+      title: entry.title || entry.unvan || entry.position || entry.role || (entry.meta && (entry.meta.title || entry.meta.role)) || "",
+      service: entry.service || entry.unit || entry.department || entry.branch || (entry.meta && (entry.meta.service || entry.meta.unit || entry.meta.department)) || "",
     };
     const canon = canonName(name);
     if (info.id) {
       const prev = byId.get(info.id);
-      if (!prev || (info.title && !prev.title) || (info.service && !prev.service)) {
-        byId.set(info.id, info);
-      }
+      if (!prev || (info.title && !prev.title) || (info.service && !prev.service)) byId.set(info.id, info);
     }
     if (canon) {
-      if (!byCanon.has(canon)) {
-        byCanon.set(canon, { ...info });
-      } else {
+      if (!byCanon.has(canon)) byCanon.set(canon, { ...info });
+      else {
         const prev = byCanon.get(canon);
         if (info.title && !prev.title) prev.title = info.title;
         if (info.service && !prev.service) prev.service = info.service;
       }
     }
   };
-
   combined.forEach((entry, idx) => capture(entry, `tmp-${idx}`));
-
   return { byId, byCanon };
 }
 
@@ -157,10 +119,8 @@ function loadShiftCodeHours() {
         const start = String(x.start).split(":");
         const end = String(x.end).split(":");
         if (start.length === 2 && end.length === 2) {
-          const sh = Number(start[0]) || 0;
-          const sm = Number(start[1]) || 0;
-          const eh = Number(end[0]) || 0;
-          const em = Number(end[1]) || 0;
+          const sh = Number(start[0]) || 0, sm = Number(start[1]) || 0;
+          const eh = Number(end[0]) || 0, em = Number(end[1]) || 0;
           let diff = (eh * 60 + em) - (sh * 60 + sm);
           if (!Number.isFinite(diff)) diff = 0;
           if (diff < 0) diff += 24 * 60;
@@ -170,9 +130,7 @@ function loadShiftCodeHours() {
       map[code] = hours;
     });
     return map;
-  } catch {
-    return {};
-  }
+  } catch { return {}; }
 }
 
 const fallbackShiftHours = (code, label = "") => {
@@ -214,7 +172,7 @@ const makeBlankRow = (y, m) => ({
   days: Array.from({ length: daysInMonth(y, m) }, () => ""),
 });
 
-/* ================ Rules: Holidays & Required Hours ================ */
+/* ================ Rules ================ */
 const dayStandardHours = (y, m, d, hmap, { includeWeekend = false } = {}) => {
   if (!includeWeekend && isWeekend(y, m, d)) return 0;
   const k = hmap.get(iso(y, m, d));
@@ -231,20 +189,11 @@ const computeMonthlyStdHours = (year, month, holidays) => {
 };
 
 /* ================ Leaves → Credited Hours ================ */
-function creditedLeaveHoursForMonth({
-  year,
-  month,
-  leaves,
-  holidays,
-  codesByDay,
-  leaveRules = {},
-  leaveCountsWeekend = false,
-}) {
+function creditedLeaveHoursForMonth({ year, month, leaves, holidays, codesByDay, leaveRules = {}, leaveCountsWeekend = false }) {
   if (!leaves?.length && !codesByDay) return 0;
   const hmap = new Map(holidays.map((h) => [h.date, h.kind]));
   const dim = daysInMonth(year, month);
   const dayCredit = Array(dim).fill(0);
-
   const addCredit = (y, m, d, credit) => {
     if (y !== year || m !== month) return;
     const std = dayStandardHours(y, m, d, hmap, { includeWeekend: leaveCountsWeekend });
@@ -253,40 +202,31 @@ function creditedLeaveHoursForMonth({
     const c = Math.min(std, Math.max(0, Number(credit) || 0));
     dayCredit[idx] = Math.min(std, dayCredit[idx] + c);
   };
-
   const eachDay = (startIso, endIso, cb) => {
     const s = new Date(startIso);
     const e = new Date(endIso ?? startIso);
     for (let dt = new Date(s); dt <= e; dt.setDate(dt.getDate() + 1)) cb(new Date(dt));
   };
-
   if (Array.isArray(leaves) && leaves.length) {
     for (const lv of leaves) {
       eachDay(lv.start, lv.end, (dt) => {
         const y = dt.getFullYear(), m = dt.getMonth() + 1, d = dt.getDate();
         const std = dayStandardHours(y, m, d, hmap, { includeWeekend: leaveCountsWeekend });
         if (std === 0) return;
-
         const code = String(lv.code || lv.type || "").trim().toLocaleUpperCase("tr-TR");
         const rule = code ? leaveRules?.[code] : null;
         if (rule && !rule.countsAsWorked) return;
-
-        const baseCredit = rule && Number.isFinite(rule.hoursPerDay)
-          ? Math.min(std, rule.hoursPerDay)
-          : std;
-
+        const baseCredit = rule && Number.isFinite(rule.hoursPerDay) ? Math.min(std, rule.hoursPerDay) : std;
         let credit = 0;
         const partial = (lv.partial || "none").toLowerCase();
         if (partial === "none") credit = baseCredit;
         else if (partial === "half_am" || partial === "half_pm") credit = baseCredit / 2;
         else if (partial === "hours") credit = Math.min(Number(lv.hours || 0), baseCredit);
         else credit = baseCredit;
-
         addCredit(y, m, d, credit);
       });
     }
   }
-
   if (codesByDay && typeof codesByDay === "object") {
     const upTR = (s) => (s ?? "").toString().trim().toLocaleUpperCase("tr");
     const parseDayKey = (k) => {
@@ -295,7 +235,7 @@ function creditedLeaveHoursForMonth({
         return n >= 1 && n <= 31 ? n : null;
       }
       const s = String(k || "").trim();
-      if (/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
         const y = Number(s.slice(0, 4));
         const m = Number(s.slice(5, 7));
         const d = Number(s.slice(8, 10));
@@ -317,25 +257,19 @@ function creditedLeaveHoursForMonth({
       addCredit(year, month, d, hours);
     }
   }
-
   return dayCredit.reduce((a, b) => a + b, 0);
 }
 
 function collectLeaveDaysForMonth({ year, month, leaves, codesByDay }) {
   const out = new Set();
-
   const markDay = (y, m, d) => {
-    if (y === year && m === month && Number.isFinite(d) && d >= 1 && d <= 31) {
-      out.add(d);
-    }
+    if (y === year && m === month && Number.isFinite(d) && d >= 1 && d <= 31) out.add(d);
   };
-
   const eachDay = (startIso, endIso, cb) => {
     const s = new Date(startIso);
     const e = new Date(endIso ?? startIso);
     for (let dt = new Date(s); dt <= e; dt.setDate(dt.getDate() + 1)) cb(new Date(dt));
   };
-
   if (Array.isArray(leaves)) {
     for (const lv of leaves) {
       const code = String(lv?.code || lv?.type || "").trim();
@@ -345,15 +279,11 @@ function collectLeaveDaysForMonth({ year, month, leaves, codesByDay }) {
       });
     }
   }
-
   if (codesByDay && typeof codesByDay === "object") {
     for (const [k, rec] of Object.entries(codesByDay)) {
       const code = typeof rec === "string" ? rec : rec?.code;
       if (!String(code || "").trim()) continue;
-      if (Number.isFinite(Number(k))) {
-        out.add(Number(k));
-        continue;
-      }
+      if (Number.isFinite(Number(k))) { out.add(Number(k)); continue; }
       const s = String(k || "").trim();
       if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
         const y = Number(s.slice(0, 4));
@@ -363,13 +293,11 @@ function collectLeaveDaysForMonth({ year, month, leaves, codesByDay }) {
       }
     }
   }
-
   return out;
 }
 
 /* ================ Component ================ */
 const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref) {
-  // Tek AY/YIL kaynağı
   const { ym } = useActiveYM();
   const { year, month } = ym;
 
@@ -377,7 +305,6 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
   const [rows, setRows] = useState(() =>
     JSON.parse(localStorage.getItem(LS_DATA_PREFIX + ymKey(year, month)) || "[]")
   );
-
   const [people, setPeople] = useState([]);
   const [holidays, setHolidays] = useState([]);
   const [leavesByPerson, setLeavesByPerson] = useState({});
@@ -386,26 +313,26 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
   const dcount = daysInMonth(year, month);
   const shiftCodeHours = useMemo(() => loadShiftCodeHours(), []);
   const [importing, setImporting] = useState(false);
-  const [leaveVersion, setLeaveVersion] = useState(0);
   const [leaveRules, setLeaveRules] = useState(() =>
     buildLeaveCreditRules(LS.get("leaveTypesV2", []), DEFAULT_LEAVE_RULES)
   );
 
-  /* persist */
+  const fetchedPidsRef = useRef(new Set());
+
   useEffect(() => localStorage.setItem(LS_CFG, JSON.stringify(cfg)), [cfg]);
   useEffect(() => {
     localStorage.setItem(LS_DATA_PREFIX + ymKey(year, month), JSON.stringify(rows));
   }, [rows, year, month]);
 
-  /* ay/yıl değişince mevcut kayıtları yükle */
   useEffect(() => {
+    fetchedPidsRef.current = new Set();
+    setLeavesByPerson({});
     try {
       const next = JSON.parse(localStorage.getItem(LS_DATA_PREFIX + ymKey(year, month)) || "[]");
       if (Array.isArray(next)) setRows(next);
     } catch {}
   }, [year, month]);
 
-  /* gün sayısı değişince normalize */
   useEffect(() => {
     setRows((prev) =>
       (prev || []).map((r) => {
@@ -417,7 +344,6 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
     );
   }, [dcount]);
 
-  /* personnel */
   useEffect(() => {
     (async () => {
       const list = await fetchPersonnel({ unitId: cfg.unitId || undefined, active: true });
@@ -425,7 +351,6 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
     })();
   }, [cfg.unitId]);
 
-  /* holidays */
   useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -443,11 +368,8 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
     };
   }, [year, month]);
 
-  /* leave types -> rules */
   useEffect(() => {
-    const refresh = () => {
-      setLeaveRules(buildLeaveCreditRules(LS.get("leaveTypesV2", []), DEFAULT_LEAVE_RULES));
-    };
+    const refresh = () => setLeaveRules(buildLeaveCreditRules(LS.get("leaveTypesV2", []), DEFAULT_LEAVE_RULES));
     window.addEventListener("leaveTypes:changed", refresh);
     window.addEventListener("storage", refresh);
     return () => {
@@ -456,9 +378,8 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
     };
   }, []);
 
-  /* local leave changes */
   useEffect(() => {
-    const refresh = () => setLeaveVersion((v) => v + 1);
+    const refresh = () => setLeavesByPerson({}) || (fetchedPidsRef.current = new Set());
     window.addEventListener("leaves:changed", refresh);
     window.addEventListener("storage", refresh);
     return () => {
@@ -468,72 +389,43 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
   }, []);
 
   useEffect(() => {
-    const pids = Array.from(
-      new Set(
-        rows
-          .map((r) => String(r?.personId || "").trim())
-          .filter(Boolean)
-      )
-    );
+    const pids = Array.from(new Set(rows.map((r) => String(r?.personId || "").trim()).filter(Boolean)));
     if (!pids.length) return;
-
-    const missing = pids.filter((pid) => !(pid in leavesByPerson));
+    const missing = pids.filter((pid) => !fetchedPidsRef.current.has(pid));
     if (!missing.length) return;
-
     let cancelled = false;
     Promise.all(
       missing.map(async (pid) => {
         try {
           const lv = await fetchLeaves({ personId: pid, year, month });
           return [pid, Array.isArray(lv) ? lv : []];
-        } catch {
-          return [pid, []];
-        }
+        } catch { return [pid, []]; }
       })
     ).then((entries) => {
       if (cancelled) return;
+      entries.forEach(([pid]) => fetchedPidsRef.current.add(pid));
       setLeavesByPerson((prev) => {
         const next = { ...prev };
-        entries.forEach(([pid, arr]) => {
-          next[pid] = arr;
-        });
+        entries.forEach(([pid, arr]) => { next[pid] = arr; });
         return next;
       });
     });
+    return () => { cancelled = true; };
+  }, [year, month, rows]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [year, month, rows, leavesByPerson]);
-
-  /* hesaplar */
   const computed = useMemo(() => {
-    const stdMonthly = computeMonthlyStdHours(year, month, holidays); // kişi başı
+    const stdMonthly = computeMonthlyStdHours(year, month, holidays);
     const ym = ymKey(year, month);
     const allLocalLeaves = getAllLeaves();
-    const nameStore = LS.get("allLeavesByNameV1", {});
     const perRowLeave = rows.map((r) => {
       const hasPid = !!(r.personId && String(r.personId).trim());
       const leaves = hasPid ? (leavesByPerson[r.personId] || []) : [];
       const byId = hasPid ? (allLocalLeaves?.[r.personId]?.[ym] || {}) : {};
       const canon = canonName(r.person || r.fullName || r.name || r.adsoyad || "");
-      const byName = !hasPid && canon ? (nameStore?.[canon]?.[ym] || {}) : {};
+      const byName = !hasPid && canon ? (LS.get("allLeavesByNameV1", {})?.[canon]?.[ym] || {}) : {};
       const localCodes = hasPid ? byId : byName;
-      const leaveDays = collectLeaveDaysForMonth({
-        year,
-        month,
-        leaves,
-        codesByDay: localCodes,
-      });
-      const credited = creditedLeaveHoursForMonth({
-        year,
-        month,
-        leaves,
-        holidays,
-        codesByDay: localCodes,
-        leaveRules,
-        leaveCountsWeekend: true,
-      });
+      const leaveDays = collectLeaveDaysForMonth({ year, month, leaves, codesByDay: localCodes });
+      const credited = creditedLeaveHoursForMonth({ year, month, leaves, holidays, codesByDay: localCodes, leaveRules, leaveCountsWeekend: true });
       let ignoredHours = 0;
       (r.days || []).forEach((val, idx) => {
         if (!leaveDays.has(idx + 1)) return;
@@ -551,42 +443,31 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
       const required = Math.max(0, stdMonthly - credited);
       const overtime = Math.max(0, work - required);
       return {
-        id: r.id,
-        work,
-        credited,
-        required,
-        overtime,
+        id: r.id, work, credited, required, overtime,
         ignoredHours: leaveMeta.ignoredHours || 0,
         conflictDays: Array.from(leaveMeta.leaveDays.values()).filter((day) => (Number(r.days?.[day - 1]) || 0) > 0),
       };
     });
     const grandWork = perRow.reduce((a, b) => a + b.work, 0);
     const grandOT = perRow.reduce((a, b) => a + b.overtime, 0);
-    const conflicts = perRow
-      .filter((row) => row.ignoredHours > 0)
-      .map((row) => ({
-        id: row.id,
-        ignoredHours: row.ignoredHours,
-        days: row.conflictDays || [],
-        person: rows.find((r) => r.id === row.id)?.person || "",
-      }));
+    const conflicts = perRow.filter((row) => row.ignoredHours > 0).map((row) => ({
+      id: row.id, ignoredHours: row.ignoredHours, days: row.conflictDays || [],
+      person: rows.find((r) => r.id === row.id)?.person || "",
+    }));
     return { stdMonthly, perRow, grandWork, grandOT, conflicts };
-  }, [rows, year, month, holidays, leavesByPerson, leaveRules, leaveVersion]);
+  }, [rows, year, month, holidays, leavesByPerson, leaveRules]);
 
-  /* helpers */
   const addRow = () => setRows((p) => [...p, makeBlankRow(year, month)]);
   const removeRow = (id) => setRows((p) => p.filter((r) => r.id !== id));
   const updateField = (id, key, value) => setRows((p) => p.map((r) => (r.id === id ? { ...r, [key]: value } : r)));
   const updateDay = (id, idx, val) =>
-    setRows((p) =>
-      p.map((r) => {
-        if (r.id !== id) return r;
-        const a = [...r.days];
-        const v = String(val).replace(",", ".");
-        a[idx] = v === "" ? "" : Number(v);
-        return { ...r, days: a };
-      })
-    );
+    setRows((p) => p.map((r) => {
+      if (r.id !== id) return r;
+      const a = [...r.days];
+      const v = String(val).replace(",", ".");
+      a[idx] = v === "" ? "" : Number(v);
+      return { ...r, days: a };
+    }));
   const resetMonth = () => { if (confirm("Bu ayın çizelgesi sıfırlansın mı?")) setRows([]); };
   const resetMonthSilent = () => setRows([]);
 
@@ -612,59 +493,34 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
       const assignments = [];
       const metaIndex = buildPersonMetaIndex();
       const findMeta = (personObj, fallbackName) => {
-        if (personObj?.id && metaIndex.byId.has(String(personObj.id))) {
-          return metaIndex.byId.get(String(personObj.id));
-        }
+        if (personObj?.id && metaIndex.byId.has(String(personObj.id))) return metaIndex.byId.get(String(personObj.id));
         const name = fallbackName || personObj?.fullName || personObj?.name || "";
         const cn = canonName(name);
-        if (cn && metaIndex.byCanon.has(cn)) {
-          return metaIndex.byCanon.get(cn);
-        }
+        if (cn && metaIndex.byCanon.has(cn)) return metaIndex.byCanon.get(cn);
         return null;
       };
-
       for (const role of rolesToTry) {
         const model = await getScheduleModel({
-          sectionId: "calisma-cizelgesi",
-          serviceId: cfg.unitId || "",
-          role,
-          year,
-          month,
-          people,
-        }).catch((err) => {
-          if (err?.status !== 404) console.error("getScheduleModel err:", err);
-          return null;
-        });
+          sectionId: "calisma-cizelgesi", serviceId: cfg.unitId || "", role, year, month, people,
+        }).catch((err) => { if (err?.status !== 404) console.error("getScheduleModel err:", err); return null; });
         if (!model) continue;
-
         Object.entries(model.byName || {}).forEach(([nameKey, days]) => {
           Object.entries(days || {}).forEach(([dayStr, entry]) => {
             const day = Number(dayStr);
             if (!Number.isFinite(day) || day < 1 || day > dcount) return;
-            const name = (people || []).find(
-              (p) => canonName(p.fullName || p.name || "") === nameKey
-            )?.fullName || nameKey;
+            const name = (people || []).find((p) => canonName(p.fullName || p.name || "") === nameKey)?.fullName || nameKey;
             if (!name || isGroupLabel(name)) return;
             const shiftCode = entry?.shiftCode || "";
             const rowLabel = entry?.rowLabel || "";
             const hours = resolveShiftHours(shiftCode, rowLabel);
-            assignments.push({
-              name,
-              day,
-              hours,
-              shiftCode,
-              rowLabel,
-              role,
-            });
+            assignments.push({ name, day, hours, shiftCode, rowLabel, role });
           });
         });
       }
-
       if (!assignments.length) {
         alert("Aktarılacak görev ataması bulunamadı. Önce Çalışma Çizelgesi'ni doldurup kaydedin.");
         return;
       }
-
       const personIndex = new Map();
       (people || []).forEach((p) => {
         const key = canonName(p.fullName || p.name || "");
@@ -673,23 +529,19 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
         arr.push(p);
         personIndex.set(key, arr);
       });
-
       const personRows = new Map();
       const ensureRow = (key, sourceName, personObj, metaInfo) => {
         if (personRows.has(key)) return personRows.get(key);
         const days = Array.from({ length: dcount }, () => "");
         const baseTitle = personObj?.title || personObj?.role || "";
         const row = {
-          id: crypto.randomUUID(),
-          personId: personObj?.id || "",
+          id: crypto.randomUUID(), personId: personObj?.id || "",
           person: personObj?.fullName || sourceName,
-          title: ((metaInfo?.title || baseTitle || "").trim()),
-          days,
+          title: (metaInfo?.title || baseTitle || "").trim(), days,
         };
         personRows.set(key, row);
         return row;
       };
-
       const duplicateAssignments = [];
       assignments.forEach((item) => {
         const canon = canonName(item.name);
@@ -700,8 +552,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
         const row = ensureRow(rowKey, item.name, personObj, meta);
         if (!row.title) {
           const entry = meta || personObj || (Array.isArray(matches) ? matches[0] : null);
-          const fallbackTitle = entry?.title || entry?.role || "";
-          row.title = (fallbackTitle || row.title || "").trim();
+          row.title = (entry?.title || entry?.role || "").trim();
         }
         const idx = item.day - 1;
         const prev = Number(row.days[idx]) || 0;
@@ -709,65 +560,38 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
         if (hours > 0 && prev <= 0) {
           row.days[idx] = Math.round(hours * 100) / 100;
         } else if (hours > 0) {
-          duplicateAssignments.push({
-            person: row.person || item.name,
-            day: item.day,
-            prev,
-            next: hours,
-            shiftCode: item.shiftCode || "",
-            rowLabel: item.rowLabel || "",
-          });
+          duplicateAssignments.push({ person: row.person || item.name, day: item.day, prev, next: hours, shiftCode: item.shiftCode || "", rowLabel: item.rowLabel || "" });
         }
       });
-
       const newRows = Array.from(personRows.values()).sort((a, b) =>
         String(a.person || "").localeCompare(String(b.person || ""), "tr", { sensitivity: "base" })
       );
       setRows(newRows);
-
-      const uniques = Array.from(
-        new Set(newRows.map((r) => r.personId).filter((pid) => pid && String(pid).trim() !== ""))
-      );
+      fetchedPidsRef.current = new Set();
+      const uniques = Array.from(new Set(newRows.map((r) => r.personId).filter((pid) => pid && String(pid).trim() !== "")));
       if (uniques.length) {
         const leavesEntries = await Promise.all(
           uniques.map(async (pid) => {
-            try {
-              const lv = await fetchLeaves({ personId: pid, year, month });
-              return [pid, lv || []];
-            } catch (err) {
-              console.error("fetchLeaves err:", err);
-              return [pid, []];
-            }
+            try { const lv = await fetchLeaves({ personId: pid, year, month }); return [pid, lv || []]; }
+            catch (err) { console.error("fetchLeaves err:", err); return [pid, []]; }
           })
         );
         const leavesMap = {};
         leavesEntries.forEach(([pid, arr]) => {
+          fetchedPidsRef.current.add(pid);
           leavesMap[pid] = Array.isArray(arr) ? arr : [];
         });
         setLeavesByPerson(leavesMap);
       } else {
         setLeavesByPerson({});
       }
-
       if (duplicateAssignments.length) {
-        const sample = duplicateAssignments
-          .slice(0, 10)
-          .map((x) => `${x.person} - ${x.day}. gün (${x.prev}s varken ${x.next}s atlandı)`)
-          .join("\n");
-        alert(
-          `Çalışma çizelgesinden ${assignments.length} atama aktarıldı.\n` +
-          `${duplicateAssignments.length} mükerrer kişi-gün ataması toplama yapılmadan atlandı.\n\n` +
-          sample +
-          (duplicateAssignments.length > 10
-            ? `\n... ve ${duplicateAssignments.length - 10} tane daha`
-            : "")
-        );
+        const sample = duplicateAssignments.slice(0, 10).map((x) => `${x.person} - ${x.day}. gün (${x.prev}s varken ${x.next}s atlandı)`).join("\n");
+        alert(`Çalışma çizelgesinden ${assignments.length} atama aktarıldı.\n${duplicateAssignments.length} mükerrer kişi-gün ataması atlandı.\n\n${sample}${duplicateAssignments.length > 10 ? `\n... ve ${duplicateAssignments.length - 10} tane daha` : ""}`);
       } else {
         alert(`Çalışma çizelgesinden ${assignments.length} atama aktarıldı.`);
       }
-    } finally {
-      setImporting(false);
-    }
+    } finally { setImporting(false); }
   }
 
   const handleScheduleBuild = useCallback(() => {
@@ -780,7 +604,8 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
     resetMonthSilent();
     importFromDutyRoster();
     LS.set(BUILD_HANDLED_KEY, trig.ts);
-  }, [year, month]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year, month, importing]);
 
   useEffect(() => {
     handleScheduleBuild();
@@ -792,76 +617,85 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
     };
   }, [handleScheduleBuild]);
 
-  /* kişi seçimi → ünvan/servis + vardiya + izin */
   async function onSelectPerson(rowId, personId) {
     const p = people.find((x) => x.id === personId);
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === rowId
-          ? { ...r, personId, person: p?.fullName || "", title: p?.title || "", service: p?.service || "" }
-          : r
-      )
-    );
-
+    setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, personId, person: p?.fullName || "", title: p?.title || "", service: p?.service || "" } : r));
     const plan = await fetchMonthlySchedule({ personId, year, month });
-    setRows((prev) =>
-      prev.map((r) => {
-        if (r.id !== rowId) return r;
-        const copy = { ...r, days: [...r.days] };
-        for (const s of plan || []) {
-          const d = new Date(s.date).getDate();
-          if (d >= 1 && d <= copy.days.length) copy.days[d - 1] = Number(s.hours);
-        }
-        return copy;
-      })
-    );
-
+    setRows((prev) => prev.map((r) => {
+      if (r.id !== rowId) return r;
+      const copy = { ...r, days: [...r.days] };
+      for (const s of plan || []) {
+        const d = new Date(s.date).getDate();
+        if (d >= 1 && d <= copy.days.length) copy.days[d - 1] = Number(s.hours);
+      }
+      return copy;
+    }));
+    fetchedPidsRef.current.add(personId);
     const lv = await fetchLeaves({ personId, year, month });
     setLeavesByPerson((prev) => ({ ...prev, [personId]: lv || [] }));
   }
 
-  /* export */
   const exportExcel = () => {
-    const header1 = [
-      cfg.department,
-      ...Array(dcount - 1).fill(""),
-      "AYLIK ÇALIŞMA SAATİ (kişi başı):",
-      computed.stdMonthly,
-    ];
-  const header2 = [
-    "Unvan", "Adı Soyadı",
-    ...Array.from({ length: dcount }, (_, i) => `${i + 1}`),
-    "Çalışma", "İzin(ÇS)", "Gereken", "Fazla Mesai",
-  ];
-  const body = rows.map((r) => {
-    const rec = computed.perRow.find((x) => x.id === r.id) || { work: 0, credited: 0, required: 0, overtime: 0 };
-    return [
-      r.title || "", r.person || "",
-      ...r.days.map((x) => (x === "" ? "" : Number(x))),
-      Number(rec.work.toFixed(2)),
-      Number(rec.credited.toFixed(2)),
-      Number(rec.required.toFixed(2)),
-      Number(rec.overtime.toFixed(2)),
-      ];
+    const header1 = [cfg.department, "", ...Array(dcount - 1).fill(""), "AYLIK ÇALIŞMA SAATİ (kişi başı):", computed.stdMonthly];
+    const header2 = ["Unvan", "Adı Soyadı", ...Array.from({ length: dcount }, (_, i) => `${i + 1}`), "Çalışma", "İzin(ÇS)", "Gereken", "Fazla Mesai"];
+    const body = rows.map((r) => {
+      const rec = computed.perRow.find((x) => x.id === r.id) || { work: 0, credited: 0, required: 0, overtime: 0 };
+      return [r.title || "", r.person || "", ...r.days.map((x) => (x === "" ? "" : Number(x))), Number(rec.work.toFixed(2)), Number(rec.credited.toFixed(2)), Number(rec.required.toFixed(2)), Number(rec.overtime.toFixed(2))];
     });
+    const totalsRow = ["TOPLAM", "", ...Array.from({ length: dcount }, (_, i) => rows.reduce((sum, r) => sum + (Number(r.days[i]) || 0), 0)), Number(computed.grandWork.toFixed(2)), "", "", Number(computed.grandOT.toFixed(2))];
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([header1, header2, ...body]);
-    ws["!cols"] = [{ wch: 16 }, { wch: 24 }, { wch: 16 }, ...Array.from({ length: dcount }, () => ({ wch: 5 })), { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 10 }];
+    const ws = XLSX.utils.aoa_to_sheet([header1, header2, ...body, totalsRow]);
+    ws["!cols"] = [{ wch: 16 }, { wch: 24 }, ...Array.from({ length: dcount }, () => ({ wch: 5 })), { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 10 }];
     XLSX.utils.book_append_sheet(wb, ws, `FazlaMesai-${ymKey(year, month)}`);
     XLSX.writeFile(wb, `fazla-mesai-${ymKey(year, month)}.xlsx`, { compression: true });
   };
 
-  const filteredPeople = people.filter((p) => !search || p.fullName.toLowerCase().includes(search.toLowerCase()));
+  const handleExcelImport = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        const headerIdx = data.findIndex((row) => row.some((c) => /unvan|adı soyad/i.test(String(c || ""))));
+        if (headerIdx < 0) { alert("Excel formatı tanınamadı."); return; }
+        const header = data[headerIdx].map((c) => String(c || "").trim());
+        const titleCol = header.findIndex((c) => /unvan/i.test(c));
+        const nameCol = header.findIndex((c) => /adı soyad/i.test(c));
+        if (titleCol < 0 || nameCol < 0) { alert("Excel formatı hatalı."); return; }
+        const newRows = [];
+        for (let i = headerIdx + 1; i < data.length; i++) {
+          const row = data[i];
+          const person = String(row[nameCol] || "").trim();
+          if (!person || /toplam/i.test(person)) continue;
+          const days = Array.from({ length: dcount }, (_, d) => {
+            const colIdx = header.findIndex((c) => c === String(d + 1));
+            if (colIdx < 0) return "";
+            const v = row[colIdx];
+            return v === "" || v === undefined ? "" : Number(v);
+          });
+          newRows.push({ id: crypto.randomUUID(), personId: "", person, title: String(row[titleCol] || "").trim(), service: "", days });
+        }
+        if (!newRows.length) { alert("Aktarılacak satır bulunamadı."); return; }
+        setRows(newRows);
+        alert(`${newRows.length} personel satırı Excel'den aktarıldı.`);
+      } catch (err) { console.error("Excel import err:", err); alert("Excel okunurken hata oluştu."); }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  };
 
-  useImperativeHandle(ref, () => ({
-    importFromRoster: importFromDutyRoster,
-    exportExcel,
-    reset: resetMonth,
-  }));
+  const dailyTotals = useMemo(() =>
+    Array.from({ length: dcount }, (_, i) => rows.reduce((sum, r) => sum + (Number(r.days[i]) || 0), 0)),
+    [rows, dcount]
+  );
+
+  useImperativeHandle(ref, () => ({ importFromRoster: importFromDutyRoster, exportExcel, reset: resetMonth }));
 
   return (
     <div className="p-3 space-y-3">
-      {/* Üst bar: ortak toolbar kullanılıyorsa hiç render etme */}
       {!hideToolbar && (
         <ToolbarYM
           title="Fazla Mesai Takip Formu"
@@ -876,7 +710,6 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
                 <input className="w-32 outline-none bg-transparent" value={cfg.unitId}
                   onChange={(e) => setCfg((c) => ({ ...c, unitId: e.target.value }))} />
               </div>
-
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border bg-white">
                 <Search size={16} className="opacity-70" />
                 <input className="outline-none bg-transparent" placeholder="Personel ara"
@@ -890,11 +723,8 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
                 className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-600 text-white hover:bg-rose-700">
                 <RotateCcw size={16} /> Sıfırla
               </button>
-              <button
-                onClick={importFromDutyRoster}
-                disabled={importing}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-xl ${importing ? "bg-blue-200 text-blue-700 cursor-wait" : "bg-blue-600 text-white hover:bg-blue-700"}`}
-              >
+              <button onClick={importFromDutyRoster} disabled={importing}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-xl ${importing ? "bg-blue-200 text-blue-700 cursor-wait" : "bg-blue-600 text-white hover:bg-blue-700"}`}>
                 <ListChecks size={16} />
                 {importing ? "Dolduruluyor…" : "Çizelgeden Doldur"}
               </button>
@@ -903,7 +733,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
                 <Upload size={16} /> Excel Yükle
               </button>
               <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
-                onChange={() => { /* içe aktarım eklemek istersen: buraya */ }} />
+                onChange={handleExcelImport} />
               <button onClick={exportExcel}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">
                 <FileSpreadsheet size={16} /> .xlsx Dışa Aktar
@@ -913,26 +743,25 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
         />
       )}
 
-      {/* üst bilgi */}
       <div className="flex items-center justify-between p-3 rounded-2xl border bg-white sticky top-0 z-20">
         <div className="text-lg font-semibold">{cfg.department}</div>
         <div className="text-sm opacity-70">
           AYLIK ÇALIŞMA SAATİ (kişi başı): <span className="font-semibold">{computed.stdMonthly}</span>
           <span className="mx-2">•</span>
           GENEL TOPLAM ÇALIŞMA: <span className="font-semibold">{computed.grandWork}</span>
+          <span className="mx-2">•</span>
+          TOPLAM FAZLA MESAİ: <span className="font-semibold text-rose-600">{computed.grandOT.toFixed(2)}</span>
         </div>
       </div>
 
       {computed.conflicts?.length > 0 && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          İzinli günlere yazılmış çalışma saatleri hesap dışı bırakıldı.
-          {" "}
+          İzinli günlere yazılmış çalışma saatleri hesap dışı bırakıldı.{" "}
           {computed.conflicts.slice(0, 3).map((item) => `${item.person || "Personel"} (${item.days.join(",")})`).join(" • ")}
           {computed.conflicts.length > 3 ? ` • +${computed.conflicts.length - 3} kişi daha` : ""}
         </div>
       )}
 
-      {/* tablo */}
       <div className="rounded-2xl border overflow-auto">
         <table className="min-w-full text-xs md:text-sm">
           <thead>
@@ -940,7 +769,9 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
               <th className="p-2 text-left sticky left-0 z-20 bg-white">Unvan</th>
               <th className="p-2 text-left sticky left-[160px] z-20 bg-white">Adı Soyadı</th>
               {Array.from({ length: dcount }, (_, i) => (
-                <th key={i} className="p-2 text-center w-[3.5rem] md:w-[3.75rem] font-mono tabular-nums border-l border-gray-200">{i + 1}</th>
+                <th key={i} className={`p-2 text-center w-[3.5rem] md:w-[3.75rem] font-mono tabular-nums border-l border-gray-200 ${isWeekend(year, month, i + 1) ? "bg-blue-50 text-blue-600" : ""}`}>
+                  {i + 1}
+                </th>
               ))}
               <th className="p-2 text-right">Çalışma</th>
               <th className="p-2 text-right">İzin (ÇS)</th>
@@ -955,6 +786,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
             ) : (
               rows.map((r) => {
                 const rec = computed.perRow.find((x) => x.id === r.id) || { work: 0, credited: 0, required: 0, overtime: 0 };
+                const otColor = rec.overtime === 0 ? "text-gray-400" : rec.overtime <= 8 ? "text-amber-600" : "text-rose-600";
                 return (
                   <tr key={r.id} className="odd:bg-white even:bg-gray-50 hover:bg-gray-100 transition-colors">
                     <td className="p-1 min-w-[160px] sticky left-0 z-10 bg-white shadow-[inset_-1px_0_0_0_rgba(0,0,0,0.06)]">
@@ -969,7 +801,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
                       />
                     </td>
                     {r.days.map((v, i) => (
-                      <td key={i} className="p-1 text-center">
+                      <td key={i} className={`p-1 text-center ${isWeekend(year, month, i + 1) ? "bg-blue-50" : ""}`}>
                         <input
                           className={`${INPUT} h-8 md:h-9 w-[3.5rem] md:w-[3.75rem]`}
                           value={v === "" ? "" : v}
@@ -982,7 +814,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
                     <td className="p-2 text-right tabular-nums font-mono">{rec.work.toFixed(2)}</td>
                     <td className="p-2 text-right tabular-nums font-mono">{rec.credited.toFixed(2)}</td>
                     <td className="p-2 text-right tabular-nums font-mono">{rec.required.toFixed(2)}</td>
-                    <td className="p-2 text-right tabular-nums font-semibold font-mono text-rose-600">{rec.overtime.toFixed(2)}</td>
+                    <td className={`p-2 text-right tabular-nums font-semibold font-mono ${otColor}`}>{rec.overtime.toFixed(2)}</td>
                     <td className="p-2 text-center">
                       <button onClick={() => removeRow(r.id)} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-600"><Trash2 size={16} /></button>
                     </td>
@@ -991,26 +823,43 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
               })
             )}
           </tbody>
+          {rows.length > 0 && (
+            <tfoot>
+              <tr className="bg-gray-100 font-semibold text-xs border-t-2 border-gray-300">
+                <td className="p-2 sticky left-0 bg-gray-100 z-10">TOPLAM</td>
+                <td className="p-2 sticky left-[160px] bg-gray-100 z-10"></td>
+                {dailyTotals.map((total, i) => (
+                  <td key={i} className={`p-2 text-center tabular-nums font-mono text-xs ${isWeekend(year, month, i + 1) ? "bg-blue-100" : ""}`}>
+                    {total > 0 ? total : ""}
+                  </td>
+                ))}
+                <td className="p-2 text-right tabular-nums font-mono">{computed.grandWork.toFixed(2)}</td>
+                <td className="p-2"></td>
+                <td className="p-2"></td>
+                <td className={`p-2 text-right tabular-nums font-mono ${computed.grandOT > 0 ? "text-rose-600" : "text-gray-400"}`}>
+                  {computed.grandOT.toFixed(2)}
+                </td>
+                <td className="p-2"></td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
 
-      {/* personel seçim paneli */}
       <div className="rounded-2xl border p-3 bg-white">
-        <div className="text-sm font-medium mb-2">Personel Listesi</div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-sm font-medium">Personel Listesi</div>
+          <button onClick={addRow} className="text-sm px-3 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+            + Boş Satır Ekle
+          </button>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-auto">
           {people
             .filter((p) => !search || p.fullName.toLowerCase().includes(search.toLowerCase()))
             .map((p) => (
-              <button
-                key={p.id}
-                onClick={() =>
-                  setRows((prev) => [
-                    ...prev,
-                    { ...makeBlankRow(year, month), personId: p.id, person: p.fullName, title: p.title, service: p.service },
-                  ])
-                }
-                className="text-left p-2 rounded-lg border hover:bg-blue-50"
-              >
+              <button key={p.id}
+                onClick={() => setRows((prev) => [...prev, { ...makeBlankRow(year, month), personId: p.id, person: p.fullName, title: p.title, service: p.service }])}
+                className="text-left p-2 rounded-lg border hover:bg-blue-50">
                 <div className="font-medium">{p.fullName}</div>
                 <div className="text-xs opacity-70">{p.title} · {p.service}</div>
               </button>
@@ -1023,18 +872,30 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
 
 export default OvertimeTab;
 
-/* Basit Autocomplete */
 function PersonSelect({ value, people, onChange, displayValue }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
+  const containerRef = useRef(null);
   const list = people.filter((p) => !q || p.fullName.toLowerCase().includes(q.toLowerCase()));
 
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+        setQ("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
   return (
-    <div className="relative">
+    <div className="relative" ref={containerRef}>
       <input
         className="w-full outline-none px-2 py-1.5 rounded-md border border-gray-300 bg-white text-sm"
-        value={displayValue || ""}
-        onFocus={() => setOpen(true)}
+        value={open ? q : (displayValue || "")}
+        onFocus={() => { setOpen(true); setQ(""); }}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Adı Soyadı"
       />
@@ -1044,15 +905,9 @@ function PersonSelect({ value, people, onChange, displayValue }) {
             <div className="px-3 py-2 text-sm text-gray-500">Sonuç yok</div>
           ) : (
             list.map((p) => (
-              <div
-                key={p.id}
+              <div key={p.id}
                 className="px-3 py-2 text-sm hover:bg-blue-50 cursor-pointer"
-                onMouseDown={() => {
-                  onChange(p.id);
-                  setOpen(false);
-                  setQ("");
-                }}
-              >
+                onMouseDown={() => { onChange(p.id); setOpen(false); setQ(""); }}>
                 <div className="font-medium">{p.fullName}</div>
                 <div className="text-xs opacity-70">{p.title} · {p.service}</div>
               </div>
