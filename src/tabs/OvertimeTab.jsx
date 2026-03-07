@@ -690,6 +690,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
         return row;
       };
 
+      const duplicateAssignments = [];
       assignments.forEach((item) => {
         const canon = canonName(item.name);
         const matches = canon ? personIndex.get(canon) : null;
@@ -705,8 +706,17 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
         const idx = item.day - 1;
         const prev = Number(row.days[idx]) || 0;
         const hours = Number.isFinite(item.hours) ? item.hours : 0;
-        if (hours > 0) {
-          row.days[idx] = Math.round((prev + hours) * 100) / 100;
+        if (hours > 0 && prev <= 0) {
+          row.days[idx] = Math.round(hours * 100) / 100;
+        } else if (hours > 0) {
+          duplicateAssignments.push({
+            person: row.person || item.name,
+            day: item.day,
+            prev,
+            next: hours,
+            shiftCode: item.shiftCode || "",
+            rowLabel: item.rowLabel || "",
+          });
         }
       });
 
@@ -739,7 +749,22 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
         setLeavesByPerson({});
       }
 
-      alert(`Çalışma çizelgesinden ${assignments.length} atama aktarıldı.`);
+      if (duplicateAssignments.length) {
+        const sample = duplicateAssignments
+          .slice(0, 10)
+          .map((x) => `${x.person} - ${x.day}. gün (${x.prev}s varken ${x.next}s atlandı)`)
+          .join("\n");
+        alert(
+          `Çalışma çizelgesinden ${assignments.length} atama aktarıldı.\n` +
+          `${duplicateAssignments.length} mükerrer kişi-gün ataması toplama yapılmadan atlandı.\n\n` +
+          sample +
+          (duplicateAssignments.length > 10
+            ? `\n... ve ${duplicateAssignments.length - 10} tane daha`
+            : "")
+        );
+      } else {
+        alert(`Çalışma çizelgesinden ${assignments.length} atama aktarıldı.`);
+      }
     } finally {
       setImporting(false);
     }
