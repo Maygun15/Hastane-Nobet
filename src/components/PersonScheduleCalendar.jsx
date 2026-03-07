@@ -600,6 +600,44 @@ function buildDefsIndex(defs) {
   return { byId, byShift };
 }
 
+function normalizeRemoteAssignments(data, defs) {
+  if (Array.isArray(data?.assignments) && data.assignments.length) {
+    return data.assignments;
+  }
+  const named = data?.roster?.namedAssignments || data?.namedAssignments || null;
+  if (!named || typeof named !== "object") return [];
+
+  const defIndex = buildDefsIndex(defs);
+  const out = [];
+  Object.entries(named).forEach(([dayStr, perRow]) => {
+    const dayNum = Number(dayStr);
+    if (!Number.isFinite(dayNum) || dayNum < 1 || dayNum > 31) return;
+    const dateStr = `${String(data?.year || "").padStart(4, "0")}-${pad2(data?.month || 0)}-${pad2(dayNum)}`;
+    Object.entries(perRow || {}).forEach(([rowId, names]) => {
+      if (!Array.isArray(names) || !names.length) return;
+      const def =
+        defIndex.byId.get(String(rowId).trim()) ||
+        defIndex.byShift.get(String(rowId).trim()) ||
+        null;
+      const shiftId = def?.id ?? def?.rowId ?? def?._id ?? def?.shiftId ?? rowId;
+      const shiftCode = String(def?.shiftCode ?? def?.code ?? rowId).trim();
+      const roleLabel = String(def?.label ?? def?.name ?? def?.area ?? rowId).trim();
+      names.forEach((nameRaw) => {
+        if (!nameRaw) return;
+        out.push({
+          date: dateStr,
+          day: dateStr,
+          shiftId,
+          shiftCode,
+          roleLabel,
+          personName: String(nameRaw),
+        });
+      });
+    });
+  });
+  return out;
+}
+
 function collectAssignmentsFromRemote({ year, month0, personId, personCanon, assignments, defs }) {
   const map = new Map();
   if (!Array.isArray(assignments)) return map;
@@ -929,7 +967,12 @@ export default function PersonScheduleCalendar({
         const hasPersonMatch = (s) => {
           if (canManage) return true;
           if (!targetPid && !targetCanon) return true;
-          const list = Array.isArray(s?.data?.assignments) ? s.data.assignments : [];
+          const data = s?.data || {};
+          const defs = Array.isArray(data.defs) ? data.defs : Array.isArray(data.rows) ? data.rows : [];
+          const list = normalizeRemoteAssignments(
+            { ...data, year, month },
+            defs
+          );
           for (const item of list) {
             if (!item) continue;
             const pidRaw = item.personId ?? item.personID ?? item.staffId ?? item.pid ?? "";
@@ -975,8 +1018,12 @@ export default function PersonScheduleCalendar({
         if (!active) return;
         const data = schedule?.data || {};
         const defs = Array.isArray(data.defs) ? data.defs : Array.isArray(data.rows) ? data.rows : [];
+        const normalizedAssignments = normalizeRemoteAssignments(
+          { ...data, year, month },
+          defs
+        );
         setRemoteDefs(defs);
-        setRemoteAssignmentsRaw(Array.isArray(data.assignments) ? data.assignments : []);
+        setRemoteAssignmentsRaw(normalizedAssignments);
         setRemoteServiceIdUsed(pickedServiceId);
         setRemoteError("");
       } catch (err) {
