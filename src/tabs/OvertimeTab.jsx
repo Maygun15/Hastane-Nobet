@@ -9,8 +9,8 @@ import {
   fetchMonthlySchedule,
   fetchHolidayCalendar,
   fetchLeaves,
+  getMonthlySchedule,
 } from "../api/apiAdapter";
-import { getScheduleModel } from "../store/monthlyScheduleModel.js";
 import { getPeople } from "../lib/dataResolver.js";
 import { STAFF_KEY } from "../engine/rosterEngine.js";
 import useActiveYM from "../hooks/useActiveYM.js";
@@ -85,11 +85,12 @@ function buildPersonMetaIndex() {
       name,
       title: entry.title || entry.unvan || entry.position || entry.role || (entry.meta && (entry.meta.title || entry.meta.role)) || "",
       service: entry.service || entry.unit || entry.department || entry.branch || (entry.meta && (entry.meta.service || entry.meta.unit || entry.meta.department)) || "",
+      tckn: entry.tckn || entry.tc || entry.tcKimlik || entry.tcNo || entry["T.C."] || entry.nationalId || "",
     };
     const canon = canonName(name);
     if (info.id) {
       const prev = byId.get(info.id);
-      if (!prev || (info.title && !prev.title) || (info.service && !prev.service)) byId.set(info.id, info);
+      if (!prev || (info.title && !prev.title) || (info.service && !prev.service) || (info.tckn && !prev.tckn)) byId.set(info.id, info);
     }
     if (canon) {
       if (!byCanon.has(canon)) byCanon.set(canon, { ...info });
@@ -97,6 +98,7 @@ function buildPersonMetaIndex() {
         const prev = byCanon.get(canon);
         if (info.title && !prev.title) prev.title = info.title;
         if (info.service && !prev.service) prev.service = info.service;
+        if (info.tckn && !prev.tckn) prev.tckn = info.tckn;
       }
     }
   };
@@ -500,20 +502,56 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
         return null;
       };
       for (const role of rolesToTry) {
-        const model = await getScheduleModel({
-          sectionId: "calisma-cizelgesi", serviceId: cfg.unitId || "", role, year, month, people,
-        }).catch((err) => { if (err?.status !== 404) console.error("getScheduleModel err:", err); return null; });
-        if (!model) continue;
-        Object.entries(model.byName || {}).forEach(([nameKey, days]) => {
-          Object.entries(days || {}).forEach(([dayStr, entry]) => {
-            const day = Number(dayStr);
+        const schedule = await getMonthlySchedule({
+          sectionId: "calisma-cizelgesi",
+          serviceId: "",
+          role,
+          year,
+          month,
+        }).catch((err) => {
+          if (err?.status !== 404) console.error("getMonthlySchedule err:", err);
+          return null;
+        });
+        const data = schedule?.data || schedule || {};
+        let named = data?.roster?.namedAssignments;
+        if (!named && Array.isArray(data?.assignments)) {
+          const built = {};
+          (data.assignments || []).forEach((a) => {
+            const date = a?.date;
+            if (!date) return;
+            const day = Number(String(date).slice(8, 10));
             if (!Number.isFinite(day) || day < 1 || day > dcount) return;
-            const name = (people || []).find((p) => canonName(p.fullName || p.name || "") === nameKey)?.fullName || nameKey;
-            if (!name || isGroupLabel(name)) return;
-            const shiftCode = entry?.shiftCode || "";
-            const rowLabel = entry?.rowLabel || "";
-            const hours = resolveShiftHours(shiftCode, rowLabel);
-            assignments.push({ name, day, hours, shiftCode, rowLabel, role });
+            const rowId = String(a.shiftId || a.rowId || a.shiftCode || "");
+            if (!rowId) return;
+            const nm = a.personName || a.name || "";
+            if (!nm || isGroupLabel(nm)) return;
+            if (!built[day]) built[day] = {};
+            if (!built[day][rowId]) built[day][rowId] = [];
+            built[day][rowId].push(nm);
+          });
+          named = built;
+        }
+        if (!named || !Object.keys(named).length) continue;
+        const defsSrc = Array.isArray(data?.defs) ? data.defs : Array.isArray(data?.rows) ? data.rows : [];
+        const shiftByRow = new Map();
+        const labelByRow = new Map();
+        defsSrc.forEach((def) => {
+          const rowId = String(def?.id ?? def?.rowId ?? "");
+          if (!rowId) return;
+          shiftByRow.set(rowId, def?.shiftCode || "");
+          labelByRow.set(rowId, def?.label || rowId);
+        });
+        Object.entries(named).forEach(([dayStr, perRow]) => {
+          const day = Number(dayStr);
+          if (!Number.isFinite(day) || day < 1 || day > dcount) return;
+          Object.entries(perRow || {}).forEach(([rowId, list]) => {
+            const shiftCode = shiftByRow.get(String(rowId)) || "";
+            const rowLabel = labelByRow.get(String(rowId)) || String(rowId);
+            (list || []).forEach((nm) => {
+              if (!nm || isGroupLabel(nm)) return;
+              const hours = resolveShiftHours(shiftCode, rowLabel);
+              assignments.push({ name: nm, day, hours, shiftCode, rowLabel, role });
+            });
           });
         });
       }
@@ -521,6 +559,24 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
         alert("Aktarılacak görev ataması bulunamadı. Önce Çalışma Çizelgesi'ni doldurup kaydedin.");
         return;
       }
+      const normalizedAssignments = new Map();
+      assignments.forEach((item) => {
+        const exactKey = [
+          canonName(item.name),
+          item.day,
+          String(item.shiftCode || "").trim().toUpperCase(),
+          String(item.rowLabel || "").trim().toUpperCase(),
+        ].join("|");
+        if (normalizedAssignments.has(exactKey)) return;
+        normalizedAssignments.set(exactKey, item);
+      });
+      const byPersonDay = new Map();
+      Array.from(normalizedAssignments.values()).forEach((item) => {
+        const personDayKey = [canonName(item.name), item.day].join("|");
+        // MonthlyHoursSheet ile aynı davranış: aynı kişi+gün için son atama kazanır.
+        byPersonDay.set(personDayKey, item);
+      });
+      const finalAssignments = Array.from(byPersonDay.values());
       const personIndex = new Map();
       (people || []).forEach((p) => {
         const key = canonName(p.fullName || p.name || "");
@@ -542,8 +598,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
         personRows.set(key, row);
         return row;
       };
-      const duplicateAssignments = [];
-      assignments.forEach((item) => {
+      finalAssignments.forEach((item) => {
         const canon = canonName(item.name);
         const matches = canon ? personIndex.get(canon) : null;
         const personObj = Array.isArray(matches) && matches.length ? matches[0] : null;
@@ -555,13 +610,8 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
           row.title = (entry?.title || entry?.role || "").trim();
         }
         const idx = item.day - 1;
-        const prev = Number(row.days[idx]) || 0;
         const hours = Number.isFinite(item.hours) ? item.hours : 0;
-        if (hours > 0 && prev <= 0) {
-          row.days[idx] = Math.round(hours * 100) / 100;
-        } else if (hours > 0) {
-          duplicateAssignments.push({ person: row.person || item.name, day: item.day, prev, next: hours, shiftCode: item.shiftCode || "", rowLabel: item.rowLabel || "" });
-        }
+        row.days[idx] = hours > 0 ? Math.round(hours * 100) / 100 : "";
       });
       const newRows = Array.from(personRows.values()).sort((a, b) =>
         String(a.person || "").localeCompare(String(b.person || ""), "tr", { sensitivity: "base" })
@@ -585,12 +635,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
       } else {
         setLeavesByPerson({});
       }
-      if (duplicateAssignments.length) {
-        const sample = duplicateAssignments.slice(0, 10).map((x) => `${x.person} - ${x.day}. gün (${x.prev}s varken ${x.next}s atlandı)`).join("\n");
-        alert(`Çalışma çizelgesinden ${assignments.length} atama aktarıldı.\n${duplicateAssignments.length} mükerrer kişi-gün ataması atlandı.\n\n${sample}${duplicateAssignments.length > 10 ? `\n... ve ${duplicateAssignments.length - 10} tane daha` : ""}`);
-      } else {
-        alert(`Çalışma çizelgesinden ${assignments.length} atama aktarıldı.`);
-      }
+      alert(`Çalışma çizelgesinden ${finalAssignments.length} atama aktarıldı.`);
     } finally { setImporting(false); }
   }
 
