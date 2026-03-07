@@ -14,6 +14,7 @@ import { getPeople, isGroupLabel } from "../lib/dataResolver.js";
 import { STAFF_KEY } from "../engine/rosterEngine.js";
 import { getMonthlySchedule } from "../api/apiAdapter.js";
 import { fetchHolidayCalendar } from "../api/apiAdapter.js";
+import { maskTC } from "../utils/format.js";
 
 /* ========= Şablon başlıkları ========= */
 const HEADER_STATIC_LEFT = [
@@ -806,7 +807,11 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym }, ref) {
                   <input className="border rounded px-2 py-1 w-40" value={r?.unvan ?? ""} onChange={(e)=>setField(ri,"unvan",e.target.value)} />
                 </td>
                 <td style={{ border:"1px solid #e5e7eb", padding:4 }}>
-                  <input className="border rounded px-2 py-1 w-44" value={r?.tckn ?? ""} onChange={(e)=>setField(ri,"tckn",e.target.value)} />
+                  <input
+                    className="border rounded px-2 py-1 w-44 bg-slate-50 text-slate-600"
+                    value={maskTC(r?.tckn ?? "")}
+                    readOnly
+                  />
                 </td>
                 <td style={{ border:"1px solid #e5e7eb", padding:4 }}>
                   <input className="border rounded px-2 py-1 w-56" value={r?.adsoyad ?? ""} onChange={(e)=>setField(ri,"adsoyad",e.target.value)} />
