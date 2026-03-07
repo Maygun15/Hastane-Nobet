@@ -1,6 +1,6 @@
 // src/lib/leaves.js
 // Leaves store (Mongo-first):
-// - Kaynak: /api/settings/personLeaves
+// - Kaynak: /api/leaves
 // - Tek şema: { [personId]: { "YYYY-MM": { [dayNumber]: {code, note?} } } }
 // - set/unset nesne parametreleriyle çalışır (optimistic + debounce save)
 // - leavesToUnavailable => { [personId]: { [dayNumber]: true } }
@@ -132,12 +132,37 @@ function normalizeLeaves(raw) {
   return out;
 }
 
+function mergeNameStoreIntoCache(out) {
+  let store = {};
+  try {
+    store = LS.get(NAME_STORE_KEY, {}) || {};
+  } catch {
+    store = {};
+  }
+  for (const [canon, byYm] of Object.entries(store || {})) {
+    const pseudoId = `__name__:${canon}`;
+    for (const [ym, days] of Object.entries(byYm || {})) {
+      if (!isObj(days)) continue;
+      out[pseudoId] ??= {};
+      out[pseudoId][ym] ??= {};
+      for (const [d, rec] of Object.entries(days)) {
+        const val = isObj(rec) ? rec : { code: String(rec || "").trim() };
+        if (!val.code) continue;
+        out[pseudoId][ym][String(d)] = { code: val.code, ...(val.note ? { note: val.note } : {}) };
+      }
+      if (!Object.keys(out[pseudoId][ym]).length) delete out[pseudoId][ym];
+    }
+    if (!Object.keys(out[pseudoId] || {}).length) delete out[pseudoId];
+  }
+  return out;
+}
+
 function emitLeavesChanged() {
   try { window.dispatchEvent(new Event("leaves:changed")); } catch {}
 }
 
 export function setLeavesStore(raw, { emit = true } = {}) {
-  leavesCache = normalizeLeaves(raw);
+  leavesCache = mergeNameStoreIntoCache(normalizeLeaves(raw));
   leavesLoaded = true;
   leavesDirty = false;
   if (emit) emitLeavesChanged();
@@ -173,9 +198,12 @@ async function saveLeavesNow() {
   const token = getToken();
   if (!token) return;
   try {
+    const backendValue = Object.fromEntries(
+      Object.entries(leavesCache || {}).filter(([pid]) => !String(pid).startsWith("__name__:"))
+    );
     await API.http.req(`/api/settings/leavesV2`, {
       method: "PUT",
-      body: { value: leavesCache, serviceId: "" },
+      body: { value: backendValue, serviceId: "" },
     });
     leavesDirty = false;
   } catch (err) {
@@ -196,7 +224,7 @@ function scheduleSave() {
 // Tam normalize şema
 export function getAllLeaves() {
   if (!leavesLoaded) loadLeavesFromBackend();
-  return leavesCache;
+  return { ...leavesCache };
 }
 
 function readSuppress() {
@@ -228,6 +256,18 @@ function setNameLeave({ canon, year, month, day, rec }) {
   if (store[canon][ym] && !Object.keys(store[canon][ym]).length) delete store[canon][ym];
   if (store[canon] && !Object.keys(store[canon]).length) delete store[canon];
   LS.set(NAME_STORE_KEY, store);
+
+  const pseudoId = `__name__:${canon}`;
+  leavesCache[pseudoId] ??= {};
+  leavesCache[pseudoId][ym] ??= {};
+  if (rec) {
+    const val = isObj(rec) ? rec : { code: String(rec || "").trim() };
+    if (val.code) leavesCache[pseudoId][ym][String(day)] = { code: val.code, ...(val.note ? { note: val.note } : {}) };
+  } else {
+    delete leavesCache?.[pseudoId]?.[ym]?.[String(day)];
+  }
+  if (leavesCache[pseudoId]?.[ym] && !Object.keys(leavesCache[pseudoId][ym]).length) delete leavesCache[pseudoId][ym];
+  if (leavesCache[pseudoId] && !Object.keys(leavesCache[pseudoId]).length) delete leavesCache[pseudoId];
 }
 
 function updateSuppress({ pid, canon, year, month, day, suppress }) {

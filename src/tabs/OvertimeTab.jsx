@@ -424,7 +424,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
       const leaves = hasPid ? (leavesByPerson[r.personId] || []) : [];
       const byId = hasPid ? (allLocalLeaves?.[r.personId]?.[ym] || {}) : {};
       const canon = canonName(r.person || r.fullName || r.name || r.adsoyad || "");
-      const byName = !hasPid && canon ? (LS.get("allLeavesByNameV1", {})?.[canon]?.[ym] || {}) : {};
+      const byName = !hasPid && canon ? (allLocalLeaves?.[`__name__:${canon}`]?.[ym] || {}) : {};
       const localCodes = hasPid ? byId : byName;
       const leaveDays = collectLeaveDaysForMonth({ year, month, leaves, codesByDay: localCodes });
       const credited = creditedLeaveHoursForMonth({ year, month, leaves, holidays, codesByDay: localCodes, leaveRules, leaveCountsWeekend: true });
