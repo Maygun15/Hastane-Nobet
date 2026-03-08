@@ -167,6 +167,22 @@ function isServiceSupervisorTaskLabel(label = "") {
 
 const HALF_DAY_A_HOURS = 4;
 
+function normalizeHolidayKind(row = {}) {
+  const kind = String(row?.kind || "").toLowerCase().trim();
+  const name = String(row?.name || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (name.includes("arife")) return "arife";
+  if (name.includes("bayram")) return "full";
+  if (kind === "full" || kind === "arife" || kind === "half") return kind;
+  if (name.includes("ogleden sonra") || name.includes("yarim gun") || name.includes("half")) return "half";
+  return "full";
+}
+
 function buildSupervisorTaskLines(taskLine, year, month0, holidayKindByDate = {}) {
   if (!taskLine) return [];
   if (!isServiceSupervisorTaskLabel(taskLine.label)) return [taskLine];
@@ -659,7 +675,7 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
       const holidayKindByDate = Object.fromEntries(
         holidays
           .filter((row) => row?.date)
-          .map((row) => [String(row.date).slice(0, 10), String(row.kind || "full").toLowerCase()])
+          .map((row) => [String(row.date).slice(0, 10), normalizeHolidayKind(row)])
       );
 
       const defs = scheduleRes?.schedule?.data?.defs || [];

@@ -4,6 +4,7 @@ const router = express.Router();
 
 const MonthlySchedule = require('../models/MonthlySchedule');
 const ScheduleRules = require('../models/ScheduleRules');
+const { listHolidays } = require('../services/holidayService');
 const { validateAssignment } = require('../utils/rulesValidator');
 const { requireAuth, sameServiceOrAdmin, requireRole } = require('../middleware/authz');
 
@@ -18,6 +19,97 @@ function allowMonthlyRead(req, res, next) {
 function parseIntSafe(val, def = null) {
   const n = Number(val);
   return Number.isFinite(n) ? n : def;
+}
+
+const HALF_DAY_A_HOURS = 4;
+const SUPERVISOR_LABEL_RE = /servis\s*sorumlu/i;
+
+function isServiceSupervisorLabel(label = '') {
+  return SUPERVISOR_LABEL_RE.test(String(label || ''));
+}
+
+function holidayKindRank(kind = '') {
+  if (kind === 'full') return 3;
+  if (kind === 'arife' || kind === 'half') return 2;
+  return 0;
+}
+
+function buildHolidayKindByDateMap(holidays = []) {
+  const out = Object.create(null);
+  for (const row of holidays || []) {
+    const date = String(row?.date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    const kind = String(row?.kind || 'full').toLowerCase();
+    const prev = String(out[date] || '');
+    if (!prev || holidayKindRank(kind) >= holidayKindRank(prev)) {
+      out[date] = kind;
+    }
+  }
+  return out;
+}
+
+function buildSupervisorRowIdSet(defs = []) {
+  const set = new Set();
+  for (const row of defs || []) {
+    const id = String(row?.id || row?.rowId || '').trim();
+    const label = String(row?.label || row?.area || row?.name || '').trim();
+    if (!id || !label) continue;
+    if (isServiceSupervisorLabel(label)) set.add(id);
+  }
+  return set;
+}
+
+function sanitizeSupervisorAssignments(assignments = [], defs = [], holidayKindByDate = {}) {
+  const supervisorRowIds = buildSupervisorRowIdSet(defs);
+  let changed = false;
+  const cleaned = [];
+
+  for (const item of assignments || []) {
+    const shiftId = String(item?.shiftId || item?.rowId || '').trim();
+    const label = String(item?.roleLabel || item?.label || item?.area || '').trim();
+    const isSupervisor = supervisorRowIds.has(shiftId) || isServiceSupervisorLabel(label);
+    if (!isSupervisor) {
+      cleaned.push(item);
+      continue;
+    }
+
+    const dateStr = String(item?.date || item?.day || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      cleaned.push(item);
+      continue;
+    }
+
+    const dt = new Date(`${dateStr}T00:00:00`);
+    const weekday = Number.isNaN(dt.getTime()) ? NaN : dt.getDay();
+    const kind = String(holidayKindByDate?.[dateStr] || '').toLowerCase();
+
+    if (weekday === 0 || weekday === 6 || kind === 'full') {
+      changed = true;
+      continue;
+    }
+
+    if (kind === 'arife' || kind === 'half') {
+      const next = {
+        ...item,
+        shiftCode: 'A',
+        shiftId: 'A',
+        hours: HALF_DAY_A_HOURS,
+      };
+      if (
+        String(item?.shiftCode || '') !== 'A' ||
+        String(item?.shiftId || '') !== 'A' ||
+        Number(item?.hours) !== HALF_DAY_A_HOURS
+      ) {
+        changed = true;
+      }
+      cleaned.push(next);
+      continue;
+    }
+
+    cleaned.push(item);
+  }
+
+  return { assignments: cleaned, changed };
 }
 
 function parseDateYmd(raw) {
@@ -295,9 +387,34 @@ router.get('/monthly',
     try {
       const query = req.scheduleQuery;
       const doc = await MonthlySchedule.findOne(query).lean();
+      let scheduleData = doc?.data && typeof doc.data === 'object' ? doc.data : {};
+
+      if (doc && Array.isArray(scheduleData.assignments)) {
+        const holidays = await listHolidays({ year: query.year, month: query.month });
+        const holidayKindByDate = buildHolidayKindByDateMap(holidays);
+        const defs = Array.isArray(scheduleData.defs)
+          ? scheduleData.defs
+          : Array.isArray(scheduleData.rows)
+          ? scheduleData.rows
+          : [];
+        const sanitized = sanitizeSupervisorAssignments(
+          scheduleData.assignments,
+          defs,
+          holidayKindByDate
+        );
+        if (sanitized.changed) {
+          scheduleData = { ...scheduleData, assignments: sanitized.assignments };
+          await MonthlySchedule.findByIdAndUpdate(
+            doc._id,
+            { $set: { 'data.assignments': sanitized.assignments } },
+            { new: false }
+          );
+        }
+      }
+
       const issues =
-        doc?.data?.issues
-        || doc?.data?.roster?.issues
+        scheduleData?.issues
+        || scheduleData?.roster?.issues
         || doc?.meta?.issues
         || [];
       return res.json({
@@ -305,7 +422,7 @@ router.get('/monthly',
         schedule: doc ? {
           id: String(doc._id),
           ...query,
-          data: doc.data || {},
+          data: scheduleData,
           meta: doc.meta || {},
           issues,
           createdAt: doc.createdAt,
@@ -325,8 +442,26 @@ router.get('/monthly',
 async function upsertMonthly(req, res) {
   try {
     const query = req.scheduleQuery;
-    const payload = req.body?.data || {};
+    let payload = req.body?.data || {};
     const meta = req.body?.meta || {};
+
+    if (payload && typeof payload === 'object' && Array.isArray(payload.assignments)) {
+      const holidays = await listHolidays({ year: query.year, month: query.month });
+      const holidayKindByDate = buildHolidayKindByDateMap(holidays);
+      const defs = Array.isArray(payload.defs)
+        ? payload.defs
+        : Array.isArray(payload.rows)
+        ? payload.rows
+        : [];
+      const sanitized = sanitizeSupervisorAssignments(
+        payload.assignments,
+        defs,
+        holidayKindByDate
+      );
+      if (sanitized.changed) {
+        payload = { ...payload, assignments: sanitized.assignments };
+      }
+    }
 
     const update = {
       ...query,
@@ -431,7 +566,40 @@ router.post('/assign',
       const data = doc?.data && typeof doc.data === 'object' ? doc.data : {};
       const assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
 
-      const payload = req.assignPayload;
+      const defs = Array.isArray(data.defs)
+        ? data.defs
+        : Array.isArray(data.rows)
+        ? data.rows
+        : [];
+      const supervisorRowIds = buildSupervisorRowIdSet(defs);
+      const holidays = await listHolidays({ year: query.year, month: query.month });
+      const holidayKindByDate = buildHolidayKindByDateMap(holidays);
+
+      let payload = { ...req.assignPayload };
+      const payloadLabel = String(payload?.roleLabel || payload?.label || '').trim();
+      const payloadShiftId = String(payload?.shiftId || payload?.shiftCode || '').trim();
+      const isSupervisor =
+        supervisorRowIds.has(payloadShiftId) || isServiceSupervisorLabel(payloadLabel);
+      if (isSupervisor) {
+        const dateStr = String(payload?.date || '').slice(0, 10);
+        const kind = String(holidayKindByDate?.[dateStr] || '').toLowerCase();
+        const dt = new Date(`${dateStr}T00:00:00`);
+        const weekday = Number.isNaN(dt.getTime()) ? NaN : dt.getDay();
+        if (weekday === 0 || weekday === 6 || kind === 'full') {
+          return res.status(400).json({
+            ok: false,
+            message: 'Servis sorumlusu hafta sonu ve resmi tatilde atanamaz',
+          });
+        }
+        if (kind === 'arife' || kind === 'half') {
+          payload = {
+            ...payload,
+            shiftCode: 'A',
+            shiftId: 'A',
+            hours: HALF_DAY_A_HOURS,
+          };
+        }
+      }
 
       const validation = validateAssignment(req.scheduleRules, payload, assignments);
       if (!validation.valid) {

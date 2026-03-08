@@ -5,6 +5,13 @@ const { getReligiousHolidays } = require('./religiousHolidayService');
 const NAGER_URL = (year) => `https://date.nager.at/api/v3/PublicHolidays/${year}/TR`;
 
 const norm = (s) => String(s || '').toLowerCase();
+const normalizeText = (s) =>
+  String(s || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
 const pad2 = (n) => String(n).padStart(2, '0');
 const dateMinusOne = (dateStr) => {
   const [y, m, d] = String(dateStr).split('-').map(Number);
@@ -53,6 +60,21 @@ function buildHalfDayEntries(year) {
       name: 'Cumhuriyet Bayramı Arifesi (Öğleden sonra)',
     },
   ];
+}
+
+function inferHolidayKind(row = {}) {
+  const kind = String(row?.kind || '').toLowerCase().trim();
+  const name = normalizeText(row?.name || row?.localName || row?.globalName || '');
+
+  // İsmi "arife" ise yarım gün statüsü korunur.
+  if (name.includes('arife')) return 'arife';
+
+  // Bayram günleri her zaman tam gün sayılır.
+  if (name.includes('bayram')) return 'full';
+
+  if (kind === 'full' || kind === 'arife' || kind === 'half') return kind;
+  if (name.includes('ogleden sonra') || name.includes('yarim gun') || name.includes('half')) return 'half';
+  return 'full';
 }
 
 async function generateHolidays(year) {
@@ -130,7 +152,11 @@ async function listHolidays({ year, month } = {}) {
     const mm = pad2(m);
     q.date = new RegExp(`^${y}-${mm}-`);
   }
-  return Holiday.find(q).sort({ date: 1 }).lean();
+  const list = await Holiday.find(q).sort({ date: 1 }).lean();
+  return list.map((row) => ({
+    ...row,
+    kind: inferHolidayKind(row),
+  }));
 }
 
 async function upsertHoliday({ date, kind, name, source = 'manual' }) {
