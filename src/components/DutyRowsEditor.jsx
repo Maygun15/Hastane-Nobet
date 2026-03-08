@@ -1210,14 +1210,15 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             setOverrides(nextOverrides);
           }
           if ("preview" in data) setPreview(data.preview || null);
-          const rosterForUI = remoteAssignments.length
+          const rosterFromData = "roster" in data ? (data.roster || null) : null;
+          const rosterFromAssignments = remoteAssignments.length
             ? buildRosterFromBackend(remoteAssignments, data.issues, defsForUI)
-            : ("roster" in data ? (data.roster || null) : null);
-          if (remoteAssignments.length) {
-            setRoster(rosterForUI);
-          } else if ("roster" in data) {
-            setRoster(rosterForUI);
-          }
+            : null;
+          const rosterForUI = rosterFromData && rosterFromAssignments
+            ? mergeRosterNamedAssignments(rosterFromData, rosterFromAssignments)
+            : (rosterFromData || rosterFromAssignments);
+          if (rosterForUI) setRoster(rosterForUI);
+          else if ("roster" in data) setRoster(null);
           if ("aiPlan" in data) setAiPlan(data.aiPlan || null);
           if ("pins" in data) setPins(data.pins || []);
           if ("rules" in data) {
@@ -1543,6 +1544,36 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
     return { namedAssignments: named, issues: issueList };
   }, [rows, daysInMonth]);
+
+  const mergeRosterNamedAssignments = useCallback((baseRoster, addonRoster) => {
+    const base = baseRoster && typeof baseRoster === "object" ? { ...baseRoster } : {};
+    const namedBase = base?.namedAssignments && typeof base.namedAssignments === "object"
+      ? { ...base.namedAssignments }
+      : {};
+    const namedAddon = addonRoster?.namedAssignments && typeof addonRoster.namedAssignments === "object"
+      ? addonRoster.namedAssignments
+      : {};
+
+    Object.entries(namedAddon).forEach(([dayKey, byRow]) => {
+      if (!namedBase[dayKey] || typeof namedBase[dayKey] !== "object") namedBase[dayKey] = {};
+      Object.entries(byRow || {}).forEach(([rowId, list]) => {
+        const prev = Array.isArray(namedBase[dayKey][rowId]) ? namedBase[dayKey][rowId] : [];
+        const next = [...prev];
+        (Array.isArray(list) ? list : []).forEach((nm) => {
+          if (!nm || isGroupLabel(nm)) return;
+          if (!next.includes(nm)) next.push(nm);
+        });
+        namedBase[dayKey][rowId] = next;
+      });
+    });
+
+    const issues = [
+      ...(Array.isArray(base?.issues) ? base.issues : []),
+      ...(Array.isArray(addonRoster?.issues) ? addonRoster.issues : []),
+    ];
+
+    return { ...base, namedAssignments: namedBase, issues };
+  }, []);
 
   const doBuild = async () => {
     if (staffLoading) {
