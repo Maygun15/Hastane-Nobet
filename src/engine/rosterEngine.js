@@ -37,6 +37,9 @@ function stripDiacritics(str) {
 function canonName(s) {
   return stripDiacritics(U(s)).replace(/\s+/g, " ").trim();
 }
+function isServiceSupervisorLabel(label = "") {
+  return stripDiacritics(U(label)).includes("SERVIS SORUMLU");
+}
 function tokens(s) {
   return canonName(s).split(" ").filter(Boolean);
 }
@@ -488,7 +491,7 @@ export function generateRoster({
     /* --- Servis Sorumlusu --- */
     for (const r of (rows || [])) {
       const labelU = U(r?.label || "");
-      if (!labelU.includes("SERVİS SORUMLUSU")) continue;
+      if (!isServiceSupervisorLabel(labelU)) continue;
 
       const need0 = needByDay[d]?.[r.id] || 0;
       let need = need0;
@@ -563,7 +566,7 @@ export function generateRoster({
     /* --- Diğer satırlar --- */
     for (const r of (rows || [])) {
       const labelU = U(r?.label || "");
-      if (labelU.includes("SERVİS SORUMLUSU")) continue;
+      if (isServiceSupervisorLabel(labelU)) continue;
 
       const need = needByDay[d]?.[r.id] || 0;
       if (need <= 0) { namedAssignments[d][r.id] = []; continue; }

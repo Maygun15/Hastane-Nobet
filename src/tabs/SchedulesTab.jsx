@@ -24,6 +24,12 @@ const stripDiacritics = (str) =>
     .replace(/\p{Diacritic}/gu, "");
 const canonPersonName = (name) => stripDiacritics(upTR(name)).replace(/\s+/g, " ").trim();
 const upTR = (s) => (s ?? "").toString().trim().toLocaleUpperCase("tr");
+const normTRText = (s = "") =>
+  stripDiacritics((s ?? "").toString())
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+const isServiceSupervisorLabel = (label = "") => normTRText(label).includes("servis sorumlu");
 const mulberry32 = (seed) => {
   let t = seed >>> 0;
   return () => {
@@ -157,7 +163,7 @@ function buildSchedule(nurses, tasks, opts) {
     for (let r = 0; r < rows.length; r++) {
       const row = rows[r];
 
-      if (row.gorev.includes("SERVİS SORUMLUSU")) {
+      if (isServiceSupervisorLabel(row.gorev)) {
         let name = !isWeekend ? supervisorName : "";
         if (name && (isUnavailable(name, dayNum) || requestConstraints?.shouldAvoid(name, dayNum))) name = "";
         table[r][d] = name;

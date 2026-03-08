@@ -22,10 +22,16 @@ function parseIntSafe(val, def = null) {
 }
 
 const HALF_DAY_A_HOURS = 4;
-const SUPERVISOR_LABEL_RE = /servis\s*sorumlu/i;
+const normalizeText = (s = '') =>
+  String(s || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
 
 function isServiceSupervisorLabel(label = '') {
-  return SUPERVISOR_LABEL_RE.test(String(label || ''));
+  return normalizeText(label).includes('servis sorumlu');
 }
 
 function holidayKindRank(kind = '') {

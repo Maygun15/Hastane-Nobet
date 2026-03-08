@@ -27,7 +27,14 @@ const DEFAULT_WEIGHTS = {
 const NIGHT_24_CODES = new Set(['N', 'V2']);
 const HALF_DAY_A_HOURS = 4;
 const normalizeCode = (s) => String(s || '').trim().toUpperCase();
-const isServiceSupervisorLabel = (label = '') => /servis\s*sorumlu/i.test(String(label || ''));
+const normalizeText = (s = '') =>
+  String(s || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+const isServiceSupervisorLabel = (label = '') => normalizeText(label).includes('servis sorumlu');
 const buildShiftMetaLookup = (shiftOptions = []) => {
   const out = Object.create(null);
   for (const item of shiftOptions || []) {

@@ -12,6 +12,8 @@ const stripDiacritics = (str = "") =>
 const normalizeCode = (s) => stripDiacritics(U(s));
 const canonName = (s = "") =>
   stripDiacritics(U(s)).replace(/\s+/g, " ").trim();
+const isServiceSupervisorLabel = (label = "") =>
+  normalizeCode(label).includes("SERVIS SORUMLU");
 const arrFromAny = (v) => {
   if (!v && v !== 0) return [];
   if (Array.isArray(v)) return v;
@@ -330,7 +332,7 @@ function generateDraftRoster({
     // Servis sorumlusu satırları
     for (const r of rows || []) {
       const labelU = U(r?.label || "");
-      if (!labelU.includes("SERVİS SORUMLUSU")) continue;
+      if (!isServiceSupervisorLabel(labelU)) continue;
 
       const need0 = needByDay[d]?.[r.id] || 0;
       let need = need0;
@@ -423,7 +425,7 @@ function generateDraftRoster({
     // Diğer satırlar
     for (const r of rows || []) {
       const labelU = U(r?.label || "");
-      if (labelU.includes("SERVİS SORUMLUSU")) continue;
+      if (isServiceSupervisorLabel(labelU)) continue;
 
       const need = needByDay[d]?.[r.id] || 0;
       if (need <= 0) {

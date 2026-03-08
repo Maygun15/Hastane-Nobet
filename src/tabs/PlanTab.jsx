@@ -162,7 +162,13 @@ function buildCountsFromPattern(def, year, month0) {
 }
 
 function isServiceSupervisorTaskLabel(label = "") {
-  return /servis\s*sorumlu/i.test(String(label || ""));
+  const normalized = String(label || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized.includes("servis sorumlu");
 }
 
 const HALF_DAY_A_HOURS = 4;
