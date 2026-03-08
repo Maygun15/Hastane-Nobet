@@ -101,6 +101,60 @@ function readArrayLS(key) {
   return [];
 }
 
+function extractListValue(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === "object") {
+    const candidates = [raw.value, raw.items, raw.list, raw.data];
+    for (const item of candidates) {
+      if (Array.isArray(item)) return item;
+    }
+  }
+  return [];
+}
+
+function shiftKeyCandidates(raw) {
+  const base = String(raw || "").trim().toUpperCase();
+  if (!base) return [];
+  const out = new Set([base]);
+  const compact = base.replace(/\s+/g, " ").trim();
+  if (compact) out.add(compact);
+  const firstToken = compact.split(/[()\s/-]+/).find(Boolean);
+  if (firstToken) out.add(firstToken);
+  return Array.from(out.values());
+}
+
+function getShiftHours(item) {
+  if (!item || typeof item !== "object") return null;
+  if (item.hours !== undefined && item.hours !== null && String(item.hours).trim() !== "") {
+    const n = Number(item.hours);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (item.start && item.end) return diffHours(item.start, item.end);
+  return null;
+}
+
+function readWorkingHoursList() {
+  const v2 = extractListValue(LS.get("workingHoursV2", null));
+  const v1 = extractListValue(LS.get("workingHours", null));
+  return [...v2, ...v1];
+}
+
+function buildShiftCodeHoursMap(list = []) {
+  const map = {};
+  (Array.isArray(list) ? list : []).forEach((item) => {
+    if (!item || typeof item !== "object") return;
+    const hours = getShiftHours(item);
+    if (!Number.isFinite(hours) || hours < 0) return;
+    const code = String(item.code ?? item.id ?? item.shiftCode ?? "").trim();
+    const label = String(item.label ?? item.name ?? item.area ?? "").trim();
+    const aliases = [...shiftKeyCandidates(code), ...shiftKeyCandidates(label)];
+    aliases.forEach((key) => {
+      map[key] = hours;
+    });
+  });
+  return map;
+}
+
 function buildPersonMetaIndex() {
   const combined = [
     ...readArrayLS("nurses"),
@@ -187,15 +241,19 @@ const fallbackShiftHours = (code, label = "") => {
   if (!c) {
     if (lbl.includes("YARIM") || lbl.includes("4 SAAT")) return 4;
     if (lbl.includes("POL") || lbl.includes("GÜNDÜZ") || lbl.includes("KISA")) return 8;
-    return 24;
+    if (lbl.includes("GECE") || lbl.includes("NÖBET")) return 24;
+    return 0;
   }
+  if (["Y", "YILLIK", "E", "R", "İ", "I", "B", "RAPOR", "AN"].includes(c)) return 0;
+  if (c.includes("IZIN") || c.includes("İZİN") || lbl.includes("İZİN") || lbl.includes("IZIN")) return 0;
   if (c.includes("4")) return 4;
   if (c.includes("8") || c === "M" || c === "GUND") return 8;
   if (c.includes("12")) return 12;
+  if (c.includes("V1")) return 16;
   if (["YARIM", "HALF"].some((k) => c.includes(k))) return 4;
-  if (["N", "GECE", "V2", "V1", "SV", "24"].some((k) => c.includes(k))) return 24;
-  if (lbl.includes("NÖBET") || lbl.includes("SORUMLU") || lbl.includes("RESÜS") || lbl.includes("TRİAJ") || lbl.includes("CERRAHİ")) return 24;
-  return 24;
+  if (["N", "GECE", "V2", "SV", "24"].some((k) => c.includes(k))) return 24;
+  if (lbl.includes("NÖBET") || lbl.includes("GECE")) return 24;
+  return 0;
 };
 
 /* Daha esnek tarih ayrıştırıcı */
@@ -233,17 +291,36 @@ function tryParseExcelDateFlexible(v){
   return null;
 }
 
-/* Çalışma kodu -> saat (LS: workingHours) */
+/* Çalışma kodu -> saat (LS: workingHoursV2 + workingHours) */
 function useShiftCodeHours(){
-  const [map,setMap]=useState({});
-  useEffect(()=>{ const arr=LS.get("workingHours",[]); const m={}; (arr||[]).forEach(x=>{
-    let h=0;
-    if (x?.hours!==undefined && x?.hours!==null && String(x.hours).trim()!=="") {
-      const n=Number(x.hours); h=isNaN(n)?0:n;
-    } else { h=diffHours(x?.start, x?.end); }
-    if (x?.code) m[String(x.code).trim().toUpperCase()]=h;
-  }); setMap(m); },[]);
+  const [map, setMap] = useState(() => buildShiftCodeHoursMap(readWorkingHoursList()));
+  useEffect(() => {
+    const refresh = () => setMap(buildShiftCodeHoursMap(readWorkingHoursList()));
+    refresh();
+    window.addEventListener("workingHours:changed", refresh);
+    window.addEventListener("settings:changed", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("workingHours:changed", refresh);
+      window.removeEventListener("settings:changed", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
   return map;
+}
+
+function resolveCellHours(value, shiftCodeHours, labelHint = "") {
+  const raw = String(value ?? "").trim();
+  if (!raw) return 0;
+  const direct = parseFloat(raw.replace(",", "."));
+  if (!isNaN(direct)) return direct;
+  const keys = shiftKeyCandidates(raw);
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(shiftCodeHours, key)) continue;
+    const h = Number(shiftCodeHours[key]);
+    if (Number.isFinite(h) && h >= 0) return h;
+  }
+  return fallbackShiftHours(raw, labelHint);
 }
 
 /* Kişiler (LS: nurses/doctors) */
@@ -294,12 +371,7 @@ function computeTotals(row, days, shiftCodeHours){
   (days||[]).forEach((d)=>{
     const v=(row?.days?.[d.ymd] ?? "").toString().trim();
     if(!v) return;
-    const direct=parseFloat(v.replace(",","."));
-    if(!isNaN(direct)){ worked+=direct; return; }
-    const key = v.toUpperCase();
-    const h=shiftCodeHours[key];
-    if(Number.isFinite(h) && h>0){ worked+=h; return; }
-    worked += fallbackShiftHours(key, row?.unvan || "");
+    worked += resolveCellHours(v, shiftCodeHours, row?.unvan || "");
   });
   const aylikCalistigiSaat=Math.round(worked*100)/100;
   const toplamCalisma=aylikCalistigiSaat + num(row?.gecenAydanDevir,0) - num(row?.gelecekAyaDevir,0);
@@ -560,12 +632,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym }, ref) {
       (days||[]).forEach(d=>{
         const v=(r?.days?.[d.ymd] ?? "").toString().trim();
         if(!v) return;
-        const direct=parseFloat(v.replace(",","."));
-        if(!isNaN(direct)){ perDay[d.ymd]+=direct; return; }
-        const key=v.toUpperCase();
-        const h=shiftCodeHours[key];
-        if(Number.isFinite(h) && h>0){ perDay[d.ymd]+=h; return; }
-        perDay[d.ymd]+=fallbackShiftHours(key, r?.unvan || "");
+        perDay[d.ymd] += resolveCellHours(v, shiftCodeHours, r?.unvan || "");
       });
     });
     return { perDay, right:{ aylik:sumAylik, gecen:sumGecen, gelecek:sumGelecek, calisilacak:sumCalisilacak, toplam:sumToplam, ucret:sumUcret, birimDisi:sumBirimDisi } };
@@ -651,7 +718,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym }, ref) {
             if (!date) return;
             const day = Number(String(date).slice(8, 10));
             if (!Number.isFinite(day) || day < 1 || day > (days?.length || 31)) return;
-            const rowId = String(a.shiftId || a.rowId || a.shiftCode || "");
+            const rowId = String(a.shiftCode || a.shiftId || a.rowId || "");
             if (!rowId) return;
             const nm = a.personName || a.name || "";
             if (!nm || isGroupLabel(nm)) return;
@@ -664,10 +731,19 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym }, ref) {
         if (!named || !Object.keys(named).length) continue;
         const defsSrc = Array.isArray(data?.defs) ? data.defs : Array.isArray(data?.rows) ? data.rows : [];
         const shiftByRow = new Map();
+        const labelByRow = new Map();
         defsSrc.forEach((def) => {
           const rowId = String(def?.id ?? def?.rowId ?? "");
-          if (!rowId) return;
-          shiftByRow.set(rowId, def?.shiftCode || def?.label || "");
+          const shiftCode = String(def?.shiftCode ?? def?.code ?? "").trim();
+          const label = String(def?.label ?? def?.name ?? def?.area ?? "").trim();
+          if (rowId) {
+            shiftByRow.set(rowId, shiftCode);
+            labelByRow.set(rowId, label || rowId);
+          }
+          if (shiftCode) {
+            shiftByRow.set(shiftCode, shiftCode);
+            labelByRow.set(shiftCode, label || shiftCode);
+          }
         });
 
         Object.entries(named).forEach(([dayStr, perRow]) => {
@@ -675,13 +751,16 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym }, ref) {
           if (!Number.isFinite(day) || day < 1 || day > (days?.length || 31)) return;
           const ymd = `${year}-${String(month1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
           Object.entries(perRow || {}).forEach(([rowId, list]) => {
-            const shiftCode = shiftByRow.get(String(rowId)) || "";
+            const lookupKey = String(rowId);
+            const shiftCode = shiftByRow.get(lookupKey) || lookupKey;
+            const rowLabel = labelByRow.get(lookupKey) || lookupKey;
             (list || []).forEach((nm) => {
               if (!nm || isGroupLabel(nm)) return;
               assignments.push({
                 name: nm,
                 day: ymd,
                 shiftCode,
+                rowLabel,
                 role,
               });
             });
@@ -721,7 +800,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym }, ref) {
           if (meta.name && !row.adsoyad) row.adsoyad = meta.name;
         }
         if (!row.adsoyad) row.adsoyad = item.name;
-        row.days[item.day] = item.shiftCode || "";
+        row.days[item.day] = item.shiftCode || item.rowLabel || "";
       });
 
       const finalized = normalizeRows(
