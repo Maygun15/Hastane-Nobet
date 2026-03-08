@@ -330,12 +330,23 @@ export function setLeave({ personId, personName, year, month, day, code, note })
     return;
   }
 
-  if (canon) {
+  // ID varsa tek kaynak ID-bazlı kayıt olsun; isim-bazlı fallback üretme.
+  if (!pidOk && canon) {
     const rec = note ? { code: c, note } : { code: c };
     setNameLeave({ canon, year: Y, month: M1, day: D, rec });
+  } else if (pidOk && canon) {
+    // Eski isim-bazlı gölge kayıtları temizle
+    setNameLeave({ canon, year: Y, month: M1, day: D, rec: null });
   }
 
-  updateSuppress({ pid: pidOk ? pid : "", canon, year: Y, month: M1, day: D, suppress: false });
+  updateSuppress({
+    pid: pidOk ? pid : "",
+    canon: pidOk ? "" : canon,
+    year: Y,
+    month: M1,
+    day: D,
+    suppress: false,
+  });
 
   emitLeavesChanged();
 }
@@ -372,11 +383,21 @@ export function unsetLeave({ personId, personName, year, month, day }) {
     }
   }
 
-  if (canon) {
+  if (!pidOk && canon) {
+    setNameLeave({ canon, year: Y, month: M1, day: D, rec: null });
+  } else if (pidOk && canon) {
+    // ID-bazlı kaydı silerken olası eski isim-bazlı gölgeleri de temizle
     setNameLeave({ canon, year: Y, month: M1, day: D, rec: null });
   }
 
-  updateSuppress({ pid: pidOk ? pid : "", canon, year: Y, month: M1, day: D, suppress: true });
+  updateSuppress({
+    pid: pidOk ? pid : "",
+    canon: pidOk ? "" : canon,
+    year: Y,
+    month: M1,
+    day: D,
+    suppress: true,
+  });
 
   emitLeavesChanged();
 }
@@ -464,10 +485,12 @@ export function buildNameUnavailability(people = [], year, month1) {
     const canon = canonName(rawName);
     if (!canon) continue;
 
-    for (const pid of idCandidates(person)) {
+    const personIds = idCandidates(person);
+    for (const pid of personIds) {
       addDays(canon, base?.[pid]);
     }
-    addDays(canon, base?.[`__name__:${canon}`]);
+    // ID'si olan personelde isim-bazlı eski kayıtları yok say.
+    if (!personIds.length) addDays(canon, base?.[`__name__:${canon}`]);
 
     if (!result.get(canon)?.size) result.delete(canon);
   }

@@ -8,7 +8,6 @@ import {
   fetchPersonnel,
   fetchMonthlySchedule,
   fetchHolidayCalendar,
-  fetchLeaves,
   getMonthlySchedule,
 } from "../api/apiAdapter";
 import { getPeople } from "../lib/dataResolver.js";
@@ -309,7 +308,6 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
   );
   const [people, setPeople] = useState([]);
   const [holidays, setHolidays] = useState([]);
-  const [leavesByPerson, setLeavesByPerson] = useState({});
   const [search, setSearch] = useState("");
   const fileRef = useRef(null);
   const dcount = daysInMonth(year, month);
@@ -319,7 +317,6 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
     buildLeaveCreditRules(LS.get("leaveTypesV2", []), DEFAULT_LEAVE_RULES)
   );
 
-  const fetchedPidsRef = useRef(new Set());
 
   useEffect(() => localStorage.setItem(LS_CFG, JSON.stringify(cfg)), [cfg]);
   useEffect(() => {
@@ -327,8 +324,6 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
   }, [rows, year, month]);
 
   useEffect(() => {
-    fetchedPidsRef.current = new Set();
-    setLeavesByPerson({});
     try {
       const next = JSON.parse(localStorage.getItem(LS_DATA_PREFIX + ymKey(year, month)) || "[]");
       if (Array.isArray(next)) setRows(next);
@@ -381,7 +376,10 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
   }, []);
 
   useEffect(() => {
-    const refresh = () => setLeavesByPerson({}) || (fetchedPidsRef.current = new Set());
+    const refresh = () => {
+      // Recompute tetikleyicisi: izin kaynağı yalnızca getAllLeaves()
+      setRows((prev) => [...prev]);
+    };
     window.addEventListener("leaves:changed", refresh);
     window.addEventListener("storage", refresh);
     return () => {
@@ -390,44 +388,18 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
     };
   }, []);
 
-  useEffect(() => {
-    const pids = Array.from(new Set(rows.map((r) => String(r?.personId || "").trim()).filter(Boolean)));
-    if (!pids.length) return;
-    const missing = pids.filter((pid) => !fetchedPidsRef.current.has(pid));
-    if (!missing.length) return;
-    let cancelled = false;
-    Promise.all(
-      missing.map(async (pid) => {
-        try {
-          const lv = await fetchLeaves({ personId: pid, year, month });
-          return [pid, Array.isArray(lv) ? lv : []];
-        } catch { return [pid, []]; }
-      })
-    ).then((entries) => {
-      if (cancelled) return;
-      entries.forEach(([pid]) => fetchedPidsRef.current.add(pid));
-      setLeavesByPerson((prev) => {
-        const next = { ...prev };
-        entries.forEach(([pid, arr]) => { next[pid] = arr; });
-        return next;
-      });
-    });
-    return () => { cancelled = true; };
-  }, [year, month, rows]);
-
   const computed = useMemo(() => {
     const stdMonthly = computeMonthlyStdHours(year, month, holidays);
     const ym = ymKey(year, month);
     const allLocalLeaves = getAllLeaves();
     const perRowLeave = rows.map((r) => {
       const hasPid = !!(r.personId && String(r.personId).trim());
-      const leaves = hasPid ? (leavesByPerson[r.personId] || []) : [];
       const byId = hasPid ? (allLocalLeaves?.[r.personId]?.[ym] || {}) : {};
       const canon = canonName(r.person || r.fullName || r.name || r.adsoyad || "");
       const byName = !hasPid && canon ? (allLocalLeaves?.[`__name__:${canon}`]?.[ym] || {}) : {};
       const localCodes = hasPid ? byId : byName;
-      const leaveDays = collectLeaveDaysForMonth({ year, month, leaves, codesByDay: localCodes });
-      const credited = creditedLeaveHoursForMonth({ year, month, leaves, holidays, codesByDay: localCodes, leaveRules, leaveCountsWeekend: true });
+      const leaveDays = collectLeaveDaysForMonth({ year, month, codesByDay: localCodes });
+      const credited = creditedLeaveHoursForMonth({ year, month, holidays, codesByDay: localCodes, leaveRules, leaveCountsWeekend: true });
       let ignoredHours = 0;
       (r.days || []).forEach((val, idx) => {
         if (!leaveDays.has(idx + 1)) return;
@@ -457,7 +429,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
       person: rows.find((r) => r.id === row.id)?.person || "",
     }));
     return { stdMonthly, perRow, grandWork, grandOT, conflicts };
-  }, [rows, year, month, holidays, leavesByPerson, leaveRules]);
+  }, [rows, year, month, holidays, leaveRules]);
 
   const addRow = () => setRows((p) => [...p, makeBlankRow(year, month)]);
   const removeRow = (id) => setRows((p) => p.filter((r) => r.id !== id));
@@ -617,24 +589,6 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
         String(a.person || "").localeCompare(String(b.person || ""), "tr", { sensitivity: "base" })
       );
       setRows(newRows);
-      fetchedPidsRef.current = new Set();
-      const uniques = Array.from(new Set(newRows.map((r) => r.personId).filter((pid) => pid && String(pid).trim() !== "")));
-      if (uniques.length) {
-        const leavesEntries = await Promise.all(
-          uniques.map(async (pid) => {
-            try { const lv = await fetchLeaves({ personId: pid, year, month }); return [pid, lv || []]; }
-            catch (err) { console.error("fetchLeaves err:", err); return [pid, []]; }
-          })
-        );
-        const leavesMap = {};
-        leavesEntries.forEach(([pid, arr]) => {
-          fetchedPidsRef.current.add(pid);
-          leavesMap[pid] = Array.isArray(arr) ? arr : [];
-        });
-        setLeavesByPerson(leavesMap);
-      } else {
-        setLeavesByPerson({});
-      }
       alert(`Çalışma çizelgesinden ${finalAssignments.length} atama aktarıldı.`);
     } finally { setImporting(false); }
   }
@@ -675,9 +629,6 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
       }
       return copy;
     }));
-    fetchedPidsRef.current.add(personId);
-    const lv = await fetchLeaves({ personId, year, month });
-    setLeavesByPerson((prev) => ({ ...prev, [personId]: lv || [] }));
   }
 
   const exportExcel = () => {

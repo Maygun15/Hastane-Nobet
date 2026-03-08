@@ -732,7 +732,9 @@ function collapseLeaves(allLeaves, personId, canon, ymKey, aliasIds = []) {
   for (const id of ids) {
     Object.assign(merged, (allLeaves?.[id] || {})[ymKey] || {});
   }
-  if (canon) {
+  // ID ile bulunan personelde isim-bazlı eski kayıtları dahil etme:
+  // Toplu İzin Listesi (ID bazlı) tek kaynak kabul edilir.
+  if (canon && ids.size === 0) {
     const byName = (allLeaves?.[`__name__:${canon}`] || {})[ymKey] || {};
     return { ...byName, ...merged };
   }

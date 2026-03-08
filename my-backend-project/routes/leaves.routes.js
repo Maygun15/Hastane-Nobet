@@ -4,14 +4,35 @@ const router = express.Router();
 const Setting = require('../models/Setting');
 const Person = require('../models/Person');
 
-const KEY_CANDIDATES = ['leavesV2', 'personLeaves'];
-
 async function findLeavesDoc(serviceId = '') {
-  for (const key of KEY_CANDIDATES) {
-    const doc = await Setting.findOne({ key, serviceId });
-    if (doc) return doc;
+  const primary = await Setting.findOne({ key: 'leavesV2', serviceId });
+  if (primary) return primary;
+
+  // Legacy migration: personLeaves -> leavesV2 (tek kaynak)
+  const legacy = await Setting.findOne({ key: 'personLeaves', serviceId });
+  if (!legacy) return null;
+
+  const migrated = await Setting.findOneAndUpdate(
+    { key: 'leavesV2', serviceId },
+    {
+      $set: {
+        key: 'leavesV2',
+        serviceId,
+        value: legacy?.value && typeof legacy.value === 'object' ? legacy.value : {},
+        updatedBy: legacy?.updatedBy || null,
+      },
+      $setOnInsert: {
+        createdBy: legacy?.createdBy || null,
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+  try {
+    await Setting.deleteOne({ _id: legacy._id });
+  } catch {
+    // migration non-blocking
   }
-  return null;
+  return migrated;
 }
 
 function monthKey(year, month) {
