@@ -25,6 +25,7 @@ const DEFAULT_WEIGHTS = {
 };
 
 const NIGHT_24_CODES = new Set(['N', 'V2']);
+const HALF_DAY_A_HOURS = 4;
 const normalizeCode = (s) => String(s || '').trim().toUpperCase();
 const isServiceSupervisorLabel = (label = '') => /servis\s*sorumlu/i.test(String(label || ''));
 const buildShiftMetaLookup = (shiftOptions = []) => {
@@ -261,11 +262,12 @@ function applySupervisorHolidayRules(days = [], holidayKindByDate = {}, shiftMet
       if (blockSupervisor) return [];
       if (holidayKind === 'arife' || holidayKind === 'half') {
         const aMeta = shiftMetaByCode.A || {};
+        const arifeHours = Number.isFinite(Number(aMeta.hours)) ? Number(aMeta.hours) : HALF_DAY_A_HOURS;
         return [{
           ...shift,
           id: String(shift?.id || shift?.code || 'A'),
           code: 'A',
-          hours: aMeta.hours ?? shift?.hours,
+          hours: arifeHours,
           start: aMeta.start ?? shift?.start ?? null,
           end: aMeta.end ?? shift?.end ?? null,
           isNight: aMeta.isNight ?? false,
@@ -305,11 +307,12 @@ function sanitizeSupervisorAssignments(assignments = [], holidayKindByDate = {},
       if (weekday === 0 || weekday === 6 || kind === 'full') return null;
       if (kind === 'arife' || kind === 'half') {
         const aMeta = shiftMetaByCode.A || {};
+        const arifeHours = Number.isFinite(Number(aMeta.hours)) ? Number(aMeta.hours) : HALF_DAY_A_HOURS;
         return {
           ...item,
           shiftCode: 'A',
           shiftId: 'A',
-          hours: Number.isFinite(Number(aMeta.hours)) ? Number(aMeta.hours) : item?.hours,
+          hours: arifeHours,
         };
       }
       return item;

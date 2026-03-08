@@ -165,6 +165,8 @@ function isServiceSupervisorTaskLabel(label = "") {
   return /servis\s*sorumlu/i.test(String(label || ""));
 }
 
+const HALF_DAY_A_HOURS = 4;
+
 function buildSupervisorTaskLines(taskLine, year, month0, holidayKindByDate = {}) {
   if (!taskLine) return [];
   if (!isServiceSupervisorTaskLabel(taskLine.label)) return [taskLine];
@@ -225,8 +227,7 @@ function buildSupervisorTaskLines(taskLine, year, month0, holidayKindByDate = {}
 }
 
 function sanitizeSupervisorAssignments(assignments = [], year, month0, holidayKindByDate = {}, workingHours = []) {
-  const aShift = (workingHours || []).find((row) => String(row?.code || "").trim().toUpperCase() === "A");
-  const aHours = Number(aShift?.hours);
+  void workingHours;
   return (assignments || [])
     .map((item) => {
       const label = String(item?.roleLabel || item?.label || "").trim();
@@ -242,7 +243,7 @@ function sanitizeSupervisorAssignments(assignments = [], year, month0, holidayKi
           ...item,
           shiftCode: "A",
           shiftId: "A",
-          hours: Number.isFinite(aHours) ? aHours : item?.hours,
+          hours: HALF_DAY_A_HOURS,
         };
       }
       return item;
