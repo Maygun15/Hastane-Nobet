@@ -1,5 +1,6 @@
 const axios = require('axios');
 const Holiday = require('../models/Holiday');
+const CalendarSetting = require('../models/CalendarSetting');
 const { getReligiousHolidays } = require('./religiousHolidayService');
 
 const NAGER_URL = (year) => `https://date.nager.at/api/v3/PublicHolidays/${year}/TR`;
@@ -77,6 +78,29 @@ function inferHolidayKind(row = {}) {
   return 'full';
 }
 
+function toYmd(raw) {
+  if (!raw) return '';
+  if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const dt = new Date(raw);
+  if (Number.isNaN(dt.getTime())) return '';
+  return dt.toISOString().slice(0, 10);
+}
+
+function inferCalendarSettingKind(row = {}) {
+  const type = normalizeText(row?.type || '');
+  const isHoliday = row?.isHoliday;
+  const affectWorkingHours = row?.affectWorkingHours;
+
+  if (isHoliday === false) return null;
+  if (type === 'working_day') return null;
+  if (affectWorkingHours === false) return null;
+
+  return inferHolidayKind({
+    kind: row?.kind || '',
+    name: row?.name || row?.description || '',
+  });
+}
+
 async function generateHolidays(year) {
   const y = Number(year);
   if (!Number.isFinite(y) || y < 2000 || y > 2100) {
@@ -146,17 +170,50 @@ async function generateHolidays(year) {
 async function listHolidays({ year, month } = {}) {
   const y = Number(year);
   const m = Number(month);
-  const q = {};
-  if (Number.isFinite(y)) q.year = y;
+  const qHoliday = {};
+  const qCal = {};
+  if (Number.isFinite(y)) qHoliday.year = y;
+  if (Number.isFinite(y)) qCal.year = y;
   if (Number.isFinite(m)) {
     const mm = pad2(m);
-    q.date = new RegExp(`^${y}-${mm}-`);
+    qHoliday.date = new RegExp(`^${y}-${mm}-`);
+    qCal.month = m;
   }
-  const list = await Holiday.find(q).sort({ date: 1 }).lean();
-  return list.map((row) => ({
-    ...row,
-    kind: inferHolidayKind(row),
-  }));
+  const [holidays, calendarSettings] = await Promise.all([
+    Holiday.find(qHoliday).sort({ date: 1 }).lean(),
+    CalendarSetting.find(qCal).sort({ updatedAt: 1, createdAt: 1, _id: 1 }).lean(),
+  ]);
+
+  const byDate = new Map();
+  for (const row of holidays || []) {
+    const date = toYmd(row?.date);
+    if (!date) continue;
+    byDate.set(date, {
+      ...row,
+      date,
+      kind: inferHolidayKind(row),
+    });
+  }
+
+  // Parametreler > Takvim girdileri Holiday kaynağını override eder.
+  for (const row of calendarSettings || []) {
+    const date = toYmd(row?.date);
+    if (!date) continue;
+    const kind = inferCalendarSettingKind(row);
+    if (!kind) {
+      byDate.delete(date);
+      continue;
+    }
+    byDate.set(date, {
+      date,
+      name: String(row?.name || row?.description || ''),
+      kind,
+      source: 'parameters-calendar',
+      year: Number.isFinite(y) ? y : Number(String(date).slice(0, 4)),
+    });
+  }
+
+  return Array.from(byDate.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)));
 }
 
 async function upsertHoliday({ date, kind, name, source = 'manual' }) {
