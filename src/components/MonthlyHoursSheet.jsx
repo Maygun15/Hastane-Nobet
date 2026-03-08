@@ -710,23 +710,30 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym }, ref) {
           return null;
         });
         const data = schedule?.data || schedule || {};
-        let named = data?.roster?.namedAssignments;
-        if (!named && Array.isArray(data?.assignments)) {
-          const built = {};
+        const named = {};
+        const namedRemote = data?.roster?.namedAssignments;
+        if (namedRemote && typeof namedRemote === "object") {
+          Object.entries(namedRemote).forEach(([dayKey, byRow]) => {
+            if (!named[dayKey]) named[dayKey] = {};
+            Object.entries(byRow || {}).forEach(([rowId, list]) => {
+              named[dayKey][rowId] = Array.isArray(list) ? [...list] : [];
+            });
+          });
+        }
+        if (Array.isArray(data?.assignments)) {
           (data.assignments || []).forEach((a) => {
-            const date = a?.date;
+            const date = a?.date || a?.day;
             if (!date) return;
             const day = Number(String(date).slice(8, 10));
             if (!Number.isFinite(day) || day < 1 || day > (days?.length || 31)) return;
-            const rowId = String(a.shiftCode || a.shiftId || a.rowId || "");
+            const rowId = String(a.shiftId || a.rowId || a.shiftCode || "");
             if (!rowId) return;
             const nm = a.personName || a.name || "";
             if (!nm || isGroupLabel(nm)) return;
-            if (!built[day]) built[day] = {};
-            if (!built[day][rowId]) built[day][rowId] = [];
-            built[day][rowId].push(nm);
+            if (!named[day]) named[day] = {};
+            if (!named[day][rowId]) named[day][rowId] = [];
+            if (!named[day][rowId].includes(nm)) named[day][rowId].push(nm);
           });
-          named = built;
         }
         if (!named || !Object.keys(named).length) continue;
         const defsSrc = Array.isArray(data?.defs) ? data.defs : Array.isArray(data?.rows) ? data.rows : [];

@@ -1200,14 +1200,24 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         if (cancelled) return;
         if (schedule && schedule.data) {
           const data = schedule.data || {};
-          if (Array.isArray(data.defs)) replaceAllDefs(data.defs);
+          const remoteDefs = Array.isArray(data.defs) ? data.defs : [];
+          const remoteAssignments = Array.isArray(data.assignments) ? data.assignments : [];
+          const defsForUI = remoteDefs;
+          if (Array.isArray(defsForUI)) replaceAllDefs(defsForUI);
           if ("overrides" in data) {
             const nextOverrides =
               data.overrides && typeof data.overrides === "object" ? data.overrides : {};
             setOverrides(nextOverrides);
           }
           if ("preview" in data) setPreview(data.preview || null);
-          if ("roster" in data) setRoster(data.roster || null);
+          const rosterForUI = remoteAssignments.length
+            ? buildRosterFromBackend(remoteAssignments, data.issues, defsForUI)
+            : ("roster" in data ? (data.roster || null) : null);
+          if (remoteAssignments.length) {
+            setRoster(rosterForUI);
+          } else if ("roster" in data) {
+            setRoster(rosterForUI);
+          }
           if ("aiPlan" in data) setAiPlan(data.aiPlan || null);
           if ("pins" in data) setPins(data.pins || []);
           if ("rules" in data) {
@@ -1224,9 +1234,9 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             autoSaveTimerRef.current = null;
           }
           lastSavedSignatureRef.current = makeSignature(
-            Array.isArray(data.defs) ? data.defs : data.rows || [],
+            Array.isArray(defsForUI) ? defsForUI : data.rows || [],
             data.overrides || {},
-            data.roster ?? null,
+            rosterForUI ?? null,
             data.preview ?? null,
             data.aiPlan ?? null,
             data.pins ?? [],
@@ -1488,20 +1498,38 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       note("Plan üretiminde hata: " + (err?.message || err), "error");
     }
   };
-  const buildRosterFromBackend = useCallback((assignments, issues) => {
+  const buildRosterFromBackend = useCallback((assignments, issues, defsSource = rows) => {
     const named = {};
-    const rowLabelById = new Map((rows || []).map((r) => [String(r.id), r.label || r.id]));
+    const defsList = Array.isArray(defsSource) ? defsSource : [];
+    const rowLabelById = new Map(defsList.map((r) => [String(r.id), r.label || r.id]));
+    const rowIdByLabel = new Map();
+    defsList.forEach((r) => {
+      const labelKey = norm(r?.label);
+      if (labelKey && !rowIdByLabel.has(labelKey)) rowIdByLabel.set(labelKey, String(r?.id));
+    });
+    const rowIdByLabelShift = new Map(
+      defsList.map((r) => [`${norm(r?.label)}|${norm(r?.shiftCode)}`, String(r?.id)])
+    );
     (assignments || []).forEach((a) => {
-      const date = a?.date;
+      const date = a?.date || a?.day;
       if (!date) return;
       const day = Number(String(date).slice(8, 10));
       if (!Number.isFinite(day) || day < 1 || day > daysInMonth) return;
-      const rowId = String(a.shiftId || a.rowId || a.shiftCode || "");
+      const rawRowId = String(a.shiftId || a.rowId || "").trim();
+      const shiftCode = String(a.shiftCode || a.shiftId || a.rowId || "").trim();
+      const roleLabel = String(a.roleLabel || a.label || a.area || "").trim();
+      const pairKey = `${norm(roleLabel)}|${norm(shiftCode)}`;
+      const labelKey = norm(roleLabel);
+      const rowId =
+        (rawRowId && rowLabelById.has(rawRowId) ? rawRowId : "") ||
+        rowIdByLabelShift.get(pairKey) ||
+        rowIdByLabel.get(labelKey) ||
+        String(a.shiftId || a.rowId || a.shiftCode || "");
       if (!rowId) return;
       if (!named[day]) named[day] = {};
       if (!named[day][rowId]) named[day][rowId] = [];
       const nm = a.personName || a.name || "";
-      if (nm && !isGroupLabel(nm)) named[day][rowId].push(nm);
+      if (nm && !isGroupLabel(nm) && !named[day][rowId].includes(nm)) named[day][rowId].push(nm);
     });
 
     const issueList = (issues || []).map((it) => {
