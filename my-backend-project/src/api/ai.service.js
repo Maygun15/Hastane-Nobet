@@ -1,7 +1,12 @@
-// src/api/parse.service.js
+// src/api/ai.service.js
+const axios = require('axios');
 
 // "1-3" gibi aralıkları YYYY-MM-DD listesine çevirir
 const DAY_RANGE_RE = /\b(\d{1,2})\s*-\s*(\d{1,2})\b/i;
+const AI_SUGGEST_WEBHOOK =
+  process.env.AI_SUGGEST_WEBHOOK ||
+  process.env.N8N_WEBHOOK_URL ||
+  '';
 
 function expandDaysFromInput(activeYM, rawText) {
   const m = rawText?.match?.(DAY_RANGE_RE);
@@ -81,4 +86,22 @@ async function parseRequest({ rawText, activeYM, personId, locale = 'tr-TR' }) {
   };
 }
 
-module.exports = { parseRequest };
+async function aiSuggest({ service, month, userId }) {
+  const payload = { service, month, userId, ts: new Date().toISOString() };
+  if (!AI_SUGGEST_WEBHOOK) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: 'AI_SUGGEST_WEBHOOK tanımlı değil',
+      payload,
+    };
+  }
+
+  const resp = await axios.post(AI_SUGGEST_WEBHOOK, payload, {
+    timeout: 20000,
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return resp?.data ?? null;
+}
+
+module.exports = { parseRequest, aiSuggest };

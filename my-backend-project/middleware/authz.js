@@ -1,13 +1,22 @@
 // middleware/authz.js
+function normalizeRole(role) {
+  const r = String(role || '').toLowerCase();
+  if (r === 'authorized' || r === 'authorised' || r === 'yetkili') return 'staff';
+  if (r === 'standard') return 'user';
+  return r;
+}
+
 function requireAuth(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Auth gerekli' });
   next();
 }
 
 function requireRole(...roles) {
+  const expected = roles.map(normalizeRole);
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Auth gerekli' });
-    if (roles.includes(req.user.role)) return next();
+    const actual = normalizeRole(req.user.role);
+    if (expected.includes(actual)) return next();
     return res.status(403).json({ error: 'Yetki yok' });
   };
 }
@@ -15,7 +24,8 @@ function requireRole(...roles) {
 // target serviceId => body/query/param içinden alınır
 function sameServiceOrAdmin(req, res, next) {
   const me = req.user;
-  if (me?.role === 'admin' || me?.role === 'authorized') return next();
+  const role = normalizeRole(me?.role);
+  if (role === 'admin') return next();
 
   const targetServiceId =
     req.targetServiceId ||
@@ -23,7 +33,7 @@ function sameServiceOrAdmin(req, res, next) {
     req.query?.serviceId ||
     req.params?.serviceId;
 
-  if (me?.role === 'staff') {
+  if (role === 'staff') {
     if (!targetServiceId) return res.status(400).json({ error: 'serviceId gerekli' });
     const has = Array.isArray(me.serviceIds) && me.serviceIds.includes(String(targetServiceId));
     if (!has) return res.status(403).json({ error: 'Servis kapsamı dışı' });
@@ -32,7 +42,7 @@ function sameServiceOrAdmin(req, res, next) {
 
   // user rolü: sadece kendi Person kaydını görebilmesi için
   // personnel listesine salt-okunur erişim ver
-  if (me?.role === 'user') {
+  if (role === 'user') {
     // GET isteği ise izin ver (sadece okuma)
     if (req.method === 'GET') return next();
     // POST/PUT/DELETE → yasak

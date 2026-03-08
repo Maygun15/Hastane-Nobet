@@ -98,7 +98,8 @@ export default function HospitalRosterApp() {
   // Yetkili tanımı (STAFF eklendi)
   const isStaff = roleOf(user) === "STAFF";
   const isAuthorized =
-    !isAdmin && !isStaff && (
+    !isAdmin && (
+      isStaff ||
       roleOf(user) === "AUTHORIZED" ||
       roleOf(user) === "MANAGER"   ||
       has(PERMISSIONS.SCHEDULE_WRITE) ||

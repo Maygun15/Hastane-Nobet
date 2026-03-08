@@ -1,18 +1,31 @@
 // src/utils/acl.js
 import { ROLE, ROLE_PERMISSIONS, PERMISSIONS } from "../constants/roles.js";
 
+function roleOf(user) {
+  const raw = String(user?.role || user?.roleKey || user?.type || "").toUpperCase();
+  if (raw === "ADMIN") return ROLE.ADMIN;
+  if (raw === "STAFF") return ROLE.STAFF;
+  if (raw === "AUTHORIZED" || raw === "MANAGER") return ROLE.AUTHORIZED;
+  if (raw === "USER" || raw === "STANDARD") return ROLE.STANDARD;
+  return ROLE.STANDARD;
+}
+
 /* -------------------------------------------------
    Basit rol yardımcıları
 ------------------------------------------------- */
-export const isAdmin = (user) => user?.role === ROLE.ADMIN;
-export const isAuthorized = (user) => user?.role === ROLE.AUTHORIZED;  // servis sorumlusu
-export const isStandard = (user) => user?.role === ROLE.STANDARD;
+export const isAdmin = (user) => roleOf(user) === ROLE.ADMIN;
+export const isAuthorized = (user) => {
+  const r = roleOf(user);
+  return r === ROLE.AUTHORIZED || r === ROLE.STAFF;  // servis sorumlusu
+};
+export const isStandard = (user) => roleOf(user) === ROLE.STANDARD;
 
 /* -------------------------------------------------
    İzin seti çıkarımları
 ------------------------------------------------- */
 export function getRolePermissions(role) {
-  return ROLE_PERMISSIONS?.[role] || [];
+  const r = roleOf({ role });
+  return ROLE_PERMISSIONS?.[r] || [];
 }
 
 export function getUserPermissions(user) {

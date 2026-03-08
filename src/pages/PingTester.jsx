@@ -10,7 +10,7 @@ export default function PingTester() {
     setErr("");
     setRes(null);
     try {
-      const r = await http.get("/ai/ping");
+      const r = await http.get("/api/ai/ping");
       setRes(r.data);
     } catch (e) {
       setErr(e?.response?.data?.message || e.message);

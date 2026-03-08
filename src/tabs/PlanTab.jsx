@@ -428,8 +428,8 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
   const isAuthorizedUser =
     !isAdminUser && !isStaffUser &&
     (roleKey === "AUTHORIZED" || roleKey === "MANAGER");
-  const isStandardUser = !!user && !isAdminUser && !isAuthorizedUser;
-  const canManage = isAdminUser || isAuthorizedUser;
+  const isStandardUser = !!user && !isAdminUser && !isAuthorizedUser && !isStaffUser;
+  const canManage = isAdminUser || isAuthorizedUser || isStaffUser;
 
   const [selectedService, setSelectedService] = useState(scope.defaultServiceId || "");
   useEffect(() => {
@@ -555,12 +555,12 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
   );
 
   const calendarPeople = useMemo(() => {
-    if (isAdminUser || isAuthorizedUser) return peopleForService;
+    if (isAdminUser || isAuthorizedUser || isStaffUser) return peopleForService;
     if (normalizedForcedPerson) return [normalizedForcedPerson];
     if (normalizedApiMatchedPerson) return [normalizedApiMatchedPerson];
     if (normalizedMatchedPerson) return [normalizedMatchedPerson];
     return normalizedFallbackPerson ? [normalizedFallbackPerson] : [];
-  }, [isAdminUser, isAuthorizedUser, peopleForService, normalizedForcedPerson, normalizedApiMatchedPerson, normalizedMatchedPerson, normalizedFallbackPerson]);
+  }, [isAdminUser, isAuthorizedUser, isStaffUser, peopleForService, normalizedForcedPerson, normalizedApiMatchedPerson, normalizedMatchedPerson, normalizedFallbackPerson]);
 
   const serviceOptions = useMemo(() => {
     const items = [];
@@ -587,7 +587,7 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
 
   const roleInfo = {
     isAdmin: isAdminUser,
-    isAuthorized: isAuthorizedUser,
+    isAuthorized: isAuthorizedUser || isStaffUser,
     isStandard: isStandardUser,
   };
 

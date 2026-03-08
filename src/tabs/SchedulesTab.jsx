@@ -11,6 +11,7 @@ import { collectRequestsByPerson } from "../lib/requestParser.js";
 import { checkLeaveShiftConflict } from "../utils/conflictChecker.js";
 import useActiveYM from "../hooks/useActiveYM.js";
 import useServiceScope from "../hooks/useServiceScope.js"; // ⬅️ YENİ: servis kapsamı
+import { API } from "../lib/api.js";
 
 /* =========================================================
    INLINE SCHEDULER — “Liste Oluştur” için yedek algoritma
@@ -817,12 +818,10 @@ export default function SchedulesTab() {
     const token = localStorage.getItem("token") || localStorage.getItem("authToken");
     if (!token) return;
 
-    fetch("/api/personnel?size=500&active=true", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => r.json())
+    API.http
+      .get("/api/personnel?size=500&active=true")
       .then((d) => {
-        const items = Array.isArray(d) ? d : Array.isArray(d?.items) ? d.items : [];
+        const items = Array.isArray(d?.items) ? d.items : Array.isArray(d) ? d : [];
         if (!items.length) return;
         try {
           localStorage.setItem("peopleV2", JSON.stringify(items));

@@ -3,6 +3,7 @@
 /* ==== ROLLER ==== */
 export const ROLE = {
   ADMIN: "ADMIN",
+  STAFF: "STAFF",
   AUTHORIZED: "AUTHORIZED",
   STANDARD: "STANDARD",
 };
@@ -43,6 +44,15 @@ export const ROLE_PERMISSIONS = {
     PERMISSIONS.PARAMETERS_READ,
     PERMISSIONS.EXPORT_IMPORT,
   ],
+  [ROLE.STAFF]: [
+    PERMISSIONS.SERVICES_READ,
+    PERMISSIONS.SCHEDULE_READ,
+    PERMISSIONS.SCHEDULE_WRITE,
+    PERMISSIONS.LEAVES_READ,
+    PERMISSIONS.LEAVES_WRITE,
+    PERMISSIONS.PARAMETERS_READ,
+    PERMISSIONS.EXPORT_IMPORT,
+  ],
 
   [ROLE.STANDARD]: [
     PERMISSIONS.SERVICES_READ,
@@ -56,7 +66,9 @@ export function normalizeRole(raw) {
   if (!raw) return ROLE.STANDARD;
   const v = String(raw).toUpperCase();
   if (v === ROLE.ADMIN) return ROLE.ADMIN;
+  if (v === ROLE.STAFF) return ROLE.STAFF;
   if (v === ROLE.AUTHORIZED) return ROLE.AUTHORIZED;
+  if (v === "MANAGER") return ROLE.AUTHORIZED;
   return ROLE.STANDARD;
 }
 

@@ -95,15 +95,47 @@ export async function fetchPersonnel({
 // Dönüş beklenen: [{ date:"YYYY-MM-DD", hours: number }, ...]
 export async function fetchMonthlySchedule({ personId, year, month, token } = {}) {
   try {
-    // TODO: G6'da kullandığın endpoint ile değiştir
-    // ör: /api/schedule/monthly?personId=&y=&m=
-    const qs = new URLSearchParams({ personId, y: String(year), m: String(month) });
-    const data = await httpRequest(`/api/schedule/monthly?${qs.toString()}`, { token });
+    const qs = new URLSearchParams({
+      sectionId: "calisma-cizelgesi",
+      year: String(year),
+      month: String(month),
+    });
+    if (personId != null) qs.append("personId", String(personId));
+    const payload = await httpRequest(`/api/schedules/monthly?${qs.toString()}`, { token });
 
-    // Şemaya göre map et
-    // ör: {items:[{date:"2025-09-01", hours:8}, ...]}
-    const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-    return items.map((x) => ({ date: x.date, hours: Number(x.hours || 0) }));
+    const data = payload?.schedule?.data || {};
+    const assignments = Array.isArray(data?.assignments) ? data.assignments : [];
+    const shiftOptions = Array.isArray(data?.shiftOptions) ? data.shiftOptions : [];
+
+    const hoursByShift = new Map();
+    for (const s of shiftOptions) {
+      const key = String(s?.code || s?.id || "").trim();
+      const h = Number(s?.hours);
+      if (key && Number.isFinite(h)) hoursByShift.set(key, h);
+    }
+
+    const byDate = new Map();
+    for (const a of assignments) {
+      const pid = String(a?.personId || "").trim();
+      if (!pid || String(personId) !== pid) continue;
+      const date = String(a?.date || a?.day || "").slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+
+      const explicitHours = Number(a?.hours);
+      const shiftKey = String(a?.shiftCode || a?.shiftId || a?.shift || a?.code || "").trim();
+      const inferredHours = hoursByShift.get(shiftKey);
+      const hours = Number.isFinite(explicitHours)
+        ? explicitHours
+        : Number.isFinite(inferredHours)
+          ? inferredHours
+          : 0;
+
+      byDate.set(date, (byDate.get(date) || 0) + hours);
+    }
+
+    return Array.from(byDate.entries())
+      .map(([date, hours]) => ({ date, hours }))
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
   } catch (err) {
     if (err?.status !== 404) console.error("fetchMonthlySchedule err:", err);
     return [];

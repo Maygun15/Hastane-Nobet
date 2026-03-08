@@ -164,10 +164,16 @@ export const apiChangePassword = (oldPassword, newPassword) =>
 // Önce /api/... dener, yoksa köke düşer (veya tersi). AUTH_PREFIX boş olduğu için
 // ikinci path doğrudan '/admin/accept-invite' vb. olacaktır.
 export const apiAdminAcceptInvite = (code) =>
-  postTry([`${AUTH_PREFIX}/admin/accept-invite`, '/api/admin/accept-invite'], { code });
+  postTry(
+    ['/api/auth/admin/accept-invite', '/api/admin/accept-invite', `${AUTH_PREFIX}/admin/accept-invite`],
+    { code }
+  );
 
 export const apiStaffAcceptInvite = (code) =>
-  postTry([`${AUTH_PREFIX}/staff/accept-invite`, '/api/staff/accept-invite'], { code });
+  postTry(
+    ['/api/auth/staff/accept-invite', '/api/staff/accept-invite', `${AUTH_PREFIX}/staff/accept-invite`],
+    { code }
+  );
 
 /* ========= ADMIN (opsiyonel örnek) ========= */
 export const apiSetUserServices = (userId, serviceIds) =>

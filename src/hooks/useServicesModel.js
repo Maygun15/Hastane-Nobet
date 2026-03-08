@@ -1,7 +1,10 @@
 // src/hooks/useServicesModel.js
 import { useState, useCallback, useEffect } from "react";
+import { getApiBase } from "../lib/apiConfig.js";
 
 const BASE = "/api/services";
+const API_BASE = getApiBase().replace(/\/+$/, "");
+const makeUrl = (path) => `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
 
 function getToken() {
   return localStorage.getItem("authToken") || localStorage.getItem("token") || "";
@@ -32,7 +35,8 @@ export function useServices() {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch(BASE, { headers: authHeaders() });
+      const url = makeUrl(BASE);
+      const res = await fetch(url, { headers: authHeaders() });
       const json = await res.json();
       if (json?.ok) {
         _cache = Array.isArray(json.data) ? json.data : [];
@@ -64,7 +68,8 @@ export default function useServicesModel() {
 
   const add = useCallback(async (payload) => {
     try {
-      const res = await fetch(BASE, {
+      const url = makeUrl(BASE);
+      const res = await fetch(url, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify(payload),
@@ -84,7 +89,8 @@ export default function useServicesModel() {
 
   const update = useCallback(async (id, patch) => {
     try {
-      const res = await fetch(`${BASE}/${id}`, {
+      const url = makeUrl(`${BASE}/${id}`);
+      const res = await fetch(url, {
         method: "PATCH",
         headers: authHeaders(),
         body: JSON.stringify(patch),
@@ -104,7 +110,8 @@ export default function useServicesModel() {
 
   const remove = useCallback(async (id) => {
     try {
-      const res = await fetch(`${BASE}/${id}`, {
+      const url = makeUrl(`${BASE}/${id}`);
+      const res = await fetch(url, {
         method: "DELETE",
         headers: authHeaders(),
       });

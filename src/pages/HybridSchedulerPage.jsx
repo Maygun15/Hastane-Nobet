@@ -6,7 +6,7 @@ import {
   optimizeScheduleWithBackend,
   compareSchedules,
 } from '../services/hybridScheduler';
-import { getToken } from '../api/client';
+import { getToken } from '../lib/api.js';
 
 export default function HybridSchedulerPage() {
   // Form state

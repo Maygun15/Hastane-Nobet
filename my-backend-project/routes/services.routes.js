@@ -28,7 +28,7 @@ router.get('/', async (req, res) => {
 // POST /api/services  — sadece admin/authorized
 router.post('/', async (req, res) => {
   const role = req.user?.role;
-  if (!['admin', 'authorized'].includes(role))
+  if (!['admin', 'authorized', 'staff'].includes(role))
     return res.status(403).json({ ok: false, error: 'Yetersiz yetki' });
   try {
     const { name, code, active } = req.body;
@@ -44,7 +44,7 @@ router.post('/', async (req, res) => {
 // PATCH /api/services/:id
 router.patch('/:id', async (req, res) => {
   const role = req.user?.role;
-  if (!['admin', 'authorized'].includes(role))
+  if (!['admin', 'authorized', 'staff'].includes(role))
     return res.status(403).json({ ok: false, error: 'Yetersiz yetki' });
   try {
     const patch = {};

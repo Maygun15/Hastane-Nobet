@@ -18,6 +18,8 @@ const DEV_PASSWORD = String(process.env.ADMIN_PASSWORD || '1234');
 /* ============ Helpers ============ */
 const normalize = (s) => (s ?? '').toString().trim();
 const lc = (s) => normalize(s).toLowerCase();
+const ADMIN_INVITE_CODE = normalize(process.env.ADMIN_INVITE_CODE);
+const STAFF_INVITE_CODE = normalize(process.env.STAFF_INVITE_CODE);
 const makeToken = (userOrId, extra = {}) => {
   if (typeof userOrId === 'string') {
     return jwt.sign({ uid: userOrId, ...extra }, JWT_SECRET, { expiresIn: '7d' });
@@ -38,6 +40,16 @@ function pickIdentifier(body) {
     normalize(body.email) ||
     normalize(body.phone)
   );
+}
+
+async function getAuthUserFromRequest(req) {
+  const h = req.headers.authorization || '';
+  const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+  if (!token) return null;
+  const decoded = jwt.verify(token, JWT_SECRET);
+  if (!decoded?.uid) return null;
+  const user = await User.findById(decoded.uid);
+  return user || null;
 }
 
 /* ============= REGISTER (opsiyonel) ============= */
@@ -290,6 +302,64 @@ async function handleChangePassword(req, res) {
 // Eski ve yeni client'lar için iki route'u da destekle
 router.post('/password/change', handleChangePassword);
 router.post('/change-password', handleChangePassword);
+
+router.post('/admin/accept-invite', async (req, res) => {
+  try {
+    if (!ADMIN_INVITE_CODE) {
+      return res.status(404).json({ message: 'Admin davet akışı aktif değil' });
+    }
+    const code = normalize(req.body?.code);
+    if (!code || code !== ADMIN_INVITE_CODE) {
+      return res.status(400).json({ message: 'Geçersiz davet kodu' });
+    }
+    const user = await getAuthUserFromRequest(req);
+    if (!user) return res.status(401).json({ message: 'Yetkisiz' });
+    user.role = 'admin';
+    user.active = true;
+    await user.save();
+    return res.json({
+      ok: true,
+      user: {
+        id: String(user._id),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        active: user.active,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Davet işlenemedi' });
+  }
+});
+
+router.post('/staff/accept-invite', async (req, res) => {
+  try {
+    if (!STAFF_INVITE_CODE) {
+      return res.status(404).json({ message: 'Staff davet akışı aktif değil' });
+    }
+    const code = normalize(req.body?.code);
+    if (!code || code !== STAFF_INVITE_CODE) {
+      return res.status(400).json({ message: 'Geçersiz davet kodu' });
+    }
+    const user = await getAuthUserFromRequest(req);
+    if (!user) return res.status(401).json({ message: 'Yetkisiz' });
+    user.role = 'staff';
+    user.active = true;
+    await user.save();
+    return res.json({
+      ok: true,
+      user: {
+        id: String(user._id),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        active: user.active,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || 'Davet işlenemedi' });
+  }
+});
 
 /* ============= ME (token ile) ============= */
 router.get('/me', async (req, res) => {

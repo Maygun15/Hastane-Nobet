@@ -660,6 +660,35 @@ router.patch('/rules/toggle',
   }
 );
 
+// Hybrid comparison kaydı (hafif uyumluluk endpoint'i)
+router.post('/comparison',
+  requireAuth,
+  async (req, res) => {
+    try {
+      const {
+        sectionId = 'calisma-cizelgesi',
+        serviceId = '',
+        year,
+        month,
+        userDecision = '',
+      } = req.body || {};
+      return res.json({
+        ok: true,
+        comparison: {
+          sectionId: String(sectionId),
+          serviceId: String(serviceId || ''),
+          year: Number(year) || null,
+          month: Number(month) || null,
+          userDecision: String(userDecision || ''),
+          savedAt: new Date().toISOString(),
+        },
+      });
+    } catch (err) {
+      return res.status(500).json({ ok: false, message: err.message || 'Sunucu hatası' });
+    }
+  }
+);
+
 module.exports = router;
 
 /* =========================================================

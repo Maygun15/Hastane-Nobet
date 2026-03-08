@@ -13,8 +13,12 @@
  * 5. Frontend displays final optimized schedule
  */
 
-import { fetchDutyRules, saveDutyRules } from '../api/apiAdapter';
+import { fetchDutyRules } from '../api/apiAdapter';
 import { generateRoster } from '../engine/rosterEngine';
+import { getApiBase } from '../lib/apiConfig.js';
+
+const API_BASE = getApiBase().replace(/\/+$/, "");
+const makeApiUrl = (path) => `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
 
 /**
  * Stage 1: Frontend Draft (Quick)
@@ -97,7 +101,7 @@ export async function optimizeScheduleWithBackend({
 
     // Call backend scheduler API
     const response = await fetch(
-      `/api/scheduler/generate`,
+      makeApiUrl(`/api/scheduler/generate`),
       {
         method: "POST",
         headers: {
@@ -179,7 +183,7 @@ export async function saveScheduleComparison({
 }) {
   try {
     const response = await fetch(
-      `/api/schedules/comparison`,
+      makeApiUrl(`/api/schedules/comparison`),
       {
         method: "POST",
         headers: {

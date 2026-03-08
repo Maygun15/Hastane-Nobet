@@ -2,8 +2,7 @@
 const express = require('express');
 const router = express.Router();
 
-const { aiSuggest } = require('./ai.service.js');
-const { parseRequest } = require('./parse.service.js');
+const { aiSuggest, parseRequest } = require('./ai.service.js');
 const { validateParsedRequest } = require('./validators/ajv.js');
 
 const MONTH_RX = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -45,7 +44,7 @@ router.post('/parse-request', async (req, res) => {
 });
 
 /** n8n webhook’una proxy: AI öneri */
-router.post('/suggest', async (req, res, next) => {
+router.post('/suggest', async (req, res) => {
   try {
     const { service, month } = req.body || {};
     if (!service || !month || !MONTH_RX.test(month)) {
@@ -65,8 +64,12 @@ router.post('/suggest', async (req, res, next) => {
       n8n,
       receivedAt: new Date().toISOString()
     });
-  } catch (err) {
-    next(err);
+  } catch (e) {
+    console.error('suggest error:', e);
+    return res.status(500).json({
+      status: 'error',
+      message: e.message || 'suggest failed'
+    });
   }
 });
 
