@@ -118,6 +118,70 @@ function sanitizeSupervisorAssignments(assignments = [], defs = [], holidayKindB
   return { assignments: cleaned, changed };
 }
 
+function buildDefsIndex(defs = []) {
+  const byId = new Map();
+  const byShift = new Map();
+  for (const row of defs || []) {
+    const id = String(row?.id || row?.rowId || '').trim();
+    const shiftCode = String(row?.shiftCode || row?.code || '').trim();
+    if (id) byId.set(id, row);
+    if (shiftCode) byShift.set(shiftCode, row);
+  }
+  return { byId, byShift };
+}
+
+function countNamedAssignments(namedAssignments = {}) {
+  let total = 0;
+  for (const byRow of Object.values(namedAssignments || {})) {
+    if (!byRow || typeof byRow !== 'object') continue;
+    for (const names of Object.values(byRow || {})) {
+      if (Array.isArray(names)) total += names.length;
+    }
+  }
+  return total;
+}
+
+function buildAssignmentsFromNamed({ year, month, defs = [], namedAssignments = {} }) {
+  const out = [];
+  const seen = new Set();
+  const defIndex = buildDefsIndex(defs);
+  const pad2 = (n) => String(n).padStart(2, '0');
+
+  for (const [dayStr, perRow] of Object.entries(namedAssignments || {})) {
+    const day = Number(dayStr);
+    if (!Number.isFinite(day) || day < 1 || day > 31) continue;
+    const date = `${year}-${pad2(month)}-${pad2(day)}`;
+    const weekday = new Date(year, month - 1, day).getDay();
+    for (const [rowIdRaw, names] of Object.entries(perRow || {})) {
+      const rowId = String(rowIdRaw || '').trim();
+      const def =
+        defIndex.byId.get(rowId) ||
+        defIndex.byShift.get(rowId) ||
+        null;
+      const shiftId = String(def?.id || def?.rowId || rowId).trim();
+      const shiftCode = String(def?.shiftCode || def?.code || rowId).trim();
+      const roleLabel = String(def?.label || def?.name || def?.area || rowId).trim();
+      for (const personNameRaw of names || []) {
+        const personName = String(personNameRaw || '').trim();
+        if (!personName) continue;
+        const key = `${date}|${shiftId}|${personName}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({
+          date,
+          day: date,
+          weekday,
+          shiftId,
+          shiftCode,
+          roleLabel,
+          personName,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 function parseDateYmd(raw) {
   const str = String(raw || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) return null;
@@ -394,15 +458,41 @@ router.get('/monthly',
       const query = req.scheduleQuery;
       const doc = await MonthlySchedule.findOne(query).lean();
       let scheduleData = doc?.data && typeof doc.data === 'object' ? doc.data : {};
+      let dataChanged = false;
+
+      const defs = Array.isArray(scheduleData.defs)
+        ? scheduleData.defs
+        : Array.isArray(scheduleData.rows)
+        ? scheduleData.rows
+        : [];
+      const namedAssignments =
+        scheduleData?.roster?.namedAssignments && typeof scheduleData.roster.namedAssignments === 'object'
+          ? scheduleData.roster.namedAssignments
+          : null;
+      const assignmentCount = Array.isArray(scheduleData.assignments) ? scheduleData.assignments.length : 0;
+      const namedCount = namedAssignments ? countNamedAssignments(namedAssignments) : 0;
+
+      if (namedAssignments && namedCount > 0) {
+        const looksCorrupted =
+          assignmentCount === 0 ||
+          (assignmentCount > 0 && assignmentCount < Math.ceil(namedCount * 0.2));
+        if (looksCorrupted) {
+          const rebuilt = buildAssignmentsFromNamed({
+            year: query.year,
+            month: query.month,
+            defs,
+            namedAssignments,
+          });
+          if (rebuilt.length > assignmentCount) {
+            scheduleData = { ...scheduleData, assignments: rebuilt };
+            dataChanged = true;
+          }
+        }
+      }
 
       if (doc && Array.isArray(scheduleData.assignments)) {
         const holidays = await listHolidays({ year: query.year, month: query.month });
         const holidayKindByDate = buildHolidayKindByDateMap(holidays);
-        const defs = Array.isArray(scheduleData.defs)
-          ? scheduleData.defs
-          : Array.isArray(scheduleData.rows)
-          ? scheduleData.rows
-          : [];
         const sanitized = sanitizeSupervisorAssignments(
           scheduleData.assignments,
           defs,
@@ -410,12 +500,16 @@ router.get('/monthly',
         );
         if (sanitized.changed) {
           scheduleData = { ...scheduleData, assignments: sanitized.assignments };
-          await MonthlySchedule.findByIdAndUpdate(
-            doc._id,
-            { $set: { 'data.assignments': sanitized.assignments } },
-            { new: false }
-          );
+          dataChanged = true;
         }
+      }
+
+      if (doc && dataChanged) {
+        await MonthlySchedule.findByIdAndUpdate(
+          doc._id,
+          { $set: { data: scheduleData } },
+          { new: false }
+        );
       }
 
       const issues =
@@ -450,6 +544,24 @@ async function upsertMonthly(req, res) {
     const query = req.scheduleQuery;
     let payload = req.body?.data || {};
     const meta = req.body?.meta || {};
+    const existingDoc = await MonthlySchedule.findOne(query).lean();
+    const existingData = existingDoc?.data && typeof existingDoc.data === 'object' ? existingDoc.data : {};
+
+    if (payload && typeof payload === 'object') {
+      if (
+        !Object.prototype.hasOwnProperty.call(payload, 'assignments') &&
+        Array.isArray(existingData.assignments)
+      ) {
+        payload = { ...payload, assignments: existingData.assignments };
+      }
+      if (
+        !Object.prototype.hasOwnProperty.call(payload, 'roster') &&
+        existingData.roster &&
+        typeof existingData.roster === 'object'
+      ) {
+        payload = { ...payload, roster: existingData.roster };
+      }
+    }
 
     if (payload && typeof payload === 'object' && Array.isArray(payload.assignments)) {
       const holidays = await listHolidays({ year: query.year, month: query.month });
