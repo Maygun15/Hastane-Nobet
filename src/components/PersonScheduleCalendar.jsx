@@ -18,6 +18,7 @@ const stripDiacritics = (str = "") =>
 const canonName = (s = "") => stripDiacritics(s).replace(/\s+/g, " ").toLocaleUpperCase("tr-TR");
 
 const dayNameTR = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+const SERVICE_SUPERVISOR_LABEL = "SERVİS SORUMLUSU";
 
 const emptyAssignments = { map: new Map(), mismatch: null };
 
@@ -42,6 +43,14 @@ function assignmentKey(assg) {
   ).trim();
   const role = String(assg?.roleLabel ?? assg?.role ?? assg?.label ?? "").trim();
   return `${shift}||${role}`;
+}
+
+function isServiceSupervisorLabel(label = "") {
+  return stripDiacritics(String(label || ""))
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+    .includes("servis sorumlu");
 }
 
 function dedupeAssignments(list) {
@@ -1297,8 +1306,12 @@ export default function PersonScheduleCalendar({
     if (assg?.source && assg.source !== "remote") return;
     const dateStr = String(assg?.day || assg?.date || `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`).slice(0, 10);
     const shiftId = String(assg?.shiftId || assg?.shiftCode || assg?.shift || assg?.code || "").trim();
+    const rawLabel = String(assg?.roleLabel || assg?.label || "").trim();
+    const inferredLabel =
+      rawLabel ||
+      (assg?.supervisorTask || isServiceSupervisorLabel(rawLabel) ? SERVICE_SUPERVISOR_LABEL : "");
     setAssignShiftId(shiftId);
-    setAssignRoleLabel(String(assg?.roleLabel || assg?.label || "").trim());
+    setAssignRoleLabel(inferredLabel);
     setAssignNote(String(assg?.note || "").trim());
     setAssignPinned(!!assg?.pinned);
     setAssignError("");
@@ -1325,21 +1338,12 @@ export default function PersonScheduleCalendar({
       return;
     }
     try {
-      if (assignModal.mode === "edit" && assignModal.assg) {
-        const prevShiftId = String(
-          assignModal.assg.shiftId || assignModal.assg.shiftCode || assignModal.assg.shift || assignModal.assg.code || ""
-        ).trim();
-        if (prevShiftId && prevShiftId !== shiftId) {
-          await unassignSchedule({
-            sectionId,
-            serviceId: remoteServiceIdUsed ?? effectiveServiceId,
-            role: remoteRoleUsed ?? scheduleRole,
-            date: assignModal.dateStr,
-            shiftId: prevShiftId,
-            personId: selectedPerson.id,
-          });
-        }
-      }
+      const prevShiftId = String(
+        assignModal.assg?.shiftId || assignModal.assg?.shiftCode || assignModal.assg?.shift || assignModal.assg?.code || ""
+      ).trim();
+      const baseRoleLabel = String(assignRoleLabel || "").trim();
+      const roleLabel = baseRoleLabel
+        || (assignModal.assg?.supervisorTask ? SERVICE_SUPERVISOR_LABEL : "");
       await assignSchedule({
         sectionId,
         serviceId: remoteServiceIdUsed ?? effectiveServiceId,
@@ -1347,9 +1351,12 @@ export default function PersonScheduleCalendar({
         date: assignModal.dateStr,
         shiftId,
         shiftCode: shiftId,
+        ...(assignModal.mode === "edit" && prevShiftId && prevShiftId !== shiftId
+          ? { previousShiftId: prevShiftId }
+          : {}),
         personId: selectedPerson.id,
         personName: selectedPerson.name,
-        roleLabel: assignRoleLabel,
+        roleLabel,
         note: assignNote,
         pinned: assignPinned,
       });

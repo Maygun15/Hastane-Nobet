@@ -22,6 +22,7 @@ function parseIntSafe(val, def = null) {
 }
 
 const HALF_DAY_A_HOURS = 4;
+const SERVICE_SUPERVISOR_LABEL = 'SERVİS SORUMLUSU';
 const normalizeText = (s = '') =>
   String(s || '')
     .normalize('NFD')
@@ -65,15 +66,23 @@ function buildSupervisorRowIdSet(defs = []) {
   return set;
 }
 
+function isSupervisorAssignment(item = {}, supervisorRowIds = new Set()) {
+  const shiftId = String(item?.shiftId || item?.rowId || '').trim();
+  const label = String(item?.roleLabel || item?.label || item?.area || '').trim();
+  return (
+    item?.supervisorTask === true ||
+    supervisorRowIds.has(shiftId) ||
+    isServiceSupervisorLabel(label)
+  );
+}
+
 function sanitizeSupervisorAssignments(assignments = [], defs = [], holidayKindByDate = {}) {
   const supervisorRowIds = buildSupervisorRowIdSet(defs);
   let changed = false;
   const cleaned = [];
 
   for (const item of assignments || []) {
-    const shiftId = String(item?.shiftId || item?.rowId || '').trim();
-    const label = String(item?.roleLabel || item?.label || item?.area || '').trim();
-    const isSupervisor = supervisorRowIds.has(shiftId) || isServiceSupervisorLabel(label);
+    const isSupervisor = isSupervisorAssignment(item, supervisorRowIds);
     if (!isSupervisor) {
       cleaned.push(item);
       continue;
@@ -97,11 +106,15 @@ function sanitizeSupervisorAssignments(assignments = [], defs = [], holidayKindB
     if (kind === 'arife' || kind === 'half') {
       const next = {
         ...item,
+        roleLabel: String(item?.roleLabel || item?.label || '').trim() || SERVICE_SUPERVISOR_LABEL,
+        supervisorTask: true,
         shiftCode: 'A',
         shiftId: 'A',
         hours: HALF_DAY_A_HOURS,
       };
       if (
+        String(item?.roleLabel || item?.label || '').trim() !== next.roleLabel ||
+        item?.supervisorTask !== true ||
         String(item?.shiftCode || '') !== 'A' ||
         String(item?.shiftId || '') !== 'A' ||
         Number(item?.hours) !== HALF_DAY_A_HOURS
@@ -112,7 +125,18 @@ function sanitizeSupervisorAssignments(assignments = [], defs = [], holidayKindB
       continue;
     }
 
-    cleaned.push(item);
+    const next = {
+      ...item,
+      roleLabel: String(item?.roleLabel || item?.label || '').trim() || SERVICE_SUPERVISOR_LABEL,
+      supervisorTask: true,
+    };
+    if (
+      String(item?.roleLabel || item?.label || '').trim() !== next.roleLabel ||
+      item?.supervisorTask !== true
+    ) {
+      changed = true;
+    }
+    cleaned.push(next);
   }
 
   return { assignments: cleaned, changed };
@@ -161,6 +185,7 @@ function buildAssignmentsFromNamed({ year, month, defs = [], namedAssignments = 
       const shiftId = String(def?.id || def?.rowId || rowId).trim();
       const shiftCode = String(def?.shiftCode || def?.code || rowId).trim();
       const roleLabel = String(def?.label || def?.name || def?.area || rowId).trim();
+      const supervisorTask = isServiceSupervisorLabel(roleLabel);
       for (const personNameRaw of names || []) {
         const personName = String(personNameRaw || '').trim();
         if (!personName) continue;
@@ -174,6 +199,7 @@ function buildAssignmentsFromNamed({ year, month, defs = [], namedAssignments = 
           shiftId,
           shiftCode,
           roleLabel,
+          ...(supervisorTask ? { supervisorTask: true } : {}),
           personName,
         });
       }
@@ -227,6 +253,9 @@ function normalizeAssignPayload(body, query, userId) {
   const shiftCode = String(body?.shiftCode ?? body?.shiftId ?? body?.shift ?? '').trim();
   const roleLabel = String(body?.roleLabel ?? body?.roleName ?? body?.label ?? '').trim();
   const note = String(body?.note ?? '').trim();
+  const previousShiftId = String(
+    body?.previousShiftId ?? body?.prevShiftId ?? body?.previousShiftCode ?? ''
+  ).trim();
   const pinnedRaw = body?.pinned;
   const pinned =
     pinnedRaw === true ||
@@ -248,6 +277,7 @@ function normalizeAssignPayload(body, query, userId) {
     createdAt: new Date().toISOString(),
   };
   if (pinnedRaw !== undefined) payload.pinned = !!pinned;
+  if (previousShiftId) payload.previousShiftId = previousShiftId;
   return payload;
 }
 
@@ -696,9 +726,18 @@ router.post('/assign',
       let payload = { ...req.assignPayload };
       const payloadLabel = String(payload?.roleLabel || payload?.label || '').trim();
       const payloadShiftId = String(payload?.shiftId || payload?.shiftCode || '').trim();
+      const previousShiftId = String(payload?.previousShiftId || '').trim();
       const isSupervisor =
-        supervisorRowIds.has(payloadShiftId) || isServiceSupervisorLabel(payloadLabel);
+        payload?.supervisorTask === true ||
+        supervisorRowIds.has(payloadShiftId) ||
+        supervisorRowIds.has(previousShiftId) ||
+        isServiceSupervisorLabel(payloadLabel);
       if (isSupervisor) {
+        payload = {
+          ...payload,
+          supervisorTask: true,
+          roleLabel: payloadLabel || SERVICE_SUPERVISOR_LABEL,
+        };
         const dateStr = String(payload?.date || '').slice(0, 10);
         const kind = String(holidayKindByDate?.[dateStr] || '').toLowerCase();
         const dt = new Date(`${dateStr}T00:00:00`);
@@ -719,10 +758,29 @@ router.post('/assign',
         }
       }
 
+      let nextAssignments = [...assignments];
+      if (previousShiftId) {
+        const prevNorm = previousShiftId.toUpperCase();
+        const payloadDate = String(payload?.date || '').slice(0, 10);
+        const payloadPid = String(payload?.personId || '').trim();
+        const payloadPname = canonName(payload?.personName || '');
+        nextAssignments = nextAssignments.filter((a) => {
+          const aDate = String(a?.date || a?.day || '').slice(0, 10);
+          if (aDate !== payloadDate) return true;
+          const aShift = String(a?.shiftId || a?.shiftCode || a?.shift || a?.code || '').trim().toUpperCase();
+          if (aShift !== prevNorm) return true;
+          const aPid = String(a?.personId || '').trim();
+          const aPname = canonName(a?.personName || a?.name || '');
+          if (payloadPid && aPid) return aPid !== payloadPid;
+          if (payloadPname && aPname) return aPname !== payloadPname;
+          return true;
+        });
+      }
+
       const key = assignmentKey(payload);
       // Edit senaryosunda aynı kaydı kendisiyle kıyaslayıp yalancı kural ihlali üretmemek için
       // validasyon sırasında mevcut kaydı geçici olarak hariç tut.
-      const validationBase = assignments.filter((a) => assignmentKey(a) !== key);
+      const validationBase = nextAssignments.filter((a) => assignmentKey(a) !== key);
       const validation = validateAssignment(req.scheduleRules, payload, validationBase);
       if (!validation.valid) {
         return res.status(400).json({
@@ -732,22 +790,22 @@ router.post('/assign',
         });
       }
 
-      const idx = assignments.findIndex((a) => assignmentKey(a) === key);
+      const idx = nextAssignments.findIndex((a) => assignmentKey(a) === key);
       if (idx === -1) {
-        assignments.push(payload);
+        nextAssignments.push(payload);
       } else {
-        const existing = assignments[idx] || {};
+        const existing = nextAssignments[idx] || {};
         const merged = { ...existing, ...payload };
         if (payload.pinned === undefined && existing.pinned !== undefined) {
           merged.pinned = existing.pinned;
         }
-        assignments[idx] = merged;
+        nextAssignments[idx] = merged;
       }
 
       const update = {
         $set: {
           ...query,
-          data: { ...data, assignments },
+          data: { ...data, assignments: nextAssignments },
           updatedBy: req.user?.uid || null,
         },
         $setOnInsert: {
@@ -763,7 +821,7 @@ router.post('/assign',
 
       const outAssignments = Array.isArray(saved?.data?.assignments)
         ? saved.data.assignments
-        : assignments;
+        : nextAssignments;
 
       return res.json({
         ok: true,
