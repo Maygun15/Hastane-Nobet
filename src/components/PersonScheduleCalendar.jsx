@@ -810,7 +810,8 @@ export default function PersonScheduleCalendar({
   const [remoteDefs, setRemoteDefs] = useState([]);
   const [remoteError, setRemoteError] = useState("");
   const [remoteLoading, setRemoteLoading] = useState(false);
-  const [remoteServiceIdUsed, setRemoteServiceIdUsed] = useState("");
+  const [remoteServiceIdUsed, setRemoteServiceIdUsed] = useState(null);
+  const [remoteRoleUsed, setRemoteRoleUsed] = useState(null);
   const [assignModal, setAssignModal] = useState({
     open: false,
     mode: "add",
@@ -958,7 +959,8 @@ export default function PersonScheduleCalendar({
       setRemoteDefs([]);
       setRemoteError("");
       setRemoteLoading(false);
-      setRemoteServiceIdUsed("");
+      setRemoteServiceIdUsed(null);
+      setRemoteRoleUsed(null);
       return () => {};
     }
     if (!canManage && !effectiveServiceId && !selectedPerson) {
@@ -966,7 +968,8 @@ export default function PersonScheduleCalendar({
       setRemoteDefs([]);
       setRemoteError("");
       setRemoteLoading(false);
-      setRemoteServiceIdUsed("");
+      setRemoteServiceIdUsed(null);
+      setRemoteRoleUsed(null);
       return () => {};
     }
     setRemoteLoading(true);
@@ -975,85 +978,87 @@ export default function PersonScheduleCalendar({
         const candidates = Array.from(
           new Set([effectiveServiceId, String(serviceId ?? "").trim(), ""].filter(v => v !== undefined))
         );
-        const roleCandidates = canManage
-          ? [scheduleRole]
-          : Array.from(
-              new Set(
-                [scheduleRole, "Nurse", "Doctor", ""]
-                  .map((v) => String(v || "").trim())
-                  .filter(Boolean)
-              )
-            );
+        const roleCandidates = Array.from(
+          new Set([scheduleRole, "", "Nurse", "Doctor"].map((v) => String(v ?? "").trim()))
+        );
         const targetPid = selectedPerson?.id ? String(selectedPerson.id) : "";
         const targetCanon = selectedPerson?.canon ? String(selectedPerson.canon) : "";
-        const hasPersonMatch = (s) => {
-          if (canManage) return true;
-          if (!targetPid && !targetCanon) return true;
-          const data = s?.data || {};
-          const defs = Array.isArray(data.defs) ? data.defs : Array.isArray(data.rows) ? data.rows : [];
-          const list = normalizeRemoteAssignments(
-            { ...data, year, month },
-            defs
-          );
+        const countPersonMatches = (list) => {
+          if (!Array.isArray(list) || !list.length) return 0;
+          if (!targetPid && !targetCanon) return list.length;
+          let count = 0;
           for (const item of list) {
             if (!item) continue;
             const pidRaw = item.personId ?? item.personID ?? item.staffId ?? item.pid ?? "";
             const pid = pidRaw == null ? "" : String(pidRaw).trim();
-            if (targetPid && pid && pid === targetPid) return true;
             const nameRaw = item.personName ?? item.fullName ?? item.name ?? "";
-            if (targetCanon && nameRaw && canonName(nameRaw) === targetCanon) return true;
+            const idMatch = !!targetPid && !!pid && pid === targetPid;
+            const canonMatch = !!targetCanon && !!nameRaw && canonName(nameRaw) === targetCanon;
+            if (idMatch || canonMatch) count += 1;
           }
-          return false;
+          return count;
         };
-        let schedule = null;
-        let pickedServiceId = "";
-        let fallbackSchedule = null;
-        let fallbackServiceId = "";
+
+        const fetched = [];
         const roleList = roleCandidates.length ? roleCandidates : [""];
-        for (const role of roleList) {
+        for (const roleKey of roleList) {
           for (const sid of candidates) {
             const s = await getMonthlySchedule({
               sectionId,
               serviceId: sid,
-              role,
+              role: roleKey,
               year,
               month,
             });
             if (!s) continue;
-            if (!fallbackSchedule) {
-              fallbackSchedule = s;
-              fallbackServiceId = sid;
-            }
-            const hasAssignments = Array.isArray(s?.data?.assignments) && s.data.assignments.length > 0;
-            const hasDefs = Array.isArray(s?.data?.defs) && s.data.defs.length > 0;
-            if (!hasPersonMatch(s)) continue;
-            schedule = s;
-            pickedServiceId = sid;
-            if (hasAssignments || hasDefs) break;
+            const data = s?.data || {};
+            const defs = Array.isArray(data.defs) ? data.defs : Array.isArray(data.rows) ? data.rows : [];
+            const normalizedAssignments = normalizeRemoteAssignments(
+              { ...data, year, month },
+              defs
+            );
+            const personMatches = countPersonMatches(normalizedAssignments);
+            fetched.push({
+              schedule: s,
+              serviceId: sid,
+              role: roleKey,
+              defs,
+              normalizedAssignments,
+              personMatches,
+              assignmentCount: normalizedAssignments.length,
+              defCount: defs.length,
+              updatedAtTs: Date.parse(s?.updatedAt || "") || 0,
+            });
           }
-          if (schedule) break;
         }
-        if (!schedule && fallbackSchedule) {
-          schedule = fallbackSchedule;
-          pickedServiceId = fallbackServiceId;
-        }
+
+        fetched.sort((a, b) => {
+          if (b.personMatches !== a.personMatches) return b.personMatches - a.personMatches;
+          if (b.assignmentCount !== a.assignmentCount) return b.assignmentCount - a.assignmentCount;
+          if (b.defCount !== a.defCount) return b.defCount - a.defCount;
+          const aServicePref = a.serviceId === effectiveServiceId ? 1 : 0;
+          const bServicePref = b.serviceId === effectiveServiceId ? 1 : 0;
+          if (bServicePref !== aServicePref) return bServicePref - aServicePref;
+          const aRolePref = a.role === scheduleRole ? 1 : 0;
+          const bRolePref = b.role === scheduleRole ? 1 : 0;
+          if (bRolePref !== aRolePref) return bRolePref - aRolePref;
+          return b.updatedAtTs - a.updatedAtTs;
+        });
+
+        const picked = fetched[0] || null;
         if (!active) return;
-        const data = schedule?.data || {};
-        const defs = Array.isArray(data.defs) ? data.defs : Array.isArray(data.rows) ? data.rows : [];
-        const normalizedAssignments = normalizeRemoteAssignments(
-          { ...data, year, month },
-          defs
-        );
-        setRemoteDefs(defs);
-        setRemoteAssignmentsRaw(normalizedAssignments);
-        setRemoteServiceIdUsed(pickedServiceId);
+        setRemoteDefs(picked?.defs || []);
+        setRemoteAssignmentsRaw(picked?.normalizedAssignments || []);
+        setRemoteServiceIdUsed(picked ? String(picked.serviceId ?? "") : null);
+        setRemoteRoleUsed(picked ? String(picked.role ?? "") : null);
         setRemoteError("");
       } catch (err) {
         if (!active) return;
         setRemoteAssignmentsRaw([]);
         setRemoteDefs([]);
         setRemoteError(err?.message || "Sunucudan nöbet verisi alınamadı.");
-        setRemoteServiceIdUsed("");
+        setRemoteServiceIdUsed(null);
+        setRemoteRoleUsed(null);
       } finally {
         if (active) setRemoteLoading(false);
       }
@@ -1321,8 +1326,8 @@ export default function PersonScheduleCalendar({
         if (prevShiftId && prevShiftId !== shiftId) {
           await unassignSchedule({
             sectionId,
-            serviceId: remoteServiceIdUsed || effectiveServiceId,
-            role: scheduleRole,
+            serviceId: remoteServiceIdUsed ?? effectiveServiceId,
+            role: remoteRoleUsed ?? scheduleRole,
             date: assignModal.dateStr,
             shiftId: prevShiftId,
             personId: selectedPerson.id,
@@ -1331,8 +1336,8 @@ export default function PersonScheduleCalendar({
       }
       await assignSchedule({
         sectionId,
-        serviceId: remoteServiceIdUsed || effectiveServiceId,
-        role: scheduleRole,
+        serviceId: remoteServiceIdUsed ?? effectiveServiceId,
+        role: remoteRoleUsed ?? scheduleRole,
         date: assignModal.dateStr,
         shiftId,
         shiftCode: shiftId,
@@ -1361,8 +1366,8 @@ export default function PersonScheduleCalendar({
     try {
       await unassignSchedule({
         sectionId,
-        serviceId: remoteServiceIdUsed || effectiveServiceId,
-        role: scheduleRole,
+        serviceId: remoteServiceIdUsed ?? effectiveServiceId,
+        role: remoteRoleUsed ?? scheduleRole,
         date: dateStr,
         shiftId,
         personId: pid,
