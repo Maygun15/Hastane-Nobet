@@ -601,14 +601,34 @@ function buildDefsIndex(defs) {
 }
 
 function normalizeRemoteAssignments(data, defs) {
+  const merged = [];
+  const seen = new Set();
+  const pushUnique = (item) => {
+    if (!item) return;
+    const dateStr = String(item?.date ?? item?.day ?? "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return;
+    const pid = String(item?.personId ?? item?.personID ?? item?.staffId ?? item?.pid ?? "").trim();
+    const pname = String(item?.personName ?? item?.fullName ?? item?.name ?? "").trim();
+    const shift = String(item?.shiftCode ?? item?.shiftId ?? item?.shift ?? item?.code ?? "").trim();
+    const roleLabel = String(item?.roleLabel ?? item?.role ?? item?.label ?? "").trim();
+    const k = `${dateStr}|${pid}|${canonName(pname)}|${shift}|${roleLabel}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    merged.push({
+      ...item,
+      date: dateStr,
+      day: dateStr,
+    });
+  };
+
   if (Array.isArray(data?.assignments) && data.assignments.length) {
-    return data.assignments;
+    (data.assignments || []).forEach((item) => pushUnique(item));
   }
+
   const named = data?.roster?.namedAssignments || data?.namedAssignments || null;
-  if (!named || typeof named !== "object") return [];
+  if (!named || typeof named !== "object") return merged;
 
   const defIndex = buildDefsIndex(defs);
-  const out = [];
   Object.entries(named).forEach(([dayStr, perRow]) => {
     const dayNum = Number(dayStr);
     if (!Number.isFinite(dayNum) || dayNum < 1 || dayNum > 31) return;
@@ -624,7 +644,7 @@ function normalizeRemoteAssignments(data, defs) {
       const roleLabel = String(def?.label ?? def?.name ?? def?.area ?? rowId).trim();
       names.forEach((nameRaw) => {
         if (!nameRaw) return;
-        out.push({
+        pushUnique({
           date: dateStr,
           day: dateStr,
           shiftId,
@@ -635,7 +655,7 @@ function normalizeRemoteAssignments(data, defs) {
       });
     });
   });
-  return out;
+  return merged;
 }
 
 function collectAssignmentsFromRemote({ year, month0, personId, personCanon, assignments, defs }) {

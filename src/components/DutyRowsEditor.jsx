@@ -498,6 +498,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const [staffLoading, setStaffLoading] = useState(true);
   const [staffRevision, setStaffRevision] = useState(0);
   const [buildLoading, setBuildLoading] = useState(false);
+  const savedAssignmentsRef = useRef([]);
 
   const normalizeOverridesForSignature = useCallback((ovr) => {
     return Object.fromEntries(
@@ -1202,6 +1203,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           const data = schedule.data || {};
           const remoteDefs = Array.isArray(data.defs) ? data.defs : [];
           const remoteAssignments = Array.isArray(data.assignments) ? data.assignments : [];
+          savedAssignmentsRef.current = remoteAssignments;
           const defsForUI = remoteDefs;
           if (Array.isArray(defsForUI)) replaceAllDefs(defsForUI);
           if ("overrides" in data) {
@@ -1246,6 +1248,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           setAutoSaveStatus("idle");
           setAutoSaveError(null);
         } else {
+          savedAssignmentsRef.current = [];
           setLastSavedInfo(null);
           if (autoSaveTimerRef.current) {
             clearTimeout(autoSaveTimerRef.current);
@@ -1258,6 +1261,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       } catch (err) {
         if (cancelled) return;
         if (err?.status === 404) {
+          savedAssignmentsRef.current = [];
           setLastSavedInfo(null);
           if (autoSaveTimerRef.current) {
             clearTimeout(autoSaveTimerRef.current);
@@ -1352,6 +1356,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         version: 1,
         defs: rows,
         overrides,
+        assignments: Array.isArray(savedAssignmentsRef.current) ? savedAssignmentsRef.current : [],
         roster,
         preview,
         aiPlan,
@@ -1680,6 +1685,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       });
       const data = res?.data || res;
       if (data?.assignments?.length) {
+        savedAssignmentsRef.current = Array.isArray(data.assignments) ? data.assignments : [];
         const rosterFromServer = buildRosterFromBackend(data.assignments, data.issues);
         setRoster(rosterFromServer);
         const payload = {
