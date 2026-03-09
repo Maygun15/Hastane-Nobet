@@ -603,6 +603,7 @@ function buildDefsIndex(defs) {
 function normalizeRemoteAssignments(data, defs) {
   const merged = [];
   const seen = new Set();
+  const hasExplicitAssignments = Array.isArray(data?.assignments) && data.assignments.length > 0;
   const pushUnique = (item) => {
     if (!item) return;
     const dateStr = String(item?.date ?? item?.day ?? "").slice(0, 10);
@@ -611,7 +612,8 @@ function normalizeRemoteAssignments(data, defs) {
     const pname = String(item?.personName ?? item?.fullName ?? item?.name ?? "").trim();
     const shift = String(item?.shiftCode ?? item?.shiftId ?? item?.shift ?? item?.code ?? "").trim();
     const roleLabel = String(item?.roleLabel ?? item?.role ?? item?.label ?? "").trim();
-    const k = `${dateStr}|${pid}|${canonName(pname)}|${shift}|${roleLabel}`;
+    const identity = canonName(pname) || (pid ? `id:${pid}` : "");
+    const k = `${dateStr}|${identity}|${shift}|${roleLabel}`;
     if (seen.has(k)) return;
     seen.add(k);
     merged.push({
@@ -624,6 +626,10 @@ function normalizeRemoteAssignments(data, defs) {
   if (Array.isArray(data?.assignments) && data.assignments.length) {
     (data.assignments || []).forEach((item) => pushUnique(item));
   }
+
+  // assignments varsa onu otorite kabul et; eski/stale namedAssignments
+  // manuel düzenlemeleri gölgede bırakmasın.
+  if (hasExplicitAssignments) return merged;
 
   const named = data?.roster?.namedAssignments || data?.namedAssignments || null;
   if (!named || typeof named !== "object") return merged;
