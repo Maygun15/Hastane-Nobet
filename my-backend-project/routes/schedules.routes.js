@@ -719,7 +719,11 @@ router.post('/assign',
         }
       }
 
-      const validation = validateAssignment(req.scheduleRules, payload, assignments);
+      const key = assignmentKey(payload);
+      // Edit senaryosunda aynı kaydı kendisiyle kıyaslayıp yalancı kural ihlali üretmemek için
+      // validasyon sırasında mevcut kaydı geçici olarak hariç tut.
+      const validationBase = assignments.filter((a) => assignmentKey(a) !== key);
+      const validation = validateAssignment(req.scheduleRules, payload, validationBase);
       if (!validation.valid) {
         return res.status(400).json({
           ok: false,
@@ -728,7 +732,6 @@ router.post('/assign',
         });
       }
 
-      const key = assignmentKey(payload);
       const idx = assignments.findIndex((a) => assignmentKey(a) === key);
       if (idx === -1) {
         assignments.push(payload);
