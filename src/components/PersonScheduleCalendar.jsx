@@ -743,14 +743,12 @@ export default function PersonScheduleCalendar({
       bumpLocal();
     };
 
-    window.addEventListener("planner:assignments", onPlannerChange);
-    window.addEventListener("planner:aiPlan", onPlannerChange);
+    window.addEventListener("planner:changed", onPlannerChange);
     window.addEventListener("schedule:built", onScheduleBuilt);
     window.addEventListener("schedule:saved", onScheduleSaved);
     window.addEventListener("storage", onStorage);
     return () => {
-      window.removeEventListener("planner:assignments", onPlannerChange);
-      window.removeEventListener("planner:aiPlan", onPlannerChange);
+      window.removeEventListener("planner:changed", onPlannerChange);
       window.removeEventListener("schedule:built", onScheduleBuilt);
       window.removeEventListener("schedule:saved", onScheduleSaved);
       window.removeEventListener("storage", onStorage);
@@ -1186,7 +1184,7 @@ export default function PersonScheduleCalendar({
   const refreshRemote = () => {
     setRemoteRevision((v) => v + 1);
     try {
-      window.dispatchEvent(new Event("planner:assignments"));
+      window.dispatchEvent(new Event("planner:changed"));
     } catch {}
   };
 

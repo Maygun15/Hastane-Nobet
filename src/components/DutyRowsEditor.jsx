@@ -868,7 +868,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     flatAll[role] = flatByRole;
     LS.set(FLAT_KEY, flatAll);
     try {
-      window.dispatchEvent(new Event("planner:assignments"));
+      window.dispatchEvent(new Event("planner:changed"));
     } catch {}
     try {
       LS.set("scheduleBuildTrigger", { ym: monthKey, ts: Date.now() });
@@ -1009,7 +1009,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     note(parts.join(" • ") || "İçe aktarma tamamlandı.", "success");
 
     try {
-      window.dispatchEvent(new Event("planner:assignments"));
+      window.dispatchEvent(new Event("planner:changed"));
     } catch {}
   }
 
@@ -1133,9 +1133,9 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     }
   }
   const [peopleNameMap, setPeopleNameMap] = useState(() => buildIdToNameMap());
-  const emitPlannerAiPlan = useCallback(() => {
+  const emitPlannerChanged = useCallback(() => {
     try {
-      window.dispatchEvent(new Event("planner:aiPlan"));
+      window.dispatchEvent(new Event("planner:changed"));
     } catch {
       /* noop */
     }
@@ -1145,8 +1145,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     if (saved && saved.year === year && saved.month === month0 + 1) setAiPlan(saved);
     else setAiPlan(null);
     setPeopleNameMap(buildIdToNameMap());
-    emitPlannerAiPlan();
-  }, [year, month0, emitPlannerAiPlan]);
+    emitPlannerChanged();
+  }, [year, month0, emitPlannerChanged]);
   useEffect(() => {
     refreshAiPlan();
   }, [year, month0, refreshAiPlan]);
