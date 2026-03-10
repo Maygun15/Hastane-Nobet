@@ -157,6 +157,69 @@ function fromNamedAssignments(data, people = []) {
   return { assignments, byName };
 }
 
+function fromExplicitAssignments(data, people = []) {
+  const list =
+    data?.data?.assignments ||
+    data?.assignments ||
+    data?.schedule?.data?.assignments ||
+    [];
+  if (!Array.isArray(list)) return null;
+
+  const nameToId = new Map();
+  for (const person of people || []) {
+    const key = canon(personNameOf(person));
+    const pid = personIdOf(person);
+    if (key && pid) nameToId.set(key, pid);
+  }
+
+  const assignments = {};
+  const byName = {};
+
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const dayRaw = item.day ?? item.dayNum ?? item.d;
+    const dateRaw = String(item.date || item.day || "").slice(0, 10);
+    const dayFromDate =
+      /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? Number.parseInt(dateRaw.slice(8, 10), 10) : NaN;
+    const day = Number.isFinite(Number(dayRaw)) ? Number(dayRaw) : dayFromDate;
+    if (!Number.isFinite(day) || day < 1 || day > 31) continue;
+
+    const pid = String(item.personId || item.pid || item.staffId || "").trim();
+    const nameRaw = item.personName || item.fullName || item.name || "";
+    const nameKey = canon(nameRaw);
+    const resolvedPid = pid || (nameKey ? nameToId.get(nameKey) || "" : "");
+    const shiftCode = item.shiftCode || item.shift || item.code || "";
+    const rowLabel = item.roleLabel || item.rowLabel || item.area || item.label || "";
+    const explicitHours = Number(item.hours);
+    const entry = {
+      shiftCode,
+      rowLabel,
+      hours: Number.isFinite(explicitHours) ? explicitHours : shiftHoursFromCode(shiftCode),
+      source: "backend",
+    };
+
+    if (nameKey) byName[nameKey] = { ...(byName[nameKey] || {}), [day]: entry };
+    if (resolvedPid) assignments[resolvedPid] = { ...(assignments[resolvedPid] || {}), [day]: entry };
+  }
+
+  return { assignments, byName };
+}
+
+function hasBackendEnvelope(data) {
+  if (!data || typeof data !== "object") return false;
+  if (Object.prototype.hasOwnProperty.call(data, "data")) return true;
+  if (Object.prototype.hasOwnProperty.call(data, "updatedAt")) return true;
+  if (Object.prototype.hasOwnProperty.call(data, "sectionId")) return true;
+  return false;
+}
+
+function fromBackendSchedule(data, people = []) {
+  if (!data) return null;
+  const named = fromNamedAssignments(data, people);
+  const explicit = fromExplicitAssignments(data, people);
+  return merge(named, explicit) || { assignments: {}, byName: {} };
+}
+
 function merge(base, override) {
   if (!base) return override || { assignments: {}, byName: {} };
   if (!override) return base;
@@ -179,12 +242,12 @@ function merge(base, override) {
 export function getScheduleModelSync({ year, month, people = [] }) {
   const ym = `${year}-${pad2(month)}`;
   const backendCache = LS.get(`schedule::${ym}`, null) || LS.get(`monthlySchedule::${ym}`, null);
+  if (hasBackendEnvelope(backendCache)) {
+    return fromBackendSchedule(backendCache, people);
+  }
 
   let model = fromRowsV2(people);
   model = merge(model, fromRosterFlat(year, month));
-  if (backendCache) {
-    model = merge(model, fromNamedAssignments(backendCache, people));
-  }
   return model || { assignments: {}, byName: {} };
 }
 
@@ -204,12 +267,12 @@ export async function getScheduleModel({ sectionId, serviceId, role = "", year, 
   if (!backendData) {
     backendData = LS.get(`schedule::${ym}`, null) || LS.get(`monthlySchedule::${ym}`, null);
   }
+  if (hasBackendEnvelope(backendData)) {
+    return fromBackendSchedule(backendData, people);
+  }
 
   let model = fromRowsV2(people);
   model = merge(model, fromRosterFlat(year, month));
-  if (backendData) {
-    model = merge(model, fromNamedAssignments(backendData, people));
-  }
   return model || { assignments: {}, byName: {} };
 }
 

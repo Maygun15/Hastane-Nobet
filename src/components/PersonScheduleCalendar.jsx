@@ -1134,7 +1134,7 @@ export default function PersonScheduleCalendar({
 
   const assignmentsByDay = useMemo(() => {
     const combined = new Map();
-    const hasRemote = !remoteLoading && !remoteError;
+    const hasRemote = !!sectionId && !remoteLoading && !remoteError;
     const merge = (srcMap) => {
       if (!(srcMap instanceof Map)) return;
       for (const [day, list] of srcMap.entries()) {
@@ -1171,6 +1171,7 @@ export default function PersonScheduleCalendar({
     remoteAssignments,
     remoteLoading,
     remoteError,
+    sectionId,
     leavesForPerson,
     year,
     month0,
