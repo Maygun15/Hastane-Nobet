@@ -2,7 +2,7 @@
 
 /* ========= BASE ========= */
 import { getApiBase, assertProdWriteAllowed } from "./apiConfig.js";
-export const REQUIRE_BACKEND = (import.meta.env.VITE_REQUIRE_BACKEND || "true") === "true";
+export const REQUIRE_BACKEND = (import.meta?.env?.VITE_REQUIRE_BACKEND || "true") === "true";
 
 // Route prefix — admin/invite gibi kök yollar için boş
 const AUTH_PREFIX = ''; // admin/invite gibi kök yollar için
