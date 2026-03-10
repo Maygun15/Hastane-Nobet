@@ -198,12 +198,9 @@ async function saveLeavesNow() {
   const token = getToken();
   if (!token) return;
   try {
-    const backendValue = Object.fromEntries(
-      Object.entries(leavesCache || {}).filter(([pid]) => !String(pid).startsWith("__name__:"))
-    );
     await API.http.req(`/api/settings/leavesV2`, {
       method: "PUT",
-      body: { value: backendValue, serviceId: "" },
+      body: { value: leavesCache, serviceId: "" },
     });
     leavesDirty = false;
   } catch (err) {
@@ -348,6 +345,17 @@ export function setLeave({ personId, personName, year, month, day, code, note })
     suppress: false,
   });
 
+  // Arka planda tek gün bazlı backend sync
+  if (pidSet && pidOk) {
+    const token = getToken();
+    if (token) {
+      API.http.req(`/api/leaves`, {
+        method: "PUT",
+        body: { personId: pid, year: Y, month: M1, day: D, code: c, ...(note ? { note } : {}), serviceId: "" },
+      }).catch((err) => console.warn("leave PUT failed:", err?.message));
+    }
+  }
+
   emitLeavesChanged();
 }
 
@@ -398,6 +406,17 @@ export function unsetLeave({ personId, personName, year, month, day }) {
     day: D,
     suppress: true,
   });
+
+  // Arka planda tek gün bazlı backend sync
+  if (pidSet && pidOk) {
+    const token = getToken();
+    if (token) {
+      API.http.req(`/api/leaves`, {
+        method: "DELETE",
+        body: { personId: pid, year: Y, month: M1, day: D, serviceId: "" },
+      }).catch((err) => console.warn("leave DELETE failed:", err?.message));
+    }
+  }
 
   emitLeavesChanged();
 }
