@@ -1009,7 +1009,6 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     note(parts.join(" • ") || "İçe aktarma tamamlandı.", "success");
 
     try {
-      localStorage.setItem("assignmentsBuffer", JSON.stringify(parsedRows));
       window.dispatchEvent(new Event("planner:assignments"));
     } catch {}
   }

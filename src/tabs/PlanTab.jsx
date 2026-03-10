@@ -727,17 +727,7 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
         },
       };
 
-      const ctx = {
-        year: cleanedResult.year,
-        month: cleanedResult.month,
-        role: cleanedResult.role,
-        serviceId: result.serviceId,
-        result: cleanedResult.dpResult,
-        taskLines: cleanedResult.taskLines,
-        workingHours: cleanedResult.workingHours,
-      };
       try {
-        localStorage.setItem("dpResultLast", JSON.stringify(ctx));
         window.dispatchEvent(new Event("planner:dpResult"));
       } catch {}
 

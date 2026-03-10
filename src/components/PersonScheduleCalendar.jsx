@@ -20,17 +20,13 @@ const canonName = (s = "") => stripDiacritics(s).replace(/\s+/g, " ").toLocaleUp
 const dayNameTR = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
 const SERVICE_SUPERVISOR_LABEL = "SERVİS SORUMLUSU";
 
-const emptyAssignments = { map: new Map(), mismatch: null };
-
 const AREA_STORAGE_KEYS = ["workAreasV2", "workAreas"];
 const WORKING_HOURS_KEYS = ["workingHoursV2", "workingHours"];
 
 const SOURCE_PRIORITY = {
   remote: 3,
   aiPlan: 2,
-  buffer: 1,
   rosterPreview: 1,
-  dpResult: 1,
 };
 
 function assignmentKey(assg) {
@@ -357,121 +353,6 @@ function resolveUserPerson(user, options) {
   if (!userCanon) return "";
   const match = options.find((opt) => opt.canon === userCanon);
   return match?.id || "";
-}
-
-function assignmentCanon(assg) {
-  const candidates = [
-    assg?.personName,
-    assg?.name,
-    assg?.displayName,
-    assg?.fullName,
-  ]
-    .map((v) => (v == null ? "" : String(v).trim()))
-    .filter(Boolean);
-  return candidates.length ? canonName(candidates[0]) : "";
-}
-
-function collectAssignmentsForMonth({ year, month0, personId, personCanon }) {
-  const ctx = (() => {
-    try {
-      return JSON.parse(localStorage.getItem("dpResultLast") || "null");
-    } catch {
-      return null;
-    }
-  })();
-  if (!ctx || !ctx.result?.assignments) return emptyAssignments;
-  if (Number(ctx.year) !== Number(year) || Number(ctx.month) !== Number(month0)) {
-    return { map: new Map(), mismatch: ctx };
-  }
-  const target = `${year}-${pad2(month0 + 1)}`;
-  const map = new Map();
-  const targetPid = personId ? String(personId) : "";
-  const targetCanon = personCanon ? canonName(personCanon) : "";
-
-  for (const assg of ctx.result.assignments || []) {
-    if (!assg) continue;
-    const pid = String(assg.personId ?? assg.personID ?? assg.staffId ?? assg.pid ?? "").trim();
-    const hasTargetId = !!targetPid;
-    const hasPid = !!pid;
-    const pidMatch = hasTargetId && hasPid && pid === targetPid;
-    const canonMatch = (!hasTargetId || !hasPid) && targetCanon && assignmentCanon(assg) === targetCanon;
-    if (!pidMatch && !canonMatch) continue;
-    if (!assg.day || !assg.day.startsWith(target)) continue;
-    const dayNum = parseInt(assg.day.slice(8, 10), 10);
-    if (!Number.isFinite(dayNum)) continue;
-    if (!map.has(dayNum)) map.set(dayNum, []);
-    map.get(dayNum).push(assg);
-  }
-  return { map, mismatch: null };
-}
-
-function collectAssignmentsFromBuffer({ year, month0, personId, personCanon }) {
-  const map = new Map();
-  try {
-    const raw = localStorage.getItem("assignmentsBuffer");
-    if (!raw) return map;
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return map;
-    const targetPid = personId ? String(personId) : "";
-    const targetCanon = personCanon ? canonName(personCanon) : "";
-    for (const item of arr) {
-      if (!item) continue;
-
-      const pidRaw = item.personId ?? item.personID ?? item.staffId ?? item.pid ?? "";
-      const pid = pidRaw == null ? "" : String(pidRaw).trim();
-      const fullName = item.fullName ?? item.personName ?? item.name ?? "";
-      const canon = fullName ? canonName(String(fullName)) : "";
-
-      const hasTargetId = !!targetPid;
-      const hasPid = !!pid;
-      const pidMatch = hasTargetId && hasPid && pid === targetPid;
-      const canonMatch = (!hasTargetId || !hasPid) && targetCanon && canon && canon === targetCanon;
-      if (!pidMatch && !canonMatch) continue;
-
-      let dateStr = item.date ?? item.Date ?? "";
-      if (!dateStr && Number.isFinite(Number(item.day ?? item.Day))) {
-        const dd = Number(item.day ?? item.Day);
-        if (dd >= 1 && dd <= 31) {
-          dateStr = `${year}-${pad2(month0 + 1)}-${pad2(dd)}`;
-        }
-      }
-      dateStr = String(dateStr || "").trim();
-      if (!dateStr) continue;
-      const date = new Date(dateStr);
-      if (Number.isNaN(date.getTime())) continue;
-      if (date.getFullYear() !== year || date.getMonth() !== month0) continue;
-      const dayNum = date.getDate();
-      if (!Number.isFinite(dayNum)) continue;
-
-      const shift =
-        item.shiftCode ??
-        item.Shift ??
-        item.code ??
-        item["Vardiya"] ??
-        item["VARDIYA"] ??
-        "";
-      const service =
-        item.service ??
-        item.Service ??
-        item.role ??
-        item["Görev"] ??
-        item["GÖREV"] ??
-        "";
-
-      if (!map.has(dayNum)) map.set(dayNum, []);
-      map.get(dayNum).push({
-        day: `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`,
-        roleLabel: service,
-        shiftCode: shift,
-        personId: pid || targetPid || undefined,
-        personName: fullName || undefined,
-        source: "buffer",
-      });
-    }
-  } catch {
-    /* noop */
-  }
-  return map;
 }
 
 function collectAssignmentsFromAiPlan({ year, month0, personId, personCanon }) {
@@ -862,14 +743,12 @@ export default function PersonScheduleCalendar({
       bumpLocal();
     };
 
-    window.addEventListener("planner:dpResult", onPlannerChange);
     window.addEventListener("planner:assignments", onPlannerChange);
     window.addEventListener("planner:aiPlan", onPlannerChange);
     window.addEventListener("schedule:built", onScheduleBuilt);
     window.addEventListener("schedule:saved", onScheduleSaved);
     window.addEventListener("storage", onStorage);
     return () => {
-      window.removeEventListener("planner:dpResult", onPlannerChange);
       window.removeEventListener("planner:assignments", onPlannerChange);
       window.removeEventListener("planner:aiPlan", onPlannerChange);
       window.removeEventListener("schedule:built", onScheduleBuilt);
@@ -925,27 +804,6 @@ export default function PersonScheduleCalendar({
       selectedPerson.aliasIds || selectedPerson.raw?.aliasIds || []
     );
   }, [allLeaves, selectedPerson, ymKey]);
-
-  const assignmentInfo = useMemo(() => {
-    if (!selectedPerson) return emptyAssignments;
-    return collectAssignmentsForMonth({
-      year,
-      month0,
-      personId: selectedPerson.id,
-      personCanon: selectedPerson.canon,
-      revision: dpRevision,
-    });
-  }, [selectedPerson, year, month0, dpRevision]);
-
-  const bufferAssignments = useMemo(() => {
-    if (!selectedPerson) return new Map();
-    return collectAssignmentsFromBuffer({
-      year,
-      month0,
-      personId: selectedPerson.id,
-      personCanon: selectedPerson.canon,
-    });
-  }, [selectedPerson, year, month0, dpRevision]);
 
   const aiPlanAssignments = useMemo(() => {
     if (!selectedPerson) return new Map();
@@ -1147,8 +1005,6 @@ export default function PersonScheduleCalendar({
       merge(remoteAssignments);
     } else {
       // Remote yoksa (henüz yüklenmedi/hata) local fallback
-      if (assignmentInfo?.map instanceof Map) merge(assignmentInfo.map);
-      merge(bufferAssignments);
       merge(aiPlanAssignments);
       merge(rosterPreviewAssignments);
     }
@@ -1164,8 +1020,6 @@ export default function PersonScheduleCalendar({
     }
     return combined;
   }, [
-    assignmentInfo?.map,
-    bufferAssignments,
     aiPlanAssignments,
     rosterPreviewAssignments,
     remoteAssignments,
