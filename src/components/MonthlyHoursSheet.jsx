@@ -133,7 +133,8 @@ function getShiftHours(item) {
   return null;
 }
 
-function readWorkingHoursList() {
+function readWorkingHoursList(preferredList) {
+  if (Array.isArray(preferredList)) return preferredList;
   const v2 = extractListValue(LS.get("workingHoursV2", null));
   const v1 = extractListValue(LS.get("workingHours", null));
   return [...v2, ...v1];
@@ -291,12 +292,16 @@ function tryParseExcelDateFlexible(v){
   return null;
 }
 
-/* Çalışma kodu -> saat (LS: workingHoursV2 + workingHours) */
-function useShiftCodeHours(){
-  const [map, setMap] = useState(() => buildShiftCodeHoursMap(readWorkingHoursList()));
+/* Çalışma kodu -> saat (öncelik: props.workingHours, fallback: LS) */
+function useShiftCodeHours(workingHours){
+  const usingProps = Array.isArray(workingHours);
+  const [map, setMap] = useState(() =>
+    buildShiftCodeHoursMap(readWorkingHoursList(workingHours))
+  );
   useEffect(() => {
-    const refresh = () => setMap(buildShiftCodeHoursMap(readWorkingHoursList()));
+    const refresh = () => setMap(buildShiftCodeHoursMap(readWorkingHoursList(workingHours)));
     refresh();
+    if (usingProps) return;
     window.addEventListener("workingHours:changed", refresh);
     window.addEventListener("settings:changed", refresh);
     window.addEventListener("storage", refresh);
@@ -305,7 +310,7 @@ function useShiftCodeHours(){
       window.removeEventListener("settings:changed", refresh);
       window.removeEventListener("storage", refresh);
     };
-  }, []);
+  }, [usingProps, workingHours]);
   return map;
 }
 
@@ -393,7 +398,7 @@ function mostCommonMonthlyValue(rows) {
 }
 
 /* ========= Ana Bileşen (imperative API ile) ========= */
-const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym }, ref) {
+const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHours }, ref) {
   const year   = Number(ym?.year);
   const month1 = Number(ym?.month);                     // 1..12
   const month0 = Math.max(0, Math.min(11, month1 - 1)); // 0..11
@@ -407,7 +412,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym }, ref) {
 
   // Kişiler + kod-saat haritası
   const people = usePeople(roleLabel);
-  const shiftCodeHours = useShiftCodeHours();
+  const shiftCodeHours = useShiftCodeHours(workingHours);
   const [holidays, setHolidays] = useState([]);
   const stdMonthly = useMemo(() => computeMonthlyStdHours(year, month1, holidays), [year, month1, holidays]);
 

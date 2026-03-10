@@ -425,6 +425,7 @@ function SectionContent({
   peopleAll,
   allLeaves,
   leaveTypes,
+  workingHours,
   selectedServiceId, // ⬅️ YENİ
 }) {
   const editorRef = useRef(null);
@@ -646,6 +647,7 @@ function SectionContent({
             <MonthlyHoursSheet
               ref={monthlyRef}
               ym={{ year, month }}
+              workingHours={workingHours}
               setYm={(val) => {
                 const y = Number(val?.year) || year;
                 const m = Number(val?.month) || month;
@@ -669,7 +671,7 @@ function SectionContent({
             onReset={() => overtimeRef.current?.reset?.() ?? commonToolbarProps.onReset()}
           />
           <div className="rounded-lg border bg-white p-4">
-            <OvertimeTab ref={overtimeRef} hideToolbar />
+            <OvertimeTab ref={overtimeRef} hideToolbar workingHours={workingHours} />
           </div>
         </div>
       );
@@ -721,7 +723,7 @@ function SectionContent({
 /* =========================
    Ana bileşen
 ========================= */
-export default function SchedulesTab() {
+export default function SchedulesTab({ workingHours = [] }) {
   const initialSections = useMemo(() => {
     const v = LS.get(LS_KEY, DEFAULT_SECTIONS);
     return Array.isArray(v) && v.length ? v : DEFAULT_SECTIONS;
@@ -963,6 +965,7 @@ export default function SchedulesTab() {
                 peopleAll={scopedPeople}      /* ⬅️ sadece kapsam içindekiler */
                 allLeaves={allLeaves}
                 leaveTypes={leaveTypes}
+                workingHours={workingHours}
                 selectedServiceId={selectedServiceId} /* ⬅️ içeriğe geçir */
               />
             </div>

@@ -1097,8 +1097,7 @@ export default function PersonScheduleCalendar({
 
   const workingHoursRaw = useMemo(() => {
     // Props (backend'den gelen) varsa localStorage'ı yoksay
-    const fromPropsRaw = Array.isArray(workingHours) ? workingHours : [];
-    if (fromPropsRaw.length > 0) return fromPropsRaw;
+    if (Array.isArray(workingHours)) return workingHours;
     return readStorageList(WORKING_HOURS_KEYS);
   }, [workingHours, settingsRevision]);
 
@@ -1118,9 +1117,10 @@ export default function PersonScheduleCalendar({
   }, [remoteDefs, settingsRevision, workingHoursRaw]);
 
   const areaOptions = useMemo(() => {
-    const fromPropsRaw = Array.isArray(workAreas) ? workAreas : [];
+    const hasProps = Array.isArray(workAreas);
+    const fromPropsRaw = hasProps ? workAreas : [];
     // Props (backend'den gelen) varsa localStorage'ı yoksay
-    const fromLSRaw = fromPropsRaw.length > 0 ? [] : readStorageList(AREA_STORAGE_KEYS);
+    const fromLSRaw = hasProps ? [] : readStorageList(AREA_STORAGE_KEYS);
     const fromPeopleRaw = collectAreasFromPeople(people);
     const merged = normalizeWorkAreas([...fromPropsRaw, ...fromLSRaw, ...fromPeopleRaw]);
     if (merged.length) return merged;
@@ -1134,7 +1134,7 @@ export default function PersonScheduleCalendar({
 
   const assignmentsByDay = useMemo(() => {
     const combined = new Map();
-    const hasRemote = Array.isArray(remoteAssignmentsRaw) && remoteAssignmentsRaw.length > 0;
+    const hasRemote = !remoteLoading && !remoteError;
     const merge = (srcMap) => {
       if (!(srcMap instanceof Map)) return;
       for (const [day, list] of srcMap.entries()) {
@@ -1146,7 +1146,7 @@ export default function PersonScheduleCalendar({
       // Remote veri varsa sadece remote'u kullan — local kaynakları yoksay
       merge(remoteAssignments);
     } else {
-      // Remote yoksa (henüz yüklenmedi veya boş ay) local fallback
+      // Remote yoksa (henüz yüklenmedi/hata) local fallback
       if (assignmentInfo?.map instanceof Map) merge(assignmentInfo.map);
       merge(bufferAssignments);
       merge(aiPlanAssignments);
@@ -1169,7 +1169,8 @@ export default function PersonScheduleCalendar({
     aiPlanAssignments,
     rosterPreviewAssignments,
     remoteAssignments,
-    remoteAssignmentsRaw,
+    remoteLoading,
+    remoteError,
     leavesForPerson,
     year,
     month0,

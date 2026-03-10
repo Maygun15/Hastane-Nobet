@@ -105,9 +105,26 @@ function buildPersonMetaIndex() {
   return { byId, byCanon };
 }
 
-function loadShiftCodeHours() {
+function loadShiftCodeHours(preferredList) {
   try {
-    const arr = JSON.parse(localStorage.getItem("workingHours") || "[]");
+    const parseList = (raw) => {
+      if (Array.isArray(raw)) return raw;
+      if (raw && typeof raw === "object") {
+        const candidate = raw.value ?? raw.items ?? raw.list ?? raw.data;
+        return Array.isArray(candidate) ? candidate : [];
+      }
+      return [];
+    };
+    const parseLS = (key) => {
+      try {
+        return parseList(JSON.parse(localStorage.getItem(key) || "[]"));
+      } catch {
+        return [];
+      }
+    };
+    const arr = Array.isArray(preferredList)
+      ? preferredList
+      : [...parseLS("workingHoursV2"), ...parseLS("workingHours")];
     const map = {};
     (arr || []).forEach((x) => {
       const code = String(x?.code || "").trim().toUpperCase();
@@ -298,7 +315,7 @@ function collectLeaveDaysForMonth({ year, month, leaves, codesByDay }) {
 }
 
 /* ================ Component ================ */
-const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref) {
+const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, workingHours }, ref) {
   const { ym } = useActiveYM();
   const { year, month } = ym;
 
@@ -311,7 +328,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false }, ref
   const [search, setSearch] = useState("");
   const fileRef = useRef(null);
   const dcount = daysInMonth(year, month);
-  const shiftCodeHours = useMemo(() => loadShiftCodeHours(), []);
+  const shiftCodeHours = useMemo(() => loadShiftCodeHours(workingHours), [workingHours]);
   const [importing, setImporting] = useState(false);
   const [leaveRules, setLeaveRules] = useState(() =>
     buildLeaveCreditRules(LS.get("leaveTypesV2", []), DEFAULT_LEAVE_RULES)

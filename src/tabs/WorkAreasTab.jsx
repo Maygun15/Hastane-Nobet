@@ -34,7 +34,7 @@ const splitNames = (s) =>
 const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
 
 function useHybridAreas(external, setExternal) {
-  const controlled = typeof setExternal === "function" && Array.isArray(external);
+  const controlled = typeof setExternal === "function";
 
   const [inner, setInner] = useState(() => {
     if (controlled) return [];
@@ -62,7 +62,7 @@ function useHybridAreas(external, setExternal) {
     }
   };
 
-  const list = controlled ? (external ?? []) : (inner ?? []);
+  const list = controlled ? (Array.isArray(external) ? external : []) : (inner ?? []);
 
   useEffect(() => {
     if (!controlled) {

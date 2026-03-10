@@ -744,7 +744,7 @@ export default function HospitalRosterApp() {
           )}
 
           {activeTab === "schedules" && (
-            canSeeSchedules ? <SchedulesTab workAreas={visibleWorkAreas} /> : <NeedAuth />
+            canSeeSchedules ? <SchedulesTab workAreas={visibleWorkAreas} workingHours={workingHours} /> : <NeedAuth />
           )}
 
           {activeTab === "parameters" && (

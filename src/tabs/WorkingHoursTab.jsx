@@ -18,7 +18,7 @@ const DEFAULTS = [
 ];
 
 function useHybridWorkingHours(external, setExternal) {
-  const controlled = typeof setExternal === "function" && Array.isArray(external);
+  const controlled = typeof setExternal === "function";
 
   const [inner, setInner] = useState(() => {
     if (controlled) return [];
@@ -47,7 +47,7 @@ function useHybridWorkingHours(external, setExternal) {
     }
   };
 
-  const list = controlled ? (external ?? []) : (inner ?? []);
+  const list = controlled ? (Array.isArray(external) ? external : []) : (inner ?? []);
 
   useEffect(() => {
     if (!controlled) {
