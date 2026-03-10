@@ -437,11 +437,9 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
     const refreshLeaves = () => setAllLeaves(getAllLeaves());
     window.addEventListener("leaves:changed", refreshLeaves);
     window.addEventListener("storage", refreshLeaves);
-    window.addEventListener("planner:dpResult", refreshLeaves);
     return () => {
       window.removeEventListener("leaves:changed", refreshLeaves);
       window.removeEventListener("storage", refreshLeaves);
-      window.removeEventListener("planner:dpResult", refreshLeaves);
     };
   }, []);
 
@@ -726,10 +724,6 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
           assignments: cleanedAssignments,
         },
       };
-
-      try {
-        window.dispatchEvent(new Event("planner:dpResult"));
-      } catch {}
 
       // Plan çıktısını çalışma çizelgesine yaz (backend ile senkron)
       try {
