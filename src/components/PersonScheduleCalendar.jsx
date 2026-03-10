@@ -1096,9 +1096,10 @@ export default function PersonScheduleCalendar({
   }, [selectedPerson, year, month0, remoteAssignmentsRaw, remoteDefs]);
 
   const workingHoursRaw = useMemo(() => {
+    // Props (backend'den gelen) varsa localStorage'ı yoksay
     const fromPropsRaw = Array.isArray(workingHours) ? workingHours : [];
-    const fromLSRaw = readStorageList(WORKING_HOURS_KEYS);
-    return [...fromPropsRaw, ...fromLSRaw];
+    if (fromPropsRaw.length > 0) return fromPropsRaw;
+    return readStorageList(WORKING_HOURS_KEYS);
   }, [workingHours, settingsRevision]);
 
   const shiftOptions = useMemo(() => {
@@ -1118,7 +1119,8 @@ export default function PersonScheduleCalendar({
 
   const areaOptions = useMemo(() => {
     const fromPropsRaw = Array.isArray(workAreas) ? workAreas : [];
-    const fromLSRaw = readStorageList(AREA_STORAGE_KEYS);
+    // Props (backend'den gelen) varsa localStorage'ı yoksay
+    const fromLSRaw = fromPropsRaw.length > 0 ? [] : readStorageList(AREA_STORAGE_KEYS);
     const fromPeopleRaw = collectAreasFromPeople(people);
     const merged = normalizeWorkAreas([...fromPropsRaw, ...fromLSRaw, ...fromPeopleRaw]);
     if (merged.length) return merged;
@@ -1140,13 +1142,16 @@ export default function PersonScheduleCalendar({
         combined.get(day).push(...list);
       }
     };
-    if (canManage && !hasRemote) {
+    if (hasRemote) {
+      // Remote veri varsa sadece remote'u kullan — local kaynakları yoksay
+      merge(remoteAssignments);
+    } else {
+      // Remote yoksa (henüz yüklenmedi veya boş ay) local fallback
       if (assignmentInfo?.map instanceof Map) merge(assignmentInfo.map);
       merge(bufferAssignments);
       merge(aiPlanAssignments);
       merge(rosterPreviewAssignments);
     }
-    merge(remoteAssignments);
     const leaveDays = collectLeaveDays(leavesForPerson, year, month0);
     for (const [day, list] of combined.entries()) {
       const unique = dedupeAssignments(list);
@@ -1168,7 +1173,6 @@ export default function PersonScheduleCalendar({
     leavesForPerson,
     year,
     month0,
-    canManage,
   ]);
 
   const overtimeStats = useMemo(() => {
@@ -1461,12 +1465,6 @@ export default function PersonScheduleCalendar({
         </div>
       )}
 
-      {assignmentInfo.mismatch && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-800 px-4 py-3 text-sm">
-          Son oluşturulan plan {assignmentInfo.mismatch?.year}-{pad2(Number(assignmentInfo.mismatch?.month) + 1)}{" "}
-          dönemine ait. {year}-{pad2(month0 + 1)} için nöbet verisi bulunamadı.
-        </div>
-      )}
       {canManage && remoteError && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3 text-sm">
           {remoteError}
