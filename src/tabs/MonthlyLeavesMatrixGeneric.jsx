@@ -1,7 +1,6 @@
 // src/tabs/MonthlyLeavesMatrixGeneric.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getAllLeaves, setLeave, unsetLeave } from "../lib/leaves.js";
-import { LS } from "../utils/storage.js"; // ← localStorage yardımcıları
 import { checkLeaveShiftConflict } from "../utils/conflictChecker.js";
 
 /* ===== Görsel sabitler ===== */
@@ -109,10 +108,8 @@ export default function MonthlyLeavesMatrixGeneric({
       setVersion((v) => v + 1);
     };
     window.addEventListener("leaves:changed", refresh);
-    window.addEventListener("storage", refresh);
     return () => {
       window.removeEventListener("leaves:changed", refresh);
-      window.removeEventListener("storage", refresh);
     };
   }, []);
 
@@ -123,21 +120,16 @@ export default function MonthlyLeavesMatrixGeneric({
       (p) => !svc || p?.service === svc || p?.serviceId === svc
     );
 
-    const byName = LS.get("allLeavesByNameV1", {});
-
     return filtered.map((p) => {
       const canon   = canonName(p.fullName || p.name || "");
       const pid     = p?.id ? String(p.id) : "";
       const monthly = leavesObj?.[pid]?.[ym] || {};
-      // 🔒 Kalıcı düzeltme: ID varsa isim-bazlı veriyi dikkate alma
-      const nameMonthly = pid ? {} : (byName?.[canon]?.[ym] || {});
-      const merged = { ...nameMonthly, ...monthly };
       return {
         id: String(pid || canon || Math.random()),
         personId: pid,
         name: p.fullName || p.name || canon,
         canon,
-        monthly: merged,
+        monthly,
       };
     });
   }, [people, selectedService, serviceId, leavesObj, ym]);

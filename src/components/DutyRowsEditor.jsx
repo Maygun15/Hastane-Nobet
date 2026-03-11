@@ -21,7 +21,6 @@ import { parseAssignmentsFile } from "../lib/importExcel.js";
 import { getPeople, getAreas, getShifts, buildPeopleFromLeaves } from "../lib/dataResolver.js";
 import {
   getAllLeaves,
-  getLeaveSuppress,
   leavesToUnavailable as leavesToUnavailableByPid,
   buildNameUnavailability,
   loadLeavesFromBackend,
@@ -233,36 +232,16 @@ function buildUnavailableByDay(year, month0) {
   try {
     const all = getAllLeaves();
     const byPid = leavesToUnavailableByPid(all, year, month0 + 1);
-    const nameStore = LS.get("allLeavesByNameV1", {});
-    const suppress = getLeaveSuppress();
-    const ymKey = `${year}-${String(month0 + 1).padStart(2, "0")}`;
     const idNameMap = buildIdToNameMap();
     const out = {};
     for (const [pid, daysObj] of Object.entries(byPid || {})) {
-      const isPseudo = pid.startsWith("__name__:");
-      const canon = isPseudo
-        ? canonName(pid.slice("__name__:".length))
-        : (idNameMap.has(pid) ? canonName(idNameMap.get(pid)) : null);
+      const canon = idNameMap.has(pid) ? canonName(idNameMap.get(pid)) : null;
       for (const dStr of Object.keys(daysObj || {})) {
         const d = Number(dStr);
         if (!Number.isFinite(d) || d < 1) continue;
-        if (!isPseudo && suppress.ids?.[pid]?.[ymKey]?.[String(d)]) continue;
-        if (isPseudo && canon && suppress.canon?.[canon]?.[ymKey]?.[String(d)]) continue;
         const bucket = (out[d] ??= { ids: new Set(), canon: new Set() });
-        if (!isPseudo) bucket.ids.add(String(pid));
+        bucket.ids.add(String(pid));
         if (canon) bucket.canon.add(canon);
-      }
-    }
-    for (const [canon, byYm] of Object.entries(nameStore || {})) {
-      const daysObj = byYm?.[ymKey];
-      if (!daysObj) continue;
-      for (const dStr of Object.keys(daysObj || {})) {
-        const d = Number(dStr);
-        if (!Number.isFinite(d) || d < 1) continue;
-        const canonNorm = canonName(canon);
-        if (suppress.canon?.[canonNorm]?.[ymKey]?.[String(d)]) continue;
-        const bucket = (out[d] ??= { ids: new Set(), canon: new Set() });
-        bucket.canon.add(canonNorm);
       }
     }
     return out;

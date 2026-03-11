@@ -1,5 +1,6 @@
 // src/tabs/ParametersTab.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import "../styles/parameters-ui-v2.css";
 
 import WorkAreasTab from "./WorkAreasTab.jsx";
 import WorkingHoursTab from "./WorkingHoursTab.jsx";
@@ -12,6 +13,7 @@ import { API, getToken } from "../lib/api.js";
 
 const LS_ACTIVE_SUBTAB = "paramsActiveSubtabV1";
 const LS_KEY_RULES = "dutyRulesV2"; // ✅ nöbet kuralları LS anahtarı
+const LS_UI_V2 = "paramsUiV2Enabled";
 const cn = (...c) => c.filter(Boolean).join(" ");
 
 // Backend kural anahtarlarını UI listesinden türet
@@ -198,6 +200,16 @@ export default function ParametersTab({
     return subFromHash() ?? subFromQuery() ?? lsGet() ?? DEFAULT_ID;
   }, []);
   const [active, setActive] = useState(isValid(initial) ? initial : DEFAULT_ID);
+  const [uiV2, setUiV2] = useState(() => {
+    try {
+      const raw = localStorage.getItem(LS_UI_V2);
+      if (raw === "0") return false;
+      if (raw === "1") return true;
+      return true; // ilk açılışta yeni görünüm açık
+    } catch {
+      return true;
+    }
+  });
 
   // Nöbet kuralları state'i (tek yerde yönetim)
   const [dutyRules, setDutyRules] = useState(() => {
@@ -299,15 +311,27 @@ export default function ParametersTab({
     handleClick(DEFAULT_ID);
   };
 
+  const toggleUi = () => {
+    setUiV2((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(LS_UI_V2, next ? "1" : "0");
+      } catch {}
+      return next;
+    });
+  };
+
   return (
-    <div className="p-4">
+    <div className={cn("p-4", uiV2 && "params-ui-v2")}>
       {/* Üst menü */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
+      <div data-params-topbar className="flex flex-wrap items-center gap-2 mb-4">
         {SUBTABS.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => handleClick(t.id)}
+            data-params-tab-btn
+            data-active={active === t.id ? "true" : "false"}
             className={cn(
               "px-3 py-2 text-sm rounded border",
               active === t.id ? "bg-blue-50 border-blue-400" : "bg-white"
@@ -317,6 +341,17 @@ export default function ParametersTab({
           </button>
         ))}
         <div className="ml-auto flex gap-2">
+          <button
+            type="button"
+            className={cn(
+              "px-2 py-2 text-xs border rounded",
+              uiV2 ? "bg-emerald-50 border-emerald-300 text-emerald-700" : "bg-white"
+            )}
+            onClick={toggleUi}
+            title="Yeni parametreler görünümünü aç/kapat"
+          >
+            {uiV2 ? "Yeni Tasarım: Açık" : "Yeni Tasarım: Kapalı"}
+          </button>
           <button type="button" className="px-2 py-2 text-sm border rounded" onClick={() => go(-1)} title="Önceki">‹</button>
           <button type="button" className="px-2 py-2 text-sm border rounded" onClick={() => go(1)} title="Sonraki">›</button>
           <button type="button" className="px-2 py-1 text-xs border rounded" onClick={resetRemembered}>Sıfırla</button>
@@ -324,7 +359,7 @@ export default function ParametersTab({
       </div>
 
       {/* İçerik */}
-      <div className="mt-2">
+      <div data-params-content className="mt-2">
         {active === "calisma-alanlari" && (
           <WorkAreasTab
             workAreas={workAreas}

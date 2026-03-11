@@ -1,5 +1,5 @@
 // src/engine/rosterEngine.js
-import { getAllLeaves, getLeaveSuppress } from "../lib/leaves.js";
+import { getAllLeaves } from "../lib/leaves.js";
 
 export const STAFF_KEY = "personCards";
 const PINS_KEY = "rosterPins";
@@ -193,62 +193,15 @@ function buildRowNeedMatrix(rows, overrides, year, month0) {
   return byDay;
 }
 
-/* ========== LEAVE okuma — her formatı, bulanık eşleşme ile ========== */
-function scanLeavesCandidates() {
-  const out = [];
-  const prefer = ["leavesV2", "leaves", "topluIzin", "izinToplu", "leavesGrid", "leaveGrid", "toplu-izin-listesi"];
-  prefer.forEach((k) => { const v = readJSON(k, null); if (v != null) out.push({ key: k, data: v }); });
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i);
-    if (!/leave|izin/i.test(k)) continue;
-    try { const v = JSON.parse(localStorage.getItem(k)); if (v != null) out.push({ key: k, data: v }); } catch {}
-  }
-  return out;
-}
-function dayFromKey(key) {
-  const s = String(key);
-  const all = s.match(/\d{1,2}/g);
-  if (!all) return null;
-  for (const tok of all) {
-    const n = Number(tok);
-    if (n >= 1 && n <= 31) return n;
-  }
-  return null;
-}
-function isLeaveCell(v) {
-  if (v == null) return false;
-  const s = String(v).trim();
-  if (s === "" || s === "0") return false;
-  const low = s.toLocaleLowerCase("tr-TR");
-  if (["hayır", "hayir", "no"].includes(low)) return false;
-  return true;
-}
-function mergeIdx(dst, src) {
-  for (const k of Object.keys(src || {})) {
-    dst[k] = dst[k] || {};
-    for (const ym of Object.keys(src[k])) {
-      dst[k][ym] = Object.assign(dst[k][ym] || {}, src[k][ym]);
-    }
-  }
-  return dst;
-}
-
-function buildLeaveIndexFromAny(cands, { year, month0, staff }) {
+/* ========== LEAVE okuma — tek kaynak: getAllLeaves() ========== */
+function buildLeaveIndexFromStore({ year, month0, staff }) {
   const ym = `${year}-${String(month0 + 1).padStart(2, "0")}`;
   const byId = {};
   const byCanon = {};
 
   const canon2id = new Map();
-  const lastNameMap = new Map(); // soyad→tekil id ise
   for (const p of staff) {
     canon2id.set(p.nameCanon, p.id);
-    const t = tokens(p.nameCanon);
-    const last = t[t.length - 1];
-    if (last) {
-      const arr = lastNameMap.get(last) || [];
-      arr.push(p.id);
-      lastNameMap.set(last, arr);
-    }
     if (p.code) canon2id.set(canonName(p.code), p.id);
   }
 
@@ -265,97 +218,20 @@ function buildLeaveIndexFromAny(cands, { year, month0, staff }) {
     byCanon[canon][ym][String(d)] = true;
   };
 
-  const tryResolveName = (raw) => {
-    const c = canonName(raw);
-    if (canon2id.has(c)) return { pid: canon2id.get(c), canon: c };
-    const t = tokens(c);
-    if (!t.length) return { pid: null, canon: c };
-    // 1) ad+soyad ilk & son
-    const guess1 = `${t[0]} ${t[t.length - 1]}`;
-    if (canon2id.has(guess1)) return { pid: canon2id.get(guess1), canon: guess1 };
-    // 2) sadece soyad tekilse
-    const last = t[t.length - 1];
-    const ids = lastNameMap.get(last);
-    if (ids && ids.length === 1) return { pid: ids[0], canon: c };
-    // 3) eşleşme yoksa kanonik isim olarak sakla
-    return { pid: null, canon: c };
-  };
-
-  for (const { data } of cands) {
-    // Tekil event listesi
-    if (Array.isArray(data)) {
-      const seemsEvents = data.some((x) => x && (x.personId != null || x.id != null || x.pid != null || x.personCode) && (x.date || (x.year && x.month && x.day)));
-      if (seemsEvents) {
-        for (const x of data) {
-          const idRaw = x?.personId ?? x?.id ?? x?.pid ?? null;
-          const codeRaw = x?.personCode || x?.code;
-          const nameRaw = x?.personName || x?.name || x?.fullName || x?.["AD SOYAD"];
-          let pid = idRaw ? String(idRaw) : null;
-          if (!pid && (codeRaw || nameRaw)) {
-            const c = codeRaw ? canonName(codeRaw) : canonName(nameRaw);
-            pid = canon2id.get(c) || null;
-          }
-          let y, m1, d;
-          if (x?.date) { const dt = new Date(x.date); if (!Number.isNaN(dt)) { y = dt.getFullYear(); m1 = dt.getMonth() + 1; d = dt.getDate(); } }
-          else { y = Number(x.year); m1 = Number(x.month); d = Number(x.day); }
-          if (y === year && m1 === (month0 + 1) && d) {
-            if (pid) putId(pid, d);
-            else if (nameRaw) putCanon(canonName(nameRaw), d);
-          }
-        }
-        continue;
-      }
-      // Grid listesi
-      if (data.length && typeof data[0] === "object") {
-        for (const row of data) {
-          const name = row.fullName || row.name || row["AD SOYAD"] || row.personName || row.employeeName || row.title;
-          const code = row.code || row.personCode;
-          const idRaw = row.id ?? row.pid ?? row.tc ?? row.tcNo;
-          let pid = idRaw ? String(idRaw) : null;
-          let canon = null;
-          if (!pid && (name || code)) {
-            const r = tryResolveName(code || name);
-            pid = r.pid;
-            canon = r.canon;
-          }
-          const daySources = [row, row.days || row.DAYS || row.gunler || null].filter((o) => o && typeof o === "object");
-          for (const obj of daySources) {
-            for (const k of Object.keys(obj)) {
-              const d = dayFromKey(k);
-              if (!d) continue;
-              const val = obj[k];
-              if (!isLeaveCell(val)) continue;
-              if (pid) putId(pid, d);
-              else if (canon || name) putCanon(canon || canonName(name), d);
-            }
-          }
-        }
-        continue;
-      }
-      // {rows:[...]} / {items:[...]} sarmalayıcı
-      if (Array.isArray(data.rows) || Array.isArray(data.items)) {
-        const inner = Array.isArray(data.rows) ? data.rows : data.items;
-        const nested = buildLeaveIndexFromAny([{ data: inner }], { year, month0, staff });
-        mergeIdx(byId, nested.byId);
-        mergeIdx(byCanon, nested.byCanon);
-        continue;
-      }
-    }
-    // Obje tipleri
-    if (data && typeof data === "object") {
-      if (Array.isArray(data.rows) || Array.isArray(data.items)) {
-        const inner = Array.isArray(data.rows) ? data.rows : data.items;
-        const nested = buildLeaveIndexFromAny([{ data: inner }], { year, month0, staff });
-        mergeIdx(byId, nested.byId);
-        mergeIdx(byCanon, nested.byCanon);
-      } else {
-        const vals = Object.values(data);
-        if (vals.length && typeof vals[0] === "object") {
-          const nested = buildLeaveIndexFromAny([{ data: vals }], { year, month0, staff });
-          mergeIdx(byId, nested.byId);
-          mergeIdx(byCanon, nested.byCanon);
-        }
-      }
+  const store = getAllLeaves() || {};
+  for (const [pidRaw, byYm] of Object.entries(store)) {
+    const monthObj = byYm?.[ym];
+    if (!monthObj || typeof monthObj !== "object") continue;
+    const pid = String(pidRaw);
+    const person = staff.find((p) => p.id === pid) || null;
+    const canon = person?.nameCanon || null;
+    for (const key of Object.keys(monthObj || {})) {
+      let day = NaN;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(key)) day = Number(key.slice(8, 10));
+      else day = Number(key);
+      if (!Number.isFinite(day) || day < 1 || day > 31) continue;
+      putId(pid, day);
+      if (canon) putCanon(canon, day);
     }
   }
 
@@ -384,53 +260,8 @@ export function generateRoster({
   const id2person = new Map(staff.map((p) => [p.id, p]));
   const canon2person = new Map(staff.map((p) => [p.nameCanon, p]));
 
-  // 2) LEAVES
-  const leaves = buildLeaveIndexFromAny(scanLeavesCandidates(), { year, month0, staff });
-  try {
-    const extra = getAllLeaves() || {};
-    const extraByName = readJSON("allLeavesByNameV1", {}) || {};
-    const suppress = getLeaveSuppress() || { ids: {}, canon: {} };
-    const ymKey = `${year}-${String(month0 + 1).padStart(2, "0")}`;
-    for (const [pidRaw, byYm] of Object.entries(extra)) {
-      const monthObj = byYm?.[ymKey];
-      if (!monthObj) continue;
-      const pid = String(pidRaw);
-      const person = id2person.get(pid);
-      const canon = person?.nameCanon;
-      for (const [k, rec] of Object.entries(monthObj || {})) {
-        let d = NaN;
-        if (/^\d{4}-\d{2}-\d{2}$/.test(k)) d = parseInt(k.slice(8, 10), 10);
-        else d = parseInt(k, 10);
-        if (!Number.isFinite(d) || d < 1 || d > 31) continue;
-        if (suppress.ids?.[pid]?.[ymKey]?.[String(d)]) continue;
-        leaves.byId[pid] ??= {};
-        leaves.byId[pid][ymKey] ??= {};
-        leaves.byId[pid][ymKey][String(d)] = true;
-        if (canon) {
-          leaves.byCanon[canon] ??= {};
-          leaves.byCanon[canon][ymKey] ??= {};
-          leaves.byCanon[canon][ymKey][String(d)] = true;
-        }
-      }
-    }
-    for (const [canonKey, byYm] of Object.entries(extraByName)) {
-      const monthObj = byYm?.[ymKey];
-      if (!monthObj) continue;
-      const canon = canonName(canonKey);
-      for (const [k, rec] of Object.entries(monthObj || {})) {
-        let d = NaN;
-        if (/^\d{4}-\d{2}-\d{2}$/.test(k)) d = parseInt(k.slice(8, 10), 10);
-        else d = parseInt(k, 10);
-        if (!Number.isFinite(d) || d < 1 || d > 31) continue;
-        if (suppress.canon?.[canon]?.[ymKey]?.[String(d)]) continue;
-        leaves.byCanon[canon] ??= {};
-        leaves.byCanon[canon][ymKey] ??= {};
-        leaves.byCanon[canon][ymKey][String(d)] = true;
-      }
-    }
-  } catch (err) {
-    console.warn("[roster] merge allLeaves fallback failed:", err);
-  }
+  // 2) LEAVES (tek kaynak)
+  const leaves = buildLeaveIndexFromStore({ year, month0, staff });
   const isOnLeave = (person, d) => {
     const pid = person.id;
     const canon = person.nameCanon;

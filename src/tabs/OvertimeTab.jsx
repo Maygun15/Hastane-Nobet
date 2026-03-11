@@ -5,13 +5,10 @@ import {
   FileSpreadsheet, Upload, RotateCcw, Settings, Trash2, Search, ListChecks
 } from "lucide-react";
 import {
-  fetchPersonnel,
   fetchMonthlySchedule,
   fetchHolidayCalendar,
   getMonthlySchedule,
 } from "../api/apiAdapter";
-import { getPeople } from "../lib/dataResolver.js";
-import { STAFF_KEY } from "../engine/rosterEngine.js";
 import useActiveYM from "../hooks/useActiveYM.js";
 import ToolbarYM from "../components/common/ToolbarYM.jsx";
 import { LEAVE_RULES as DEFAULT_LEAVE_RULES } from "../constants/rules.js";
@@ -47,31 +44,8 @@ function stripDiacritics(str) {
 }
 const canonName = (s) => stripDiacritics((s || "").toString().trim().toLocaleUpperCase("tr-TR")).replace(/\s+/g, " ").trim();
 
-function readArrayLS(key) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return [];
-    const val = JSON.parse(raw);
-    if (Array.isArray(val)) return val;
-    if (val && typeof val === "object") {
-      const out = [];
-      Object.values(val).forEach((v) => {
-        if (Array.isArray(v)) out.push(...v);
-      });
-      return out;
-    }
-  } catch { /* no-op */ }
-  return [];
-}
-
-function buildPersonMetaIndex() {
-  const combined = [
-    ...readArrayLS("nurses"),
-    ...readArrayLS("doctors"),
-    ...readArrayLS(STAFF_KEY),
-  ];
-  const peopleExtra = getPeople();
-  if (Array.isArray(peopleExtra)) combined.push(...peopleExtra);
+function buildPersonMetaIndex(source = []) {
+  const combined = Array.isArray(source) ? source : [];
   const byId = new Map();
   const byCanon = new Map();
   const capture = (entry, fallbackId) => {
@@ -107,24 +81,7 @@ function buildPersonMetaIndex() {
 
 function loadShiftCodeHours(preferredList) {
   try {
-    const parseList = (raw) => {
-      if (Array.isArray(raw)) return raw;
-      if (raw && typeof raw === "object") {
-        const candidate = raw.value ?? raw.items ?? raw.list ?? raw.data;
-        return Array.isArray(candidate) ? candidate : [];
-      }
-      return [];
-    };
-    const parseLS = (key) => {
-      try {
-        return parseList(JSON.parse(localStorage.getItem(key) || "[]"));
-      } catch {
-        return [];
-      }
-    };
-    const arr = Array.isArray(preferredList)
-      ? preferredList
-      : [...parseLS("workingHoursV2"), ...parseLS("workingHours")];
+    const arr = Array.isArray(preferredList) ? preferredList : [];
     const map = {};
     (arr || []).forEach((x) => {
       const code = String(x?.code || "").trim().toUpperCase();
@@ -315,7 +272,7 @@ function collectLeaveDaysForMonth({ year, month, leaves, codesByDay }) {
 }
 
 /* ================ Component ================ */
-const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, workingHours }, ref) {
+const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, workingHours, people: peopleProp = [], leaveTypes = [] }, ref) {
   const { ym } = useActiveYM();
   const { year, month } = ym;
 
@@ -323,16 +280,30 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
   const [rows, setRows] = useState(() =>
     JSON.parse(localStorage.getItem(LS_DATA_PREFIX + ymKey(year, month)) || "[]")
   );
-  const [people, setPeople] = useState([]);
   const [holidays, setHolidays] = useState([]);
   const [search, setSearch] = useState("");
   const fileRef = useRef(null);
   const dcount = daysInMonth(year, month);
   const shiftCodeHours = useMemo(() => loadShiftCodeHours(workingHours), [workingHours]);
   const [importing, setImporting] = useState(false);
-  const [leaveRules, setLeaveRules] = useState(() =>
-    buildLeaveCreditRules(LS.get("leaveTypesV2", []), DEFAULT_LEAVE_RULES)
+  const leaveRules = useMemo(
+    () => buildLeaveCreditRules(Array.isArray(leaveTypes) ? leaveTypes : [], DEFAULT_LEAVE_RULES),
+    [leaveTypes]
   );
+  const people = useMemo(() => {
+    const raw = Array.isArray(peopleProp) ? peopleProp : [];
+    const normalized = raw
+      .map((p, idx) => ({
+        id: String(p?.id ?? p?.personId ?? p?.pid ?? `p-${idx}`),
+        fullName: p?.fullName || p?.name || [p?.firstName, p?.lastName].filter(Boolean).join(" ").trim(),
+        title: p?.title || p?.role || "",
+        service: p?.serviceId || p?.service || p?.department || "",
+      }))
+      .filter((p) => p.fullName);
+    const svc = String(cfg.unitId || "").trim();
+    if (!svc) return normalized;
+    return normalized.filter((p) => String(p.service || "").trim() === svc);
+  }, [peopleProp, cfg.unitId]);
 
 
   useEffect(() => localStorage.setItem(LS_CFG, JSON.stringify(cfg)), [cfg]);
@@ -359,13 +330,6 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
   }, [dcount]);
 
   useEffect(() => {
-    (async () => {
-      const list = await fetchPersonnel({ unitId: cfg.unitId || undefined, active: true });
-      setPeople(list || []);
-    })();
-  }, [cfg.unitId]);
-
-  useEffect(() => {
     let alive = true;
     const load = async () => {
       const list = await fetchHolidayCalendar({ year, month });
@@ -383,25 +347,13 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
   }, [year, month]);
 
   useEffect(() => {
-    const refresh = () => setLeaveRules(buildLeaveCreditRules(LS.get("leaveTypesV2", []), DEFAULT_LEAVE_RULES));
-    window.addEventListener("leaveTypes:changed", refresh);
-    window.addEventListener("storage", refresh);
-    return () => {
-      window.removeEventListener("leaveTypes:changed", refresh);
-      window.removeEventListener("storage", refresh);
-    };
-  }, []);
-
-  useEffect(() => {
     const refresh = () => {
       // Recompute tetikleyicisi: izin kaynağı yalnızca getAllLeaves()
       setRows((prev) => [...prev]);
     };
     window.addEventListener("leaves:changed", refresh);
-    window.addEventListener("storage", refresh);
     return () => {
       window.removeEventListener("leaves:changed", refresh);
-      window.removeEventListener("storage", refresh);
     };
   }, []);
 
@@ -409,12 +361,16 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
     const stdMonthly = computeMonthlyStdHours(year, month, holidays);
     const ym = ymKey(year, month);
     const allLocalLeaves = getAllLeaves();
+    const personIdByCanon = new Map(
+      (people || [])
+        .map((p) => [canonName(p?.fullName || p?.name || ""), String(p?.id || "").trim()])
+        .filter(([canon, pid]) => canon && pid)
+    );
     const perRowLeave = rows.map((r) => {
-      const hasPid = !!(r.personId && String(r.personId).trim());
-      const byId = hasPid ? (allLocalLeaves?.[r.personId]?.[ym] || {}) : {};
+      const rowPid = String(r.personId || "").trim();
       const canon = canonName(r.person || r.fullName || r.name || r.adsoyad || "");
-      const byName = !hasPid && canon ? (allLocalLeaves?.[`__name__:${canon}`]?.[ym] || {}) : {};
-      const localCodes = hasPid ? byId : byName;
+      const effectivePid = rowPid || personIdByCanon.get(canon) || "";
+      const localCodes = effectivePid ? (allLocalLeaves?.[effectivePid]?.[ym] || {}) : {};
       const leaveDays = collectLeaveDaysForMonth({ year, month, codesByDay: localCodes });
       const credited = creditedLeaveHoursForMonth({ year, month, holidays, codesByDay: localCodes, leaveRules, leaveCountsWeekend: true });
       let ignoredHours = 0;
@@ -446,7 +402,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
       person: rows.find((r) => r.id === row.id)?.person || "",
     }));
     return { stdMonthly, perRow, grandWork, grandOT, conflicts };
-  }, [rows, year, month, holidays, leaveRules]);
+  }, [rows, people, year, month, holidays, leaveRules]);
 
   const addRow = () => setRows((p) => [...p, makeBlankRow(year, month)]);
   const removeRow = (id) => setRows((p) => p.filter((r) => r.id !== id));
@@ -482,7 +438,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
     try {
       const rolesToTry = ["Nurse", "Doctor"];
       const assignments = [];
-      const metaIndex = buildPersonMetaIndex();
+      const metaIndex = buildPersonMetaIndex(people);
       const findMeta = (personObj, fallbackName) => {
         if (personObj?.id && metaIndex.byId.has(String(personObj.id))) return metaIndex.byId.get(String(personObj.id));
         const name = fallbackName || personObj?.fullName || personObj?.name || "";

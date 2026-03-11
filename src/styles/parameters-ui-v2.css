@@ -1,0 +1,84 @@
+.params-ui-v2 {
+  --params-accent: #0f766e;
+  --params-accent-soft: #ccfbf1;
+  --params-border: #cbd5e1;
+  --params-bg: #f8fafc;
+  --params-card-bg: #ffffff;
+}
+
+.params-ui-v2 [data-params-topbar] {
+  padding: 12px;
+  border: 1px solid var(--params-border);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at top right, rgba(15, 118, 110, 0.08), transparent 38%),
+    radial-gradient(circle at bottom left, rgba(14, 116, 144, 0.08), transparent 42%),
+    var(--params-bg);
+}
+
+.params-ui-v2 [data-params-tab-btn] {
+  border-color: #94a3b8;
+  background: #fff;
+  color: #334155;
+  transition: all 0.18s ease;
+}
+
+.params-ui-v2 [data-params-tab-btn]:hover {
+  border-color: var(--params-accent);
+  color: #0f172a;
+  box-shadow: 0 2px 10px rgba(15, 118, 110, 0.1);
+}
+
+.params-ui-v2 [data-params-tab-btn][data-active="true"] {
+  background: linear-gradient(180deg, #f0fdfa 0%, #ccfbf1 100%);
+  border-color: var(--params-accent);
+  color: #115e59;
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(15, 118, 110, 0.12);
+}
+
+.params-ui-v2 [data-params-content] {
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.params-ui-v2 [data-params-content] .bg-white.rounded-2xl,
+.params-ui-v2 [data-params-content] .bg-white.rounded-xl {
+  border: 1px solid #dbeafe;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.params-ui-v2 [data-params-content] input,
+.params-ui-v2 [data-params-content] select,
+.params-ui-v2 [data-params-content] textarea {
+  border-color: #cbd5e1;
+  background: #ffffff;
+}
+
+.params-ui-v2 [data-params-content] input:focus,
+.params-ui-v2 [data-params-content] select:focus,
+.params-ui-v2 [data-params-content] textarea:focus {
+  outline: none;
+  border-color: var(--params-accent);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
+}
+
+.params-ui-v2 [data-params-content] table thead tr {
+  background: #f1f5f9;
+}
+
+.params-ui-v2 [data-params-content] table th {
+  color: #334155;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .params-ui-v2 [data-params-topbar] {
+    padding: 10px;
+  }
+  .params-ui-v2 [data-params-content] {
+    padding: 8px;
+  }
+}

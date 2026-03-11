@@ -8,8 +8,6 @@
 import { LS } from "../utils/storage";
 import { API, getToken } from "./api.js";
 
-const NAME_STORE_KEY = "allLeavesByNameV1";
-const SUPPRESS_KEY = "leaveSuppressV1";
 const PERSONNEL_STORE_KEY = "appStoreV1";
 
 function stripDiacritics(str) {
@@ -132,37 +130,12 @@ function normalizeLeaves(raw) {
   return out;
 }
 
-function mergeNameStoreIntoCache(out) {
-  let store = {};
-  try {
-    store = LS.get(NAME_STORE_KEY, {}) || {};
-  } catch {
-    store = {};
-  }
-  for (const [canon, byYm] of Object.entries(store || {})) {
-    const pseudoId = `__name__:${canon}`;
-    for (const [ym, days] of Object.entries(byYm || {})) {
-      if (!isObj(days)) continue;
-      out[pseudoId] ??= {};
-      out[pseudoId][ym] ??= {};
-      for (const [d, rec] of Object.entries(days)) {
-        const val = isObj(rec) ? rec : { code: String(rec || "").trim() };
-        if (!val.code) continue;
-        out[pseudoId][ym][String(d)] = { code: val.code, ...(val.note ? { note: val.note } : {}) };
-      }
-      if (!Object.keys(out[pseudoId][ym]).length) delete out[pseudoId][ym];
-    }
-    if (!Object.keys(out[pseudoId] || {}).length) delete out[pseudoId];
-  }
-  return out;
-}
-
 function emitLeavesChanged() {
   try { window.dispatchEvent(new Event("leaves:changed")); } catch {}
 }
 
 export function setLeavesStore(raw, { emit = true } = {}) {
-  leavesCache = mergeNameStoreIntoCache(normalizeLeaves(raw));
+  leavesCache = normalizeLeaves(raw);
   leavesLoaded = true;
   leavesDirty = false;
   if (emit) emitLeavesChanged();
@@ -224,136 +197,40 @@ export function getAllLeaves() {
   return { ...leavesCache };
 }
 
-function readSuppress() {
-  return (
-    LS.get(SUPPRESS_KEY, {
-      ids: {},
-      canon: {},
-    }) || { ids: {}, canon: {} }
-  );
-}
-
-function writeSuppress(map) {
-  LS.set(SUPPRESS_KEY, map);
-}
-
 export function getLeaveSuppress() {
-  return readSuppress();
-}
-
-// Nesne-parametreli set
-function setNameLeave({ canon, year, month, day, rec }) {
-  if (!canon) return;
-  const store = LS.get(NAME_STORE_KEY, {});
-  const ym = ymKey(year, month);
-  store[canon] ??= {};
-  store[canon][ym] ??= {};
-  if (rec) store[canon][ym][String(day)] = rec;
-  else delete store[canon][ym][String(day)];
-  if (store[canon][ym] && !Object.keys(store[canon][ym]).length) delete store[canon][ym];
-  if (store[canon] && !Object.keys(store[canon]).length) delete store[canon];
-  LS.set(NAME_STORE_KEY, store);
-
-  const pseudoId = `__name__:${canon}`;
-  leavesCache[pseudoId] ??= {};
-  leavesCache[pseudoId][ym] ??= {};
-  if (rec) {
-    const val = isObj(rec) ? rec : { code: String(rec || "").trim() };
-    if (val.code) leavesCache[pseudoId][ym][String(day)] = { code: val.code, ...(val.note ? { note: val.note } : {}) };
-  } else {
-    delete leavesCache?.[pseudoId]?.[ym]?.[String(day)];
-  }
-  if (leavesCache[pseudoId]?.[ym] && !Object.keys(leavesCache[pseudoId][ym]).length) delete leavesCache[pseudoId][ym];
-  if (leavesCache[pseudoId] && !Object.keys(leavesCache[pseudoId]).length) delete leavesCache[pseudoId];
-}
-
-function updateSuppress({ pid, canon, year, month, day, suppress }) {
-  const map = readSuppress();
-  const ym = ymKey(year, month);
-  if (pid) {
-    map.ids[pid] ??= {};
-    map.ids[pid][ym] ??= {};
-    if (suppress) map.ids[pid][ym][String(day)] = true;
-    else {
-      delete map.ids[pid][ym][String(day)];
-      if (!Object.keys(map.ids[pid][ym]).length) delete map.ids[pid][ym];
-      if (!Object.keys(map.ids[pid] || {}).length) delete map.ids[pid];
-    }
-  }
-  if (canon) {
-    map.canon[canon] ??= {};
-    map.canon[canon][ym] ??= {};
-    if (suppress) map.canon[canon][ym][String(day)] = true;
-    else {
-      delete map.canon[canon][ym][String(day)];
-      if (!Object.keys(map.canon[canon][ym]).length) delete map.canon[canon][ym];
-      if (!Object.keys(map.canon[canon] || {}).length) delete map.canon[canon];
-    }
-  }
-  writeSuppress(map);
+  // Geriye dönük API: local suppress devre dışı, backend tek kaynak.
+  return { ids: {}, canon: {} };
 }
 
 export function setLeave({ personId, personName, year, month, day, code, note }) {
+  void personName;
   const pidRaw = personId ?? "";
   const pid = typeof pidRaw === "string" ? pidRaw : String(pidRaw);
   const Y = toInt(year);
   const M1 = toInt(month);
   const D = toInt(day);
   const c = (code ?? "").toString().trim();
-  const canon = personName ? canonName(personName) : null;
   if (!Number.isFinite(Y) || !Number.isFinite(M1) || !Number.isFinite(D) || !c) return;
 
   const pidSet = pid && pid !== "undefined" && pid !== "null" && pid !== "";
   const pidOk = pidSet ? isKnownPersonId(pid) : false;
+  if (!pidSet || !pidOk) return;
 
-  if (pidSet && pidOk) {
-    const ym = ymKey(Y, M1);
-    leavesCache[pid] ??= {};
-    leavesCache[pid][ym] ??= {};
-    leavesCache[pid][ym][String(D)] = note ? { code: c, note } : { code: c };
-    leavesLoaded = true;
-    leavesDirty = true;
-    scheduleSave();
-  } else if (pidSet && !pidOk) {
-    if (leavesCache?.[pid]) {
-      delete leavesCache[pid];
-      leavesLoaded = true;
-      leavesDirty = true;
-      scheduleSave();
-    }
-  }
-
-  if ((!pidSet) && !canon) {
-    return;
-  }
-
-  // ID varsa tek kaynak ID-bazlı kayıt olsun; isim-bazlı fallback üretme.
-  if (!pidOk && canon) {
-    const rec = note ? { code: c, note } : { code: c };
-    setNameLeave({ canon, year: Y, month: M1, day: D, rec });
-  } else if (pidOk && canon) {
-    // Eski isim-bazlı gölge kayıtları temizle
-    setNameLeave({ canon, year: Y, month: M1, day: D, rec: null });
-  }
-
-  updateSuppress({
-    pid: pidOk ? pid : "",
-    canon: pidOk ? "" : canon,
-    year: Y,
-    month: M1,
-    day: D,
-    suppress: false,
-  });
+  const ym = ymKey(Y, M1);
+  leavesCache[pid] ??= {};
+  leavesCache[pid][ym] ??= {};
+  leavesCache[pid][ym][String(D)] = note ? { code: c, note } : { code: c };
+  leavesLoaded = true;
+  leavesDirty = true;
+  scheduleSave();
 
   // Arka planda tek gün bazlı backend sync
-  if (pidSet && pidOk) {
-    const token = getToken();
-    if (token) {
-      API.http.req(`/api/leaves`, {
-        method: "PUT",
-        body: { personId: pid, year: Y, month: M1, day: D, code: c, ...(note ? { note } : {}), serviceId: "" },
-      }).catch((err) => console.warn("leave PUT failed:", err?.message));
-    }
+  const token = getToken();
+  if (token) {
+    API.http.req(`/api/leaves`, {
+      method: "PUT",
+      body: { personId: pid, year: Y, month: M1, day: D, code: c, ...(note ? { note } : {}), serviceId: "" },
+    }).catch((err) => console.warn("leave PUT failed:", err?.message));
   }
 
   emitLeavesChanged();
@@ -361,61 +238,35 @@ export function setLeave({ personId, personName, year, month, day, code, note })
 
 // Nesne-parametreli unset
 export function unsetLeave({ personId, personName, year, month, day }) {
+  void personName;
   const pidRaw = personId ?? "";
   const pid = typeof pidRaw === "string" ? pidRaw : String(pidRaw);
   const Y = toInt(year);
   const M1 = toInt(month);
   const D = toInt(day);
-  const canon = personName ? canonName(personName) : null;
   if (!Number.isFinite(Y) || !Number.isFinite(M1) || !Number.isFinite(D)) return;
 
   const pidSet = pid && pid !== "undefined" && pid !== "null" && pid !== "";
   const pidOk = pidSet ? isKnownPersonId(pid) : false;
+  if (!pidSet || !pidOk) return;
 
-  if (pidSet && pidOk) {
-    const ym = ymKey(Y, M1);
-    if (leavesCache?.[pid]?.[ym]) {
-      delete leavesCache[pid][ym][String(D)];
-      if (!Object.keys(leavesCache[pid][ym]).length) delete leavesCache[pid][ym];
-      if (!Object.keys(leavesCache[pid]).length) delete leavesCache[pid];
-      leavesLoaded = true;
-      leavesDirty = true;
-      scheduleSave();
-    }
-  } else if (pidSet && !pidOk) {
-    if (leavesCache?.[pid]) {
-      delete leavesCache[pid];
-      leavesLoaded = true;
-      leavesDirty = true;
-      scheduleSave();
-    }
+  const ym = ymKey(Y, M1);
+  if (leavesCache?.[pid]?.[ym]) {
+    delete leavesCache[pid][ym][String(D)];
+    if (!Object.keys(leavesCache[pid][ym]).length) delete leavesCache[pid][ym];
+    if (!Object.keys(leavesCache[pid]).length) delete leavesCache[pid];
+    leavesLoaded = true;
+    leavesDirty = true;
+    scheduleSave();
   }
-
-  if (!pidOk && canon) {
-    setNameLeave({ canon, year: Y, month: M1, day: D, rec: null });
-  } else if (pidOk && canon) {
-    // ID-bazlı kaydı silerken olası eski isim-bazlı gölgeleri de temizle
-    setNameLeave({ canon, year: Y, month: M1, day: D, rec: null });
-  }
-
-  updateSuppress({
-    pid: pidOk ? pid : "",
-    canon: pidOk ? "" : canon,
-    year: Y,
-    month: M1,
-    day: D,
-    suppress: true,
-  });
 
   // Arka planda tek gün bazlı backend sync
-  if (pidSet && pidOk) {
-    const token = getToken();
-    if (token) {
-      API.http.req(`/api/leaves`, {
-        method: "DELETE",
-        body: { personId: pid, year: Y, month: M1, day: D, serviceId: "" },
-      }).catch((err) => console.warn("leave DELETE failed:", err?.message));
-    }
+  const token = getToken();
+  if (token) {
+    API.http.req(`/api/leaves`, {
+      method: "DELETE",
+      body: { personId: pid, year: Y, month: M1, day: D, serviceId: "" },
+    }).catch((err) => console.warn("leave DELETE failed:", err?.message));
   }
 
   emitLeavesChanged();
@@ -425,7 +276,6 @@ export function unsetLeave({ personId, personName, year, month, day }) {
 export function leavesToUnavailable(allLeaves = {}, year, month1) {
   const out = {};
   const ym = ymKey(year, month1);
-  const suppress = readSuppress();
   for (const [pid, byYm] of Object.entries(allLeaves || {})) {
     const monthObj = byYm?.[ym];
     if (!isObj(monthObj)) continue;
@@ -436,30 +286,10 @@ export function leavesToUnavailable(allLeaves = {}, year, month1) {
       if (!Number.isFinite(d) || d < 1 || d > 31) continue;
       const code = isObj(rec) ? rec.code : String(rec || "");
       if (!code) continue;
-      if (suppress.ids?.[pid]?.[ym]?.[String(d)]) continue;
       out[pid] ??= {};
       out[pid][d] = true;
     }
   }
-  try {
-    const nameStore = LS.get(NAME_STORE_KEY, {});
-    for (const [canon, byYm] of Object.entries(nameStore || {})) {
-      const monthObj = byYm?.[ym];
-      if (!isObj(monthObj)) continue;
-      const pseudoId = `__name__:${canon}`;
-      for (const [k, rec] of Object.entries(monthObj)) {
-        let d = NaN;
-        if (/^\d{4}-\d{2}-\d{2}$/.test(k)) d = parseInt(k.slice(8, 10), 10);
-        else d = parseInt(k, 10);
-        if (!Number.isFinite(d) || d < 1 || d > 31) continue;
-        const code = isObj(rec) ? rec.code : String(rec || "");
-        if (!code) continue;
-        if (suppress.canon?.[canon]?.[ym]?.[String(d)]) continue;
-        out[pseudoId] ??= {};
-        out[pseudoId][d] = true;
-      }
-    }
-  } catch {}
   return out;
 }
 
@@ -508,8 +338,6 @@ export function buildNameUnavailability(people = [], year, month1) {
     for (const pid of personIds) {
       addDays(canon, base?.[pid]);
     }
-    // ID'si olan personelde isim-bazlı eski kayıtları yok say.
-    if (!personIds.length) addDays(canon, base?.[`__name__:${canon}`]);
 
     if (!result.get(canon)?.size) result.delete(canon);
   }

@@ -25,8 +25,6 @@ const WORKING_HOURS_KEYS = ["workingHoursV2", "workingHours"];
 
 const SOURCE_PRIORITY = {
   remote: 3,
-  aiPlan: 2,
-  rosterPreview: 1,
 };
 
 function assignmentKey(assg) {
@@ -803,25 +801,7 @@ export default function PersonScheduleCalendar({
     );
   }, [allLeaves, selectedPerson, ymKey]);
 
-  const aiPlanAssignments = useMemo(() => {
-    if (!selectedPerson) return new Map();
-    return collectAssignmentsFromAiPlan({
-      year,
-      month0,
-      personId: selectedPerson.id,
-      personCanon: selectedPerson.canon,
-    });
-  }, [selectedPerson, year, month0, dpRevision]);
-
-  const rosterPreviewAssignments = useMemo(() => {
-    if (!selectedPerson) return new Map();
-    return collectAssignmentsFromRosterPreview({
-      year,
-      month0,
-      personId: selectedPerson.id,
-      personCanon: selectedPerson.canon,
-    });
-  }, [selectedPerson, year, month0, dpRevision]);
+  void dpRevision;
 
   useEffect(() => {
     let active = true;
@@ -952,9 +932,7 @@ export default function PersonScheduleCalendar({
   }, [selectedPerson, year, month0, remoteAssignmentsRaw, remoteDefs]);
 
   const workingHoursRaw = useMemo(() => {
-    // Props (backend'den gelen) varsa localStorage'ı yoksay
-    if (Array.isArray(workingHours)) return workingHours;
-    return readStorageList(WORKING_HOURS_KEYS);
+    return Array.isArray(workingHours) ? workingHours : [];
   }, [workingHours, settingsRevision]);
 
   const shiftOptions = useMemo(() => {
@@ -973,12 +951,9 @@ export default function PersonScheduleCalendar({
   }, [remoteDefs, settingsRevision, workingHoursRaw]);
 
   const areaOptions = useMemo(() => {
-    const hasProps = Array.isArray(workAreas);
-    const fromPropsRaw = hasProps ? workAreas : [];
-    // Props (backend'den gelen) varsa localStorage'ı yoksay
-    const fromLSRaw = hasProps ? [] : readStorageList(AREA_STORAGE_KEYS);
+    const fromPropsRaw = Array.isArray(workAreas) ? workAreas : [];
     const fromPeopleRaw = collectAreasFromPeople(people);
-    const merged = normalizeWorkAreas([...fromPropsRaw, ...fromLSRaw, ...fromPeopleRaw]);
+    const merged = normalizeWorkAreas([...fromPropsRaw, ...fromPeopleRaw]);
     if (merged.length) return merged;
     const set = new Set();
     (remoteDefs || []).forEach((def) => {
@@ -990,7 +965,6 @@ export default function PersonScheduleCalendar({
 
   const assignmentsByDay = useMemo(() => {
     const combined = new Map();
-    const hasRemote = !!sectionId && !remoteLoading && !remoteError;
     const merge = (srcMap) => {
       if (!(srcMap instanceof Map)) return;
       for (const [day, list] of srcMap.entries()) {
@@ -998,14 +972,7 @@ export default function PersonScheduleCalendar({
         combined.get(day).push(...list);
       }
     };
-    if (hasRemote) {
-      // Remote veri varsa sadece remote'u kullan — local kaynakları yoksay
-      merge(remoteAssignments);
-    } else {
-      // Remote yoksa (henüz yüklenmedi/hata) local fallback
-      merge(aiPlanAssignments);
-      merge(rosterPreviewAssignments);
-    }
+    merge(remoteAssignments);
     const leaveDays = collectLeaveDays(leavesForPerson, year, month0);
     for (const [day, list] of combined.entries()) {
       const unique = dedupeAssignments(list);
@@ -1018,12 +985,7 @@ export default function PersonScheduleCalendar({
     }
     return combined;
   }, [
-    aiPlanAssignments,
-    rosterPreviewAssignments,
     remoteAssignments,
-    remoteLoading,
-    remoteError,
-    sectionId,
     leavesForPerson,
     year,
     month0,

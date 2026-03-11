@@ -10,9 +10,7 @@ import React, {
 } from "react";
 import * as XLSX from "xlsx";
 import { LS } from "../utils/storage.js";
-import { getPeople, isGroupLabel } from "../lib/dataResolver.js";
-import { STAFF_KEY } from "../engine/rosterEngine.js";
-import { getMonthlySchedule } from "../api/apiAdapter.js";
+import { fetchPersonnel, getMonthlySchedule } from "../api/apiAdapter.js";
 import { fetchHolidayCalendar } from "../api/apiAdapter.js";
 import { maskTC } from "../utils/format.js";
 
@@ -82,25 +80,6 @@ const stripDiacritics = (str) =>
     .replace(/ö/g, "o").replace(/ç/g, "c");
 const canonName = (s) => stripDiacritics((s || "").toString().trim().toLocaleUpperCase("tr-TR")).replace(/\s+/g, " ").trim();
 
-function readArrayLS(key) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return [];
-    const val = JSON.parse(raw);
-    if (Array.isArray(val)) return val;
-    if (val && typeof val === "object") {
-      const out = [];
-      Object.values(val).forEach((v) => {
-        if (Array.isArray(v)) out.push(...v);
-      });
-      return out;
-    }
-  } catch {
-    return [];
-  }
-  return [];
-}
-
 function extractListValue(raw) {
   if (Array.isArray(raw)) return raw;
   if (raw && typeof raw === "object") {
@@ -134,10 +113,7 @@ function getShiftHours(item) {
 }
 
 function readWorkingHoursList(preferredList) {
-  if (Array.isArray(preferredList) && preferredList.length > 0) return preferredList;
-  const v2 = extractListValue(LS.get("workingHoursV2", null));
-  const v1 = extractListValue(LS.get("workingHours", null));
-  return [...v2, ...v1];
+  return Array.isArray(preferredList) ? preferredList : [];
 }
 
 function buildShiftCodeHoursMap(list = []) {
@@ -162,15 +138,8 @@ function buildShiftCodeHoursMap(list = []) {
   return map;
 }
 
-function buildPersonMetaIndex() {
-  const combined = [
-    ...readArrayLS("nurses"),
-    ...readArrayLS("doctors"),
-    ...readArrayLS(STAFF_KEY),
-  ];
-  const extra = getPeople();
-  if (Array.isArray(extra)) combined.push(...extra);
-
+function buildPersonMetaIndex(source = []) {
+  const combined = Array.isArray(source) ? source : [];
   const byId = new Map();
   const byCanon = new Map();
 
@@ -300,23 +269,12 @@ function tryParseExcelDateFlexible(v){
 
 /* Çalışma kodu -> saat (öncelik: props.workingHours, fallback: LS) */
 function useShiftCodeHours(workingHours){
-  const usingProps = Array.isArray(workingHours) && workingHours.length > 0;
   const [map, setMap] = useState(() =>
     buildShiftCodeHoursMap(readWorkingHoursList(workingHours))
   );
   useEffect(() => {
-    const refresh = () => setMap(buildShiftCodeHoursMap(readWorkingHoursList(workingHours)));
-    refresh();
-    if (usingProps) return;
-    window.addEventListener("workingHours:changed", refresh);
-    window.addEventListener("settings:changed", refresh);
-    window.addEventListener("storage", refresh);
-    return () => {
-      window.removeEventListener("workingHours:changed", refresh);
-      window.removeEventListener("settings:changed", refresh);
-      window.removeEventListener("storage", refresh);
-    };
-  }, [usingProps, workingHours]);
+    setMap(buildShiftCodeHoursMap(readWorkingHoursList(workingHours)));
+  }, [workingHours]);
   return map;
 }
 
@@ -334,22 +292,32 @@ function resolveCellHours(value, shiftCodeHours, labelHint = "") {
   return fallbackShiftHours(raw, labelHint);
 }
 
-/* Kişiler (LS: nurses/doctors) */
-function usePeople(roleLabel){
-  const [people,setPeople]=useState([]);
-  useEffect(()=>{
-    const nurses=LS.get("nurses",[]);
-    const doctors=LS.get("doctors",[]);
-    const map=(arr,title)=> (arr||[]).map((p,i)=>({
-      id: p.id || `${title}-${i}`,
-      unvan: p.title || p.role || title,
-      adsoyad: p.name || `${p.firstName||""} ${p.lastName||""}`.trim(),
-      tckn: p.tckn || p.nationalId || "",
-    }));
-    const list = roleLabel==="Doktorlar" ? map(doctors,"Doktor") : map(nurses,"Hemşire");
-    setPeople(list);
-  },[roleLabel]);
-  return people;
+const looksDoctor = (title = "") => {
+  const t = String(title || "").toLocaleUpperCase("tr-TR");
+  return /\b(DR|DOKTOR|HEKIM|HEKİM|TABIP|TABİP)\b/.test(t);
+};
+
+function filterPeopleByRoleLabel(list = [], roleLabel = "Hemşireler") {
+  const base = Array.isArray(list) ? list : [];
+  if (roleLabel === "Doktorlar") return base.filter((p) => looksDoctor(p?.unvan || p?.role || ""));
+  const nonDoctors = base.filter((p) => !looksDoctor(p?.unvan || p?.role || ""));
+  return nonDoctors.length ? nonDoctors : base;
+}
+
+/* Kişiler (tek kaynak: props.people) */
+function usePeople(roleLabel, sourcePeople = []){
+  return useMemo(() => {
+    const mapped = (Array.isArray(sourcePeople) ? sourcePeople : [])
+      .map((p, i) => ({
+        id: p?.id ? String(p.id) : `p-${i}`,
+        unvan: p?.title || p?.role || "",
+        role: p?.role || p?.title || "",
+        adsoyad: p?.fullName || p?.name || [p?.firstName, p?.lastName].filter(Boolean).join(" ").trim(),
+        tckn: p?.meta?.tckn || p?.meta?.tc || p?.tckn || p?.tc || p?.nationalId || "",
+      }))
+      .filter((p) => String(p.adsoyad || "").trim());
+    return filterPeopleByRoleLabel(mapped, roleLabel);
+  }, [roleLabel, sourcePeople]);
 }
 
 function emptyRow(person, monthlyRequired = LEGACY_MONTHLY_DEFAULT){
@@ -404,7 +372,7 @@ function mostCommonMonthlyValue(rows) {
 }
 
 /* ========= Ana Bileşen (imperative API ile) ========= */
-const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHours }, ref) {
+const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHours, people: peopleProp = [] }, ref) {
   const year   = Number(ym?.year);
   const month1 = Number(ym?.month);                     // 1..12
   const month0 = Math.max(0, Math.min(11, month1 - 1)); // 0..11
@@ -417,7 +385,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
   const days = useMemo(() => buildMonthDaysLocal(year, month0), [year, month0]);
 
   // Kişiler + kod-saat haritası
-  const people = usePeople(roleLabel);
+  const people = usePeople(roleLabel, peopleProp);
   const shiftCodeHours = useShiftCodeHours(workingHours);
   const [holidays, setHolidays] = useState([]);
   const stdMonthly = useMemo(() => computeMonthlyStdHours(year, month1, holidays), [year, month1, holidays]);
@@ -732,7 +700,24 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
 
   const fillFromDutyRoster = async () => {
     try {
-      const metaIndex = buildPersonMetaIndex();
+      const metaIndex = buildPersonMetaIndex(peopleProp);
+      const remotePeople = await fetchPersonnel({ active: true, page: 1, size: 2000 }).catch(() => []);
+      const remoteByCanon = new Map(
+        (remotePeople || [])
+          .map((p) => {
+            const fullName = p?.fullName || p?.name || "";
+            return [
+              canonName(fullName),
+              {
+                id: p?.id ? String(p.id) : "",
+                name: fullName,
+                title: p?.title || p?.role || "",
+                tckn: p?.meta?.tckn || p?.meta?.tc || p?.tckn || p?.tc || "",
+              },
+            ];
+          })
+          .filter(([canon, meta]) => canon && (meta?.name || meta?.title || meta?.tckn))
+      );
       const roles = ["Nurse", "Doctor"];
       const assignments = [];
       for (const role of roles) {
@@ -835,7 +820,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
       assignments.forEach((item) => {
         const canon = canonName(item.name);
         if (!canon) return;
-        const meta = metaIndex.byCanon.get(canon) || null;
+        const meta = remoteByCanon.get(canon) || metaIndex.byCanon.get(canon) || null;
         const idx = ensureRow(canon, meta);
         const row = next[idx];
         if (meta) {
@@ -848,6 +833,15 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
         const rawLabel = String(item.rowLabel || "").trim();
         const safeValue = rawShift && !/^\d+$/.test(rawShift) ? rawShift : (rawLabel || rawShift);
         row.days[item.day] = safeValue;
+      });
+
+      // Mevcut satırlardaki unvan/tckn değerlerini de backend personel verisiyle hizala.
+      next.forEach((row) => {
+        const canon = canonName(row?.adsoyad || "");
+        const remoteMeta = canon ? remoteByCanon.get(canon) : null;
+        if (!remoteMeta) return;
+        if (remoteMeta.title && remoteMeta.title !== row.unvan) row.unvan = remoteMeta.title;
+        if (remoteMeta.tckn && !row.tckn) row.tckn = remoteMeta.tckn;
       });
 
       const finalized = normalizeRows(

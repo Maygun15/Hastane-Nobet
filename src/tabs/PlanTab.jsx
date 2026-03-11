@@ -273,45 +273,6 @@ function sanitizeSupervisorAssignments(assignments = [], year, month0, holidayKi
     .filter(Boolean);
 }
 
-function readPeopleAll() {
-  const sources = [
-    "peopleV2",
-    "peopleAll",
-    "people",
-    "personList",
-    "personnel",
-    "nurses",
-    "staff",
-    "doctors",
-  ];
-  const aggregated = [];
-  const seenId = new Set();
-  sources.forEach((key) => {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      const arr = Array.isArray(parsed)
-        ? parsed
-        : Array.isArray(parsed?.items)
-        ? parsed.items
-        : Array.isArray(parsed?.data)
-        ? parsed.data
-        : [];
-      arr.forEach((row, idx) => {
-        const norm = normalizePersonRecord(row, idx);
-        if (!norm || seenId.has(norm.id)) return;
-        seenId.add(norm.id);
-        aggregated.push(norm);
-      });
-    } catch {
-      /* noop */
-    }
-  });
-  aggregated.sort((a, b) => a.name.localeCompare(b.name, "tr", { sensitivity: "base" }));
-  return aggregated;
-}
-
 function matchPersonToUser(user, options) {
   if (!user || !options.length) return null;
   const idCandidates = [
@@ -385,7 +346,7 @@ function withAliasIds(person, pool = []) {
   };
 }
 
-export default function PlanTab({ workAreas = [], workingHours = [] }) {
+export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: peopleAllProp = [] }) {
   const { user } = useAuth();
   const scope = useServiceScope();
   const normalizeServiceId = useCallback(
@@ -415,16 +376,19 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
   const [plannerStatus, setPlannerStatus] = useState("idle"); // idle | loading | error | done
   const [plannerError, setPlannerError] = useState("");
 
-  const [peopleAll, setPeopleAll] = useState(() => readPeopleAll());
-  useEffect(() => {
-    const refresh = () => setPeopleAll(readPeopleAll());
-    window.addEventListener("people:changed", refresh);
-    window.addEventListener("storage", refresh);
-    return () => {
-      window.removeEventListener("people:changed", refresh);
-      window.removeEventListener("storage", refresh);
-    };
-  }, []);
+  const peopleAll = useMemo(() => {
+    const raw = Array.isArray(peopleAllProp) ? peopleAllProp : [];
+    const seen = new Set();
+    const normalized = [];
+    raw.forEach((row, idx) => {
+      const norm = normalizePersonRecord(row, idx);
+      if (!norm || seen.has(norm.id)) return;
+      seen.add(norm.id);
+      normalized.push(norm);
+    });
+    normalized.sort((a, b) => a.name.localeCompare(b.name, "tr", { sensitivity: "base" }));
+    return normalized;
+  }, [peopleAllProp]);
 
   const [apiMatchedPerson, setApiMatchedPerson] = useState(null);
 
@@ -436,10 +400,8 @@ export default function PlanTab({ workAreas = [], workingHours = [] }) {
   useEffect(() => {
     const refreshLeaves = () => setAllLeaves(getAllLeaves());
     window.addEventListener("leaves:changed", refreshLeaves);
-    window.addEventListener("storage", refreshLeaves);
     return () => {
       window.removeEventListener("leaves:changed", refreshLeaves);
-      window.removeEventListener("storage", refreshLeaves);
     };
   }, []);
 

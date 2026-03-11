@@ -11,7 +11,6 @@ import { collectRequestsByPerson } from "../lib/requestParser.js";
 import { checkLeaveShiftConflict } from "../utils/conflictChecker.js";
 import useActiveYM from "../hooks/useActiveYM.js";
 import useServiceScope from "../hooks/useServiceScope.js"; // ⬅️ YENİ: servis kapsamı
-import { API } from "../lib/api.js";
 
 /* =========================================================
    INLINE SCHEDULER — “Liste Oluştur” için yedek algoritma
@@ -309,72 +308,6 @@ function getSecFromLocation() {
   } catch { return null; }
 }
 
-/* People / LeaveTypes helpers (güvenli okuma) */
-function readPeopleAll() {
-  try {
-    const keys = ["peopleAll", "peopleV2", "people", "personList", "personnel", "nurses", "staff"];
-    const normalize = (arr) =>
-      (arr || [])
-        .map((p) => {
-          const id = p?.id ?? p?.personId ?? p?.pid ?? p?.tc ?? p?.kod ?? p?.code ?? "";
-          const name = p?.fullName || p?.name || [p?.firstName, p?.lastName].filter(Boolean).join(" ");
-          return {
-            id: String(id || "").trim(),
-            name: name || "",
-            fullName: name || "",
-            service: p?.service || p?.serviceId || p?.department || null,
-            ...p
-          };
-        })
-        .filter((x) => x.id);
-    for (const k of keys) {
-      const raw = localStorage.getItem(k);
-      if (!raw) continue;
-      const val = JSON.parse(raw);
-      if (Array.isArray(val)) return normalize(val);
-      if (val && typeof val === "object") {
-        if (Array.isArray(val.items)) return normalize(val.items);
-        const flattened = Object.values(val).flatMap((v) => (Array.isArray(v) ? v : []));
-        if (flattened.length) return normalize(flattened);
-      }
-    }
-  } catch {}
-  return [];
-}
-
-function readLeaveTypes() {
-  try {
-    const tryKeys = ["leaveTypesV1", "leaveTypes", "izinTurleri", "izinTurleriV1", "vacationTypes", "rules"];
-    let arr = null;
-    for (const k of tryKeys) {
-      const raw = localStorage.getItem(k);
-      if (!raw) continue;
-      const val = JSON.parse(raw);
-      if (Array.isArray(val) && val.length) { arr = val; break; }
-      if (val && typeof val === "object") {
-        if (Array.isArray(val.leaveTypes))    { arr = val.leaveTypes;    break; }
-        if (Array.isArray(val.izinTurleri))   { arr = val.izinTurleri;   break; }
-        if (Array.isArray(val.vacationTypes)) { arr = val.vacationTypes; break; }
-      }
-    }
-    if (!arr) return [];
-    return arr
-      .map((x) => {
-        if (typeof x === "string") {
-          const [codeRaw, nameRaw] = x.split(/[-—–]/).map((s) => s.trim());
-          const code = codeRaw?.length ? codeRaw : x.trim();
-          const name = nameRaw?.length ? nameRaw : "";
-          return { code, name };
-        }
-        const id   = (x?.id ?? x?.code ?? x?.key ?? x?.type) ?? "";
-        const code = (x?.code ?? x?.id ?? x?.key ?? x?.type) ?? "";
-        const name = (x?.name ?? x?.title ?? x?.label) ?? "";
-        return { id: String(id), code: String(code).trim(), name: String(name).trim() };
-      })
-      .filter((t) => t.code);
-  } catch { return []; }
-}
-
 /* CSV/XLSX ortak */
 const splitCsvLine = (line) => {
   const re = /,(?=(?:[^"]*"[^"]*")*[^"]*$)/g;
@@ -647,6 +580,7 @@ function SectionContent({
             <MonthlyHoursSheet
               ref={monthlyRef}
               ym={{ year, month }}
+              people={Array.isArray(peopleAll) ? peopleAll : []}
               workingHours={workingHours}
               setYm={(val) => {
                 const y = Number(val?.year) || year;
@@ -671,7 +605,13 @@ function SectionContent({
             onReset={() => overtimeRef.current?.reset?.() ?? commonToolbarProps.onReset()}
           />
           <div className="rounded-lg border bg-white p-4">
-            <OvertimeTab ref={overtimeRef} hideToolbar workingHours={workingHours} />
+            <OvertimeTab
+              ref={overtimeRef}
+              hideToolbar
+              workingHours={workingHours}
+              people={Array.isArray(peopleAll) ? peopleAll : []}
+              leaveTypes={Array.isArray(leaveTypes) ? leaveTypes : []}
+            />
           </div>
         </div>
       );
@@ -723,7 +663,7 @@ function SectionContent({
 /* =========================
    Ana bileşen
 ========================= */
-export default function SchedulesTab({ workingHours = [] }) {
+export default function SchedulesTab({ workingHours = [], peopleAll: peopleAllProp = [], leaveTypes: leaveTypesProp = [] }) {
   const initialSections = useMemo(() => {
     const v = LS.get(LS_KEY, DEFAULT_SECTIONS);
     return Array.isArray(v) && v.length ? v : DEFAULT_SECTIONS;
@@ -807,38 +747,22 @@ export default function SchedulesTab({ workingHours = [] }) {
   const { ym, setYear, setMonth } = useActiveYM(); // month: 1..12
   const { year, month } = ym;
 
-  const [peopleAll, setPeopleAll] = useState(() => readPeopleAll());
-  useEffect(() => {
-    const refreshPeople = () => setPeopleAll(readPeopleAll());
-    const onStorage = (e) => {
-      if (!e || ["peopleV2","peopleAll","people","personList","personnel","nurses","staff","doctors"].includes(e.key)) {
-        refreshPeople();
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("people:changed", refreshPeople);
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("people:changed", refreshPeople);
-    };
-  }, []);
-  useEffect(() => {
-    const token = localStorage.getItem("token") || localStorage.getItem("authToken");
-    if (!token) return;
-
-    API.http
-      .get("/api/personnel?size=500&active=true")
-      .then((d) => {
-        const items = Array.isArray(d?.items) ? d.items : Array.isArray(d) ? d : [];
-        if (!items.length) return;
-        try {
-          localStorage.setItem("peopleV2", JSON.stringify(items));
-          window.dispatchEvent(new Event("people:changed"));
-        } catch {}
-        setPeopleAll(items);
+  const peopleAll = useMemo(() => {
+    const raw = Array.isArray(peopleAllProp) ? peopleAllProp : [];
+    return raw
+      .map((p) => {
+        const id = p?.id ?? p?.personId ?? p?.pid ?? p?.tc ?? p?.kod ?? p?.code ?? "";
+        const name = p?.fullName || p?.name || [p?.firstName, p?.lastName].filter(Boolean).join(" ");
+        return {
+          id: String(id || "").trim(),
+          name: name || "",
+          fullName: name || "",
+          service: p?.service || p?.serviceId || p?.department || null,
+          ...p,
+        };
       })
-      .catch((err) => console.warn("Personnel fetch failed:", err));
-  }, []);
+      .filter((x) => x.id);
+  }, [peopleAllProp]);
 
   const [allLeaves, setAllLeaves] = useState(() => getAllLeaves());
   useEffect(() => {
@@ -847,16 +771,10 @@ export default function SchedulesTab({ workingHours = [] }) {
     return () => window.removeEventListener("leaves:changed", refreshLeaves);
   }, []);
 
-  const [leaveTypes, setLeaveTypes] = useState(() => readLeaveTypes());
-  useEffect(() => {
-    const refreshLT = () => setLeaveTypes(readLeaveTypes());
-    window.addEventListener("storage", refreshLT);
-    window.addEventListener("leaveTypes:changed", refreshLT);
-    return () => {
-      window.removeEventListener("storage", refreshLT);
-      window.removeEventListener("leaveTypes:changed", refreshLT);
-    };
-  }, []);
+  const leaveTypes = useMemo(
+    () => (Array.isArray(leaveTypesProp) ? leaveTypesProp : []),
+    [leaveTypesProp]
+  );
 
   const handleTabClick = useCallback((id) => {
     setActiveId(id);
