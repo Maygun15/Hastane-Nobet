@@ -134,7 +134,7 @@ function getShiftHours(item) {
 }
 
 function readWorkingHoursList(preferredList) {
-  if (Array.isArray(preferredList)) return preferredList;
+  if (Array.isArray(preferredList) && preferredList.length > 0) return preferredList;
   const v2 = extractListValue(LS.get("workingHoursV2", null));
   const v1 = extractListValue(LS.get("workingHours", null));
   return [...v2, ...v1];
@@ -148,10 +148,16 @@ function buildShiftCodeHoursMap(list = []) {
     if (!Number.isFinite(hours) || hours < 0) return;
     const code = String(item.code ?? item.id ?? item.shiftCode ?? "").trim();
     const label = String(item.label ?? item.name ?? item.area ?? "").trim();
-    const aliases = [...shiftKeyCandidates(code), ...shiftKeyCandidates(label)];
-    aliases.forEach((key) => {
+    // Çakışmaları azaltmak için asıl eşlemeyi kod üzerinden kur.
+    const codeAliases = shiftKeyCandidates(code);
+    codeAliases.forEach((key) => {
       map[key] = hours;
     });
+    // Label tam eşleşmesi yardımcı alias olarak eklenir, mevcut kod eşlemesini ezmez.
+    const labelKey = String(label || "").trim().toUpperCase();
+    if (labelKey && !Object.prototype.hasOwnProperty.call(map, labelKey)) {
+      map[labelKey] = hours;
+    }
   });
   return map;
 }
@@ -242,18 +248,18 @@ const fallbackShiftHours = (code, label = "") => {
   if (!c) {
     if (lbl.includes("YARIM") || lbl.includes("4 SAAT")) return 4;
     if (lbl.includes("POL") || lbl.includes("GÜNDÜZ") || lbl.includes("KISA")) return 8;
-    if (lbl.includes("GECE") || lbl.includes("NÖBET")) return 24;
+    if (lbl.includes("GECE") || lbl.includes("NÖBET") || lbl.includes("SORUMLU")) return 24;
     return 0;
   }
   if (["Y", "YILLIK", "E", "R", "İ", "I", "B", "RAPOR", "AN"].includes(c)) return 0;
   if (c.includes("IZIN") || c.includes("İZİN") || lbl.includes("İZİN") || lbl.includes("IZIN")) return 0;
+  if (c === "A" || /^A[\s/_-]/.test(c)) return 4;
   if (c.includes("4")) return 4;
   if (c.includes("8") || c === "M" || c === "GUND") return 8;
   if (c.includes("12")) return 12;
-  if (c.includes("V1")) return 16;
   if (["YARIM", "HALF"].some((k) => c.includes(k))) return 4;
-  if (["N", "GECE", "V2", "SV", "24"].some((k) => c.includes(k))) return 24;
-  if (lbl.includes("NÖBET") || lbl.includes("GECE")) return 24;
+  if (["N", "GECE", "V2", "V1", "SV", "24"].some((k) => c.includes(k))) return 24;
+  if (lbl.includes("NÖBET") || lbl.includes("GECE") || lbl.includes("SORUMLU")) return 24;
   return 0;
 };
 
@@ -294,7 +300,7 @@ function tryParseExcelDateFlexible(v){
 
 /* Çalışma kodu -> saat (öncelik: props.workingHours, fallback: LS) */
 function useShiftCodeHours(workingHours){
-  const usingProps = Array.isArray(workingHours);
+  const usingProps = Array.isArray(workingHours) && workingHours.length > 0;
   const [map, setMap] = useState(() =>
     buildShiftCodeHoursMap(readWorkingHoursList(workingHours))
   );
@@ -323,7 +329,7 @@ function resolveCellHours(value, shiftCodeHours, labelHint = "") {
   for (const key of keys) {
     if (!Object.prototype.hasOwnProperty.call(shiftCodeHours, key)) continue;
     const h = Number(shiftCodeHours[key]);
-    if (Number.isFinite(h) && h >= 0) return h;
+    if (Number.isFinite(h) && h > 0) return h;
   }
   return fallbackShiftHours(raw, labelHint);
 }
@@ -431,18 +437,24 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
     setLoaded(false);
     const saved = LS.get(storageKey, null);
     if (Array.isArray(saved)) {
-      const ready = normalizeRows(saved, { sort:true, renumber:true, filterEmpty:true });
+      const ready = normalizeRows(saved, { sort:true, renumber:true, filterEmpty:true }).map((r) => ({
+        ...r,
+        ...computeTotals(r, days, shiftCodeHours),
+      }));
       setRows(ready);
       setLoaded(true);
     } else {
       const plist = Array.isArray(people) ? people : [];
       if (plist.length === 0) { setRows([]); setLoaded(true); return; }
-      const initial = normalizeRows(plist.map((p)=> emptyRow(p, stdMonthly)), { sort:true, renumber:true, filterEmpty:true });
+      const initial = normalizeRows(plist.map((p)=> emptyRow(p, stdMonthly)), { sort:true, renumber:true, filterEmpty:true }).map((r) => ({
+        ...r,
+        ...computeTotals(r, days, shiftCodeHours),
+      }));
       setRows(initial);
       setLoaded(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storageKey, (people||[]).length, version]);
+  }, [storageKey, (people||[]).length, version, days, shiftCodeHours, stdMonthly]);
 
   /* Sadece yüklendikten sonra kaydet */
   useEffect(() => {
@@ -468,7 +480,8 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
   const setField = (ri, field, value) => {
     setRows((prev) => {
       const next = [...(prev||[])];
-      next[ri] = { ...(next[ri]||{}), [field]: value };
+      const row = { ...(next[ri]||{}), [field]: value };
+      next[ri] = { ...row, ...computeTotals(row, days, shiftCodeHours) };
       return next;
     });
   };
@@ -513,6 +526,25 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
     });
     LS.set(stdLsKey, stdMonthly);
   }, [stdMonthly, loaded, rows, stdLsKey]);
+
+  // Vardiya saat haritası/gün listesi değiştiğinde satır toplamlarını yeniden hesapla.
+  useEffect(() => {
+    if (!loaded) return;
+    setRows((prev) => {
+      let changed = false;
+      const next = (prev || []).map((r) => {
+        const totals = computeTotals(r, days, shiftCodeHours);
+        const curWorked = Number(r?.aylikCalistigiSaat ?? 0);
+        const curTotal = Number(r?.toplamCalisma ?? 0);
+        if (Math.abs(curWorked - totals.aylikCalistigiSaat) > 0.001 || Math.abs(curTotal - totals.toplamCalisma) > 0.001) {
+          changed = true;
+          return { ...r, ...totals };
+        }
+        return r;
+      });
+      return changed ? next : prev;
+    });
+  }, [loaded, days, shiftCodeHours]);
 
   /* Excel dışa aktar — ISO başlık */
   const exportExcel = () => {
@@ -812,7 +844,10 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
           if (meta.name && !row.adsoyad) row.adsoyad = meta.name;
         }
         if (!row.adsoyad) row.adsoyad = item.name;
-        row.days[item.day] = item.shiftCode || item.rowLabel || "";
+        const rawShift = String(item.shiftCode || "").trim();
+        const rawLabel = String(item.rowLabel || "").trim();
+        const safeValue = rawShift && !/^\d+$/.test(rawShift) ? rawShift : (rawLabel || rawShift);
+        row.days[item.day] = safeValue;
       });
 
       const finalized = normalizeRows(
