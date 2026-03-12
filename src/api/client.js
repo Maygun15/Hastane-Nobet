@@ -1,5 +1,5 @@
 // src/api/client.js
-const BASE_URL = (import.meta.env.VITE_API_URL || 'https://hastane-backend-production.up.railway.app').replace(/\/$/, '');
+const BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const TOKEN_KEY = 'token';
 
 export function getToken() {
@@ -37,22 +37,13 @@ async function request(path, { method = 'GET', body } = {}) {
 }
 
 export const api = {
-  // Yalnızca email + password bekler
-  register: (payload) => request('/register', { method: 'POST', body: payload }),
-
-  // Giriş (backend { token } döndürür)
-  login:    (payload) => request('/api/auth/login',    { method: 'POST', body: payload }),
-
-  // Oturum sahibini getir
-  me:       ()         => request('/me'),
-
-  // Admin daveti
+  register: (payload) => request('/api/auth/register', { method: 'POST', body: payload }),
+  login: (payload) => request('/api/auth/login', { method: 'POST', body: payload }),
+  me: () => request('/api/auth/me'),
   acceptInvite: (code) =>
-    request('/admin/accept-invite', { method: 'POST', body: { code } }),
-
-  // Staff daveti
+    request('/api/auth/admin/accept-invite', { method: 'POST', body: { code } }),
   acceptStaffInvite: (code) =>
-    request('/staff/accept-invite', { method: 'POST', body: { code } }),
+    request('/api/auth/staff/accept-invite', { method: 'POST', body: { code } }),
 
   // Çıkış
   logout:   ()         => { setToken(''); return Promise.resolve(); },

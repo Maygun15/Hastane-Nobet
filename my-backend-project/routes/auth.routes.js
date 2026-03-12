@@ -10,10 +10,68 @@ const router  = express.Router();
 const path = require('path');
 const User = require(path.join(__dirname, '..', 'models', 'User.js'));
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
-const ALLOW_DEV = ['1','true','yes'].includes(String(process.env.ALLOW_DEV_ENDPOINTS || '').toLowerCase());
-const DEV_EMAIL = String(process.env.ADMIN_EMAIL || 'admin@admin.com').toLowerCase();
-const DEV_PASSWORD = String(process.env.ADMIN_PASSWORD || '1234');
+const JWT_SECRET = process.env.JWT_SECRET;
+const NODE_ENV = String(process.env.NODE_ENV || '').toLowerCase();
+const IS_PROD = NODE_ENV === 'production';
+const ALLOW_DEV = !IS_PROD && ['1','true','yes'].includes(String(process.env.ALLOW_DEV_ENDPOINTS || '').toLowerCase());
+const DEV_EMAIL = String(process.env.ADMIN_EMAIL || '').toLowerCase();
+const DEV_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
+const RATE_STORE = new Map();
+const AUTH_WINDOW_MS = 15 * 60 * 1000;
+
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET tanımlı değil');
+}
+
+function getClientIp(req) {
+  return String(req.headers['x-forwarded-for'] || req.ip || req.socket?.remoteAddress || '')
+    .split(',')[0]
+    .trim();
+}
+
+function authRateLimit({ limit, keyOf, message }) {
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = String(keyOf(req) || '');
+    const cur = RATE_STORE.get(key);
+    if (!cur || cur.resetAt <= now) {
+      RATE_STORE.set(key, { count: 1, resetAt: now + AUTH_WINDOW_MS });
+      return next();
+    }
+    if (cur.count >= limit) {
+      const retrySec = Math.max(1, Math.ceil((cur.resetAt - now) / 1000));
+      res.setHeader('Retry-After', String(retrySec));
+      return res.status(429).json({ message });
+    }
+    cur.count += 1;
+    RATE_STORE.set(key, cur);
+    return next();
+  };
+}
+
+const registerRateLimit = authRateLimit({
+  limit: 20,
+  keyOf: (req) => `reg:${getClientIp(req)}`,
+  message: 'Çok fazla kayıt denemesi, lütfen sonra tekrar deneyin',
+});
+const loginRateLimit = authRateLimit({
+  limit: 15,
+  keyOf: (req) => {
+    const identifier = pickIdentifier(req.body || {});
+    return `login:${getClientIp(req)}:${String(identifier || '').toLowerCase()}`;
+  },
+  message: 'Çok fazla giriş denemesi, lütfen sonra tekrar deneyin',
+});
+const resetRequestRateLimit = authRateLimit({
+  limit: 10,
+  keyOf: (req) => `reset-req:${getClientIp(req)}:${lc(req.body?.email || '')}`,
+  message: 'Çok fazla şifre sıfırlama isteği, lütfen sonra tekrar deneyin',
+});
+const resetApplyRateLimit = authRateLimit({
+  limit: 10,
+  keyOf: (req) => `reset-apply:${getClientIp(req)}:${normalize(req.body?.token || '')}`,
+  message: 'Çok fazla şifre sıfırlama denemesi, lütfen sonra tekrar deneyin',
+});
 
 /* ============ Helpers ============ */
 const normalize = (s) => (s ?? '').toString().trim();
@@ -53,9 +111,9 @@ async function getAuthUserFromRequest(req) {
 }
 
 /* ============= REGISTER (opsiyonel) ============= */
-router.post('/register', async (req, res) => {
+router.post('/register', registerRateLimit, async (req, res) => {
   try {
-    const { name, email, tc, phone, password, role } = req.body || {};
+    const { name, email, tc, phone, password } = req.body || {};
     const pass = normalize(password);
     if (!name || !pass || !(email || tc || phone)) {
       return res.status(400).json({ message: 'Zorunlu alanlar eksik' });
@@ -80,14 +138,16 @@ router.post('/register', async (req, res) => {
       tc: tc || undefined,
       phone: phone || undefined,
       passwordHash: hash,              // 🔧 doğru alan
-      role: role || 'user',
-      active: true,
+      role: 'user',
+      active: false,
       serviceIds: [],
+      mustChangePassword: true,
     });
 
-    const token = makeToken(user);
-    return res.json({
-      token,
+    return res.status(201).json({
+      ok: true,
+      pending: true,
+      message: 'Kayıt alındı. Hesabınız yönetici onayı bekliyor.',
       user: {
         id: String(user._id),
         name: user.name,
@@ -107,7 +167,7 @@ router.post('/register', async (req, res) => {
 });
 
 /* ============= LOGIN ============= */
-router.post('/login', async (req, res) => {
+router.post('/login', loginRateLimit, async (req, res) => {
   try {
     const identifier = pickIdentifier(req.body);
     const password   = normalize(req.body.password ?? req.body.parola);
@@ -118,9 +178,9 @@ router.post('/login', async (req, res) => {
 
     // DB yoksa ve dev endpoints açıksa, hızlı dev login
     const dbReady = mongoose.connection?.readyState === 1;
-    if (!dbReady && ALLOW_DEV) {
+    if (!dbReady && ALLOW_DEV && DEV_EMAIL && DEV_PASSWORD) {
       const idLc = String(identifier || '').toLowerCase();
-      if ((idLc === DEV_EMAIL || identifier === '17047689518') && password === DEV_PASSWORD) {
+      if (idLc === DEV_EMAIL && password === DEV_PASSWORD) {
         const token = makeToken({ _id: 'dev1', role: 'admin', personId: null });
         return res.json({
           token,
@@ -144,7 +204,7 @@ router.post('/login', async (req, res) => {
 
     let ok = await user.comparePassword(password);
     if (!ok) {
-      const adminEmail = (process.env.ADMIN_EMAIL || 'admin@admin.com').toLowerCase();
+      const adminEmail = String(process.env.ADMIN_EMAIL || '').toLowerCase();
       const adminPass  = process.env.ADMIN_PASSWORD;
       if (adminPass && user.email && user.email.toLowerCase() === adminEmail && password === adminPass && process.env.NODE_ENV !== 'production') {
         await user.setPassword(password);
@@ -180,7 +240,7 @@ router.post('/login', async (req, res) => {
 
 
 /* ============= PASSWORD RESET (token ile) ============= */
-router.post('/password/request-reset', async (req, res) => {
+router.post('/password/request-reset', resetRequestRateLimit, async (req, res) => {
   try {
     const email = lc(req.body?.email || "");
     if (!email) return res.status(400).json({ message: 'E-posta zorunlu' });
@@ -223,7 +283,7 @@ Bu baglanti 15 dakika gecerlidir.`,
   }
 });
 
-router.post('/password/reset', async (req, res) => {
+router.post('/password/reset', resetApplyRateLimit, async (req, res) => {
   try {
     const { token } = req.body || {};
     const newPassword = normalize(req.body?.newPassword);

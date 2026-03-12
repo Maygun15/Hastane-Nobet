@@ -1044,7 +1044,14 @@ module.exports = router;
 ========================================================= */
 const GeneratedSchedule = require('../models/GeneratedSchedule');
 
-router.get('/generated', async (req, res) => {
+router.get('/generated',
+  requireAuth,
+  (req, _res, next) => {
+    req.targetServiceId = req.query?.serviceId != null ? String(req.query.serviceId).trim() : '';
+    next();
+  },
+  allowMonthlyRead,
+  async (req, res) => {
   try {
     const { sectionId = 'calisma-cizelgesi', serviceId = '', role = '', year, month } = req.query;
     const filter = { sectionId };

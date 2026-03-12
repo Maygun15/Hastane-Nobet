@@ -11,6 +11,7 @@ import {
   apiLogin,
   apiLogout,
   apiMe,
+  apiRegister,
   setToken,
   getToken,
 } from "../lib/api.js";
@@ -100,6 +101,10 @@ export function AuthProvider({ children }) {
     return me || data;
   }, [refresh]);
 
+  const register = useCallback(async (payload) => {
+    return apiRegister(payload);
+  }, []);
+
   // Manual token set (opsiyonel): davet kabul vs. sonrası kullanılabilir
   const loginWithToken = useCallback(async (token) => {
     setToken(token || "");
@@ -130,13 +135,14 @@ export function AuthProvider({ children }) {
       status,            // 'idle' | 'loading' | 'authenticated' | 'unauthenticated'
       isAuthenticated,   // boolean
       login,
+      register,
       loginWithToken,
       logout,
       refresh,
       hasRole,
       token: getToken(), // gerektiğinde erişim
     }),
-    [user, status, isAuthenticated, login, loginWithToken, logout, refresh, hasRole]
+    [user, status, isAuthenticated, login, register, loginWithToken, logout, refresh, hasRole]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

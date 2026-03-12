@@ -21,12 +21,24 @@ const PORT = Number(process.env.PORT || 3000);
 /* ================= ENV ================= */
 const MONGODB_URI     = process.env.MONGODB_URI;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "https://hastane-nobet.vercel.app";
-const JWT_SECRET      = process.env.JWT_SECRET || 'dev-secret';
+const JWT_SECRET      = process.env.JWT_SECRET;
+const NODE_ENV        = String(process.env.NODE_ENV || '').toLowerCase();
+const IS_PROD         = NODE_ENV === 'production';
 const SKIP_DB         = ['1','true','yes'].includes(String(process.env.SKIP_DB || '').toLowerCase());
-const ALLOW_DEV       = ['1','true','yes'].includes(String(process.env.ALLOW_DEV_ENDPOINTS || '').toLowerCase());
+const ALLOW_DEV_RAW   = ['1','true','yes'].includes(String(process.env.ALLOW_DEV_ENDPOINTS || '').toLowerCase());
+const ALLOW_DEV       = !IS_PROD && ALLOW_DEV_RAW;
 const ADMIN_EMAIL     = process.env.ADMIN_EMAIL || 'admin@admin.com';
-const ADMIN_PASSWORD  = process.env.ADMIN_PASSWORD || '1234';
+const ADMIN_PASSWORD  = process.env.ADMIN_PASSWORD;
 const RESET_ADMIN_PW  = ['1','true','yes'].includes(String(process.env.RESET_ADMIN_PASSWORD || '').toLowerCase());
+const DEV_LOGIN_IDENTIFIER = String(process.env.DEV_LOGIN_IDENTIFIER || ADMIN_EMAIL || '').toLowerCase().trim();
+
+if (!JWT_SECRET) {
+  console.error('HATA: JWT_SECRET tanımlı değil');
+  process.exit(1);
+}
+if (IS_PROD && ALLOW_DEV_RAW) {
+  console.warn('UYARI: NODE_ENV=production iken ALLOW_DEV_ENDPOINTS aktif, dev endpointler zorla kapatıldı.');
+}
 
 console.log('[BOOT] CWD:', process.cwd());
 console.log('[BOOT] .env path:', path.join(__dirname, '.env'));
@@ -55,7 +67,7 @@ if (!SKIP_DB) {
 /* ============== MIDDLEWARE ============== */
 const ALLOWED_ORIGINS = new Set(['http://localhost:5173','http://localhost:5174', FRONTEND_ORIGIN]);
 app.set('trust proxy', 1);
-app.use(cors({
+const corsOptions = {
   origin(origin, cb) {
     if (!origin) return cb(null, true); // Postman/cURL
     const ok = [...ALLOWED_ORIGINS].some(o => o === origin);
@@ -64,8 +76,19 @@ app.use(cors({
   credentials: true,
   methods: ['GET','HEAD','PUT','PATCH','POST','DELETE','OPTIONS'],
   allowedHeaders: ['Content-Type','Authorization']
-}));
-app.options(/.*/, cors());
+};
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  if (IS_PROD) {
+    res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+  }
+  next();
+});
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use((req, _res, next) => { console.log('[REQ]', req.method, req.originalUrl); next(); });
@@ -80,7 +103,7 @@ app.get('/health', (_req, res) => res.json({
 
 /* ============== HOLIDAYS ROUTES ============== */
 const holidayRoutes = require(path.join(__dirname, 'routes', 'holiday.js'));
-app.use('/api/holidays', holidayRoutes);
+app.use('/api/holidays', auth, ensureActive, holidayRoutes);
 
 /* ============ AUTH HELPERS (JWT) ============ */
 const User = require(path.join(__dirname, 'models', 'User.js'));
@@ -91,6 +114,9 @@ async function createAdmin() {
     const existing = await User.findOne({ email });
     if (existing) {
       if (RESET_ADMIN_PW) {
+        if (!ADMIN_PASSWORD) {
+          throw new Error('RESET_ADMIN_PASSWORD açıkken ADMIN_PASSWORD zorunlu');
+        }
         existing.passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
         existing.password = undefined;
         existing.role = 'admin';
@@ -102,6 +128,10 @@ async function createAdmin() {
         console.log('Admin zaten var');
       }
       return;
+    }
+
+    if (!ADMIN_PASSWORD) {
+      throw new Error('İlk admin oluşturma için ADMIN_PASSWORD zorunlu');
     }
 
     const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
@@ -172,15 +202,45 @@ function requireAnyRole(...roles) {
 /* ============== DEV LOGIN — ESNEK, DB'siz ============== */
 // .env → ALLOW_DEV_ENDPOINTS=true olmalı
 if (ALLOW_DEV) {
+  const devLoginLimiter = new Map();
+  const DEV_LOGIN_WINDOW_MS = 15 * 60 * 1000;
+  const DEV_LOGIN_MAX_ATTEMPTS = 20;
+  function devKey(req) {
+    const ip = String(req.headers['x-forwarded-for'] || req.ip || req.socket?.remoteAddress || '').split(',')[0].trim();
+    const body = req.body || {};
+    const ident = String(body.tc ?? body.identifier ?? body.email ?? body.phone ?? '').trim().toLowerCase();
+    return `${ip}|${ident}`;
+  }
+  function hitDevLoginLimit(req, res, next) {
+    const now = Date.now();
+    const key = devKey(req);
+    const cur = devLoginLimiter.get(key);
+    if (!cur || cur.resetAt <= now) {
+      devLoginLimiter.set(key, { count: 1, resetAt: now + DEV_LOGIN_WINDOW_MS });
+      return next();
+    }
+    if (cur.count >= DEV_LOGIN_MAX_ATTEMPTS) {
+      const retrySec = Math.max(1, Math.ceil((cur.resetAt - now) / 1000));
+      res.setHeader('Retry-After', String(retrySec));
+      return res.status(429).json({ message: 'Çok fazla giriş denemesi, lütfen sonra tekrar deneyin' });
+    }
+    cur.count += 1;
+    devLoginLimiter.set(key, cur);
+    return next();
+  }
+
   // /login (dev) — /api/auth/login gerçek auth'tur
-  app.post('/login', (req, res) => {
+  app.post('/login', hitDevLoginLimit, (req, res) => {
     const b = req.body || {};
     // identifier | tc | email | phone -> hepsini kabul et
-    const id = (b.tc ?? b.identifier ?? b.email ?? b.phone ?? '').toString().trim();
+    const id = (b.tc ?? b.identifier ?? b.email ?? b.phone ?? '').toString().trim().toLowerCase();
     const pwd = (b.password ?? '').toString();
 
-    // DEV kullanıcı: 17047689518 / 1234
-    if (id === '17047689518' && pwd === '1234') {
+    if (!DEV_LOGIN_IDENTIFIER || !ADMIN_PASSWORD) {
+      return res.status(503).json({ message: 'Dev login yapılandırılmamış' });
+    }
+
+    if (id === DEV_LOGIN_IDENTIFIER && pwd === ADMIN_PASSWORD) {
       const token = jwt.sign({ uid: 'dev1' }, JWT_SECRET, { expiresIn: '7d' });
       return res.json({ token, user: { id: 'dev1', name: 'Dev Kullanıcı', role: 'admin' } });
     }

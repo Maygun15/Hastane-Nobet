@@ -127,7 +127,7 @@ function LoginForm() {
 }
 
 function RegisterForm({ onDone }) {
-  const { register, login } = useAuth();
+  const { register } = useAuth();
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -140,10 +140,8 @@ function RegisterForm({ onDone }) {
     setErr(""); setOk(""); setBusy(true);
     try {
       const r = await register({ name: form.name, email: form.email, password: form.password, role: "user" });
-      if (!r) {
-        setOk("Başvurunuz alındı. Yönetici onayından sonra giriş yapabilirsiniz.");
-        onDone?.();
-      }
+      setOk(r?.message || "Başvurunuz alındı. Yönetici onayından sonra giriş yapabilirsiniz.");
+      onDone?.();
     } catch (ex) {
       setErr(ex.message || "Kayıt başarısız");
     } finally {

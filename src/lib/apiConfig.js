@@ -1,5 +1,8 @@
 // src/lib/apiConfig.js
-const DEFAULT_PROD_BASE = "https://hastane-backend-production-dcf1.up.railway.app";
+const IS_LOCAL_HOST =
+  typeof window !== "undefined" &&
+  /^(localhost|127\.0\.0\.1)$/.test(String(window.location.hostname || "").toLowerCase());
+const DEFAULT_PROD_BASE = IS_LOCAL_HOST ? "" : "https://hastane-backend-production-dcf1.up.railway.app";
 const RAW_PROD_BASE =
   import.meta.env?.VITE_API_BASE ||
   import.meta.env?.VITE_API_URL ||

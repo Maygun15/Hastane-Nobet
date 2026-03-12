@@ -6,7 +6,11 @@ const Request = require('../models/Request');
 const User = require('../models/User');
 const Person = require('../models/Person');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET tanımlı değil');
+}
 
 // Auth middleware
 async function requireAuth(req, res, next) {

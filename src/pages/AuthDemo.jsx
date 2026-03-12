@@ -98,10 +98,15 @@ export default function AuthDemo() {
         email: emailNorm || undefined,
         password: rpass,
       };
-      const { token } = await apiRegister(payload);
-      if (token) setToken(token);
-      setMsg("Kayıt başarılı, giriş yapıldı.");
-      setTimeout(() => (window.location.href = "/"), 600);
+      const data = await apiRegister(payload);
+      if (data?.token) {
+        setToken(data.token);
+        setMsg("Kayıt başarılı, giriş yapıldı.");
+        setTimeout(() => (window.location.href = "/"), 600);
+        return;
+      }
+      setMsg(data?.message || "Kayıt alındı. Hesabınız yönetici onayı bekliyor.");
+      setTimeout(() => setTab("login"), 600);
     } catch (err) {
       setMsg(err.message || "Kayıt başarısız");
     } finally {

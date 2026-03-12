@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { requireRole } = require('../middleware/authz');
 const {
   generateHolidays,
   listHolidays,
@@ -31,7 +32,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/holidays/generate/:year
-router.get('/generate/:year', async (req, res) => {
+router.get('/generate/:year', requireRole('admin', 'staff'), async (req, res) => {
   try {
     const year = Number(req.params.year);
     const result = await generateHolidays(year);
@@ -43,7 +44,7 @@ router.get('/generate/:year', async (req, res) => {
 });
 
 // POST /api/holidays
-router.post('/', async (req, res) => {
+router.post('/', requireRole('admin', 'staff'), async (req, res) => {
   try {
     const { date, kind, name } = req.body || {};
     const row = await upsertHoliday({ date, kind, name, source: 'manual' });
@@ -54,7 +55,7 @@ router.post('/', async (req, res) => {
 });
 
 // DELETE /api/holidays/:date
-router.delete('/:date', async (req, res) => {
+router.delete('/:date', requireRole('admin', 'staff'), async (req, res) => {
   try {
     const date = req.params.date;
     const row = await deleteHoliday(date);

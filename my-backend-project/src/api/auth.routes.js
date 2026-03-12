@@ -6,14 +6,18 @@ const jwt      = require('jsonwebtoken');
 
 const User     = require('../models/User.js');
 const { validateRegisterPayload } = require('../utils/validate.js');
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET tanımlı değil');
+}
 
 /* =========================
    Helpers
 ========================= */
 function signJwtFor(user) {
   const payload = { uid: String(user._id), role: user.role };
-  const secret  = process.env.JWT_SECRET || 'dev-secret-change-me';
-  return jwt.sign(payload, secret, { expiresIn: '7d' });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 }
 
 function getBearerToken(req) {
@@ -23,8 +27,7 @@ function getBearerToken(req) {
 }
 
 function verifyJwt(token) {
-  const secret = process.env.JWT_SECRET || 'dev-secret-change-me';
-  return jwt.verify(token, secret);
+  return jwt.verify(token, JWT_SECRET);
 }
 
 // Basit login doğrulayıcı (identifier + password)
