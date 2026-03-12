@@ -11,6 +11,9 @@ if (!process.env.MONGODB_URI) {
 
 const express  = require('express');
 const cors     = require('cors');
+const helmet   = require('helmet');
+const hpp      = require('hpp');
+const mongoSanitize = require('express-mongo-sanitize');
 const mongoose = require('mongoose');
 const jwt      = require('jsonwebtoken');
 const bcrypt   = require('bcryptjs');
@@ -31,6 +34,7 @@ const ADMIN_EMAIL     = process.env.ADMIN_EMAIL || 'admin@admin.com';
 const ADMIN_PASSWORD  = process.env.ADMIN_PASSWORD;
 const RESET_ADMIN_PW  = ['1','true','yes'].includes(String(process.env.RESET_ADMIN_PASSWORD || '').toLowerCase());
 const DEV_LOGIN_IDENTIFIER = String(process.env.DEV_LOGIN_IDENTIFIER || ADMIN_EMAIL || '').toLowerCase().trim();
+const BODY_LIMIT      = String(process.env.BODY_LIMIT || '256kb');
 
 if (!JWT_SECRET) {
   console.error('HATA: JWT_SECRET tanımlı değil');
@@ -80,6 +84,19 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 app.disable('x-powered-by');
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: false,
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+    },
+  },
+}));
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -89,8 +106,10 @@ app.use((req, res, next) => {
   }
   next();
 });
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: BODY_LIMIT }));
+app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }));
+app.use(mongoSanitize({ replaceWith: '_' }));
+app.use(hpp());
 app.use((req, _res, next) => { console.log('[REQ]', req.method, req.originalUrl); next(); });
 
 /* ============== HEALTH ============== */
@@ -157,7 +176,7 @@ async function auth(req, res, next) {
     const h = req.headers.authorization || '';
     const token = h.startsWith('Bearer ') ? h.slice(7) : null;
     if (!token) return res.status(401).json({ message: 'Yetkisiz' });
-    const decoded = jwt.verify(token, JWT_SECRET); // { uid }
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }); // { uid }
     if (!decoded?.uid) return res.status(401).json({ message: 'Yetkisiz' });
 
     // Dev login ile gelen 'dev1' için DB sorgusuna gerek yok
@@ -252,7 +271,7 @@ if (ALLOW_DEV) {
     try {
       const h = req.headers.authorization || '';
       const t = h.startsWith('Bearer ') ? h.slice(7) : null;
-      const d = jwt.verify(t, JWT_SECRET);
+      const d = jwt.verify(t, JWT_SECRET, { algorithms: ['HS256'] });
       if (d.uid !== 'dev1') return res.status(401).json({ message: 'Yetkisiz' });
       return res.json({ id: 'dev1', name: 'Dev Kullanıcı', role: 'admin' });
     } catch {
@@ -451,7 +470,12 @@ app.use((req, res) => res.status(404).json({ status: 'error', message: 'Not Foun
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
   console.error('ERR:', err);
-  res.status(err.status || 500).json({ status: 'error', message: err.message || 'Internal Server Error' });
+  const status = err?.status || err?.statusCode || 500;
+  const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+  res.status(status).json({
+    status: 'error',
+    message: isProd ? 'Internal Server Error' : (err?.message || 'Internal Server Error'),
+  });
 });
 
 /* ============== SERVER ============== */

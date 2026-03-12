@@ -18,7 +18,7 @@ async function requireAuth(req, res, next) {
     const h = req.headers.authorization || '';
     const token = h.startsWith('Bearer ') ? h.slice(7) : null;
     if (!token) return res.status(401).json({ message: 'Yetkisiz' });
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     const user = await User.findById(decoded.uid).lean();
     if (!user) return res.status(401).json({ message: 'Yetkisiz' });
     req.user = user;

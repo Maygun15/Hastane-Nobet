@@ -27,7 +27,7 @@ function getBearerToken(req) {
 }
 
 function verifyJwt(token) {
-  return jwt.verify(token, JWT_SECRET);
+  return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
 }
 
 // Basit login doğrulayıcı (identifier + password)

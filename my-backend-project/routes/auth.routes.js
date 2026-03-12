@@ -4,6 +4,7 @@ const bcrypt  = require('bcryptjs');
 const crypto  = require('crypto');
 const jwt     = require('jsonwebtoken');
 const mongoose = require('mongoose');
+const { body, validationResult } = require('express-validator');
 const { sendMail, isConfigured } = require('../utils/mailer');
 const router  = express.Router();
 
@@ -104,14 +105,69 @@ async function getAuthUserFromRequest(req) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
   if (!token) return null;
-  const decoded = jwt.verify(token, JWT_SECRET);
+  const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
   if (!decoded?.uid) return null;
   const user = await User.findById(decoded.uid);
   return user || null;
 }
 
+function withValidation(chains = []) {
+  return [
+    ...chains,
+    (req, res, next) => {
+      const errors = validationResult(req);
+      if (errors.isEmpty()) return next();
+      return res.status(400).json({
+        message: 'Geçersiz istek',
+        errors: errors.array().map((e) => ({ field: e.path, message: e.msg })),
+      });
+    },
+  ];
+}
+
+const registerValidation = withValidation([
+  body('name').optional({ checkFalsy: true }).isString().isLength({ min: 2, max: 120 }),
+  body('email').optional({ checkFalsy: true }).isEmail().normalizeEmail(),
+  body('tc').optional({ checkFalsy: true }).matches(/^\d{11}$/).withMessage('TC 11 hane olmalı'),
+  body('phone').optional({ checkFalsy: true }).isString().isLength({ min: 10, max: 20 }),
+  body('password').isString().isLength({ min: 6, max: 128 }),
+  body().custom((_v, { req }) => {
+    if (!req.body?.email && !req.body?.tc && !req.body?.phone) {
+      throw new Error('En az bir kimlik alanı gerekli (email/tc/phone)');
+    }
+    return true;
+  }),
+]);
+
+const loginValidation = withValidation([
+  body('password').isString().isLength({ min: 1, max: 128 }),
+  body().custom((_v, { req }) => {
+    const identifier = pickIdentifier(req.body || {});
+    if (!identifier) throw new Error('Kimlik zorunlu');
+    return true;
+  }),
+]);
+
+const requestResetValidation = withValidation([
+  body('email').isEmail().normalizeEmail(),
+]);
+
+const resetPasswordValidation = withValidation([
+  body('token').isString().isLength({ min: 10, max: 512 }),
+  body('newPassword').isString().isLength({ min: 6, max: 128 }),
+]);
+
+const changePasswordValidation = withValidation([
+  body('newPassword').isString().isLength({ min: 6, max: 128 }),
+  body().custom((_v, { req }) => {
+    const oldPassword = normalize(req.body?.oldPassword ?? req.body?.currentPassword);
+    if (!oldPassword) throw new Error('Eski şifre zorunlu');
+    return true;
+  }),
+]);
+
 /* ============= REGISTER (opsiyonel) ============= */
-router.post('/register', registerRateLimit, async (req, res) => {
+router.post('/register', registerRateLimit, ...registerValidation, async (req, res) => {
   try {
     const { name, email, tc, phone, password } = req.body || {};
     const pass = normalize(password);
@@ -167,7 +223,7 @@ router.post('/register', registerRateLimit, async (req, res) => {
 });
 
 /* ============= LOGIN ============= */
-router.post('/login', loginRateLimit, async (req, res) => {
+router.post('/login', loginRateLimit, ...loginValidation, async (req, res) => {
   try {
     const identifier = pickIdentifier(req.body);
     const password   = normalize(req.body.password ?? req.body.parola);
@@ -240,7 +296,7 @@ router.post('/login', loginRateLimit, async (req, res) => {
 
 
 /* ============= PASSWORD RESET (token ile) ============= */
-router.post('/password/request-reset', resetRequestRateLimit, async (req, res) => {
+router.post('/password/request-reset', resetRequestRateLimit, ...requestResetValidation, async (req, res) => {
   try {
     const email = lc(req.body?.email || "");
     if (!email) return res.status(400).json({ message: 'E-posta zorunlu' });
@@ -283,7 +339,7 @@ Bu baglanti 15 dakika gecerlidir.`,
   }
 });
 
-router.post('/password/reset', resetApplyRateLimit, async (req, res) => {
+router.post('/password/reset', resetApplyRateLimit, ...resetPasswordValidation, async (req, res) => {
   try {
     const { token } = req.body || {};
     const newPassword = normalize(req.body?.newPassword);
@@ -322,7 +378,7 @@ async function handleChangePassword(req, res) {
     const token = h.startsWith('Bearer ') ? h.slice(7) : null;
     if (!token) return res.status(401).json({ message: 'Yetkisiz' });
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     if (!decoded?.uid) return res.status(401).json({ message: 'Yetkisiz' });
 
     const body = req.body || {};
@@ -339,13 +395,7 @@ async function handleChangePassword(req, res) {
     if (!user) return res.status(401).json({ message: 'Kullanıcı bulunamadı' });
 
     const ok = await user.comparePassword(String(oldPassword));
-    if (!ok) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.warn('CHANGE PASSWORD: eski şifre doğrulanamadı, dev mod bypass');
-      } else {
-        return res.status(401).json({ message: 'Eski şifre hatalı' });
-      }
-    }
+    if (!ok) return res.status(401).json({ message: 'Eski şifre hatalı' });
 
     await user.setPassword(String(newPassword));
     user.mustChangePassword = false;
@@ -360,8 +410,8 @@ async function handleChangePassword(req, res) {
 }
 
 // Eski ve yeni client'lar için iki route'u da destekle
-router.post('/password/change', handleChangePassword);
-router.post('/change-password', handleChangePassword);
+router.post('/password/change', ...changePasswordValidation, handleChangePassword);
+router.post('/change-password', ...changePasswordValidation, handleChangePassword);
 
 router.post('/admin/accept-invite', async (req, res) => {
   try {
@@ -428,7 +478,7 @@ router.get('/me', async (req, res) => {
     const token = h.startsWith('Bearer ') ? h.slice(7) : null;
     if (!token) return res.status(401).json({ message: 'Yetkisiz' });
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     const user = await User.findById(decoded.uid).lean();
     if (!user) return res.status(401).json({ message: 'Yetkisiz' });
 
