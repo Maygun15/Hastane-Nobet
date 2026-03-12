@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const Setting = require('../models/Setting');
 const { requireAuth, requireRole } = require('../middleware/authz');
+const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+const safeMessage = (err, fallback = 'Sunucu hatası') =>
+  isProd ? fallback : (err?.message || fallback);
 
 const normalizeKey = (k) => String(k || '').trim();
 const normalizeServiceId = (s) => String(s || '').trim();
@@ -22,7 +25,7 @@ router.get('/:key', requireAuth, async (req, res) => {
       createdAt: doc?.createdAt || null,
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, message: err.message || 'Sunucu hatası' });
+    return res.status(500).json({ ok: false, message: safeMessage(err) });
   }
 });
 
@@ -57,7 +60,7 @@ router.put('/:key', requireAuth, requireRole('admin', 'authorized'), async (req,
       createdAt: doc?.createdAt || null,
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, message: err.message || 'Sunucu hatası' });
+    return res.status(500).json({ ok: false, message: safeMessage(err) });
   }
 });
 

@@ -4,6 +4,9 @@ const router = express.Router();
 const Person = require('../models/Person');
 const User = require('../models/User');
 const { requireAuth, requireRole, sameServiceOrAdmin } = require('../middleware/authz');
+const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+const safeMessage = (err, fallback = 'Sunucu hatası') =>
+  isProd ? fallback : (err?.message || fallback);
 
 function parseIntSafe(val, def = null) {
   const n = Number(val);
@@ -287,7 +290,7 @@ router.post('/bulk',
       return res.json({ ok: true, count: inserted.length, cleared: !!(replaceAll && clear) });
     } catch (err) {
       console.error('POST /api/personnel/bulk ERR:', err);
-      return res.status(500).json({ error: err.message || 'Bulk ekleme hatası' });
+      return res.status(500).json({ error: safeMessage(err, 'Bulk ekleme hatası') });
     }
   }
 );

@@ -10,7 +10,37 @@ const { sendMail, isConfigured } = require('../utils/mailer');
 
 const XLSX = require('xlsx');
 const multer = require('multer');
-const upload = multer();
+const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+const safeMessage = (err, fallback = 'Sunucu hatası') =>
+  isProd ? fallback : (err?.message || fallback);
+const upload = multer({
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 1,
+  },
+  fileFilter: (_req, file, cb) => {
+    const allowed = new Set([
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+      'text/csv',
+    ]);
+    if (allowed.has(String(file?.mimetype || '').toLowerCase())) return cb(null, true);
+    return cb(new Error('Sadece Excel ve CSV dosyası kabul edilir.'), false);
+  },
+});
+
+function uploadSpreadsheet(req, res, next) {
+  upload.single('file')(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ message: 'Dosya boyutu 5MB sınırını aşıyor.' });
+      }
+      return res.status(400).json({ message: 'Dosya yükleme hatası.' });
+    }
+    return res.status(400).json({ message: safeMessage(err, 'Geçersiz dosya türü.') });
+  });
+}
 
 const requireAdmin = requireRole('admin');
 const requireAdminOrStaff = requireRole('admin', 'staff');
@@ -87,7 +117,7 @@ router.put('/:userId/link-person', requireAdmin, async (req, res) => {
     }
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: safeMessage(err) });
   }
 });
 
@@ -500,7 +530,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
    EXCEL EXPORT
    GET /api/users/export.xlsx
 ---------------------------- */
-router.get('/export.xlsx', async (_req, res) => {
+router.get('/export.xlsx', requireAdminOrStaff, async (_req, res) => {
   try {
     const users = await User.find({})
       .select('name email phone tc role active serviceIds')
@@ -526,7 +556,7 @@ router.get('/export.xlsx', async (_req, res) => {
     return res.status(200).send(buf);
   } catch (err) {
     console.error('Export.xlsx hatası:', err);
-    res.status(500).json({ message: err.message || 'Export hatası' });
+    res.status(500).json({ message: safeMessage(err, 'Export hatası') });
   }
 });
 
@@ -534,7 +564,7 @@ router.get('/export.xlsx', async (_req, res) => {
    EXCEL IMPORT (upsert)
    POST /api/users/import.xlsx   (form-data: file)
 ---------------------------- */
-router.post('/import.xlsx', requireAuth, upload.single('file'), async (req, res) => {
+router.post('/import.xlsx', requireAuth, uploadSpreadsheet, async (req, res) => {
   try {
     const me = req.user;
     if (!me || !['admin', 'staff'].includes(String(me.role || ''))) {

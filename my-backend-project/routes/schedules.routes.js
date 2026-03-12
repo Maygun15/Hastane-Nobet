@@ -7,6 +7,9 @@ const ScheduleRules = require('../models/ScheduleRules');
 const { listHolidays } = require('../services/holidayService');
 const { validateAssignment } = require('../utils/rulesValidator');
 const { requireAuth, sameServiceOrAdmin, requireRole } = require('../middleware/authz');
+const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+const safeMessage = (err, fallback = 'Sunucu hatası') =>
+  isProd ? fallback : (err?.message || fallback);
 
 function allowMonthlyRead(req, res, next) {
   const role = String(req.user?.role || '').toLowerCase();
@@ -945,7 +948,7 @@ router.get('/rules',
       }).lean();
       return res.json({ ok: true, rules: rules || null });
     } catch (err) {
-      return res.status(500).json({ ok: false, message: err.message });
+      return res.status(500).json({ ok: false, message: safeMessage(err) });
     }
   }
 );
@@ -976,7 +979,7 @@ router.put('/rules',
       ).lean();
       return res.json({ ok: true, rules });
     } catch (err) {
-      return res.status(500).json({ ok: false, message: err.message });
+      return res.status(500).json({ ok: false, message: safeMessage(err) });
     }
   }
 );
@@ -1002,7 +1005,7 @@ router.patch('/rules/toggle',
         message: enabled ? 'Kurallar etkinleştirildi' : 'Kurallar devre dışı bırakıldı',
       });
     } catch (err) {
-      return res.status(500).json({ ok: false, message: err.message });
+      return res.status(500).json({ ok: false, message: safeMessage(err) });
     }
   }
 );
@@ -1031,7 +1034,7 @@ router.post('/comparison',
         },
       });
     } catch (err) {
-      return res.status(500).json({ ok: false, message: err.message || 'Sunucu hatası' });
+      return res.status(500).json({ ok: false, message: safeMessage(err) });
     }
   }
 );

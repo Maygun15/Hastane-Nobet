@@ -14,6 +14,7 @@ const cors     = require('cors');
 const helmet   = require('helmet');
 const hpp      = require('hpp');
 const mongoSanitize = require('express-mongo-sanitize');
+const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 const jwt      = require('jsonwebtoken');
 const bcrypt   = require('bcryptjs');
@@ -35,6 +36,8 @@ const ADMIN_PASSWORD  = process.env.ADMIN_PASSWORD;
 const RESET_ADMIN_PW  = ['1','true','yes'].includes(String(process.env.RESET_ADMIN_PASSWORD || '').toLowerCase());
 const DEV_LOGIN_IDENTIFIER = String(process.env.DEV_LOGIN_IDENTIFIER || ADMIN_EMAIL || '').toLowerCase().trim();
 const BODY_LIMIT      = String(process.env.BODY_LIMIT || '256kb');
+const API_RATE_WINDOW_MS = Number(process.env.API_RATE_WINDOW_MS || 15 * 60 * 1000);
+const API_RATE_MAX = Number(process.env.API_RATE_MAX || 300);
 
 if (!JWT_SECRET) {
   console.error('HATA: JWT_SECRET tanımlı değil');
@@ -111,6 +114,14 @@ app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }));
 app.use(mongoSanitize({ replaceWith: '_' }));
 app.use(hpp());
 app.use((req, _res, next) => { console.log('[REQ]', req.method, req.originalUrl); next(); });
+const globalApiLimiter = rateLimit({
+  windowMs: API_RATE_WINDOW_MS,
+  max: API_RATE_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Çok fazla istek, lütfen daha sonra tekrar deneyin' },
+});
+app.use('/api', globalApiLimiter);
 
 /* ============== HEALTH ============== */
 app.get('/', (_req, res) => res.send('Backend Sunucusu Başarıyla Çalışıyor!'));
@@ -330,8 +341,8 @@ app.post('/api/users/:id/deactivate',
 try {
   const aiRoutes = require('./src/api/ai.routes.js');   // /api/ai/*
   const aiPing   = require('./src/api/ai/ping.js');     // /api/ai/ping
-  app.use('/api/ai', aiPing);
-  app.use('/api/ai', aiRoutes);
+  app.use('/api/ai', auth, ensureActive, aiPing);
+  app.use('/api/ai', auth, ensureActive, aiRoutes);
 } catch { /* opsiyonel */ }
 
 /* ============== AUTH ROUTER ============== */

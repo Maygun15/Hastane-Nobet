@@ -19,6 +19,8 @@ const DEV_EMAIL = String(process.env.ADMIN_EMAIL || '').toLowerCase();
 const DEV_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
 const RATE_STORE = new Map();
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
+const safeMessage = (err, fallback = 'Sunucu hatası') =>
+  IS_PROD ? fallback : (err?.message || fallback);
 
 if (!JWT_SECRET) {
   throw new Error('JWT_SECRET tanımlı değil');
@@ -438,7 +440,7 @@ router.post('/admin/accept-invite', async (req, res) => {
       },
     });
   } catch (err) {
-    return res.status(500).json({ message: err.message || 'Davet işlenemedi' });
+    return res.status(500).json({ message: safeMessage(err, 'Davet işlenemedi') });
   }
 });
 
@@ -467,7 +469,7 @@ router.post('/staff/accept-invite', async (req, res) => {
       },
     });
   } catch (err) {
-    return res.status(500).json({ message: err.message || 'Davet işlenemedi' });
+    return res.status(500).json({ message: safeMessage(err, 'Davet işlenemedi') });
   }
 });
 

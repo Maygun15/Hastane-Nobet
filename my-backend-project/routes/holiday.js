@@ -7,6 +7,9 @@ const {
   upsertHoliday,
   deleteHoliday,
 } = require('../services/holidayService');
+const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+const safeMessage = (err, fallback = 'Sunucu hatası') =>
+  isProd ? fallback : (err?.message || fallback);
 
 // GET /api/holidays?y=2026&m=3
 router.get('/', async (req, res) => {
@@ -39,7 +42,7 @@ router.get('/generate/:year', requireRole('admin', 'staff'), async (req, res) =>
     return res.json({ success: true, added: result.added, total: result.total });
   } catch (err) {
     console.error('holidays generate error:', err?.message || err);
-    return res.status(500).json({ success: false, message: err.message });
+    return res.status(500).json({ success: false, message: safeMessage(err) });
   }
 });
 

@@ -3,6 +3,10 @@ const express = require('express');
 const router = express.Router();
 const DutyRule = require('../models/DutyRule');
 const RuleEngine = require('../services/ruleEngine');
+const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+const safeMessage = (err, fallback = 'Sunucu hatası') =>
+  isProd ? fallback : (err?.message || fallback);
+const devError = (err) => (isProd ? {} : { error: err?.message || 'Sunucu hatası' });
 
 // GET /api/duty-rules?serviceId=&sectionId=&role=
 router.get('/', async (req, res) => {
@@ -15,7 +19,7 @@ router.get('/', async (req, res) => {
       rule: doc ?? { serviceId, sectionId: serviceId, role, rules: [], weights: {} },
     });
   } catch (err) {
-    return res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: safeMessage(err) });
   }
 });
 
@@ -67,7 +71,7 @@ router.put('/', async (req, res) => {
     ).lean();
     return res.json({ ok: true, rule: doc });
   } catch (err) {
-    return res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: safeMessage(err) });
   }
 });
 
@@ -98,7 +102,7 @@ router.get('/:serviceId', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Sunucu hatası',
-      error: err.message
+      ...devError(err),
     });
   }
 });
@@ -167,7 +171,7 @@ router.post('/', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Kural oluşturulamadı',
-      error: err.message
+      ...devError(err),
     });
   }
 });
@@ -219,7 +223,7 @@ router.put('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Kural güncellenemedi',
-      error: err.message
+      ...devError(err),
     });
   }
 });
@@ -254,7 +258,7 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Kural silinemedi',
-      error: err.message
+      ...devError(err),
     });
   }
 });
@@ -289,7 +293,7 @@ router.post('/test', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Test çalıştırılamadı',
-      error: err.message
+      ...devError(err),
     });
   }
 });
@@ -328,7 +332,7 @@ router.post('/validate-shift', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Validasyon başarısız',
-      error: err.message
+      ...devError(err),
     });
   }
 });
@@ -363,7 +367,7 @@ router.post('/check-eligibility', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Kontrol başarısız',
-      error: err.message
+      ...devError(err),
     });
   }
 });
@@ -403,7 +407,7 @@ router.post('/calculate-hours', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Hesaplama başarısız',
-      error: err.message
+      ...devError(err),
     });
   }
 });

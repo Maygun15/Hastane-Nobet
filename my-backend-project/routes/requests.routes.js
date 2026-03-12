@@ -5,6 +5,9 @@ const router = express.Router();
 const Request = require('../models/Request');
 const User = require('../models/User');
 const Person = require('../models/Person');
+const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+const safeMessage = (err, fallback = 'Sunucu hatası') =>
+  isProd ? fallback : (err?.message || fallback);
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -58,7 +61,7 @@ router.post('/', requireAuth, async (req, res) => {
 
     res.json({ ok: true, request });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: safeMessage(err) });
   }
 });
 
@@ -91,7 +94,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     res.json({ items: requests });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: safeMessage(err) });
   }
 });
 
@@ -129,7 +132,7 @@ router.put('/:id', requireAuth, async (req, res) => {
 
     res.json({ ok: true, request });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: safeMessage(err) });
   }
 });
 
