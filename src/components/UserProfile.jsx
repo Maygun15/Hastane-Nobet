@@ -1,6 +1,6 @@
 // src/components/UserProfile.jsx
 import React, { useState, useEffect, useMemo } from "react";
-import { API, getToken } from "../lib/api.js";
+import { API } from "../lib/api.js";
 import { maskTC } from "../utils/format.js";
 import useServicesModel from "../hooks/useServicesModel.js";
 
@@ -25,14 +25,20 @@ export default function UserProfile({ currentUser, onUpdate }) {
     email: "",
     serviceId: "",
   });
+  const [identityForm, setIdentityForm] = useState({
+    name: "",
+    tc: "",
+  });
   const [pwForm, setPwForm] = useState({
     current: "",
     next: "",
     confirm: "",
   });
   const [saving, setSaving] = useState(false);
+  const [identitySaving, setIdentitySaving] = useState(false);
   const [pwSaving, setPwSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [identityMsg, setIdentityMsg] = useState("");
   const [pwMsg, setPwMsg] = useState("");
 
   useEffect(() => {
@@ -44,6 +50,10 @@ export default function UserProfile({ currentUser, onUpdate }) {
         phone: currentUser.phone || "",
         email: currentUser.email || "",
         serviceId: svc ? String(svc) : "",
+      });
+      setIdentityForm({
+        name: currentUser.name || "",
+        tc: String(currentUser.tc || "").replace(/\D/g, "").slice(0, 11),
       });
     }
   }, [currentUser]);
@@ -70,6 +80,30 @@ export default function UserProfile({ currentUser, onUpdate }) {
       setMsg(`❌ ${err?.message || "Kaydedilemedi"}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveIdentity = async (e) => {
+    e.preventDefault();
+    if (!isAdminOrAuth) return;
+    setIdentitySaving(true);
+    setIdentityMsg("");
+    try {
+      const userId = currentUser._id || currentUser.id;
+      const tcDigits = String(identityForm.tc || "").replace(/\D/g, "").slice(0, 11);
+      await API.http.req(`/api/users/${userId}/identity`, {
+        method: "PATCH",
+        body: {
+          name: String(identityForm.name || "").trim(),
+          tc: tcDigits,
+        },
+      });
+      setIdentityMsg("✅ Kimlik bilgileri güncellendi.");
+      onUpdate?.();
+    } catch (err) {
+      setIdentityMsg(`❌ ${err?.message || "Kimlik bilgileri güncellenemedi"}`);
+    } finally {
+      setIdentitySaving(false);
     }
   };
 
@@ -115,10 +149,10 @@ export default function UserProfile({ currentUser, onUpdate }) {
 
   return (
     <div className="max-w-xl mx-auto space-y-6 p-4">
-      {/* Kimlik Bilgileri — salt okunur */}
+      {/* Kimlik Bilgileri */}
       <div className="rounded-xl border bg-white p-4 space-y-2">
         <h2 className="font-semibold text-slate-800 mb-3">Kimlik Bilgileri</h2>
-        <div className="grid grid-cols-2 gap-3 text-sm">
+        <div className="grid grid-cols-2 gap-3 text-sm mb-2">
           <div>
             <div className="text-xs text-slate-500 mb-1">Ad Soyad</div>
             <div className="font-medium">{currentUser.name || "-"}</div>
@@ -150,6 +184,37 @@ export default function UserProfile({ currentUser, onUpdate }) {
             <div className="font-medium">{displayServices.join(", ") || "-"}</div>
           </div>
         </div>
+        {isAdminOrAuth && (
+          <form onSubmit={saveIdentity} className="space-y-3 border-t pt-3">
+            <div>
+              <label className="text-xs text-slate-500">Ad Soyad</label>
+              <input
+                className="w-full border rounded-lg px-3 py-2 mt-1 text-sm"
+                value={identityForm.name}
+                onChange={(e) => setIdentityForm((f) => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500">T.C. Kimlik No</label>
+              <input
+                className="w-full border rounded-lg px-3 py-2 mt-1 text-sm"
+                value={identityForm.tc}
+                maxLength={11}
+                onChange={(e) =>
+                  setIdentityForm((f) => ({ ...f, tc: e.target.value.replace(/\D/g, "").slice(0, 11) }))
+                }
+              />
+            </div>
+            {identityMsg && <div className="text-sm">{identityMsg}</div>}
+            <button
+              type="submit"
+              disabled={identitySaving}
+              className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm disabled:opacity-50"
+            >
+              {identitySaving ? "Kaydediliyor..." : "Kimliği Kaydet"}
+            </button>
+          </form>
+        )}
       </div>
 
       {/* İletişim Bilgileri — düzenlenebilir */}

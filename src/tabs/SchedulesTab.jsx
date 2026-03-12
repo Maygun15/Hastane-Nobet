@@ -11,6 +11,7 @@ import { collectRequestsByPerson } from "../lib/requestParser.js";
 import { checkLeaveShiftConflict, removeShiftOnDay } from "../utils/conflictChecker.js";
 import useActiveYM from "../hooks/useActiveYM.js";
 import useServiceScope from "../hooks/useServiceScope.js"; // ⬅️ YENİ: servis kapsamı
+import { useAppData } from "../context/AppDataContext.jsx";
 
 /* =========================================================
    INLINE SCHEDULER — “Liste Oluştur” için yedek algoritma
@@ -681,7 +682,21 @@ function SectionContent({
 /* =========================
    Ana bileşen
 ========================= */
-export default function SchedulesTab({ workingHours = [], peopleAll: peopleAllProp = [], leaveTypes: leaveTypesProp = [] }) {
+export default function SchedulesTab({ workingHours, peopleAll: peopleAllProp, leaveTypes: leaveTypesProp }) {
+  const appData = useAppData();
+  const effectiveWorkingHours = Array.isArray(workingHours)
+    ? workingHours
+    : (Array.isArray(appData.workingHours) ? appData.workingHours : []);
+  const effectivePeopleAllProp = Array.isArray(peopleAllProp)
+    ? peopleAllProp
+    : (Array.isArray(appData.peopleAll) ? appData.peopleAll : []);
+  const effectiveLeaveTypesProp = Array.isArray(leaveTypesProp)
+    ? leaveTypesProp
+    : (Array.isArray(appData.leaveTypes) ? appData.leaveTypes : []);
+  const effectivePersonLeaves = appData?.personLeaves && typeof appData.personLeaves === "object"
+    ? appData.personLeaves
+    : null;
+
   const initialSections = useMemo(() => {
     const v = LS.get(LS_KEY, DEFAULT_SECTIONS);
     return Array.isArray(v) && v.length ? v : DEFAULT_SECTIONS;
@@ -766,7 +781,7 @@ export default function SchedulesTab({ workingHours = [], peopleAll: peopleAllPr
   const { year, month } = ym;
 
   const peopleAll = useMemo(() => {
-    const raw = Array.isArray(peopleAllProp) ? peopleAllProp : [];
+    const raw = Array.isArray(effectivePeopleAllProp) ? effectivePeopleAllProp : [];
     return raw
       .map((p) => {
         const id = p?.id ?? p?.personId ?? p?.pid ?? p?.tc ?? p?.kod ?? p?.code ?? "";
@@ -782,18 +797,22 @@ export default function SchedulesTab({ workingHours = [], peopleAll: peopleAllPr
         };
       })
       .filter((x) => x.id);
-  }, [peopleAllProp]);
+  }, [effectivePeopleAllProp]);
 
-  const [allLeaves, setAllLeaves] = useState(() => getAllLeaves());
+  const [allLeaves, setAllLeaves] = useState(() => effectivePersonLeaves || getAllLeaves());
   useEffect(() => {
+    if (effectivePersonLeaves) {
+      setAllLeaves(effectivePersonLeaves);
+      return undefined;
+    }
     const refreshLeaves = () => setAllLeaves(getAllLeaves());
     window.addEventListener("leaves:changed", refreshLeaves);
     return () => window.removeEventListener("leaves:changed", refreshLeaves);
-  }, []);
+  }, [effectivePersonLeaves]);
 
   const leaveTypes = useMemo(
-    () => (Array.isArray(leaveTypesProp) ? leaveTypesProp : []),
-    [leaveTypesProp]
+    () => (Array.isArray(effectiveLeaveTypesProp) ? effectiveLeaveTypesProp : []),
+    [effectiveLeaveTypesProp]
   );
 
   const handleTabClick = useCallback((id) => {
@@ -903,7 +922,7 @@ export default function SchedulesTab({ workingHours = [], peopleAll: peopleAllPr
                 peopleAll={scopedPeople}      /* ⬅️ sadece kapsam içindekiler */
                 allLeaves={allLeaves}
                 leaveTypes={leaveTypes}
-                workingHours={workingHours}
+                workingHours={effectiveWorkingHours}
                 selectedServiceId={selectedServiceId} /* ⬅️ içeriğe geçir */
               />
             </div>

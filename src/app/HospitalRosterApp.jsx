@@ -25,6 +25,7 @@ import ServicesTab from "../tabs/ServicesTab.jsx";
 import UsersTab from "../tabs/UsersTab.jsx";
 import MyRequestsTab from "../tabs/MyRequestsTab.jsx";
 import RequestsManagementTab from "../tabs/RequestsManagementTab.jsx";
+import UserProfile from "../components/UserProfile.jsx";
 
 // Normal kullanıcı takvimi
 import PersonScheduleCalendar from "../components/PersonScheduleCalendar.jsx";
@@ -32,6 +33,7 @@ import { getActiveYM, setActiveYM } from "../utils/activeYM.js";
 import { apiChangePassword, API, getToken } from "../lib/api.js";
 import { getAllLeaves } from "../lib/leaves.js";
 import { ROLE } from "../constants/enums.js";
+import { AppDataProvider } from "../context/AppDataContext.jsx";
 
 // Yedekleme butonları (yeni)
 import BackupButtons from "../components/BackupButtons.jsx";
@@ -116,7 +118,7 @@ export default function HospitalRosterApp() {
 
   const [activeTab, setActiveTab] = useState("plan");
   useEffect(() => {
-    if (isBasicUser && activeTab !== "plan" && activeTab !== "myRequests") {
+    if (isBasicUser && activeTab !== "plan" && activeTab !== "myRequests" && activeTab !== "profile") {
       setActiveTab("plan");
       pushUrl("/");
     }
@@ -298,6 +300,20 @@ export default function HospitalRosterApp() {
   }, [requestBox, isAdmin, saveSetting]);
 
   const peopleAll = useMemo(() => [...(doctors || []), ...(nurses || [])], [doctors, nurses]);
+  const appDataValue = useMemo(
+    () => ({
+      workAreas,
+      workingHours,
+      leaveTypes,
+      personLeaves,
+      nurses,
+      doctors,
+      peopleAll,
+      setNurses,
+      setDoctors,
+    }),
+    [workAreas, workingHours, leaveTypes, personLeaves, nurses, doctors, peopleAll, setNurses, setDoctors]
+  );
 
   /* ---- Backend’den personel çek ---- */
   const reloadPersonnel = useCallback(async () => {
@@ -392,20 +408,6 @@ export default function HospitalRosterApp() {
     return () => window.removeEventListener("personnel:changed", onPersonnelChanged);
   }, [reloadPersonnel]);
 
-  const visibleWorkAreas = useMemo(() => {
-    if (!user) return [];
-    const arr = Array.isArray(workAreas) ? workAreas : [];
-    if (isAdmin) return arr;
-    const allowed = new Set(user?.serviceIds || []);
-    if (allowed.size === 0) return arr;
-    return arr.filter((w) => {
-      if (!w || typeof w !== "object") return true; // string list ise filtreleme
-      const sid = w.serviceId || w.service || "";
-      if (!sid) return true; // servis bağı yoksa göster
-      return allowed.has(sid);
-    });
-  }, [user, workAreas, isAdmin]);
-
   /* ---- dropdown helpers ---- */
   const personnelDdRef = useRef(null);
   const schedulesDdRef = useRef(null);
@@ -468,6 +470,10 @@ export default function HospitalRosterApp() {
         if (activeTab !== "myRequests") setActiveTab("myRequests");
         return;
       }
+      if (pathname.startsWith("/profilim")) {
+        if (activeTab !== "profile") setActiveTab("profile");
+        return;
+      }
       if (pathname.startsWith("/talepler")) {
         if (isAdmin || isStaff) {
           if (activeTab !== "requests") setActiveTab("requests");
@@ -523,6 +529,7 @@ export default function HospitalRosterApp() {
   /* ======================= RENDER ======================= */
   return (
     <ErrorBoundary>
+      <AppDataProvider value={appDataValue}>
       <div className="w-screen h-screen bg-slate-50 text-slate-800 flex flex-col">
         <header className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b shadow-sm">
           {/* Satır 1: Logo + (sağda) yedek & kullanıcı */}
@@ -576,6 +583,19 @@ export default function HospitalRosterApp() {
                 }}
               >
                 Talepler
+              </NavBtn>
+
+              <NavBtn
+                active={activeTab === "profile"}
+                onClick={() => {
+                  setActiveTab("profile");
+                  pushUrl("/profilim");
+                  closePersonnelDd();
+                  closeSchedulesDd();
+                  closeParamsDd();
+                }}
+              >
+                Profilim
               </NavBtn>
 
               {!isBasicUser && (
@@ -755,25 +775,13 @@ export default function HospitalRosterApp() {
 
           {activeTab === "personnel" && (
             canSeePersonnel ? (
-              <PersonnelTab
-                workAreas={workAreas}
-                workingHours={workingHours}
-                nurses={nurses}
-                setNurses={setNurses}
-                doctors={doctors}
-                setDoctors={setDoctors}
-              />
+              <PersonnelTab />
             ) : <NeedAuth />
           )}
 
           {activeTab === "schedules" && (
             canSeeSchedules ? (
-              <SchedulesTab
-                workAreas={visibleWorkAreas}
-                workingHours={workingHours}
-                peopleAll={peopleAll}
-                leaveTypes={leaveTypes}
-              />
+              <SchedulesTab />
             ) : <NeedAuth />
           )}
 
@@ -803,8 +811,10 @@ export default function HospitalRosterApp() {
 
           {activeTab === "myRequests" && <MyRequestsTab />}
           {activeTab === "requests" && (isAdmin || isStaff) && <RequestsManagementTab />}
+          {activeTab === "profile" && <UserProfile currentUser={user} onUpdate={refresh} />}
         </main>
       </div>
+      </AppDataProvider>
     </ErrorBoundary>
   );
 }

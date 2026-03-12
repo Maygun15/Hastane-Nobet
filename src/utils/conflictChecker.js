@@ -18,6 +18,37 @@ function samePerson(item, personId, personNameCanon) {
   return !!(personNameCanon && itemNameCanon && itemNameCanon === personNameCanon);
 }
 
+function removeFromNamedAssignments(named, day, personNameCanon) {
+  if (!named || typeof named !== "object" || !personNameCanon) {
+    return { next: named, changed: false };
+  }
+
+  const dayKey = String(day);
+  const rows = named?.[dayKey];
+  if (!rows || typeof rows !== "object") {
+    return { next: named, changed: false };
+  }
+
+  let changed = false;
+  const nextNamed = { ...named };
+  const nextRows = { ...rows };
+
+  for (const [rowId, names] of Object.entries(nextRows)) {
+    if (!Array.isArray(names)) continue;
+    const filtered = names.filter((nm) => canon(nm) !== personNameCanon);
+    if (filtered.length !== names.length) {
+      changed = true;
+      if (filtered.length) nextRows[rowId] = filtered;
+      else delete nextRows[rowId];
+    }
+  }
+
+  if (!changed) return { next: named, changed: false };
+  if (Object.keys(nextRows).length) nextNamed[dayKey] = nextRows;
+  else delete nextNamed[dayKey];
+  return { next: nextNamed, changed: true };
+}
+
 function removeFromScheduleCache({ year, month, day, personId, personName }) {
   const ym = `${year}-${pad2(month)}`;
   const dateStr = `${year}-${pad2(month)}-${pad2(day)}`;
@@ -30,27 +61,54 @@ function removeFromScheduleCache({ year, month, day, personId, personName }) {
     if (!payload || typeof payload !== "object") continue;
     const data = payload?.data && typeof payload.data === "object" ? payload.data : payload;
     const assignments = Array.isArray(data?.assignments) ? data.assignments : [];
-    if (!assignments.length) continue;
-    const nextAssignments = assignments.filter((a) => {
-      const itemDate = String(a?.date || a?.day || "").slice(0, 10);
-      if (itemDate !== dateStr) return true;
-      return !samePerson(a, pid, pCanon);
-    });
-    if (nextAssignments.length === assignments.length) continue;
+    let changed = false;
+
+    let nextAssignments = assignments;
+    if (assignments.length) {
+      const filtered = assignments.filter((a) => {
+        const itemDate = String(a?.date || a?.day || "").slice(0, 10);
+        if (itemDate !== dateStr) return true;
+        return !samePerson(a, pid, pCanon);
+      });
+      if (filtered.length !== assignments.length) {
+        changed = true;
+        nextAssignments = filtered;
+      }
+    }
+
+    let nextData = data;
+    const rosterNamed = data?.roster?.namedAssignments;
+    const rosterRes = removeFromNamedAssignments(rosterNamed, day, pCanon);
+    if (rosterRes.changed) {
+      changed = true;
+      nextData = {
+        ...nextData,
+        roster: {
+          ...(nextData?.roster || {}),
+          namedAssignments: rosterRes.next,
+        },
+      };
+    }
+
+    const namedRes = removeFromNamedAssignments(nextData?.namedAssignments, day, pCanon);
+    if (namedRes.changed) {
+      changed = true;
+      nextData = {
+        ...nextData,
+        namedAssignments: namedRes.next,
+      };
+    }
+
+    if (!changed) continue;
+    nextData = {
+      ...nextData,
+      assignments: nextAssignments,
+    };
 
     if (payload?.data && typeof payload.data === "object") {
-      LS.set(key, {
-        ...payload,
-        data: {
-          ...payload.data,
-          assignments: nextAssignments,
-        },
-      });
+      LS.set(key, { ...payload, data: nextData });
     } else {
-      LS.set(key, {
-        ...payload,
-        assignments: nextAssignments,
-      });
+      LS.set(key, nextData);
     }
   }
 

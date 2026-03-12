@@ -6,6 +6,7 @@ import { ROLE } from "../constants/enums.js";
 import { LS } from "../utils/storage.js";
 import useServicesModel from "../hooks/useServicesModel.js";
 import useServiceScope from "../hooks/useServiceScope.js";
+import { useAppData } from "../context/AppDataContext.jsx";
 
 /** LS anahtarları */
 const LS_KEY = "personnelSections";
@@ -106,6 +107,28 @@ export default function PersonnelTab({
   nurses, setNurses,
   doctors, setDoctors,
 }) {
+  const appData = useAppData();
+  const effectiveWorkAreas = Array.isArray(workAreas)
+    ? workAreas
+    : (Array.isArray(appData.workAreas) ? appData.workAreas : []);
+  const effectiveWorkingHours = Array.isArray(workingHours)
+    ? workingHours
+    : (Array.isArray(appData.workingHours) ? appData.workingHours : []);
+  const effectiveNurses = Array.isArray(nurses)
+    ? nurses
+    : (Array.isArray(appData.nurses) ? appData.nurses : []);
+  const effectiveDoctors = Array.isArray(doctors)
+    ? doctors
+    : (Array.isArray(appData.doctors) ? appData.doctors : []);
+  const effectiveSetNurses =
+    typeof setNurses === "function"
+      ? setNurses
+      : (typeof appData.setNurses === "function" ? appData.setNurses : () => {});
+  const effectiveSetDoctors =
+    typeof setDoctors === "function"
+      ? setDoctors
+      : (typeof appData.setDoctors === "function" ? appData.setDoctors : () => {});
+
   const servicesModel = useServicesModel();
   const scope = useServiceScope();
   const [sections, setSections] = useState(() => LS.get(LS_KEY, DEFAULT_SECTIONS));
@@ -179,7 +202,7 @@ export default function PersonnelTab({
 
   // WorkAreas opsiyonlarını PeopleTab'e temiz isim listesi olarak geç (nesne/karışık olabilir)
   const workAreaOptions = useMemo(() => {
-    const raw = Array.isArray(workAreas) ? workAreas : [];
+    const raw = Array.isArray(effectiveWorkAreas) ? effectiveWorkAreas : [];
     const names = raw
       .map((a) => (typeof a === "string" ? clean(a) : clean(a?.name || a?.label || a?.title || a?.id)))
       .filter(Boolean);
@@ -191,7 +214,7 @@ export default function PersonnelTab({
       if (!seen.has(k)) { seen.add(k); out.push(n); }
     }
     return out;
-  }, [workAreas]);
+  }, [effectiveWorkAreas]);
 
   const services = useMemo(() => {
     const list = servicesModel.list?.() || [];
@@ -201,8 +224,8 @@ export default function PersonnelTab({
   }, [servicesModel, scope.isAdmin, scope.allowedIds]);
 
   // setPeople proxy'leri (normalize ederek kaydeder)
-  const setNursesNormalized  = useMemo(() => makeNormalizedSetter(setNurses), [setNurses]);
-  const setDoctorsNormalized = useMemo(() => makeNormalizedSetter(setDoctors), [setDoctors]);
+  const setNursesNormalized  = useMemo(() => makeNormalizedSetter(effectiveSetNurses), [effectiveSetNurses]);
+  const setDoctorsNormalized = useMemo(() => makeNormalizedSetter(effectiveSetDoctors), [effectiveSetDoctors]);
 
   return (
     <div className="space-y-4">
@@ -232,11 +255,11 @@ export default function PersonnelTab({
         <SectionContent
           section={active}
           workAreas={workAreaOptions}
-          workingHours={workingHours}
+          workingHours={effectiveWorkingHours}
           services={services}
-          nurses={normalizePeople(nurses)}
+          nurses={normalizePeople(effectiveNurses)}
           setNurses={setNursesNormalized}
-          doctors={normalizePeople(doctors)}
+          doctors={normalizePeople(effectiveDoctors)}
           setDoctors={setDoctorsNormalized}
         />
       </div>
