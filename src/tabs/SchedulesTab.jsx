@@ -1,5 +1,6 @@
 // src/tabs/SchedulesTab.jsx
 import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import * as XLSX from "xlsx";
 import { LS } from "../utils/storage.js";
 import DutyRowsEditor from "../components/DutyRowsEditor.jsx";
 import ScheduleToolbar from "../components/ScheduleToolbar.jsx";
@@ -331,7 +332,6 @@ async function readTableFile(file) {
     const text = await file.text();
     return parseCSV(text);
   }
-  const XLSX = await import("xlsx");
   const ab = await file.arrayBuffer();
   const wb = XLSX.read(ab, { type: "array" });
   const ws = wb.Sheets[wb.SheetNames[0]];
@@ -376,7 +376,6 @@ function SectionContent({
   const handleExportLeaves = useCallback(async () => {
     const mIdx = toZeroBased(month);
     const month1 = mIdx + 1;
-    const XLSX = await import("xlsx");
     const daysInMonth = new Date(year, month1, 0).getDate();
     const ymStr = `${year}-${String(month1).padStart(2, "0")}`;
     const header = ["personId", "name", ...Array.from({ length: daysInMonth }, (_, i) => String(i + 1))];

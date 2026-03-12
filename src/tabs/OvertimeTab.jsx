@@ -5,9 +5,7 @@ import {
   FileSpreadsheet, Upload, RotateCcw, Settings, Trash2, Search, ListChecks
 } from "lucide-react";
 import {
-  fetchMonthlySchedule,
   fetchHolidayCalendar,
-  getMonthlySchedule,
 } from "../api/apiAdapter";
 import useActiveYM from "../hooks/useActiveYM.js";
 import ToolbarYM from "../components/common/ToolbarYM.jsx";
@@ -15,6 +13,11 @@ import { LEAVE_RULES as DEFAULT_LEAVE_RULES } from "../constants/rules.js";
 import { buildLeaveCreditRules } from "../utils/leaveTypeRules.js";
 import { LS } from "../utils/storage.js";
 import { getAllLeaves } from "../lib/leaves.js";
+import {
+  getScheduleModel,
+  getScheduleModelSync,
+  getPersonMonthShifts,
+} from "../store/monthlyScheduleModel.js";
 
 /* ================ Helpers ================ */
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -268,6 +271,22 @@ function collectLeaveDaysForMonth({ year, month, leaves, codesByDay }) {
   return out;
 }
 
+function mergeScheduleModels(base, incoming) {
+  const a = base && typeof base === "object" ? base : { assignments: {}, byName: {} };
+  const b = incoming && typeof incoming === "object" ? incoming : { assignments: {}, byName: {} };
+  const out = {
+    assignments: { ...(a.assignments || {}) },
+    byName: { ...(a.byName || {}) },
+  };
+  for (const [pid, days] of Object.entries(b.assignments || {})) {
+    out.assignments[pid] = { ...(out.assignments[pid] || {}), ...(days || {}) };
+  }
+  for (const [name, days] of Object.entries(b.byName || {})) {
+    out.byName[name] = { ...(out.byName[name] || {}), ...(days || {}) };
+  }
+  return out;
+}
+
 /* ================ Component ================ */
 const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, workingHours, people: peopleProp = [], leaveTypes = [] }, ref) {
   const { ym } = useActiveYM();
@@ -434,164 +453,96 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
     setImporting(true);
     try {
       const rolesToTry = ["Nurse", "Doctor"];
-      const assignments = [];
-      const metaIndex = buildPersonMetaIndex(people);
-      const findMeta = (personObj, fallbackName) => {
-        if (personObj?.id && metaIndex.byId.has(String(personObj.id))) return metaIndex.byId.get(String(personObj.id));
-        const name = fallbackName || personObj?.fullName || personObj?.name || "";
-        const cn = canonName(name);
-        if (cn && metaIndex.byCanon.has(cn)) return metaIndex.byCanon.get(cn);
-        return null;
-      };
+      let model = { assignments: {}, byName: {} };
       for (const role of rolesToTry) {
-        const schedule = await getMonthlySchedule({
+        const roleModel = await getScheduleModel({
           sectionId: "calisma-cizelgesi",
           serviceId: "",
           role,
           year,
           month,
+          people,
         }).catch((err) => {
-          if (err?.status !== 404) console.error("getMonthlySchedule err:", err);
+          if (err?.status !== 404) console.error("getScheduleModel err:", err);
           return null;
         });
-        const data = schedule?.data || schedule || {};
-        const named = {};
-        const namedRemote = data?.roster?.namedAssignments;
-        if (namedRemote && typeof namedRemote === "object") {
-          Object.entries(namedRemote).forEach(([dayKey, byRow]) => {
-            if (!named[dayKey]) named[dayKey] = {};
-            Object.entries(byRow || {}).forEach(([rowId, list]) => {
-              named[dayKey][rowId] = Array.isArray(list) ? [...list] : [];
-            });
-          });
-        }
-        if (Array.isArray(data?.assignments)) {
-          (data.assignments || []).forEach((a) => {
-            const date = a?.date || a?.day;
-            if (!date) return;
-            const day = Number(String(date).slice(8, 10));
-            if (!Number.isFinite(day) || day < 1 || day > dcount) return;
-            // shiftCode öncelikli: shiftId (ObjectId) kullanımı saat çözümlemesini bozabiliyor.
-            const rowId = String(a.shiftCode || a.shiftId || a.rowId || "");
-            if (!rowId) return;
-            const nm = a.personName || a.name || "";
-            if (!nm || isGroupLabel(nm)) return;
-            if (!named[day]) named[day] = {};
-            if (!named[day][rowId]) named[day][rowId] = [];
-            if (!named[day][rowId].includes(nm)) named[day][rowId].push(nm);
-          });
-        }
-        if (!named || !Object.keys(named).length) continue;
-        const defsSrc = Array.isArray(data?.defs) ? data.defs : Array.isArray(data?.rows) ? data.rows : [];
-        const shiftByRow = new Map();
-        const labelByRow = new Map();
-        defsSrc.forEach((def) => {
-          const rowId = String(def?.id ?? def?.rowId ?? "");
-          if (!rowId) return;
-          shiftByRow.set(rowId, def?.shiftCode || "");
-          labelByRow.set(rowId, def?.label || rowId);
-        });
-        Object.entries(named).forEach(([dayStr, perRow]) => {
-          const day = Number(dayStr);
-          if (!Number.isFinite(day) || day < 1 || day > dcount) return;
-          Object.entries(perRow || {}).forEach(([rowId, list]) => {
-            const shiftCode = shiftByRow.get(String(rowId)) || "";
-            const rowLabel = labelByRow.get(String(rowId)) || String(rowId);
-            (list || []).forEach((nm) => {
-              if (!nm || isGroupLabel(nm)) return;
-              assignments.push({ name: nm, day, shiftCode, rowLabel, role });
-            });
-          });
-        });
-        if (Array.isArray(data?.assignments)) {
-          (data.assignments || []).forEach((a) => {
-            const date = a?.date || a?.day;
-            if (!date) return;
-            const day = Number(String(date).slice(8, 10));
-            if (!Number.isFinite(day) || day < 1 || day > dcount) return;
-            const nm = a.personName || a.name || "";
-            if (!nm || isGroupLabel(nm)) return;
-            const explicitHours = Number(a?.hours);
-            if (!Number.isFinite(explicitHours) || explicitHours <= 0) return;
-            const shiftCode = String(a?.shiftCode || a?.shift || a?.code || "").trim();
-            const rowLabel = String(a?.roleLabel || a?.rowLabel || a?.label || "").trim();
-            assignments.push({
-              name: nm,
-              day,
-              shiftCode,
-              rowLabel,
-              role,
-              explicitHours: Math.round(explicitHours * 100) / 100,
-            });
-          });
-        }
+        model = mergeScheduleModels(model, roleModel);
       }
-      if (!assignments.length) {
-        alert("Aktarılacak görev ataması bulunamadı. Önce Çalışma Çizelgesi'ni doldurup kaydedin.");
-        return;
-      }
-      const normalizedAssignments = new Map();
-      assignments.forEach((item) => {
-        const exactKey = [
-          canonName(item.name),
-          item.day,
-          String(item.shiftCode || "").trim().toUpperCase(),
-          String(item.rowLabel || "").trim().toUpperCase(),
-        ].join("|");
-        if (normalizedAssignments.has(exactKey)) return;
-        normalizedAssignments.set(exactKey, item);
-      });
-      const byPersonDay = new Map();
-      Array.from(normalizedAssignments.values()).forEach((item) => {
-        const personDayKey = [canonName(item.name), item.day].join("|");
-        // MonthlyHoursSheet ile aynı davranış: aynı kişi+gün için son atama kazanır.
-        byPersonDay.set(personDayKey, item);
-      });
-      const finalAssignments = Array.from(byPersonDay.values());
-      const personIndex = new Map();
-      (people || []).forEach((p) => {
-        const key = canonName(p.fullName || p.name || "");
-        if (!key) return;
-        const arr = personIndex.get(key) || [];
-        arr.push(p);
-        personIndex.set(key, arr);
-      });
+
+      const metaIndex = buildPersonMetaIndex(people);
+      const peopleById = new Map((people || []).map((p) => [String(p.id), p]));
+      const peopleByCanon = new Map(
+        (people || [])
+          .map((p) => [canonName(p.fullName || p.name || ""), p])
+          .filter(([k]) => !!k)
+      );
       const personRows = new Map();
       const ensureRow = (key, sourceName, personObj, metaInfo) => {
         if (personRows.has(key)) return personRows.get(key);
         const days = Array.from({ length: dcount }, () => "");
         const baseTitle = personObj?.title || personObj?.role || "";
         const row = {
-          id: crypto.randomUUID(), personId: personObj?.id || "",
+          id: crypto.randomUUID(),
+          personId: personObj?.id || "",
           person: personObj?.fullName || sourceName,
-          title: (metaInfo?.title || baseTitle || "").trim(), days,
+          title: (metaInfo?.title || baseTitle || "").trim(),
+          days,
         };
         personRows.set(key, row);
         return row;
       };
-      finalAssignments.forEach((item) => {
-        const canon = canonName(item.name);
-        const matches = canon ? personIndex.get(canon) : null;
-        const personObj = Array.isArray(matches) && matches.length ? matches[0] : null;
-        const meta = findMeta(personObj, item.name);
-        const rowKey = personObj?.id ? `id:${personObj.id}` : `name:${canon || item.name}`;
-        const row = ensureRow(rowKey, item.name, personObj, meta);
-        if (!row.title) {
-          const entry = meta || personObj || (Array.isArray(matches) ? matches[0] : null);
-          row.title = (entry?.title || entry?.role || "").trim();
+
+      for (const [pid, dayMap] of Object.entries(model.assignments || {})) {
+        const personObj = peopleById.get(String(pid)) || null;
+        const sourceName = personObj?.fullName || personObj?.name || "";
+        const cn = canonName(sourceName);
+        const meta = personObj?.id
+          ? metaIndex.byId.get(String(personObj.id))
+          : (cn ? metaIndex.byCanon.get(cn) : null);
+        const row = ensureRow(`id:${pid}`, sourceName || pid, personObj, meta);
+        for (const [dayKey, entry] of Object.entries(dayMap || {})) {
+          const day = Number(dayKey);
+          if (!Number.isFinite(day) || day < 1 || day > dcount) continue;
+          const explicit = Number(entry?.hours);
+          const hours = Number.isFinite(explicit) && explicit > 0
+            ? explicit
+            : resolveShiftHours(entry?.shiftCode, entry?.rowLabel);
+          row.days[day - 1] = hours > 0 ? Math.round(hours * 100) / 100 : "";
         }
-        const idx = item.day - 1;
-        const explicitHours = Number(item.explicitHours);
-        const hours = Number.isFinite(explicitHours) && explicitHours > 0
-          ? explicitHours
-          : resolveShiftHours(item.shiftCode, item.rowLabel);
-        row.days[idx] = hours > 0 ? Math.round(hours * 100) / 100 : "";
-      });
+      }
+
+      for (const [nameKey, dayMap] of Object.entries(model.byName || {})) {
+        const personObj = peopleByCanon.get(nameKey) || null;
+        const sourceName = personObj?.fullName || personObj?.name || nameKey;
+        const meta = personObj?.id
+          ? metaIndex.byId.get(String(personObj.id))
+          : metaIndex.byCanon.get(nameKey);
+        const rowKey = personObj?.id ? `id:${personObj.id}` : `name:${nameKey}`;
+        const row = ensureRow(rowKey, sourceName, personObj, meta);
+        for (const [dayKey, entry] of Object.entries(dayMap || {})) {
+          const day = Number(dayKey);
+          if (!Number.isFinite(day) || day < 1 || day > dcount) continue;
+          const explicit = Number(entry?.hours);
+          const hours = Number.isFinite(explicit) && explicit > 0
+            ? explicit
+            : resolveShiftHours(entry?.shiftCode, entry?.rowLabel);
+          row.days[day - 1] = hours > 0 ? Math.round(hours * 100) / 100 : "";
+        }
+      }
+
       const newRows = Array.from(personRows.values()).sort((a, b) =>
         String(a.person || "").localeCompare(String(b.person || ""), "tr", { sensitivity: "base" })
       );
+      if (!newRows.length) {
+        alert("Aktarılacak görev ataması bulunamadı. Önce Çalışma Çizelgesi'ni doldurup kaydedin.");
+        return;
+      }
       setRows(newRows);
-      alert(`Çalışma çizelgesinden ${finalAssignments.length} atama aktarıldı.`);
+      const assignedDays = newRows.reduce(
+        (sum, row) => sum + (row.days || []).filter((h) => Number(h) > 0).length,
+        0
+      );
+      alert(`Çalışma çizelgesinden ${newRows.length} personel için ${assignedDays} atama aktarıldı.`);
     } finally { setImporting(false); }
   }
 
@@ -621,13 +572,23 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
   async function onSelectPerson(rowId, personId) {
     const p = people.find((x) => x.id === personId);
     setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, personId, person: p?.fullName || "", title: p?.title || "", service: p?.service || "" } : r));
-    const plan = await fetchMonthlySchedule({ personId, year, month });
     setRows((prev) => prev.map((r) => {
       if (r.id !== rowId) return r;
       const copy = { ...r, days: [...r.days] };
-      for (const s of plan || []) {
-        const d = new Date(s.date).getDate();
-        if (d >= 1 && d <= copy.days.length) copy.days[d - 1] = Number(s.hours);
+      const model = getScheduleModelSync({ year, month, people });
+      const dayMap = getPersonMonthShifts({
+        model,
+        personId,
+        personName: p?.fullName || p?.name || "",
+      });
+      for (const [dayKey, entry] of Object.entries(dayMap || {})) {
+        const d = Number(dayKey);
+        if (!Number.isFinite(d) || d < 1 || d > copy.days.length) continue;
+        const explicit = Number(entry?.hours);
+        const val = Number.isFinite(explicit) && explicit > 0
+          ? explicit
+          : resolveShiftHours(entry?.shiftCode, entry?.rowLabel);
+        copy.days[d - 1] = Number.isFinite(val) ? val : "";
       }
       return copy;
     }));

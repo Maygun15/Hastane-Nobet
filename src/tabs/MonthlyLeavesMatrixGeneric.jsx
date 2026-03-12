@@ -120,7 +120,17 @@ export default function MonthlyLeavesMatrixGeneric({
       (p) => !svc || p?.service === svc || p?.serviceId === svc
     );
 
-    return filtered.map((p) => {
+    const sorted = [...filtered].sort((a, b) => {
+      const aName = String(a?.fullName || a?.name || "").trim();
+      const bName = String(b?.fullName || b?.name || "").trim();
+      const byName = aName.localeCompare(bName, "tr", { sensitivity: "base" });
+      if (byName !== 0) return byName;
+      const aId = String(a?.id ?? a?.personId ?? "");
+      const bId = String(b?.id ?? b?.personId ?? "");
+      return aId.localeCompare(bId, "tr", { sensitivity: "base" });
+    });
+
+    return sorted.map((p) => {
       const canon   = canonName(p.fullName || p.name || "");
       const pid     = p?.id ? String(p.id) : "";
       const monthly = leavesObj?.[pid]?.[ym] || {};

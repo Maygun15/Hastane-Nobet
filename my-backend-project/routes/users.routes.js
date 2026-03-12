@@ -8,7 +8,7 @@ const Person  = require('../models/Person');
 const { requireAuth, requireRole } = require('../middleware/authz');
 const { sendMail, isConfigured } = require('../utils/mailer');
 
-const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 const multer = require('multer');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
@@ -40,6 +40,82 @@ function uploadSpreadsheet(req, res, next) {
     }
     return res.status(400).json({ message: safeMessage(err, 'Geçersiz dosya türü.') });
   });
+}
+
+function normalizeCellValue(value) {
+  if (value == null) return '';
+  if (typeof value === 'object') {
+    if (Array.isArray(value.richText)) return value.richText.map((p) => p.text || '').join('');
+    if (value.text != null) return String(value.text);
+    if (value.result != null) return String(value.result);
+    if (value.hyperlink != null) return String(value.text || value.hyperlink);
+    if (value.formula != null && value.result != null) return String(value.result);
+  }
+  return String(value);
+}
+
+function parseCsvLine(line = '') {
+  const re = /,(?=(?:[^"]*"[^"]*")*[^"]*$)/g;
+  return String(line)
+    .split(re)
+    .map((part) => {
+      const x = part.trim();
+      return x.startsWith('"') && x.endsWith('"')
+        ? x.slice(1, -1).replace(/""/g, '"')
+        : x;
+    });
+}
+
+function parseCsvBuffer(buffer) {
+  const text = Buffer.from(buffer || '').toString('utf8');
+  const lines = text.replace(/\r/g, '').split('\n').filter(Boolean);
+  if (!lines.length) return [];
+  const header = parseCsvLine(lines[0]).map((h) => String(h || '').trim());
+  return lines.slice(1).map((line) => {
+    const cols = parseCsvLine(line);
+    const out = {};
+    header.forEach((h, i) => {
+      if (!h) return;
+      out[h] = String(cols[i] ?? '').trim();
+    });
+    return out;
+  });
+}
+
+async function parseSpreadsheetRows(file) {
+  const name = String(file?.originalname || file?.name || '').toLowerCase();
+  if (name.endsWith('.csv') || String(file?.mimetype || '').toLowerCase().includes('csv')) {
+    return parseCsvBuffer(file.buffer);
+  }
+  if (name.endsWith('.xls')) {
+    throw new Error('Eski .xls formatı desteklenmiyor. Lütfen dosyayı .xlsx olarak kaydedip tekrar yükleyin.');
+  }
+
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(file.buffer);
+  const ws = wb.worksheets[0];
+  if (!ws) return [];
+
+  const headerRow = ws.getRow(1);
+  const headers = [];
+  for (let c = 1; c <= headerRow.cellCount; c++) {
+    headers.push(normalizeCellValue(headerRow.getCell(c).value).trim());
+  }
+
+  const rows = [];
+  for (let r = 2; r <= ws.rowCount; r++) {
+    const row = ws.getRow(r);
+    const obj = {};
+    let hasAny = false;
+    headers.forEach((h, idx) => {
+      if (!h) return;
+      const val = normalizeCellValue(row.getCell(idx + 1).value).trim();
+      if (val) hasAny = true;
+      obj[h] = val;
+    });
+    if (hasAny) rows.push(obj);
+  }
+  return rows;
 }
 
 const requireAdmin = requireRole('admin');
@@ -546,14 +622,22 @@ router.get('/export.xlsx', requireAdminOrStaff, async (_req, res) => {
       Servisler: (u.serviceIds || []).join('|')
     }));
 
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, 'Kullanicilar');
-
-    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Kullanicilar');
+    ws.columns = [
+      { header: 'AdSoyad', key: 'AdSoyad', width: 28 },
+      { header: 'Email', key: 'Email', width: 30 },
+      { header: 'Telefon', key: 'Telefon', width: 18 },
+      { header: 'TC', key: 'TC', width: 16 },
+      { header: 'Rol', key: 'Rol', width: 14 },
+      { header: 'Aktif', key: 'Aktif', width: 12 },
+      { header: 'Servisler', key: 'Servisler', width: 24 },
+    ];
+    rows.forEach((row) => ws.addRow(row));
+    const buf = await wb.xlsx.writeBuffer();
     res.setHeader('Content-Disposition', 'attachment; filename="kullanicilar.xlsx"');
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    return res.status(200).send(buf);
+    return res.status(200).send(Buffer.from(buf));
   } catch (err) {
     console.error('Export.xlsx hatası:', err);
     res.status(500).json({ message: safeMessage(err, 'Export hatası') });
@@ -573,9 +657,7 @@ router.post('/import.xlsx', requireAuth, uploadSpreadsheet, async (req, res) => 
 
     if (!req.file) return res.status(400).json({ message: 'Excel dosyası gerekli (file)' });
 
-    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    const rows = await parseSpreadsheetRows(req.file);
 
     const roleMap = {
       admin: 'admin',

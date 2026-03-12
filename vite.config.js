@@ -7,6 +7,16 @@ export default defineConfig({
       jsxRuntime: "automatic",
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react_vendor: ["react", "react-dom", "react-router-dom"],
+          xlsx_vendor: ["xlsx"],
+        },
+      },
+    },
+  },
   server: {
     port: 5174,
     open: true,
