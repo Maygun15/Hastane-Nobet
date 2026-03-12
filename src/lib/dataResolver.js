@@ -138,6 +138,11 @@ export function getShifts() {
 
 /* -------- people: bilinen düz listeler ve grouped objeler -------- */
 function readPeopleKnown() {
+  const canonicalV2 = LSget("peopleV2", []);
+  if (Array.isArray(canonicalV2) && canonicalV2.length) {
+    return canonicalV2;
+  }
+
   // Genel listelerden birini al
   const flat = pickFirst(["peopleV2", "people", "personel", "staff"], []);
   const list1 = Array.isArray(flat) ? flat : [];

@@ -753,12 +753,14 @@ export default function SchedulesTab({ workingHours = [], peopleAll: peopleAllPr
       .map((p) => {
         const id = p?.id ?? p?.personId ?? p?.pid ?? p?.tc ?? p?.kod ?? p?.code ?? "";
         const name = p?.fullName || p?.name || [p?.firstName, p?.lastName].filter(Boolean).join(" ");
+        const pid = String(id || "").trim();
         return {
-          id: String(id || "").trim(),
+          ...p,
+          id: pid,
+          personId: pid,
           name: name || "",
           fullName: name || "",
           service: p?.service || p?.serviceId || p?.department || null,
-          ...p,
         };
       })
       .filter((x) => x.id);

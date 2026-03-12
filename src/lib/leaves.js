@@ -215,6 +215,8 @@ export function setLeave({ personId, personName, year, month, day, code, note })
   const pidSet = pid && pid !== "undefined" && pid !== "null" && pid !== "";
   const pidOk = pidSet ? isKnownPersonId(pid) : false;
   if (!pidSet || !pidOk) return;
+  const token = getToken();
+  if (!token) return;
 
   const ym = ymKey(Y, M1);
   leavesCache[pid] ??= {};
@@ -225,13 +227,10 @@ export function setLeave({ personId, personName, year, month, day, code, note })
   scheduleSave();
 
   // Arka planda tek gün bazlı backend sync
-  const token = getToken();
-  if (token) {
-    API.http.req(`/api/leaves`, {
-      method: "PUT",
-      body: { personId: pid, year: Y, month: M1, day: D, code: c, ...(note ? { note } : {}), serviceId: "" },
-    }).catch((err) => console.warn("leave PUT failed:", err?.message));
-  }
+  API.http.req(`/api/leaves`, {
+    method: "PUT",
+    body: { personId: pid, year: Y, month: M1, day: D, code: c, ...(note ? { note } : {}), serviceId: "" },
+  }).catch((err) => console.warn("leave PUT failed:", err?.message));
 
   emitLeavesChanged();
 }
@@ -249,6 +248,8 @@ export function unsetLeave({ personId, personName, year, month, day }) {
   const pidSet = pid && pid !== "undefined" && pid !== "null" && pid !== "";
   const pidOk = pidSet ? isKnownPersonId(pid) : false;
   if (!pidSet || !pidOk) return;
+  const token = getToken();
+  if (!token) return;
 
   const ym = ymKey(Y, M1);
   if (leavesCache?.[pid]?.[ym]) {
@@ -261,13 +262,10 @@ export function unsetLeave({ personId, personName, year, month, day }) {
   }
 
   // Arka planda tek gün bazlı backend sync
-  const token = getToken();
-  if (token) {
-    API.http.req(`/api/leaves`, {
-      method: "DELETE",
-      body: { personId: pid, year: Y, month: M1, day: D, serviceId: "" },
-    }).catch((err) => console.warn("leave DELETE failed:", err?.message));
-  }
+  API.http.req(`/api/leaves`, {
+    method: "DELETE",
+    body: { personId: pid, year: Y, month: M1, day: D, serviceId: "" },
+  }).catch((err) => console.warn("leave DELETE failed:", err?.message));
 
   emitLeavesChanged();
 }

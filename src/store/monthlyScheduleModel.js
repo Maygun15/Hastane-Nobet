@@ -11,13 +11,16 @@ const canon = (s) =>
 function shiftHoursFromCode(code = "") {
   const c = String(code || "").toUpperCase();
   if (!c) return 0;
+  if (c === "A" || /^A[\s/_-]?/.test(c)) return 4;
+  if (/^M\d*$/.test(c) || c === "M") return 8;
+  if (["Y", "YILLIK", "E", "R", "İ", "I", "B", "AN", "RAPOR"].includes(c)) return 0;
   if (c.includes("4")) return 4;
-  if (c === "M" || c.includes("8")) return 8;
+  if (c.includes("8")) return 8;
   if (c.includes("12")) return 12;
   if (["N", "V1", "V2", "SV", "24", "GECE"].some((k) => c.includes(k))) {
     return 24;
   }
-  return 24;
+  return 8;
 }
 
 function personIdOf(person) {

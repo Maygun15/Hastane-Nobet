@@ -134,6 +134,7 @@ export default function HospitalRosterApp() {
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
     LS.set("workAreas", workAreas);
+    LS.set("workAreasV2", workAreas);
     try {
       window.dispatchEvent(new Event("workAreas:changed"));
       window.dispatchEvent(new Event("settings:changed"));
@@ -152,6 +153,7 @@ export default function HospitalRosterApp() {
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
     LS.set("workingHours", workingHours);
+    LS.set("workingHoursV2", workingHours);
     try {
       window.dispatchEvent(new Event("workingHours:changed"));
       window.dispatchEvent(new Event("settings:changed"));
@@ -168,6 +170,26 @@ export default function HospitalRosterApp() {
     if (!settingsLoadedRef.current) return;
     LS.set("personLeaves", personLeaves);
   }, [personLeaves]);
+
+  useEffect(() => {
+    if (!personnelLoadedRef.current) return;
+    const canonical = [...(doctors || []), ...(nurses || [])]
+      .map((p) => {
+        const pid = String(p?.personId || p?.id || "").trim();
+        if (!pid) return null;
+        return {
+          ...p,
+          id: pid,
+          personId: pid,
+          fullName: p?.fullName || p?.name || "",
+          name: p?.name || p?.fullName || "",
+        };
+      })
+      .filter(Boolean);
+    LS.set("peopleV2", canonical);
+    LS.set("people", canonical);
+    try { window.dispatchEvent(new Event("people:changed")); } catch {}
+  }, [doctors, nurses]);
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
     LS.set("requestBoxV1", requestBox);
@@ -327,6 +349,7 @@ export default function HospitalRosterApp() {
             .trim();
         return {
           id: p.id,
+          personId: p.id,
           role: isDoctor ? ROLE.Doctor : ROLE.Nurse,
           service,
           title: meta.title || p.title || "",

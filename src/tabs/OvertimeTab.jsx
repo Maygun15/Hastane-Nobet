@@ -474,7 +474,8 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
             if (!date) return;
             const day = Number(String(date).slice(8, 10));
             if (!Number.isFinite(day) || day < 1 || day > dcount) return;
-            const rowId = String(a.shiftId || a.rowId || a.shiftCode || "");
+            // shiftCode öncelikli: shiftId (ObjectId) kullanımı saat çözümlemesini bozabiliyor.
+            const rowId = String(a.shiftCode || a.shiftId || a.rowId || "");
             if (!rowId) return;
             const nm = a.personName || a.name || "";
             if (!nm || isGroupLabel(nm)) return;
@@ -501,11 +502,32 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
             const rowLabel = labelByRow.get(String(rowId)) || String(rowId);
             (list || []).forEach((nm) => {
               if (!nm || isGroupLabel(nm)) return;
-              const hours = resolveShiftHours(shiftCode, rowLabel);
-              assignments.push({ name: nm, day, hours, shiftCode, rowLabel, role });
+              assignments.push({ name: nm, day, shiftCode, rowLabel, role });
             });
           });
         });
+        if (Array.isArray(data?.assignments)) {
+          (data.assignments || []).forEach((a) => {
+            const date = a?.date || a?.day;
+            if (!date) return;
+            const day = Number(String(date).slice(8, 10));
+            if (!Number.isFinite(day) || day < 1 || day > dcount) return;
+            const nm = a.personName || a.name || "";
+            if (!nm || isGroupLabel(nm)) return;
+            const explicitHours = Number(a?.hours);
+            if (!Number.isFinite(explicitHours) || explicitHours <= 0) return;
+            const shiftCode = String(a?.shiftCode || a?.shift || a?.code || "").trim();
+            const rowLabel = String(a?.roleLabel || a?.rowLabel || a?.label || "").trim();
+            assignments.push({
+              name: nm,
+              day,
+              shiftCode,
+              rowLabel,
+              role,
+              explicitHours: Math.round(explicitHours * 100) / 100,
+            });
+          });
+        }
       }
       if (!assignments.length) {
         alert("Aktarılacak görev ataması bulunamadı. Önce Çalışma Çizelgesi'ni doldurup kaydedin.");
@@ -562,7 +584,10 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
           row.title = (entry?.title || entry?.role || "").trim();
         }
         const idx = item.day - 1;
-        const hours = Number.isFinite(item.hours) ? item.hours : 0;
+        const explicitHours = Number(item.explicitHours);
+        const hours = Number.isFinite(explicitHours) && explicitHours > 0
+          ? explicitHours
+          : resolveShiftHours(item.shiftCode, item.rowLabel);
         row.days[idx] = hours > 0 ? Math.round(hours * 100) / 100 : "";
       });
       const newRows = Array.from(personRows.values()).sort((a, b) =>

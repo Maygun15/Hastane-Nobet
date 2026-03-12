@@ -239,7 +239,7 @@ export default function PeopleTab({
     const nextRow = {
       ...row,
       id: saved?._id || saved?.id || id,
-      personId: saved?._id || saved?.id || "",
+      personId: saved?._id || saved?.id || String(nextId),
       name: saved?.name || row.name,
       service: saved?.serviceId || row.service,
       tc: saved?.tc || row.tc,
@@ -421,8 +421,10 @@ export default function PeopleTab({
           const shiftsRaw = (r["VARDİYE KODLARI"] || r["VARDIYE KODLARI"] || "").toString();
           const shiftCodes = shiftsRaw.split(/,|;/).map((s) => s.trim()).filter(Boolean);
           if (!name) return null;
+          const generatedId = Date.now() + idx;
           return {
-            id: Date.now() + idx,
+            id: generatedId,
+            personId: String(generatedId),
             role,
             service,
             title,

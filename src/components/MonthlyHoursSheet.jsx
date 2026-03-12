@@ -748,7 +748,8 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
             if (!date) return;
             const day = Number(String(date).slice(8, 10));
             if (!Number.isFinite(day) || day < 1 || day > (days?.length || 31)) return;
-            const rowId = String(a.shiftId || a.rowId || a.shiftCode || "");
+            // shiftCode öncelikli: shiftId (ObjectId) saat çözümlemesinde belirsizlik yaratıyor.
+            const rowId = String(a.shiftCode || a.shiftId || a.rowId || "");
             if (!rowId) return;
             const nm = a.personName || a.name || "";
             if (!nm || isGroupLabel(nm)) return;
@@ -795,6 +796,27 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
             });
           });
         });
+        if (Array.isArray(data?.assignments)) {
+          (data.assignments || []).forEach((a) => {
+            const date = a?.date || a?.day;
+            if (!date) return;
+            const ymd = String(date).slice(0, 10);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return;
+            if (!ymd.startsWith(`${year}-${String(month1).padStart(2, "0")}-`)) return;
+            const nm = a.personName || a.name || "";
+            if (!nm || isGroupLabel(nm)) return;
+            const explicitHours = Number(a?.hours);
+            if (!Number.isFinite(explicitHours) || explicitHours <= 0) return;
+            assignments.push({
+              name: nm,
+              day: ymd,
+              shiftCode: String(a?.shiftCode || a?.shift || a?.code || "").trim(),
+              rowLabel: String(a?.roleLabel || a?.rowLabel || a?.label || "").trim(),
+              role,
+              explicitHours: Math.round(explicitHours * 100) / 100,
+            });
+          });
+        }
       }
       if (!assignments.length) {
         alert("Çalışma Çizelgesi verisi bulunamadı. Önce ilgili ayı kaydedin.");
@@ -832,7 +854,11 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
         const rawShift = String(item.shiftCode || "").trim();
         const rawLabel = String(item.rowLabel || "").trim();
         const safeValue = rawShift && !/^\d+$/.test(rawShift) ? rawShift : (rawLabel || rawShift);
-        row.days[item.day] = safeValue;
+        const explicitHours = Number(item.explicitHours);
+        row.days[item.day] =
+          Number.isFinite(explicitHours) && explicitHours > 0
+            ? Math.round(explicitHours * 100) / 100
+            : safeValue;
       });
 
       // Mevcut satırlardaki unvan/tckn değerlerini de backend personel verisiyle hizala.
