@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ymKey } from "../utils/storage.js";
 import { getAllLeaves, upsertLeave, removeLeave } from "../lib/leaves.js";
-import { checkLeaveShiftConflict } from "../utils/conflictChecker.js";
+import { checkLeaveShiftConflict, removeShiftOnDay } from "../utils/conflictChecker.js";
 
 /* === Son kullanılan kod (MonthlyLeavesMatrix ile ortak) === */
 const LAST_CODE_KEY = "lastLeaveCodeV1";
@@ -80,7 +80,7 @@ export default function PersonCalendar({
   }, []);
 
   // Yaz / Sil (tek/çift tık davranışı)
-  const onCellClick = (day) => {
+  const onCellClick = async (day) => {
     if (!person?.id) return;
     const ymd = `${mkey}-${pad2(day)}`;
     const current =
@@ -94,6 +94,7 @@ export default function PersonCalendar({
         year,
         month: month + 1,
         day,
+        people: [person],
       });
       if (conflict.hasConflict) {
         const ok = window.confirm(`${conflict.message}\n\nYine de izin eklensin mi?`);
@@ -101,6 +102,14 @@ export default function PersonCalendar({
         try {
           window.dispatchEvent(new CustomEvent("leave:conflict", { detail: conflict }));
         } catch {}
+        await removeShiftOnDay({
+          personId: person.id,
+          personName: person?.fullName || person?.name || "",
+          year,
+          month: month + 1,
+          day,
+          people: [person],
+        });
       }
     }
     if (!curCode) upsertLeave(person.id, ymd, selCode);
@@ -152,7 +161,7 @@ export default function PersonCalendar({
             <div
               key={d}
               className="border rounded-xl p-2 hover:bg-slate-50 cursor-pointer"
-              onClick={() => onCellClick(d)}
+              onClick={() => { void onCellClick(d); }}
               onDoubleClick={() => onCellDblClick(d)}
               title={
                 badge

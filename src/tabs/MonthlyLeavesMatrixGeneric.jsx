@@ -1,7 +1,7 @@
 // src/tabs/MonthlyLeavesMatrixGeneric.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getAllLeaves, setLeave, unsetLeave } from "../lib/leaves.js";
-import { checkLeaveShiftConflict } from "../utils/conflictChecker.js";
+import { checkLeaveShiftConflict, removeShiftOnDay } from "../utils/conflictChecker.js";
 
 /* ===== Görsel sabitler ===== */
 const MONTHS_TR = [
@@ -141,13 +141,14 @@ export default function MonthlyLeavesMatrixGeneric({
   };
 
   /* ---- Yaz / Sil ---- */
-  const applySet = (pid, name, d, code) => {
+  const applySet = async (pid, name, d, code) => {
     const conflict = checkLeaveShiftConflict({
       personId: pid,
       personName: name,
       year,
       month: m0 + 1,
       day: d,
+      people,
     });
     if (conflict.hasConflict) {
       const ok = window.confirm(`${conflict.message}\n\nYine de izin eklensin mi?`);
@@ -155,6 +156,14 @@ export default function MonthlyLeavesMatrixGeneric({
       try {
         window.dispatchEvent(new CustomEvent("leave:conflict", { detail: conflict }));
       } catch {}
+      await removeShiftOnDay({
+        personId: pid,
+        personName: name,
+        year,
+        month: m0 + 1,
+        day: d,
+        people,
+      });
     }
     setLeave({ personId: pid, personName: name, year, month: m0 + 1, day: d, code });
     setVersion((v) => v + 1);
@@ -168,9 +177,9 @@ export default function MonthlyLeavesMatrixGeneric({
   const quickClick = (pid, name, d, currentCode) => {
     const lc  = upTR(lastCode || defaultCode);
     const cur = upTR(currentCode || "");
-    if (!cur)              applySet(pid, name, d, lc);
+    if (!cur)              void applySet(pid, name, d, lc);
     else if (cur === lc)   applyUnset(pid, name, d);
-    else                   applySet(pid, name, d, lc);
+    else                   void applySet(pid, name, d, lc);
   };
 
   /* ---- Kod seçim menüsü (Shift+tık) ---- */
@@ -199,7 +208,7 @@ export default function MonthlyLeavesMatrixGeneric({
     const chosen = code || defaultCode;
     setLastCode(chosen);
     writeLastCode(chosen);
-    applySet(menu.pid, menu.name, menu.day, chosen);
+    void applySet(menu.pid, menu.name, menu.day, chosen);
     setMenu(null);
   };
 

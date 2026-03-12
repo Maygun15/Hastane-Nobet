@@ -164,18 +164,16 @@ const computeMonthlyStdHours = (year, month, holidays) => {
 };
 
 /* ================ Leaves → Credited Hours ================ */
-function creditedLeaveHoursForMonth({ year, month, leaves, holidays, codesByDay, leaveRules = {}, leaveCountsWeekend = false }) {
+function creditedLeaveHoursForMonth({ year, month, leaves, holidays: _holidays, codesByDay, leaveRules = {}, leaveCountsWeekend = false }) {
   if (!leaves?.length && !codesByDay) return 0;
-  const hmap = new Map(holidays.map((h) => [h.date, h.kind]));
   const dim = daysInMonth(year, month);
   const dayCredit = Array(dim).fill(0);
   const addCredit = (y, m, d, credit) => {
     if (y !== year || m !== month) return;
-    const std = dayStandardHours(y, m, d, hmap, { includeWeekend: leaveCountsWeekend });
-    if (std === 0) return;
+    if (!leaveCountsWeekend && isWeekend(y, m, d)) return;
     const idx = d - 1;
-    const c = Math.min(std, Math.max(0, Number(credit) || 0));
-    dayCredit[idx] = Math.min(std, dayCredit[idx] + c);
+    const c = Math.min(24, Math.max(0, Number(credit) || 0));
+    dayCredit[idx] = Math.max(dayCredit[idx], c);
   };
   const eachDay = (startIso, endIso, cb) => {
     const s = new Date(startIso);
@@ -186,12 +184,11 @@ function creditedLeaveHoursForMonth({ year, month, leaves, holidays, codesByDay,
     for (const lv of leaves) {
       eachDay(lv.start, lv.end, (dt) => {
         const y = dt.getFullYear(), m = dt.getMonth() + 1, d = dt.getDate();
-        const std = dayStandardHours(y, m, d, hmap, { includeWeekend: leaveCountsWeekend });
-        if (std === 0) return;
+        if (!leaveCountsWeekend && isWeekend(y, m, d)) return;
         const code = String(lv.code || lv.type || "").trim().toLocaleUpperCase("tr-TR");
         const rule = code ? leaveRules?.[code] : null;
         if (rule && !rule.countsAsWorked) return;
-        const baseCredit = rule && Number.isFinite(rule.hoursPerDay) ? Math.min(std, rule.hoursPerDay) : std;
+        const baseCredit = rule && Number.isFinite(rule.hoursPerDay) ? rule.hoursPerDay : 8;
         let credit = 0;
         const partial = (lv.partial || "none").toLowerCase();
         if (partial === "none") credit = baseCredit;

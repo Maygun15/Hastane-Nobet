@@ -8,7 +8,7 @@ import OvertimeTab from "./OvertimeTab.jsx";
 import MonthlyLeavesMatrixGeneric from "./MonthlyLeavesMatrixGeneric.jsx";
 import { getAllLeaves, setLeave, unsetLeave, buildNameUnavailability } from "../lib/leaves.js";
 import { collectRequestsByPerson } from "../lib/requestParser.js";
-import { checkLeaveShiftConflict } from "../utils/conflictChecker.js";
+import { checkLeaveShiftConflict, removeShiftOnDay } from "../utils/conflictChecker.js";
 import useActiveYM from "../hooks/useActiveYM.js";
 import useServiceScope from "../hooks/useServiceScope.js"; // ⬅️ YENİ: servis kapsamı
 
@@ -431,6 +431,7 @@ function SectionContent({
 
       let updates = 0;
       const conflictLog = [];
+      let conflictPolicy = null; // null: sorulmadı, true: uygula+vardiya sil, false: çakışanları atla
       rows.forEach((cols) => {
         let pid = idxId >= 0 ? String(cols[idxId] || "").trim() : "";
         let personMeta = null;
@@ -460,12 +461,29 @@ function SectionContent({
               year,
               month: month1,
               day: d,
+              people: peopleAll,
             });
             if (conflict.hasConflict) {
               conflictLog.push(conflict.message);
               try {
                 window.dispatchEvent(new CustomEvent("leave:conflict", { detail: conflict }));
               } catch {}
+              if (conflictPolicy === null) {
+                conflictPolicy = window.confirm(
+                  "Excel importta vardiya-izin çakışmaları var.\n" +
+                  "Çakışan hücrelerde izin eklensin ve mevcut vardiya otomatik silinsin mi?\n\n" +
+                  "İptal seçersen çakışan hücreler atlanır."
+                );
+              }
+              if (!conflictPolicy) continue;
+              void removeShiftOnDay({
+                personId: pid,
+                personName,
+                year,
+                month: month1,
+                day: d,
+                people: peopleAll,
+              });
             }
             setLeave({ personId: pid, personName, year, month: month1, day: d, code: val }); updates++;
           }
