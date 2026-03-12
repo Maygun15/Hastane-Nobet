@@ -12,8 +12,6 @@ if (!process.env.MONGODB_URI) {
 const express  = require('express');
 const cors     = require('cors');
 const helmet   = require('helmet');
-const hpp      = require('hpp');
-const mongoSanitize = require('express-mongo-sanitize');
 const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 const jwt      = require('jsonwebtoken');
@@ -72,13 +70,23 @@ if (!SKIP_DB) {
 }
 
 /* ============== MIDDLEWARE ============== */
-const ALLOWED_ORIGINS = new Set(['http://localhost:5173','http://localhost:5174', FRONTEND_ORIGIN]);
+function normalizeOrigin(value) {
+  return String(value || '').trim().replace(/\/+$/, '');
+}
+const ALLOWED_ORIGINS = new Set(
+  ['http://localhost:5173', 'http://localhost:5174', FRONTEND_ORIGIN]
+    .map(normalizeOrigin)
+    .filter(Boolean)
+);
 app.set('trust proxy', 1);
 const corsOptions = {
   origin(origin, cb) {
     if (!origin) return cb(null, true); // Postman/cURL
-    const ok = [...ALLOWED_ORIGINS].some(o => o === origin);
-    return ok ? cb(null, true) : cb(new Error('CORS blocked: ' + origin));
+    const ok = ALLOWED_ORIGINS.has(normalizeOrigin(origin));
+    if (ok) return cb(null, true);
+    console.warn('[CORS] blocked origin:', origin);
+    // Error fırlatmak yerine sessizce reddet; 500 üretmesin
+    return cb(null, false);
   },
   credentials: true,
   methods: ['GET','HEAD','PUT','PATCH','POST','DELETE','OPTIONS'],
@@ -111,8 +119,44 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: BODY_LIMIT }));
 app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }));
-app.use(mongoSanitize({ replaceWith: '_' }));
-app.use(hpp());
+// Express 5 ile çakışan paketlere bağımlılığı azaltmak için hafif sanitize + HPP koruması
+function sanitizeObjectInPlace(obj) {
+  if (!obj || typeof obj !== 'object') return;
+  if (Array.isArray(obj)) {
+    for (const item of obj) sanitizeObjectInPlace(item);
+    return;
+  }
+  for (const key of Object.keys(obj)) {
+    if (key.startsWith('$') || key.includes('.')) {
+      delete obj[key];
+      continue;
+    }
+    sanitizeObjectInPlace(obj[key]);
+  }
+}
+function collapseParamPollutionInPlace(obj) {
+  if (!obj || typeof obj !== 'object') return;
+  if (Array.isArray(obj)) return;
+  for (const key of Object.keys(obj)) {
+    const value = obj[key];
+    if (Array.isArray(value)) {
+      obj[key] = value.length ? value[0] : undefined;
+      continue;
+    }
+    if (value && typeof value === 'object') collapseParamPollutionInPlace(value);
+  }
+}
+app.use((req, _res, next) => {
+  try {
+    sanitizeObjectInPlace(req.body);
+    sanitizeObjectInPlace(req.params);
+    sanitizeObjectInPlace(req.query);
+    collapseParamPollutionInPlace(req.query);
+  } catch (err) {
+    console.error('[SEC][sanitize-lite]', err?.message || err);
+  }
+  next();
+});
 app.use((req, _res, next) => { console.log('[REQ]', req.method, req.originalUrl); next(); });
 const globalApiLimiter = rateLimit({
   windowMs: API_RATE_WINDOW_MS,
