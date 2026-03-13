@@ -1,4 +1,4 @@
-// index.js — CJS, Express 5 (auth router + clean CORS + RBAC + FLEX DEV LOGIN)
+CTRL + X// index.js — CJS, Express 5 (auth router + clean CORS + RBAC + FLEX DEV LOGIN)
 const path = require('path');
 const dotenvResult = require('dotenv').config({ path: path.join(__dirname, '.env') });
 if (dotenvResult?.error) {
@@ -16,14 +16,8 @@ const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 const jwt      = require('jsonwebtoken');
 const bcrypt   = require('bcryptjs');
-const Sentry   = require('@sentry/node');
 const { isConfigured: isMailerConfigured } = require(path.join(__dirname, 'utils', 'mailer.js'));
 const { applyHospitalContext, extractHospital, withHospitalFilter } = require(path.join(__dirname, 'middleware', 'hospital.js'));
-
-Sentry.init({
-  dsn: process.env.SENTRY_DSN,
-  enabled: !!process.env.SENTRY_DSN,
-});
 
 const app  = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -550,7 +544,6 @@ app.get('/api/admin/ping', ...secureTenant, requireRole('admin'),
 );
 
 /* ========== 404 & ERROR ========== */
-Sentry.setupExpressErrorHandler(app);
 app.use((req, res) => res.status(404).json({ status: 'error', message: 'Not Found' }));
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
