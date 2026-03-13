@@ -5,6 +5,10 @@ const router = express.Router();
 const Request = require('../models/Request');
 const User = require('../models/User');
 const Person = require('../models/Person');
+const {
+  sendLeaveApproved,
+  sendLeaveRejected,
+} = require('../services/notificationService');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
@@ -124,11 +128,25 @@ router.put('/:id', requireAuth, async (req, res) => {
       }
     }
 
+    const previousStatus = String(request.status || 'pending');
     request.status = status;
     request.adminNote = adminNote || '';
     request.resolvedBy = req.user._id;
     request.resolvedAt = new Date();
     await request.save();
+
+    const isLeaveRequest = String(request.type || '').toLowerCase() === 'izin';
+    const hasStatusChange = previousStatus !== String(status);
+    const actorName = req.user?.name || req.user?.email || 'Yetkili';
+    if (isLeaveRequest && hasStatusChange && status === 'approved') {
+      void sendLeaveApproved({ request, actorName }).catch((notifyErr) => {
+        console.error('[notify][leave-approved] ERR:', notifyErr?.message || notifyErr);
+      });
+    } else if (isLeaveRequest && hasStatusChange && status === 'rejected') {
+      void sendLeaveRejected({ request, actorName }).catch((notifyErr) => {
+        console.error('[notify][leave-rejected] ERR:', notifyErr?.message || notifyErr);
+      });
+    }
 
     res.json({ ok: true, request });
   } catch (err) {

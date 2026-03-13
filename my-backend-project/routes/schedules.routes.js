@@ -5,6 +5,7 @@ const router = express.Router();
 const MonthlySchedule = require('../models/MonthlySchedule');
 const ScheduleRules = require('../models/ScheduleRules');
 const { listHolidays } = require('../services/holidayService');
+const { sendShiftChanged } = require('../services/notificationService');
 const { validateAssignment } = require('../utils/rulesValidator');
 const { requireAuth, sameServiceOrAdmin, requireRole } = require('../middleware/authz');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
@@ -794,6 +795,7 @@ router.post('/assign',
       }
 
       const idx = nextAssignments.findIndex((a) => assignmentKey(a) === key);
+      const existingAssignment = idx === -1 ? null : (nextAssignments[idx] || null);
       if (idx === -1) {
         nextAssignments.push(payload);
       } else {
@@ -825,6 +827,24 @@ router.post('/assign',
       const outAssignments = Array.isArray(saved?.data?.assignments)
         ? saved.data.assignments
         : nextAssignments;
+
+      const changedByName = req.user?.name || req.user?.email || 'Yetkili';
+      const previousShift =
+        String(payload?.previousShiftId || existingAssignment?.shiftCode || existingAssignment?.shiftId || '').trim() || '-';
+      const newShift = String(payload?.shiftCode || payload?.shiftId || '').trim() || '-';
+      void sendShiftChanged({
+        personId: payload?.personId,
+        personName: payload?.personName || existingAssignment?.personName || '',
+        date: payload?.date || req.assignQuery?.dateStr,
+        previousShift,
+        newShift,
+        roleLabel: payload?.roleLabel || existingAssignment?.roleLabel || '',
+        note: payload?.note || '',
+        changedByName,
+        action: 'updated',
+      }).catch((notifyErr) => {
+        console.error('[notify][shift-updated] ERR:', notifyErr?.message || notifyErr);
+      });
 
       return res.json({
         ok: true,
@@ -884,6 +904,7 @@ router.delete('/assign',
         const assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
         const { filtered, removed } = applyDeleteFilter(assignments, req.assignPayload, req.assignQuery);
         if (!removed) return { removed: false };
+        const removedAssignment = assignments.find((item) => !filtered.includes(item)) || null;
 
         const saved = await MonthlySchedule.findOneAndUpdate(
           targetQuery,
@@ -900,13 +921,30 @@ router.delete('/assign',
           removed: true,
           assignments: Array.isArray(saved?.data?.assignments) ? saved.data.assignments : filtered,
           updatedAt: saved?.updatedAt || null,
+          removedAssignment,
         };
       };
 
       if (doc && query) {
         const res1 = await attemptRemove(doc, query);
         if (res1.removed) {
-          return res.json({ ok: true, removed: true, ...res1 });
+          const removedItem = res1.removedAssignment || null;
+          const { removedAssignment: _ignoredRemovedAssignment1, ...resPayload1 } = res1;
+          const changedByName = req.user?.name || req.user?.email || 'Yetkili';
+          void sendShiftChanged({
+            personId: req.assignPayload?.personId || removedItem?.personId,
+            personName: req.assignPayload?.personName || removedItem?.personName || '',
+            date: req.assignQuery?.dateStr,
+            previousShift: removedItem?.shiftCode || removedItem?.shiftId || req.assignPayload?.shiftCode || req.assignPayload?.shiftId || '-',
+            newShift: '-',
+            roleLabel: removedItem?.roleLabel || req.assignPayload?.roleLabel || '',
+            note: req.assignPayload?.note || removedItem?.note || '',
+            changedByName,
+            action: 'removed',
+          }).catch((notifyErr) => {
+            console.error('[notify][shift-removed] ERR:', notifyErr?.message || notifyErr);
+          });
+          return res.json({ ok: true, removed: true, ...resPayload1 });
         }
       }
 
@@ -915,7 +953,23 @@ router.delete('/assign',
       for (const d of allDocs) {
         const res2 = await attemptRemove(d, { _id: d._id });
         if (res2.removed) {
-          return res.json({ ok: true, removed: true, ...res2 });
+          const removedItem = res2.removedAssignment || null;
+          const { removedAssignment: _ignoredRemovedAssignment2, ...resPayload2 } = res2;
+          const changedByName = req.user?.name || req.user?.email || 'Yetkili';
+          void sendShiftChanged({
+            personId: req.assignPayload?.personId || removedItem?.personId,
+            personName: req.assignPayload?.personName || removedItem?.personName || '',
+            date: req.assignQuery?.dateStr,
+            previousShift: removedItem?.shiftCode || removedItem?.shiftId || req.assignPayload?.shiftCode || req.assignPayload?.shiftId || '-',
+            newShift: '-',
+            roleLabel: removedItem?.roleLabel || req.assignPayload?.roleLabel || '',
+            note: req.assignPayload?.note || removedItem?.note || '',
+            changedByName,
+            action: 'removed',
+          }).catch((notifyErr) => {
+            console.error('[notify][shift-removed] ERR:', notifyErr?.message || notifyErr);
+          });
+          return res.json({ ok: true, removed: true, ...resPayload2 });
         }
       }
 
