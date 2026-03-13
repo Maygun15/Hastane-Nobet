@@ -1,6 +1,6 @@
 // src/tabs/RequestsManagementTab.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { getMyRequests, updateRequest } from "../api/apiAdapter.js";
+import { deleteRequest, getMyRequests, updateRequest } from "../api/apiAdapter.js";
 
 const typeLabels = {
   izin: "İzin",
@@ -13,6 +13,7 @@ const statusTone = {
   pending: "bg-amber-100 text-amber-800",
   approved: "bg-emerald-100 text-emerald-800",
   rejected: "bg-rose-100 text-rose-800",
+  deleted: "bg-slate-200 text-slate-700",
 };
 
 export default function RequestsManagementTab() {
@@ -26,7 +27,7 @@ export default function RequestsManagementTab() {
   const load = async () => {
     try {
       setError("");
-      const res = await getMyRequests();
+      const res = await getMyRequests({ status: statusFilter });
       setItems(Array.isArray(res?.items) ? res.items : []);
     } catch (e) {
       setError(e?.message || "Talepler alınamadı");
@@ -35,7 +36,7 @@ export default function RequestsManagementTab() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [statusFilter]);
 
   const filtered = useMemo(() => {
     return (items || []).filter((r) => {
@@ -58,6 +59,21 @@ export default function RequestsManagementTab() {
     load();
   };
 
+  const remove = async (r) => {
+    const id = r._id || r.id;
+    const ok = window.confirm("Bu talep silinsin mi? 180 gün boyunca sistemde saklanır.");
+    if (!ok) return;
+    await deleteRequest(id);
+    load();
+  };
+
+  const statusText = (status) => {
+    if (status === "approved") return "Onaylandı";
+    if (status === "rejected") return "Reddedildi";
+    if (status === "deleted") return "Silindi";
+    return "Beklemede";
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -72,6 +88,7 @@ export default function RequestsManagementTab() {
             <option value="pending">Beklemede</option>
             <option value="approved">Onaylandı</option>
             <option value="rejected">Reddedildi</option>
+            <option value="deleted">Silinenler</option>
           </select>
           <select
             className="h-9 rounded-lg border px-3 text-sm"
@@ -104,7 +121,7 @@ export default function RequestsManagementTab() {
                   {r.fromName || "-"} • {r.serviceId || "-"} • {r.targetDate || "-"}
                 </div>
                 <span className={`px-2 py-0.5 rounded-full text-[11px] ${statusTone[r.status] || "bg-slate-100 text-slate-700"}`}>
-                  {r.status === "approved" ? "Onaylandı" : r.status === "rejected" ? "Reddedildi" : "Beklemede"}
+                  {statusText(r.status)}
                 </span>
               </div>
               <div className="mt-2 text-[13px]">
@@ -113,21 +130,36 @@ export default function RequestsManagementTab() {
                 {r.adminNote ? (
                   <div className="mt-2 text-[12px] text-slate-500">Not: {r.adminNote}</div>
                 ) : null}
+                {r.status === "deleted" ? (
+                  <div className="mt-2 text-[12px] text-slate-500">
+                    Silinme tarihi: {r.deletedAt ? new Date(r.deletedAt).toLocaleString("tr-TR") : "-"}
+                  </div>
+                ) : null}
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  className="text-[12px] px-3 py-1 rounded bg-emerald-600 text-white"
-                  onClick={() => approve(r)}
-                >
-                  Onayla
-                </button>
-                <button
-                  className="text-[12px] px-3 py-1 rounded bg-rose-600 text-white"
-                  onClick={() => setNoteFor(r)}
-                >
-                  Reddet
-                </button>
+                {r.status !== "deleted" ? (
+                  <>
+                    <button
+                      className="text-[12px] px-3 py-1 rounded bg-emerald-600 text-white"
+                      onClick={() => approve(r)}
+                    >
+                      Onayla
+                    </button>
+                    <button
+                      className="text-[12px] px-3 py-1 rounded bg-rose-600 text-white"
+                      onClick={() => setNoteFor(r)}
+                    >
+                      Reddet
+                    </button>
+                    <button
+                      className="text-[12px] px-3 py-1 rounded border border-rose-200 text-rose-700 hover:bg-rose-50"
+                      onClick={() => remove(r)}
+                    >
+                      Sil
+                    </button>
+                  </>
+                ) : null}
               </div>
 
               {noteFor && (noteFor._id || noteFor.id) === (r._id || r.id) && (

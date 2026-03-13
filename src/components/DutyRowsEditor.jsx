@@ -1737,7 +1737,11 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
   /* Render (toolbar yok) */
   return (
-    <div className="space-y-3">
+    <>
+      <div className="md:hidden rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        Bu ekran masaüstü kullanım için tasarlanmıştır
+      </div>
+      <div className="hidden md:block space-y-3">
       <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
         Çalışma Çizelgesi — {roleLabel}
       </div>
@@ -2306,7 +2310,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         rows={rows}
         daysInMonth={daysInMonth}
       />
-    </div>
+      </div>
+    </>
   );
 });
 

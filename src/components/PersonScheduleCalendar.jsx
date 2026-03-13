@@ -190,7 +190,18 @@ function normalizeWorkAreas(input) {
       return;
     }
     if (typeof item === "object") {
-      const v = String(item.name ?? item.label ?? item.title ?? item.code ?? "").trim();
+      const v = String(
+        item.name ??
+          item.label ??
+          item.title ??
+          item.code ??
+          item.value ??
+          item.text ??
+          item.area ??
+          item.workArea ??
+          item.workarea ??
+          ""
+      ).trim();
       if (v) set.add(v);
     }
   });
@@ -952,8 +963,9 @@ export default function PersonScheduleCalendar({
 
   const areaOptions = useMemo(() => {
     const fromPropsRaw = Array.isArray(workAreas) ? workAreas : [];
+    const fromLSRaw = fromPropsRaw.length > 0 ? [] : readStorageList(AREA_STORAGE_KEYS);
     const fromPeopleRaw = collectAreasFromPeople(people);
-    const merged = normalizeWorkAreas([...fromPropsRaw, ...fromPeopleRaw]);
+    const merged = normalizeWorkAreas([...fromPropsRaw, ...fromLSRaw, ...fromPeopleRaw]);
     if (merged.length) return merged;
     const set = new Set();
     (remoteDefs || []).forEach((def) => {
@@ -1287,8 +1299,38 @@ export default function PersonScheduleCalendar({
         </div>
       )}
 
-      {/* Takvim Başlığı */}
-      <div className="grid grid-cols-7 gap-1 text-xs font-semibold text-slate-500 px-1">
+      {/* Mobil görünüm (< md): gün kartları dikey liste */}
+      <div className="md:hidden space-y-2">
+        {cells.map((dt, idx) => {
+          if (!dt) return null;
+          const dayNum = dt.getDate();
+          const assignments = assignmentsByDay.get(dayNum) || [];
+          const leaveCodeRaw =
+            leavesForPerson[String(dayNum)] || leavesForPerson[`${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`];
+          const leaveCode = assignments.length ? "" : formatLeaveValue(leaveCodeRaw);
+          const isWeekend = dt.getDay() === 0 || dt.getDay() === 6;
+          return (
+            <div key={`mobile-day-${dayNum}-${idx}`} className="rounded-xl border border-slate-200 bg-white p-2">
+              <DayCard
+                dayNum={dayNum}
+                dateObj={dt}
+                leaveCode={leaveCode}
+                assignments={assignments}
+                isWeekend={isWeekend}
+                requiredCount={2}
+                renderLeave={renderLeave}
+                renderAssignments={renderAssignments}
+                onAddShift={canManage ? () => openAssignModal(dayNum) : null}
+                onRemoveShift={canManage ? (assg) => handleRemoveShift(assg, dayNum) : null}
+                onEditShift={null}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Takvim Başlığı (desktop) */}
+      <div className="hidden md:grid grid-cols-7 gap-1 text-xs font-semibold text-slate-500 px-1">
         {dayNameTR.map((name) => (
           <div key={name} className="text-center py-1">
             {name}
@@ -1296,8 +1338,8 @@ export default function PersonScheduleCalendar({
         ))}
       </div>
 
-      {/* Takvim Grid */}
-      <div className="grid grid-cols-7 gap-1">
+      {/* Takvim Grid (desktop) */}
+      <div className="hidden md:grid grid-cols-7 gap-1">
         {cells.map((dt, idx) => {
           if (!dt) {
             return <div key={`empty-${idx}`} className="h-32 rounded-xl bg-transparent" />;

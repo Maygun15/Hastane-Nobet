@@ -406,8 +406,11 @@ export async function checkDutyEligibility(payload = {}, { token } = {}) {
 }
 
 // ===== REQUESTS =====
-export async function getMyRequests() {
-  return httpRequest('/api/requests');
+export async function getMyRequests({ status } = {}) {
+  const qs = new URLSearchParams();
+  if (status && String(status).toLowerCase() !== 'all') qs.set('status', String(status));
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return httpRequest(`/api/requests${suffix}`);
 }
 
 export async function createRequest(payload = {}) {
@@ -416,6 +419,10 @@ export async function createRequest(payload = {}) {
 
 export async function updateRequest(id, payload = {}) {
   return httpRequest(`/api/requests/${id}`, { method: 'PUT', body: payload });
+}
+
+export async function deleteRequest(id, payload = {}) {
+  return httpRequest(`/api/requests/${id}`, { method: 'DELETE', body: payload });
 }
 
 export async function getUnreadRequestCount() {

@@ -900,7 +900,7 @@ export default function SchedulesTab({ workingHours, peopleAll: peopleAllProp, l
       </div>
 
       {/* Alt sekmeleri canlı tut (diğerlerine geçince state kaybolmasın) */}
-      <div>
+      <div className="overflow-x-auto [&_table]:min-w-max [&_thead_th:first-child]:sticky [&_thead_th:first-child]:left-0 [&_thead_th:first-child]:z-10 [&_thead_th:first-child]:bg-white [&_tbody_th:first-child]:sticky [&_tbody_th:first-child]:left-0 [&_tbody_th:first-child]:z-[1] [&_tbody_th:first-child]:bg-white [&_tbody_td:first-child]:sticky [&_tbody_td:first-child]:left-0 [&_tbody_td:first-child]:z-[1] [&_tbody_td:first-child]:bg-white">
         {visitedInOrder.map((id) => {
           const section = sections.find((s) => s.id === id);
           if (!section) return null;

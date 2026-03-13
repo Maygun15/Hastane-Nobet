@@ -1,6 +1,6 @@
 // src/tabs/MyRequestsTab.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { createRequest, getMyRequests } from "../api/apiAdapter.js";
+import { createRequest, deleteRequest, getMyRequests } from "../api/apiAdapter.js";
 
 const typeLabels = {
   izin: "İzin",
@@ -13,10 +13,12 @@ const statusTone = {
   pending: "bg-amber-100 text-amber-800",
   approved: "bg-emerald-100 text-emerald-800",
   rejected: "bg-rose-100 text-rose-800",
+  deleted: "bg-slate-200 text-slate-700",
 };
 
 export default function MyRequestsTab() {
   const [items, setItems] = useState([]);
+  const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
@@ -30,7 +32,7 @@ export default function MyRequestsTab() {
     try {
       setLoading(true);
       setError("");
-      const res = await getMyRequests();
+      const res = await getMyRequests({ status: statusFilter });
       setItems(Array.isArray(res?.items) ? res.items : []);
     } catch (e) {
       setError(e?.message || "Talepler alınamadı");
@@ -41,7 +43,28 @@ export default function MyRequestsTab() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [statusFilter]);
+
+  const onDelete = async (r) => {
+    const id = r?._id || r?.id;
+    if (!id) return;
+    const ok = window.confirm("Bu talep silinsin mi? 180 gün boyunca 'Silinenler' filtresinde görünecek.");
+    if (!ok) return;
+    try {
+      setError("");
+      await deleteRequest(id);
+      await load();
+    } catch (e) {
+      setError(e?.message || "Talep silinemedi");
+    }
+  };
+
+  const statusText = (status) => {
+    if (status === "approved") return "Onaylandı";
+    if (status === "rejected") return "Reddedildi";
+    if (status === "deleted") return "Silindi";
+    return "Beklemede";
+  };
 
   const submit = async () => {
     if (!type || !message.trim()) {
@@ -74,12 +97,25 @@ export default function MyRequestsTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="font-semibold text-[15px]">Taleplerim</div>
-        <button
-          className="px-3 py-2 rounded-lg bg-sky-600 text-white text-sm hover:bg-sky-700"
-          onClick={() => setOpen(true)}
-        >
-          + Yeni Talep
-        </button>
+        <div className="flex items-center gap-2">
+          <select
+            className="h-9 rounded-lg border px-3 text-sm"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="all">Hepsi</option>
+            <option value="pending">Beklemede</option>
+            <option value="approved">Onaylandı</option>
+            <option value="rejected">Reddedildi</option>
+            <option value="deleted">Silinenler</option>
+          </select>
+          <button
+            className="px-3 py-2 rounded-lg bg-sky-600 text-white text-sm hover:bg-sky-700"
+            onClick={() => setOpen(true)}
+          >
+            + Yeni Talep
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -101,7 +137,7 @@ export default function MyRequestsTab() {
                   {r.createdAt ? new Date(r.createdAt).toLocaleString("tr-TR") : "-"}
                 </div>
                 <span className={`px-2 py-0.5 rounded-full text-[11px] ${statusTone[r.status] || "bg-slate-100 text-slate-700"}`}>
-                  {r.status === "approved" ? "Onaylandı" : r.status === "rejected" ? "Reddedildi" : "Beklemede"}
+                  {statusText(r.status)}
                 </span>
               </div>
               <div className="mt-2 text-[13px]">
@@ -111,6 +147,22 @@ export default function MyRequestsTab() {
                   <div className="mt-2 text-rose-700 text-[12px]">
                     Admin notu: {r.adminNote}
                   </div>
+                ) : null}
+                {r.status === "deleted" ? (
+                  <div className="mt-2 text-slate-500 text-[12px]">
+                    Silinme tarihi: {r.deletedAt ? new Date(r.deletedAt).toLocaleString("tr-TR") : "-"}
+                  </div>
+                ) : null}
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                {r.status !== "deleted" ? (
+                  <button
+                    type="button"
+                    className="text-[12px] px-3 py-1 rounded border border-rose-200 text-rose-700 hover:bg-rose-50"
+                    onClick={() => onDelete(r)}
+                  >
+                    Sil
+                  </button>
                 ) : null}
               </div>
             </div>
