@@ -1,7 +1,9 @@
 const mongoose = require('mongoose');
+const { applyHospitalScope } = require('./plugins/hospitalScope');
 
 const GeneratedScheduleSchema = new mongoose.Schema(
   {
+    hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null, index: true },
     sectionId: { type: String, required: true, trim: true, index: true },
     serviceId: { type: String, default: '', trim: true, index: true },
     role: { type: String, default: '', trim: true, index: true },
@@ -17,7 +19,8 @@ const GeneratedScheduleSchema = new mongoose.Schema(
   { timestamps: true, minimize: false }
 );
 
-GeneratedScheduleSchema.index({ sectionId: 1, serviceId: 1, role: 1, year: 1, month: 1 });
+GeneratedScheduleSchema.index({ hospitalId: 1, sectionId: 1, serviceId: 1, role: 1, year: 1, month: 1 });
+applyHospitalScope(GeneratedScheduleSchema);
 
 module.exports = mongoose.models.GeneratedSchedule
   || mongoose.model('GeneratedSchedule', GeneratedScheduleSchema);

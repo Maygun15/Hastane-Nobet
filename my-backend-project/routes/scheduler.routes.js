@@ -24,6 +24,7 @@ router.post('/generate', requireAuth, requireRole('admin', 'authorized'), async 
       ...params,
       userId: req.user?.uid || null,
       payload: params.payload,
+      hospitalId: req.hospitalId || null,
     });
     return res.json({ ok: true, ...result });
   } catch (err) {

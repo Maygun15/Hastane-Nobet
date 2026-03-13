@@ -16,6 +16,8 @@ const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 const jwt      = require('jsonwebtoken');
 const bcrypt   = require('bcryptjs');
+const { isConfigured: isMailerConfigured } = require(path.join(__dirname, 'utils', 'mailer.js'));
+const { applyHospitalContext, extractHospital, withHospitalFilter } = require(path.join(__dirname, 'middleware', 'hospital.js'));
 
 const app  = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -36,6 +38,8 @@ const DEV_LOGIN_IDENTIFIER = String(process.env.DEV_LOGIN_IDENTIFIER || ADMIN_EM
 const BODY_LIMIT      = String(process.env.BODY_LIMIT || '256kb');
 const API_RATE_WINDOW_MS = Number(process.env.API_RATE_WINDOW_MS || 15 * 60 * 1000);
 const API_RATE_MAX = Number(process.env.API_RATE_MAX || 300);
+const ENABLED_VALUES = new Set(['1', 'true', 'yes', 'on']);
+const NOTIFICATIONS_ENABLED = ENABLED_VALUES.has(String(process.env.NOTIFICATIONS_ENABLED || '').toLowerCase());
 
 if (!JWT_SECRET) {
   console.error('HATA: JWT_SECRET tanımlı değil');
@@ -169,15 +173,21 @@ app.use('/api', globalApiLimiter);
 
 /* ============== HEALTH ============== */
 app.get('/', (_req, res) => res.send('Backend Sunucusu Başarıyla Çalışıyor!'));
-app.get('/health', (_req, res) => res.json({
-  ok: true,
-  ts: Date.now(),
-  env: { allowDev: ALLOW_DEV, frontendOrigin: [...ALLOWED_ORIGINS], mongo: !!MONGODB_URI }
-}));
-
-/* ============== HOLIDAYS ROUTES ============== */
-const holidayRoutes = require(path.join(__dirname, 'routes', 'holiday.js'));
-app.use('/api/holidays', auth, ensureActive, holidayRoutes);
+function buildHealthPayload() {
+  return {
+    ok: true,
+    ts: Date.now(),
+    env: {
+      allowDev: ALLOW_DEV,
+      frontendOrigin: [...ALLOWED_ORIGINS],
+      mongo: !!MONGODB_URI,
+      notificationsEnabled: NOTIFICATIONS_ENABLED,
+      smtpConfigured: isMailerConfigured(),
+    },
+  };
+}
+app.get('/health', (_req, res) => res.json(buildHealthPayload()));
+app.get('/api/health', (_req, res) => res.json(buildHealthPayload()));
 
 /* ============ AUTH HELPERS (JWT) ============ */
 const User = require(path.join(__dirname, 'models', 'User.js'));
@@ -236,7 +246,7 @@ async function auth(req, res, next) {
 
     // Dev login ile gelen 'dev1' için DB sorgusuna gerek yok
     if (decoded.uid === 'dev1') {
-      req.user = { uid: 'dev1', role: 'admin', serviceIds: [], active: true, email: 'dev@local' };
+      req.user = { uid: 'dev1', role: 'superadmin', serviceIds: [], active: true, email: 'dev@local', hospitalId: null };
       return next();
     }
 
@@ -249,6 +259,7 @@ async function auth(req, res, next) {
       serviceIds: u.serviceIds || [],
       active: !!u.active,
       email: u.email,
+      hospitalId: u.hospitalId ? String(u.hospitalId) : null,
     };
     next();
   } catch {
@@ -261,17 +272,25 @@ function ensureActive(req, res, next) {
   next();
 }
 function requireRole(role) {
-  return (req, res, next) =>
-    (!req.user) ? res.status(401).json({ message: 'Yetkisiz' }) :
-    (String(req.user.role).toLowerCase() !== String(role).toLowerCase())
-      ? res.status(403).json({ message: 'Yetersiz yetki' }) : next();
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ message: 'Yetkisiz' });
+    const actual = String(req.user.role || '').toLowerCase();
+    if (actual === 'superadmin' || actual === String(role || '').toLowerCase()) return next();
+    return res.status(403).json({ message: 'Yetersiz yetki' });
+  };
 }
 function requireAnyRole(...roles) {
-  return (req, res, next) =>
-    (!req.user) ? res.status(401).json({ message: 'Yetkisiz' }) :
-    (!roles.map(r=>String(r).toLowerCase()).includes(String(req.user.role).toLowerCase()))
-      ? res.status(403).json({ message: 'Yetersiz yetki' }) : next();
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ message: 'Yetkisiz' });
+    const actual = String(req.user.role || '').toLowerCase();
+    if (actual === 'superadmin') return next();
+    const expected = roles.map((r) => String(r || '').toLowerCase());
+    if (expected.includes(actual)) return next();
+    return res.status(403).json({ message: 'Yetersiz yetki' });
+  };
 }
+
+const secureTenant = [auth, ensureActive, extractHospital, applyHospitalContext];
 
 /* ============== DEV LOGIN — ESNEK, DB'siz ============== */
 // .env → ALLOW_DEV_ENDPOINTS=true olmalı
@@ -315,8 +334,8 @@ if (ALLOW_DEV) {
     }
 
     if (id === DEV_LOGIN_IDENTIFIER && pwd === ADMIN_PASSWORD) {
-      const token = jwt.sign({ uid: 'dev1' }, JWT_SECRET, { expiresIn: '7d' });
-      return res.json({ token, user: { id: 'dev1', name: 'Dev Kullanıcı', role: 'admin' } });
+      const token = jwt.sign({ uid: 'dev1', role: 'superadmin', hospitalId: null }, JWT_SECRET, { expiresIn: '7d' });
+      return res.json({ token, user: { id: 'dev1', name: 'Dev Kullanıcı', role: 'superadmin', hospitalId: null } });
     }
     return res.status(401).json({ message: 'Kullanıcı bulunamadı veya şifre hatalı' });
   });
@@ -328,7 +347,7 @@ if (ALLOW_DEV) {
       const t = h.startsWith('Bearer ') ? h.slice(7) : null;
       const d = jwt.verify(t, JWT_SECRET, { algorithms: ['HS256'] });
       if (d.uid !== 'dev1') return res.status(401).json({ message: 'Yetkisiz' });
-      return res.json({ id: 'dev1', name: 'Dev Kullanıcı', role: 'admin' });
+      return res.json({ id: 'dev1', name: 'Dev Kullanıcı', role: 'superadmin', hospitalId: null });
     } catch {
       return res.status(401).json({ message: 'Yetkisiz' });
     }
@@ -338,12 +357,12 @@ if (ALLOW_DEV) {
 /* ============== USERS: Activate / Deactivate (kalıcı) ============== */
 // Bu blok SADECE eklendi; mevcut routes yapısını bozmaz.
 app.post('/api/users/:id/activate',
-  auth, ensureActive, requireAnyRole('admin','authorized'),
+  ...secureTenant, requireAnyRole('admin','authorized'),
   async (req, res) => {
     try {
       const id = req.params.id;
-      const u = await User.findByIdAndUpdate(
-        id,
+      const u = await User.findOneAndUpdate(
+        withHospitalFilter(req, { _id: id }),
         {
           $set: { active: true, activatedAt: new Date(), activatedBy: req.user.uid },
           $unset: { deactivatedAt: 1, deactivatedBy: 1 }
@@ -360,12 +379,12 @@ app.post('/api/users/:id/activate',
 );
 
 app.post('/api/users/:id/deactivate',
-  auth, ensureActive, requireAnyRole('admin','authorized'),
+  ...secureTenant, requireAnyRole('admin','authorized'),
   async (req, res) => {
     try {
       const id = req.params.id;
-      const u = await User.findByIdAndUpdate(
-        id,
+      const u = await User.findOneAndUpdate(
+        withHospitalFilter(req, { _id: id }),
         {
           $set: { active: false, deactivatedAt: new Date(), deactivatedBy: req.user.uid },
           $unset: { activatedAt: 1, activatedBy: 1 }
@@ -385,8 +404,8 @@ app.post('/api/users/:id/deactivate',
 try {
   const aiRoutes = require('./src/api/ai.routes.js');   // /api/ai/*
   const aiPing   = require('./src/api/ai/ping.js');     // /api/ai/ping
-  app.use('/api/ai', auth, ensureActive, aiPing);
-  app.use('/api/ai', auth, ensureActive, aiRoutes);
+  app.use('/api/ai', ...secureTenant, aiPing);
+  app.use('/api/ai', ...secureTenant, aiRoutes);
 } catch { /* opsiyonel */ }
 
 /* ============== AUTH ROUTER ============== */
@@ -398,15 +417,15 @@ try {
 
 /* ============== USERS ROUTES ============== */
 try {
-  app.get('/api/users/__ping', auth, ensureActive, (_req, res) => res.json({ ok: true }));
+  app.get('/api/users/__ping', ...secureTenant, (_req, res) => res.json({ ok: true }));
   const usersRoutes = require('./routes/users.routes.js');
-  app.use('/api/users', auth, ensureActive, usersRoutes);
+  app.use('/api/users', ...secureTenant, usersRoutes);
 } catch {}
 
 /* ============== PERSONNEL ROUTES ============== */
 try {
   const personnelRoutes = require('./routes/personnel.routes.js');
-  app.use('/api/personnel', auth, ensureActive, personnelRoutes);
+  app.use('/api/personnel', ...secureTenant, personnelRoutes);
 } catch (e) {
   console.error('PERSONNEL ROUTE LOAD ERROR:', e);
 }
@@ -414,7 +433,7 @@ try {
 /* ============== REQUESTS ROUTES ============== */
 try {
   const requestsRouter = require('./routes/requests.routes');
-  app.use('/api/requests', requestsRouter);
+  app.use('/api/requests', ...secureTenant, requestsRouter);
 } catch (e) {
   console.error('REQUESTS ROUTE LOAD ERROR:', e);
 }
@@ -422,25 +441,25 @@ try {
 /* ============== SCHEDULES ROUTER ============== */
 try {
   const schedulesRoutes = require('./routes/schedules.routes.js');
-  app.use('/api/schedules', auth, ensureActive, schedulesRoutes);
+  app.use('/api/schedules', ...secureTenant, schedulesRoutes);
 } catch {}
 
 /* ============== DUTY RULES ROUTES ============== */
 try {
   const dutyRulesRoutes = require('./routes/dutyRules.routes.js');
-  app.use('/api/duty-rules', auth, ensureActive, dutyRulesRoutes);
+  app.use('/api/duty-rules', ...secureTenant, dutyRulesRoutes);
 } catch {}
 
 /* ============== SETTINGS ROUTES ============== */
 try {
   const settingsRoutes = require('./routes/settings.routes.js');
-  app.use('/api/settings', auth, ensureActive, settingsRoutes);
+  app.use('/api/settings', ...secureTenant, settingsRoutes);
 } catch {}
 
 /* ============== LEAVES ROUTES ============== */
 try {
   const leavesRoutes = require('./routes/leaves.routes.js');
-  app.use('/api/leaves', auth, ensureActive, leavesRoutes);
+  app.use('/api/leaves', ...secureTenant, leavesRoutes);
 } catch (e) {
   console.error('LEAVES ROUTE LOAD ERROR:', e);
 }
@@ -448,7 +467,7 @@ try {
 /* ============== PARAMETERS ROUTES ============== */
 try {
   const parametersRoutes = require('./routes/parameters.routes.js');
-  app.use('/api/parameters', auth, ensureActive, parametersRoutes);
+  app.use('/api/parameters', ...secureTenant, parametersRoutes);
   console.log('✅ Parameters routes yüklendi');
 } catch (e) {
   console.error('❌ PARAMETERS ROUTE LOAD ERROR:', e.message);
@@ -461,43 +480,43 @@ try {
 
   const respondSetting = async (req, res, key) => {
     const serviceId = String(req.query?.serviceId || '').trim();
-    const doc = await Setting.findOne({ key, serviceId }).lean();
+    const doc = await Setting.findOne(withHospitalFilter(req, { key, serviceId })).lean();
     const value = Array.isArray(doc?.value) ? doc.value : (doc?.value ?? null);
     return res.json({ ok: true, key, serviceId, value });
   };
 
   // settings/* legacy callers
-  app.get('/api/settings/leaveTypes', auth, ensureActive, async (req, res) => {
+  app.get('/api/settings/leaveTypes', ...secureTenant, async (req, res) => {
     try { return await respondSetting(req, res, 'leaveTypes'); }
     catch (e) { return res.status(500).json({ message: e.message }); }
   });
-  app.get('/api/settings/workAreas', auth, ensureActive, async (req, res) => {
+  app.get('/api/settings/workAreas', ...secureTenant, async (req, res) => {
     try { return await respondSetting(req, res, 'workAreas'); }
     catch (e) { return res.status(500).json({ message: e.message }); }
   });
-  app.get('/api/settings/workingHours', auth, ensureActive, async (req, res) => {
+  app.get('/api/settings/workingHours', ...secureTenant, async (req, res) => {
     try { return await respondSetting(req, res, 'workingHours'); }
     catch (e) { return res.status(500).json({ message: e.message }); }
   });
-  app.get('/api/settings/requestBoxV1', auth, ensureActive, async (req, res) => {
+  app.get('/api/settings/requestBoxV1', ...secureTenant, async (req, res) => {
     try { return await respondSetting(req, res, 'requestBoxV1'); }
     catch (e) { return res.status(500).json({ message: e.message }); }
   });
 
-  app.get('/api/leaveTypes', auth, ensureActive, async (req, res) => {
+  app.get('/api/leaveTypes', ...secureTenant, async (req, res) => {
     try {
       const serviceId = String(req.query?.serviceId || '').trim();
-      const doc = await Setting.findOne({ key: 'leaveTypes', serviceId }).lean();
+      const doc = await Setting.findOne(withHospitalFilter(req, { key: 'leaveTypes', serviceId })).lean();
       res.json(Array.isArray(doc?.value) ? doc.value : []);
     } catch (e) {
       res.status(500).json({ message: e.message });
     }
   });
 
-  app.get('/api/requestBoxV1', auth, ensureActive, async (req, res) => {
+  app.get('/api/requestBoxV1', ...secureTenant, async (req, res) => {
     try {
       const serviceId = String(req.query?.serviceId || '').trim();
-      const doc = await Setting.findOne({ key: 'requestBoxV1', serviceId }).lean();
+      const doc = await Setting.findOne(withHospitalFilter(req, { key: 'requestBoxV1', serviceId })).lean();
       res.json(Array.isArray(doc?.value) ? doc.value : []);
     } catch (e) {
       res.status(500).json({ message: e.message });
@@ -510,13 +529,17 @@ try {
 /* ============== SCHEDULER ROUTER ============== */
 try {
   const schedulerRoutes = require('./routes/scheduler.routes.js');
-  app.use('/api/scheduler', auth, ensureActive, schedulerRoutes);
+  app.use('/api/scheduler', ...secureTenant, schedulerRoutes);
   const servicesRoutes = require('./routes/services.routes.js');
-  app.use('/api/services', auth, ensureActive, servicesRoutes);
+  app.use('/api/services', ...secureTenant, servicesRoutes);
 } catch {}
 
+/* ============== HOLIDAYS ROUTES ============== */
+const holidayRoutes = require(path.join(__dirname, 'routes', 'holiday.js'));
+app.use('/api/holidays', ...secureTenant, holidayRoutes);
+
 /* ============ ADMIN ÖRNEĞİ ============ */
-app.get('/api/admin/ping', auth, ensureActive, requireRole('admin'),
+app.get('/api/admin/ping', ...secureTenant, requireRole('admin'),
   (req, res) => res.json({ ok: true, role: req.user.role })
 );
 

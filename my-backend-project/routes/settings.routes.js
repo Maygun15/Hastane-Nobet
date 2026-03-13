@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Setting = require('../models/Setting');
 const { requireAuth, requireRole } = require('../middleware/authz');
+const { withHospitalFilter } = require('../middleware/hospital');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
@@ -15,7 +16,7 @@ router.get('/:key', requireAuth, async (req, res) => {
     const key = normalizeKey(req.params.key);
     if (!key) return res.status(400).json({ ok: false, message: 'key gerekli' });
     const serviceId = normalizeServiceId(req.query?.serviceId || '');
-    const doc = await Setting.findOne({ key, serviceId }).lean();
+    const doc = await Setting.findOne(withHospitalFilter(req, { key, serviceId })).lean();
     return res.json({
       ok: true,
       key,
@@ -37,7 +38,7 @@ router.put('/:key', requireAuth, requireRole('admin', 'authorized'), async (req,
     const serviceId = normalizeServiceId(req.body?.serviceId || req.query?.serviceId || '');
     const value = req.body?.value ?? null;
     const doc = await Setting.findOneAndUpdate(
-      { key, serviceId },
+      withHospitalFilter(req, { key, serviceId }),
       {
         $set: {
           key,

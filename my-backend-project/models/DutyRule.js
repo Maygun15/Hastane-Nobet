@@ -1,8 +1,15 @@
 // models/DutyRule.js
 const mongoose = require('mongoose');
+const { applyHospitalScope } = require('./plugins/hospitalScope');
 
 const DutyRuleSchema = new mongoose.Schema(
   {
+    hospitalId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Hospital',
+      default: null,
+      index: true,
+    },
     // Departman bilgileri
     departman: {
       type: String,
@@ -386,6 +393,7 @@ const DutyRuleSchema = new mongoose.Schema(
 );
 
 // Index
-DutyRuleSchema.index({ serviceId: 1, departman: 1 });
+DutyRuleSchema.index({ hospitalId: 1, serviceId: 1, departman: 1 });
+applyHospitalScope(DutyRuleSchema);
 
 module.exports = mongoose.model('DutyRule', DutyRuleSchema);

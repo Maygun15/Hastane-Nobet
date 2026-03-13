@@ -327,7 +327,7 @@ function sanitizeSupervisorAssignments(assignments = [], holidayKindByDate = {},
     .filter(Boolean);
 }
 
-async function fetchDutyRules({ sectionId, serviceId = '', role = '' }) {
+async function fetchDutyRules({ sectionId, serviceId = '', role = '', hospitalId = null }) {
   // Önce en spesifik kuralı ara; yoksa daha genel kuralı kullan
   const fallbacks = [
     { sectionId, serviceId, role },
@@ -338,7 +338,7 @@ async function fetchDutyRules({ sectionId, serviceId = '', role = '' }) {
 
   let doc = null;
   for (const q of fallbacks) {
-    doc = await DutyRule.findOne(q).lean();
+    doc = await DutyRule.findOne(hospitalId ? { ...q, hospitalId } : q).lean();
     if (doc) break;
   }
 
@@ -367,8 +367,8 @@ function roleTokens(role) {
   return [r];
 }
 
-async function buildStaff({ serviceId = '', role = '' } = {}) {
-  const query = {};
+async function buildStaff({ serviceId = '', role = '', hospitalId = null } = {}) {
+  const query = hospitalId ? { hospitalId } : {};
   if (serviceId) query.serviceId = serviceId;
   const list = await Person.find(query).lean();
   if (!role) return { staff: list, debug: { rawCount: list.length, filteredCount: list.length, usedFallback: false, roleTokens: [] } };
@@ -387,8 +387,8 @@ async function buildStaff({ serviceId = '', role = '' } = {}) {
   return { staff: filtered, debug: { rawCount: list.length, filteredCount: filtered.length, usedFallback: false, roleTokens: tokens } };
 }
 
-async function generateSchedule({ sectionId, serviceId = '', role = '', year, month, dryRun = false, userId, payload = {} }) {
-  const query = { sectionId, year, month };
+async function generateSchedule({ sectionId, serviceId = '', role = '', year, month, dryRun = false, userId, payload = {}, hospitalId = null }) {
+  const query = hospitalId ? { hospitalId, sectionId, year, month } : { sectionId, year, month };
   if (serviceId) query.serviceId = serviceId;
   if (role) query.role = role;
   const scheduleDoc = await MonthlySchedule.findOne(query).lean();
@@ -422,7 +422,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     throw new Error('Vardiya şablonu bulunamadı (MonthlySchedule.data.defs bekleniyor).');
   }
 
-  const holidays = await listHolidays({ year, month });
+  const holidays = await listHolidays({ year, month, hospitalId });
   const holidayKindByDate = Object.fromEntries(
     (holidays || []).map((row) => [String(row.date || '').slice(0, 10), String(row.kind || 'full').toLowerCase()])
   );
@@ -431,7 +431,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
 
   const staffPack = Array.isArray(payload.staff) && payload.staff.length
     ? { staff: payload.staff, debug: { rawCount: payload.staff.length, filteredCount: payload.staff.length, usedFallback: false, roleTokens: [] } }
-    : await buildStaff({ serviceId, role });
+    : await buildStaff({ serviceId, role, hospitalId });
   const staff = staffPack.staff;
 
   const leavesByPerson = payload.leavesByPerson || {};
@@ -473,7 +473,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   const engineMode = String(payload.engine || payload.mode || '').toLowerCase();
   const useDraft = engineMode === 'draft';
 
-  const { doc: ruleDoc, rules: dbRules, weights: dbWeights } = await fetchDutyRules({ sectionId, serviceId, role });
+  const { doc: ruleDoc, rules: dbRules, weights: dbWeights } = await fetchDutyRules({ sectionId, serviceId, role, hospitalId });
   const rules = { ...dbRules, ...(payload.rules || {}) };
   const weights = { ...dbWeights, ...(payload.weights || {}) };
 
@@ -542,6 +542,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   }
 
   const doc = await GeneratedSchedule.create({
+    ...(hospitalId ? { hospitalId } : {}),
     sectionId,
     serviceId,
     role,

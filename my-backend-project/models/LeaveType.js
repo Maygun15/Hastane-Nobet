@@ -1,7 +1,14 @@
 // models/LeaveType.js
 const mongoose = require('mongoose');
+const { applyHospitalScope } = require('./plugins/hospitalScope');
 
 const LeaveTypeSchema = new mongoose.Schema({
+  hospitalId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Hospital',
+    default: null,
+    index: true,
+  },
   name: {
     type: String,
     required: true,
@@ -69,5 +76,6 @@ LeaveTypeSchema.index({ name: 1 });
 LeaveTypeSchema.index({ code: 1 });
 LeaveTypeSchema.index({ category: 1 });
 LeaveTypeSchema.index({ isActive: 1 });
+applyHospitalScope(LeaveTypeSchema);
 
 module.exports = mongoose.model('LeaveType', LeaveTypeSchema);

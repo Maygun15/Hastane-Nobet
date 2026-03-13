@@ -1,7 +1,14 @@
 // models/WorkArea.js
 const mongoose = require('mongoose');
+const { applyHospitalScope } = require('./plugins/hospitalScope');
 
 const WorkAreaSchema = new mongoose.Schema({
+  hospitalId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Hospital',
+    default: null,
+    index: true,
+  },
   name: {
     type: String,
     required: true,
@@ -41,5 +48,6 @@ const WorkAreaSchema = new mongoose.Schema({
 // Index for faster queries
 WorkAreaSchema.index({ name: 1 });
 WorkAreaSchema.index({ status: 1 });
+applyHospitalScope(WorkAreaSchema);
 
 module.exports = mongoose.model('WorkArea', WorkAreaSchema);

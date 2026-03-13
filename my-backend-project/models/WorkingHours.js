@@ -1,7 +1,14 @@
 // models/WorkingHours.js
 const mongoose = require('mongoose');
+const { applyHospitalScope } = require('./plugins/hospitalScope');
 
 const WorkingHoursSchema = new mongoose.Schema({
+  hospitalId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Hospital',
+    default: null,
+    index: true,
+  },
   name: {
     type: String,
     required: true,
@@ -59,5 +66,6 @@ const WorkingHoursSchema = new mongoose.Schema({
 WorkingHoursSchema.index({ name: 1 });
 WorkingHoursSchema.index({ workAreaId: 1 });
 WorkingHoursSchema.index({ status: 1 });
+applyHospitalScope(WorkingHoursSchema);
 
 module.exports = mongoose.model('WorkingHours', WorkingHoursSchema);

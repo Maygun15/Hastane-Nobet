@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const User    = require('../models/User');
 const Person  = require('../models/Person');
 const { requireAuth, requireRole } = require('../middleware/authz');
+const { withHospitalFilter } = require('../middleware/hospital');
 const { sendMail, isConfigured } = require('../utils/mailer');
 
 const ExcelJS = require('exceljs');
@@ -152,7 +153,7 @@ router.get('/', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Yetki yok' });
     }
 
-    const users = await User.find({})
+    const users = await User.find(withHospitalFilter(req, {}))
       .select('name email phone tc role active serviceIds personId')
       .lean();
 
@@ -184,12 +185,12 @@ router.put('/:userId/link-person', requireAdmin, async (req, res) => {
   try {
     const { personId } = req.body;
 
-    await Person.updateMany({ userId: req.params.userId }, { $set: { userId: null } });
-    await User.findByIdAndUpdate(req.params.userId, { personId: null });
+    await Person.updateMany(withHospitalFilter(req, { userId: req.params.userId }), { $set: { userId: null } });
+    await User.findOneAndUpdate(withHospitalFilter(req, { _id: req.params.userId }), { personId: null });
 
     if (personId) {
-      await Person.findByIdAndUpdate(personId, { userId: req.params.userId });
-      await User.findByIdAndUpdate(req.params.userId, { personId });
+      await Person.findOneAndUpdate(withHospitalFilter(req, { _id: personId }), { userId: req.params.userId });
+      await User.findOneAndUpdate(withHospitalFilter(req, { _id: req.params.userId }), { personId });
     }
     res.json({ ok: true });
   } catch (err) {
@@ -213,7 +214,7 @@ router.post('/quick-create', requireAdminOrStaff, async (req, res) => {
     if (phone) or.push({ phone: String(phone).trim() });
     if (tc) or.push({ tc: String(tc).trim() });
     if (or.length) {
-      const exists = await User.findOne({ $or: or }).lean();
+      const exists = await User.findOne(withHospitalFilter(req, { $or: or })).lean();
       if (exists) return res.status(409).json({ message: 'Bu e-posta/telefon/TC zaten kayıtlı olabilir' });
     }
 
@@ -247,7 +248,7 @@ router.post('/bulk-from-personnel', requireAdmin, async (req, res) => {
     const personIds = Array.isArray(req.body?.personIds) ? req.body.personIds : [];
     if (!personIds.length) return res.json({ created: 0, skipped: 0 });
 
-    const persons = await Person.find({ _id: { $in: personIds } }).lean();
+    const persons = await Person.find(withHospitalFilter(req, { _id: { $in: personIds } })).lean();
     let created = 0;
     let skipped = 0;
 
@@ -256,7 +257,7 @@ router.post('/bulk-from-personnel', requireAdmin, async (req, res) => {
       if (p.tc) or.push({ tc: p.tc });
       if (p.email) or.push({ email: p.email });
       if (p.phone) or.push({ phone: p.phone });
-      const exists = await User.findOne({ $or: or }).lean();
+      const exists = await User.findOne(withHospitalFilter(req, { $or: or })).lean();
       if (exists) { skipped++; continue; }
 
       const user = new User({
@@ -274,7 +275,7 @@ router.post('/bulk-from-personnel', requireAdmin, async (req, res) => {
       user.mustChangePassword = true;
       await user.save();
 
-      await Person.findByIdAndUpdate(p._id, { userId: user._id });
+      await Person.findOneAndUpdate(withHospitalFilter(req, { _id: p._id }), { userId: user._id });
       created++;
     }
 
@@ -303,7 +304,7 @@ router.patch('/:id/profile', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Yetkisiz' });
     }
 
-    const user = await User.findById(userId);
+    const user = await User.findOne(withHospitalFilter(req, { _id: userId }));
     if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
 
     if (phone !== undefined) user.phone = phone;
@@ -332,7 +333,7 @@ router.patch('/:id/identity', requireAdminOrStaff, async (req, res) => {
     const userId = String(req.params.id || '').trim();
     if (!userId) return res.status(400).json({ error: 'id gerekli' });
 
-    const user = await User.findById(userId);
+    const user = await User.findOne(withHospitalFilter(req, { _id: userId }));
     if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
 
     if (name) user.name = String(name).trim();
@@ -361,7 +362,7 @@ router.post('/change-password', requireAuth, async (req, res) => {
     const userId = String(req.user?.uid || '').trim();
     if (!userId) return res.status(401).json({ error: 'Yetkisiz' });
 
-    const user = await User.findById(userId).select('+password');
+    const user = await User.findOne(withHospitalFilter(req, { _id: userId })).select('+password');
     if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
 
     const ok = await user.comparePassword(currentPassword);
@@ -407,7 +408,7 @@ router.post('/', requireAuth, async (req, res) => {
     if (phone) or.push({ phone: String(phone).trim() });
     if (tc)    or.push({ tc: String(tc).trim() });
     if (or.length) {
-      const exists = await User.findOne({ $or: or }).lean();
+      const exists = await User.findOne(withHospitalFilter(req, { $or: or })).lean();
       if (exists) return res.status(409).json({ error: 'Bu e-posta/telefon/TC zaten kayıtlı olabilir' });
     }
 
@@ -472,8 +473,8 @@ router.post('/reset-password', requireAuth, async (req, res) => {
     }
 
     let user = null;
-    if (userId) user = await User.findById(String(userId));
-    if (!user && identifier) user = await User.findByIdentifier(String(identifier));
+    if (userId) user = await User.findOne(withHospitalFilter(req, { _id: String(userId) }));
+    if (!user && identifier) user = await User.findOne(withHospitalFilter(req, { $or: [{ email: String(identifier).toLowerCase().trim() }, { phone: String(identifier).trim() }, { tc: String(identifier).replace(/\D+/g, '') }] }));
     if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
 
     const tempPassword = (newPassword ? String(newPassword).trim() : '') || crypto.randomBytes(4).toString('hex');
@@ -531,8 +532,8 @@ router.patch('/:id/role', requireAuth, async (req, res) => {
     const roleMap = { admin: 'admin', staff: 'staff', authorized: 'staff', standard: 'user', user: 'user' };
     const role = roleMap[roleIn] || 'user';
 
-    const u = await User.findByIdAndUpdate(
-      id,
+    const u = await User.findOneAndUpdate(
+      withHospitalFilter(req, { _id: id }),
       { $set: { role } },
       { new: true }
     ).lean();
@@ -560,8 +561,8 @@ router.patch('/:id/services', requireAuth, async (req, res) => {
     const id = req.params.id;
     const serviceIds = Array.isArray(req.body?.serviceIds) ? req.body.serviceIds.map(String) : [];
 
-    const u = await User.findByIdAndUpdate(
-      id,
+    const u = await User.findOneAndUpdate(
+      withHospitalFilter(req, { _id: id }),
       { $set: { serviceIds } },
       { new: true }
     ).lean();
@@ -590,10 +591,10 @@ router.delete('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Kendi hesabını silemezsin' });
     }
 
-    const u = await User.findByIdAndDelete(id).lean();
+    const u = await User.findOneAndDelete(withHospitalFilter(req, { _id: id })).lean();
     if (!u) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
 
-    try { await Person.deleteMany({ userId: u._id }); } catch {}
+    try { await Person.deleteMany(withHospitalFilter(req, { userId: u._id })); } catch {}
 
     return res.json({ ok: true });
   } catch (err) {
@@ -606,9 +607,9 @@ router.delete('/:id', requireAuth, async (req, res) => {
    EXCEL EXPORT
    GET /api/users/export.xlsx
 ---------------------------- */
-router.get('/export.xlsx', requireAdminOrStaff, async (_req, res) => {
+router.get('/export.xlsx', requireAdminOrStaff, async (req, res) => {
   try {
-    const users = await User.find({})
+    const users = await User.find(withHospitalFilter(req, {}))
       .select('name email phone tc role active serviceIds')
       .lean();
 
@@ -720,7 +721,7 @@ router.post('/import.xlsx', requireAuth, uploadSpreadsheet, async (req, res) => 
         }
       }
 
-      let user = await User.findOne(query).select('+passwordHash +password');
+      let user = await User.findOne(withHospitalFilter(req, query)).select('+passwordHash +password');
       const isNew = !user;
       if (!user) {
         user = new User({
@@ -760,7 +761,7 @@ router.post('/import.xlsx', requireAuth, uploadSpreadsheet, async (req, res) => 
         if (roleIn) meta.roleLabel = roleIn;
 
         await Person.findOneAndUpdate(
-          { userId: user._id, serviceId: String(serviceId) },
+          withHospitalFilter(req, { userId: user._id, serviceId: String(serviceId) }),
           {
             $set: {
               name: name || user.name || '',

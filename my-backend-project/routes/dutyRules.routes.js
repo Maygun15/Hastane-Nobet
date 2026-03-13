@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const DutyRule = require('../models/DutyRule');
 const RuleEngine = require('../services/ruleEngine');
+const { withHospitalFilter } = require('../middleware/hospital');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
@@ -13,7 +14,7 @@ router.get('/', async (req, res) => {
   try {
     const serviceId = String(req.query.serviceId || req.query.sectionId || req.query.unitId || '').trim();
     const role = String(req.query.role || '').trim();
-    const doc = await DutyRule.findOne({ serviceId, role }).lean();
+    const doc = await DutyRule.findOne(withHospitalFilter(req, { serviceId, role })).lean();
     return res.json({
       ok: true,
       rule: doc ?? { serviceId, sectionId: serviceId, role, rules: [], weights: {} },
@@ -44,7 +45,7 @@ router.put('/', async (req, res) => {
     const sid = String(serviceId || sectionId || '').trim();
     const roleKey = String(role || '').trim();
     const doc = await DutyRule.findOneAndUpdate(
-      { serviceId: sid, role: roleKey },
+      withHospitalFilter(req, { serviceId: sid, role: roleKey }),
       {
         $set: {
           serviceId: sid,
@@ -83,7 +84,7 @@ router.get('/:serviceId', async (req, res) => {
   try {
     const { serviceId } = req.params;
 
-    const rules = await DutyRule.findOne({ serviceId, 'metadata.isActive': true });
+    const rules = await DutyRule.findOne(withHospitalFilter(req, { serviceId, 'metadata.isActive': true }));
 
     if (!rules) {
       return res.status(404).json({
@@ -134,7 +135,7 @@ router.post('/', async (req, res) => {
     }
 
     // Var olan kuralı kontrol et
-    const existing = await DutyRule.findOne({ serviceId });
+    const existing = await DutyRule.findOne(withHospitalFilter(req, { serviceId }));
     if (existing) {
       return res.status(409).json({
         success: false,
@@ -204,7 +205,7 @@ router.put('/:id', async (req, res) => {
       updatedAt: new Date()
     };
 
-    const updated = await DutyRule.findByIdAndUpdate(id, updates, { new: true });
+    const updated = await DutyRule.findOneAndUpdate(withHospitalFilter(req, { _id: id }), updates, { new: true });
 
     if (!updated) {
       return res.status(404).json({
@@ -236,8 +237,8 @@ router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const deleted = await DutyRule.findByIdAndUpdate(
-      id,
+    const deleted = await DutyRule.findOneAndUpdate(
+      withHospitalFilter(req, { _id: id }),
       { 'metadata.isActive': false },
       { new: true }
     );

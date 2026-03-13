@@ -1,7 +1,14 @@
 // models/Person.js
 const mongoose = require('mongoose');
+const { applyHospitalScope } = require('./plugins/hospitalScope');
 
 const personSchema = new mongoose.Schema({
+  hospitalId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Hospital',
+    default: null,
+    index: true,
+  },
   serviceId: { type: String, required: true, index: true },
 
   // Kimlik
@@ -30,5 +37,6 @@ const personSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 personSchema.index({ tc: 1 }, { sparse: true });
+applyHospitalScope(personSchema);
 
 module.exports = mongoose.models.Person || mongoose.model('Person', personSchema);

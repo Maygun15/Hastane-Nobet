@@ -3,6 +3,7 @@ function normalizeRole(role) {
   const r = String(role || '').toLowerCase();
   if (r === 'authorized' || r === 'authorised' || r === 'yetkili') return 'staff';
   if (r === 'standard') return 'user';
+  if (r === 'super-admin' || r === 'super_admin') return 'superadmin';
   return r;
 }
 
@@ -16,6 +17,7 @@ function requireRole(...roles) {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Auth gerekli' });
     const actual = normalizeRole(req.user.role);
+    if (actual === 'superadmin') return next();
     if (expected.includes(actual)) return next();
     return res.status(403).json({ error: 'Yetki yok' });
   };
@@ -25,7 +27,7 @@ function requireRole(...roles) {
 function sameServiceOrAdmin(req, res, next) {
   const me = req.user;
   const role = normalizeRole(me?.role);
-  if (role === 'admin') return next();
+  if (role === 'admin' || role === 'superadmin') return next();
 
   const targetServiceId =
     req.targetServiceId ||

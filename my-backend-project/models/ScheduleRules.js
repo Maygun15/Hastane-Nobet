@@ -1,8 +1,10 @@
 // models/ScheduleRules.js
 const mongoose = require('mongoose');
+const { applyHospitalScope } = require('./plugins/hospitalScope');
 
 const ScheduleRulesSchema = new mongoose.Schema(
   {
+    hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null, index: true },
     sectionId: { type: String, required: true, trim: true },
     serviceId: { type: String, default: '', trim: true },
     role: { type: String, default: '', trim: true },
@@ -27,9 +29,10 @@ const ScheduleRulesSchema = new mongoose.Schema(
 );
 
 ScheduleRulesSchema.index(
-  { sectionId: 1, serviceId: 1, role: 1 },
+  { hospitalId: 1, sectionId: 1, serviceId: 1, role: 1 },
   { unique: true }
 );
+applyHospitalScope(ScheduleRulesSchema);
 
 module.exports = mongoose.models.ScheduleRules
   || mongoose.model('ScheduleRules', ScheduleRulesSchema);

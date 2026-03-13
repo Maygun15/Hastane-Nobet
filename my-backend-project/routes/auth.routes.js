@@ -10,6 +10,8 @@ const router  = express.Router();
 
 const path = require('path');
 const User = require(path.join(__dirname, '..', 'models', 'User.js'));
+const Person = require(path.join(__dirname, '..', 'models', 'Person.js'));
+const Hospital = require(path.join(__dirname, '..', 'models', 'Hospital.js'));
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const NODE_ENV = String(process.env.NODE_ENV || '').toLowerCase();
@@ -89,6 +91,7 @@ const makeToken = (userOrId, extra = {}) => {
   const payload = { uid };
   if (userOrId?.role) payload.role = userOrId.role;
   if (userOrId?.personId) payload.personId = String(userOrId.personId);
+  if (userOrId?.hospitalId) payload.hospitalId = String(userOrId.hospitalId);
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 };
 
@@ -132,6 +135,7 @@ const registerValidation = withValidation([
   body('email').optional({ checkFalsy: true }).isEmail().normalizeEmail(),
   body('tc').optional({ checkFalsy: true }).matches(/^\d{11}$/).withMessage('TC 11 hane olmalı'),
   body('phone').optional({ checkFalsy: true }).isString().isLength({ min: 10, max: 20 }),
+  body('hospitalId').optional({ checkFalsy: true }).isMongoId().withMessage('hospitalId geçersiz'),
   body('password').isString().isLength({ min: 6, max: 128 }),
   body().custom((_v, { req }) => {
     if (!req.body?.email && !req.body?.tc && !req.body?.phone) {
@@ -172,12 +176,20 @@ const changePasswordValidation = withValidation([
 router.post('/register', registerRateLimit, ...registerValidation, async (req, res) => {
   try {
     const { name, email, tc, phone, password } = req.body || {};
+    const hospitalId = normalize(req.body?.hospitalId);
     const pass = normalize(password);
     if (!name || !pass || !(email || tc || phone)) {
       return res.status(400).json({ message: 'Zorunlu alanlar eksik' });
     }
 
     const emailLC = email ? lc(email) : undefined;
+
+    if (hospitalId) {
+      const hospital = await Hospital.findOne({ _id: hospitalId, active: true }).lean();
+      if (!hospital) {
+        return res.status(400).json({ message: 'Geçersiz hospitalId' });
+      }
+    }
 
     const exists = await User.findOne({
       $or: [
@@ -195,6 +207,7 @@ router.post('/register', registerRateLimit, ...registerValidation, async (req, r
       email: emailLC,
       tc: tc || undefined,
       phone: phone || undefined,
+      hospitalId: hospitalId || null,
       passwordHash: hash,              // 🔧 doğru alan
       role: 'user',
       active: false,
@@ -216,6 +229,7 @@ router.post('/register', registerRateLimit, ...registerValidation, async (req, r
         active: user.active,
         mustChangePassword: !!user.mustChangePassword,
         personId: user.personId ? String(user.personId) : null,
+        hospitalId: user.hospitalId ? String(user.hospitalId) : null,
       },
     });
   } catch (err) {
@@ -249,6 +263,7 @@ router.post('/login', loginRateLimit, ...loginValidation, async (req, res) => {
             role: 'admin',
             active: true,
             personId: null,
+            hospitalId: null,
           },
         });
       }
@@ -288,6 +303,7 @@ router.post('/login', loginRateLimit, ...loginValidation, async (req, res) => {
         active: user.active,
         mustChangePassword: !!user.mustChangePassword,
         personId: user.personId ? String(user.personId) : null,
+        hospitalId: user.hospitalId ? String(user.hospitalId) : null,
       },
     });
   } catch (err) {
@@ -484,17 +500,18 @@ router.get('/me', async (req, res) => {
     const user = await User.findById(decoded.uid).lean();
     if (!user) return res.status(401).json({ message: 'Yetkisiz' });
 
-    const Person = require('../models/Person');
     let person = null;
+    const hospitalId = user?.hospitalId ? String(user.hospitalId) : '';
+    const basePersonFilter = hospitalId ? { hospitalId } : {};
 
     // 1) User.personId varsa onu kullan (tek kaynak)
     if (user.personId) {
-      person = await Person.findById(user.personId).lean();
+      person = await Person.findOne({ ...basePersonFilter, _id: user.personId }).lean();
     }
 
     // 2) Yoksa Person.userId ile bak
     if (!person) {
-      person = await Person.findOne({ userId: user._id }).lean();
+      person = await Person.findOne({ ...basePersonFilter, userId: user._id }).lean();
     }
 
     // 3) Hala yoksa tc / email / phone ile eşleştir
@@ -503,7 +520,7 @@ router.get('/me', async (req, res) => {
       if (user.tc)    or.push({ tc: user.tc });
       if (user.email) or.push({ email: user.email });
       if (user.phone) or.push({ phone: user.phone });
-      if (or.length)  person = await Person.findOne({ $or: or }).lean();
+      if (or.length)  person = await Person.findOne({ ...basePersonFilter, $or: or }).lean();
     }
 
     // 4) Eşleşme varsa iki tarafı da düzelt (lazy fix)
@@ -526,6 +543,7 @@ router.get('/me', async (req, res) => {
       active:             user.active,
       serviceIds:         user.serviceIds || [],
       mustChangePassword: !!user.mustChangePassword,
+      hospitalId:         user.hospitalId ? String(user.hospitalId) : null,
       personId:           person ? String(person._id)       : null,
       personName:         person ? person.name              : null,
       serviceId:          person ? (person.serviceId || '') : null,

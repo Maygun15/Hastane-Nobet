@@ -2,16 +2,18 @@
 const mongoose = require('mongoose');
 const bcrypt   = require('bcryptjs');
 const crypto   = require('crypto');
+const { applyHospitalScope } = require('./plugins/hospitalScope');
 
 /* =========================
    Roles / RBAC helpers
 ========================= */
-const RoleEnum = ['user', 'staff', 'admin'];
+const RoleEnum = ['user', 'staff', 'admin', 'superadmin'];
 function mapRole(v) {
   const m = String(v || '').toLowerCase();
   if (m === 'standard') return 'user';
   if (['authorized', 'authorised', 'yetkili', 'staff'].includes(m)) return 'staff';
   if (['admin', 'administrator'].includes(m)) return 'admin';
+  if (['superadmin', 'super-admin', 'super_admin'].includes(m)) return 'superadmin';
   return RoleEnum.includes(m) ? m : 'user';
 }
 
@@ -65,6 +67,12 @@ function sha256Hex(v) {
    Schema
 ========================= */
 const userSchema = new mongoose.Schema({
+  hospitalId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Hospital',
+    default: null,
+    index: true,
+  },
   email: { type: String, trim: true, lowercase: true, sparse: true, unique: true },
   phone: { type: String, trim: true, sparse: true, unique: true },
   tc:    { type: String, trim: true, sparse: true, unique: true },
@@ -112,7 +120,7 @@ userSchema.pre('save', function(next) {
 /* =========================
    RBAC helpers (instance)
 ========================= */
-userSchema.methods.isAdmin = function() { return this.role === 'admin'; };
+userSchema.methods.isAdmin = function() { return this.role === 'admin' || this.role === 'superadmin'; };
 userSchema.methods.isStaff = function() { return this.role === 'staff'; };
 
 /* =========================
@@ -202,5 +210,6 @@ userSchema.set('toJSON', {
     return ret;
   }
 });
+applyHospitalScope(userSchema);
 
 module.exports = mongoose.models.User || mongoose.model('User', userSchema);

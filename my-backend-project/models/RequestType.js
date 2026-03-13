@@ -1,7 +1,14 @@
 // models/RequestType.js
 const mongoose = require('mongoose');
+const { applyHospitalScope } = require('./plugins/hospitalScope');
 
 const RequestTypeSchema = new mongoose.Schema({
+  hospitalId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Hospital',
+    default: null,
+    index: true,
+  },
   name: {
     type: String,
     required: true,
@@ -74,5 +81,6 @@ RequestTypeSchema.index({ name: 1 });
 RequestTypeSchema.index({ code: 1 });
 RequestTypeSchema.index({ category: 1 });
 RequestTypeSchema.index({ isActive: 1 });
+applyHospitalScope(RequestTypeSchema);
 
 module.exports = mongoose.model('RequestType', RequestTypeSchema);

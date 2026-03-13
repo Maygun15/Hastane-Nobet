@@ -21,12 +21,12 @@ router.get('/', async (req, res) => {
       return res.json({ items: [] });
     }
 
-    const count = await listHolidays({ year });
+    const count = await listHolidays({ year, hospitalId: req.hospitalId });
     if (!count || count.length === 0) {
-      await generateHolidays(year);
+      await generateHolidays(year, { hospitalId: req.hospitalId });
     }
 
-    const items = await listHolidays({ year, month });
+    const items = await listHolidays({ year, month, hospitalId: req.hospitalId });
     return res.json({ items });
   } catch (err) {
     console.error('holidays list error:', err?.message || err);
@@ -38,7 +38,7 @@ router.get('/', async (req, res) => {
 router.get('/generate/:year', requireRole('admin', 'staff'), async (req, res) => {
   try {
     const year = Number(req.params.year);
-    const result = await generateHolidays(year);
+    const result = await generateHolidays(year, { hospitalId: req.hospitalId });
     return res.json({ success: true, added: result.added, total: result.total });
   } catch (err) {
     console.error('holidays generate error:', err?.message || err);
@@ -50,7 +50,7 @@ router.get('/generate/:year', requireRole('admin', 'staff'), async (req, res) =>
 router.post('/', requireRole('admin', 'staff'), async (req, res) => {
   try {
     const { date, kind, name } = req.body || {};
-    const row = await upsertHoliday({ date, kind, name, source: 'manual' });
+    const row = await upsertHoliday({ date, kind, name, source: 'manual', hospitalId: req.hospitalId });
     return res.json({ ok: true, item: row });
   } catch (err) {
     return res.status(400).json({ message: err.message });
@@ -61,7 +61,7 @@ router.post('/', requireRole('admin', 'staff'), async (req, res) => {
 router.delete('/:date', requireRole('admin', 'staff'), async (req, res) => {
   try {
     const date = req.params.date;
-    const row = await deleteHoliday(date);
+    const row = await deleteHoliday(date, { hospitalId: req.hospitalId });
     return res.json({ ok: true, item: row });
   } catch (err) {
     return res.status(400).json({ message: err.message });

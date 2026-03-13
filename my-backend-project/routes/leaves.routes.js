@@ -3,17 +3,19 @@ const router = express.Router();
 
 const Setting = require('../models/Setting');
 const Person = require('../models/Person');
+const { withHospitalFilter } = require('../middleware/hospital');
 
-async function findLeavesDoc(serviceId = '') {
-  const primary = await Setting.findOne({ key: 'leavesV2', serviceId });
+async function findLeavesDoc(req, serviceId = '') {
+  const base = withHospitalFilter(req, { key: 'leavesV2', serviceId });
+  const primary = await Setting.findOne(base);
   if (primary) return primary;
 
   // Legacy migration: personLeaves -> leavesV2 (tek kaynak)
-  const legacy = await Setting.findOne({ key: 'personLeaves', serviceId });
+  const legacy = await Setting.findOne(withHospitalFilter(req, { key: 'personLeaves', serviceId }));
   if (!legacy) return null;
 
   const migrated = await Setting.findOneAndUpdate(
-    { key: 'leavesV2', serviceId },
+    withHospitalFilter(req, { key: 'leavesV2', serviceId }),
     {
       $set: {
         key: 'leavesV2',
@@ -28,7 +30,7 @@ async function findLeavesDoc(serviceId = '') {
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
   try {
-    await Setting.deleteOne({ _id: legacy._id });
+    await Setting.deleteOne(withHospitalFilter(req, { _id: legacy._id }));
   } catch {
     // migration non-blocking
   }
@@ -66,7 +68,7 @@ router.get('/', async (req, res) => {
     const year = Number(req.query?.year || req.query?.y);
     const month = Number(req.query?.month || req.query?.m);
 
-    const doc = await findLeavesDoc(serviceId);
+    const doc = await findLeavesDoc(req, serviceId);
     const allLeaves = doc?.value && typeof doc.value === 'object' ? doc.value : {};
 
     if (personId) {
@@ -106,22 +108,22 @@ router.put('/', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'personId, year, month, day, code zorunlu' });
     }
 
-    const person = await Person.findById(personId).lean();
+    const person = await Person.findOne(withHospitalFilter(req, { _id: personId })).lean();
     if (!person) {
       return res.status(404).json({ ok: false, error: 'Person bulunamadı' });
     }
 
     if (!['admin', 'staff', 'authorized'].includes(role)) {
       const userId = String(req.user?.uid || req.user?.id || req.user?._id || '').trim();
-      const ownPerson = userId ? await Person.findOne({ userId }).lean() : null;
+      const ownPerson = userId ? await Person.findOne(withHospitalFilter(req, { userId })).lean() : null;
       if (!ownPerson || String(ownPerson._id) !== personId) {
         return res.status(403).json({ ok: false, error: 'Sadece kendi izninizi yazabilirsiniz' });
       }
     }
 
-    let doc = await findLeavesDoc(serviceId);
+    let doc = await findLeavesDoc(req, serviceId);
     if (!doc) {
-      doc = new Setting({ key: 'leavesV2', serviceId, value: {} });
+      doc = new Setting(withHospitalFilter(req, { key: 'leavesV2', serviceId, value: {} }));
     }
 
     const ym = monthKey(year, month);
@@ -157,7 +159,7 @@ router.delete('/', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'personId, year, month, day zorunlu' });
     }
 
-    const doc = await findLeavesDoc(serviceId);
+    const doc = await findLeavesDoc(req, serviceId);
     if (!doc) return res.json({ ok: true });
 
     const ym = monthKey(year, month);

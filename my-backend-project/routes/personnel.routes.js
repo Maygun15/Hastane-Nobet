@@ -4,6 +4,7 @@ const router = express.Router();
 const Person = require('../models/Person');
 const User = require('../models/User');
 const { requireAuth, requireRole, sameServiceOrAdmin } = require('../middleware/authz');
+const { withHospitalFilter } = require('../middleware/hospital');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
@@ -33,13 +34,14 @@ router.get('/',
       if (q) query.name = new RegExp(q, 'i');
       if (req.query.active === 'true') query.active = { $ne: false };
       if (req.query.active === 'false') query.active = false;
+      const scopedQuery = withHospitalFilter(req, query);
 
       const skip = Math.max(0, (page - 1) * size);
       const limit = Math.max(1, Math.min(size, 2000));
 
       const [items, total] = await Promise.all([
-        Person.find(query).skip(skip).limit(limit).lean(),
-        Person.countDocuments(query),
+        Person.find(scopedQuery).skip(skip).limit(limit).lean(),
+        Person.countDocuments(scopedQuery),
       ]);
 
       const mapped = (items || []).map((p) => ({
@@ -84,7 +86,7 @@ router.post('/',
         return res.status(400).json({ error: 'İsim gerekli' });
       }
 
-      const person = await Person.create({
+      const person = await Person.create(withHospitalFilter(req, {
         name: String(name).trim(),
         serviceId: String(serviceId || ''),
         meta: meta || {},
@@ -92,23 +94,23 @@ router.post('/',
         phone,
         email,
         createdBy: req.user?.uid || null
-      });
+      }));
 
       // opsiyonel: kullanıcı ile otomatik bağla
       try {
         if (userId) {
-          await User.findByIdAndUpdate(userId, { personId: person._id });
-          await Person.findByIdAndUpdate(person._id, { userId });
+          await User.findOneAndUpdate(withHospitalFilter(req, { _id: userId }), { personId: person._id });
+          await Person.findOneAndUpdate(withHospitalFilter(req, { _id: person._id }), { userId });
         } else {
           const or = [];
           if (tc) or.push({ tc: String(tc).trim() });
           if (email) or.push({ email: String(email).toLowerCase().trim() });
           if (phone) or.push({ phone: String(phone).trim() });
           if (or.length) {
-            const u = await User.findOne({ $or: or }).lean();
+            const u = await User.findOne(withHospitalFilter(req, { $or: or })).lean();
             if (u && !u.personId) {
-              await User.findByIdAndUpdate(u._id, { personId: person._id });
-              await Person.findByIdAndUpdate(person._id, { userId: u._id });
+              await User.findOneAndUpdate(withHospitalFilter(req, { _id: u._id }), { personId: person._id });
+              await Person.findOneAndUpdate(withHospitalFilter(req, { _id: person._id }), { userId: u._id });
             }
           }
         }
@@ -141,7 +143,7 @@ router.put('/:id',
     try {
       const id = String(req.params.id || '').trim();
       if (!id) return res.status(400).json({ error: 'id gerekli' });
-      const person = await Person.findById(id);
+      const person = await Person.findOne(withHospitalFilter(req, { _id: id }));
       if (!person) return res.status(404).json({ error: 'Kayıt bulunamadı' });
       req.targetServiceId = person.serviceId || '';
       req.person = person;
@@ -208,7 +210,7 @@ router.delete('/:id',
     try {
       const id = String(req.params.id || '').trim();
       if (!id) return res.status(400).json({ error: 'id gerekli' });
-      const person = await Person.findById(id);
+      const person = await Person.findOne(withHospitalFilter(req, { _id: id }));
       if (!person) return res.status(404).json({ error: 'Kayıt bulunamadı' });
       req.targetServiceId = person.serviceId || '';
       req.person = person;
@@ -272,16 +274,16 @@ router.post('/bulk',
         if (replaceRole) {
           const esc = replaceRole.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           const rx = new RegExp(`^${esc}$`, 'i');
-          await Person.deleteMany({
+          await Person.deleteMany(withHospitalFilter(req, {
             $or: [
               { "meta.role": rx },
               { role: rx },
               { title: rx },
               { "meta.title": rx },
             ],
-          });
+          }));
         } else {
-          await Person.deleteMany({});
+          await Person.deleteMany(withHospitalFilter(req, {}));
         }
       }
       const inserted = mapped.length

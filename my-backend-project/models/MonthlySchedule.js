@@ -1,8 +1,10 @@
 // models/MonthlySchedule.js
 const mongoose = require('mongoose');
+const { applyHospitalScope } = require('./plugins/hospitalScope');
 
 const MonthlyScheduleSchema = new mongoose.Schema(
   {
+    hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null, index: true },
     sectionId: { type: String, required: true, trim: true }, // ör: calisma-cizelgesi
     serviceId: { type: String, default: '', trim: true },     // boş => tüm servisler
     role: { type: String, default: '', trim: true },           // Nurse | Doctor vb.
@@ -26,10 +28,10 @@ const MonthlyScheduleSchema = new mongoose.Schema(
 );
 
 MonthlyScheduleSchema.index(
-  { sectionId: 1, serviceId: 1, role: 1, year: 1, month: 1 },
+  { hospitalId: 1, sectionId: 1, serviceId: 1, role: 1, year: 1, month: 1 },
   { unique: true }
 );
+applyHospitalScope(MonthlyScheduleSchema);
 
 module.exports = mongoose.models.MonthlySchedule
   || mongoose.model('MonthlySchedule', MonthlyScheduleSchema);
-

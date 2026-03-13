@@ -9,13 +9,14 @@ const WorkingHours = require(path.join(__dirname, '..', 'models', 'WorkingHours.
 const LeaveType = require(path.join(__dirname, '..', 'models', 'LeaveType.js'));
 const CalendarSetting = require(path.join(__dirname, '..', 'models', 'CalendarSetting.js'));
 const RequestType = require(path.join(__dirname, '..', 'models', 'RequestType.js'));
+const { withHospitalFilter } = require(path.join(__dirname, '..', 'middleware', 'hospital.js'));
 
 /* ============ WORK AREAS ============ */
 
 // GET all work areas
 router.get('/work-areas', async (req, res) => {
   try {
-    const areas = await WorkArea.find().sort({ createdAt: -1 }).lean();
+    const areas = await WorkArea.find(withHospitalFilter(req, {})).sort({ createdAt: -1 }).lean();
     res.json({ ok: true, data: areas });
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -25,7 +26,7 @@ router.get('/work-areas', async (req, res) => {
 // GET work area by ID
 router.get('/work-areas/:id', async (req, res) => {
   try {
-    const area = await WorkArea.findById(req.params.id).lean();
+    const area = await WorkArea.findOne(withHospitalFilter(req, { _id: req.params.id })).lean();
     if (!area) return res.status(404).json({ message: 'Çalışma alanı bulunamadı' });
     res.json({ ok: true, data: area });
   } catch (e) {
@@ -39,11 +40,11 @@ router.post('/work-areas', async (req, res) => {
     const { name, description, color } = req.body;
     if (!name) return res.status(400).json({ message: 'İsim gerekli' });
     
-    const area = await WorkArea.create({
+    const area = await WorkArea.create(withHospitalFilter(req, {
       name: name.trim(),
       description: description || '',
       color: color || '#3b82f6'
-    });
+    }));
     
     res.status(201).json({ ok: true, data: area });
   } catch (e) {
@@ -55,8 +56,8 @@ router.post('/work-areas', async (req, res) => {
 router.put('/work-areas/:id', async (req, res) => {
   try {
     const { name, description, color, status } = req.body;
-    const area = await WorkArea.findByIdAndUpdate(
-      req.params.id,
+    const area = await WorkArea.findOneAndUpdate(
+      withHospitalFilter(req, { _id: req.params.id }),
       { name, description, color, status, updatedAt: new Date() },
       { new: true, runValidators: true }
     );
@@ -71,7 +72,7 @@ router.put('/work-areas/:id', async (req, res) => {
 // DELETE work area
 router.delete('/work-areas/:id', async (req, res) => {
   try {
-    const area = await WorkArea.findByIdAndDelete(req.params.id);
+    const area = await WorkArea.findOneAndDelete(withHospitalFilter(req, { _id: req.params.id }));
     if (!area) return res.status(404).json({ message: 'Çalışma alanı bulunamadı' });
     res.json({ ok: true, message: 'Silindi' });
   } catch (e) {
@@ -84,7 +85,7 @@ router.delete('/work-areas/:id', async (req, res) => {
 // GET all working hours
 router.get('/working-hours', async (req, res) => {
   try {
-    const hours = await WorkingHours.find()
+    const hours = await WorkingHours.find(withHospitalFilter(req, {}))
       .populate('workAreaId', 'name')
       .sort({ createdAt: -1 })
       .lean();
@@ -97,7 +98,7 @@ router.get('/working-hours', async (req, res) => {
 // GET working hours by ID
 router.get('/working-hours/:id', async (req, res) => {
   try {
-    const hours = await WorkingHours.findById(req.params.id)
+    const hours = await WorkingHours.findOne(withHospitalFilter(req, { _id: req.params.id }))
       .populate('workAreaId', 'name')
       .lean();
     if (!hours) return res.status(404).json({ message: 'Çalışma saati bulunamadı' });
@@ -115,13 +116,13 @@ router.post('/working-hours', async (req, res) => {
       return res.status(400).json({ message: 'İsim, başlangıç ve bitiş saati gerekli' });
     }
     
-    const hours = await WorkingHours.create({
+    const hours = await WorkingHours.create(withHospitalFilter(req, {
       name: name.trim(),
       startTime,
       endTime,
       workAreaId: workAreaId || null,
       isDefault: isDefault || false
-    });
+    }));
     
     res.status(201).json({ ok: true, data: hours });
   } catch (e) {
@@ -133,8 +134,8 @@ router.post('/working-hours', async (req, res) => {
 router.put('/working-hours/:id', async (req, res) => {
   try {
     const { name, startTime, endTime, workAreaId, isDefault, status } = req.body;
-    const hours = await WorkingHours.findByIdAndUpdate(
-      req.params.id,
+    const hours = await WorkingHours.findOneAndUpdate(
+      withHospitalFilter(req, { _id: req.params.id }),
       { name, startTime, endTime, workAreaId, isDefault, status, updatedAt: new Date() },
       { new: true, runValidators: true }
     );
@@ -149,7 +150,7 @@ router.put('/working-hours/:id', async (req, res) => {
 // DELETE working hours
 router.delete('/working-hours/:id', async (req, res) => {
   try {
-    const hours = await WorkingHours.findByIdAndDelete(req.params.id);
+    const hours = await WorkingHours.findOneAndDelete(withHospitalFilter(req, { _id: req.params.id }));
     if (!hours) return res.status(404).json({ message: 'Çalışma saati bulunamadı' });
     res.json({ ok: true, message: 'Silindi' });
   } catch (e) {
@@ -162,7 +163,7 @@ router.delete('/working-hours/:id', async (req, res) => {
 // GET all leave types
 router.get('/leave-types', async (req, res) => {
   try {
-    const types = await LeaveType.find().sort({ createdAt: -1 }).lean();
+    const types = await LeaveType.find(withHospitalFilter(req, {})).sort({ createdAt: -1 }).lean();
     res.json({ ok: true, data: types });
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -172,7 +173,7 @@ router.get('/leave-types', async (req, res) => {
 // GET leave type by ID
 router.get('/leave-types/:id', async (req, res) => {
   try {
-    const type = await LeaveType.findById(req.params.id).lean();
+    const type = await LeaveType.findOne(withHospitalFilter(req, { _id: req.params.id })).lean();
     if (!type) return res.status(404).json({ message: 'İzin türü bulunamadı' });
     res.json({ ok: true, data: type });
   } catch (e) {
@@ -186,14 +187,14 @@ router.post('/leave-types', async (req, res) => {
     const { name, description, color, category, maxDaysPerYear, paidLeave } = req.body;
     if (!name) return res.status(400).json({ message: 'İsim gerekli' });
     
-    const type = await LeaveType.create({
+    const type = await LeaveType.create(withHospitalFilter(req, {
       name: name.trim(),
       description: description || '',
       color: color || '#ef4444',
       category: category || 'other',
       maxDaysPerYear: maxDaysPerYear || null,
       paidLeave: paidLeave !== undefined ? paidLeave : true
-    });
+    }));
     
     res.status(201).json({ ok: true, data: type });
   } catch (e) {
@@ -207,8 +208,8 @@ router.put('/leave-types/:id', async (req, res) => {
     const updates = req.body;
     updates.updatedAt = new Date();
     
-    const type = await LeaveType.findByIdAndUpdate(
-      req.params.id,
+    const type = await LeaveType.findOneAndUpdate(
+      withHospitalFilter(req, { _id: req.params.id }),
       updates,
       { new: true, runValidators: true }
     );
@@ -223,7 +224,7 @@ router.put('/leave-types/:id', async (req, res) => {
 // DELETE leave type
 router.delete('/leave-types/:id', async (req, res) => {
   try {
-    const type = await LeaveType.findByIdAndDelete(req.params.id);
+    const type = await LeaveType.findOneAndDelete(withHospitalFilter(req, { _id: req.params.id }));
     if (!type) return res.status(404).json({ message: 'İzin türü bulunamadı' });
     res.json({ ok: true, message: 'Silindi' });
   } catch (e) {
@@ -237,7 +238,7 @@ router.delete('/leave-types/:id', async (req, res) => {
 router.get('/calendar', async (req, res) => {
   try {
     const { year, month } = req.query;
-    let query = {};
+    let query = withHospitalFilter(req, {});
     
     if (year) query.year = parseInt(year);
     if (month) query.month = parseInt(month);
@@ -256,7 +257,7 @@ router.get('/calendar', async (req, res) => {
 // GET calendar setting by ID
 router.get('/calendar/:id', async (req, res) => {
   try {
-    const setting = await CalendarSetting.findById(req.params.id)
+    const setting = await CalendarSetting.findOne(withHospitalFilter(req, { _id: req.params.id }))
       .populate('createdBy', 'name email')
       .lean();
     if (!setting) return res.status(404).json({ message: 'Takvim ayarı bulunamadı' });
@@ -273,7 +274,7 @@ router.post('/calendar', async (req, res) => {
     if (!name || !date) return res.status(400).json({ message: 'İsim ve tarih gerekli' });
     
     const dateObj = new Date(date);
-    const setting = await CalendarSetting.create({
+    const setting = await CalendarSetting.create(withHospitalFilter(req, {
       name: name.trim(),
       date: dateObj,
       year: dateObj.getFullYear(),
@@ -283,7 +284,7 @@ router.post('/calendar', async (req, res) => {
       startDate: startDate ? new Date(startDate) : null,
       endDate: endDate ? new Date(endDate) : null,
       createdBy: req.user?.uid || null
-    });
+    }));
     
     res.status(201).json({ ok: true, data: setting });
   } catch (e) {
@@ -303,8 +304,8 @@ router.put('/calendar/:id', async (req, res) => {
       updates.month = dateObj.getMonth() + 1;
     }
     
-    const setting = await CalendarSetting.findByIdAndUpdate(
-      req.params.id,
+    const setting = await CalendarSetting.findOneAndUpdate(
+      withHospitalFilter(req, { _id: req.params.id }),
       updates,
       { new: true, runValidators: true }
     );
@@ -319,7 +320,7 @@ router.put('/calendar/:id', async (req, res) => {
 // DELETE calendar setting
 router.delete('/calendar/:id', async (req, res) => {
   try {
-    const setting = await CalendarSetting.findByIdAndDelete(req.params.id);
+    const setting = await CalendarSetting.findOneAndDelete(withHospitalFilter(req, { _id: req.params.id }));
     if (!setting) return res.status(404).json({ message: 'Takvim ayarı bulunamadı' });
     res.json({ ok: true, message: 'Silindi' });
   } catch (e) {
@@ -332,7 +333,7 @@ router.delete('/calendar/:id', async (req, res) => {
 // GET all request types
 router.get('/request-types', async (req, res) => {
   try {
-    const types = await RequestType.find().sort({ createdAt: -1 }).lean();
+    const types = await RequestType.find(withHospitalFilter(req, {})).sort({ createdAt: -1 }).lean();
     res.json({ ok: true, data: types });
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -342,7 +343,7 @@ router.get('/request-types', async (req, res) => {
 // GET request type by ID
 router.get('/request-types/:id', async (req, res) => {
   try {
-    const type = await RequestType.findById(req.params.id).lean();
+    const type = await RequestType.findOne(withHospitalFilter(req, { _id: req.params.id })).lean();
     if (!type) return res.status(404).json({ message: 'İstek türü bulunamadı' });
     res.json({ ok: true, data: type });
   } catch (e) {
@@ -356,12 +357,12 @@ router.post('/request-types', async (req, res) => {
     const { name, description, category, requiresApproval } = req.body;
     if (!name) return res.status(400).json({ message: 'İsim gerekli' });
     
-    const type = await RequestType.create({
+    const type = await RequestType.create(withHospitalFilter(req, {
       name: name.trim(),
       description: description || '',
       category: category || 'other',
       requiresApproval: requiresApproval !== undefined ? requiresApproval : true
-    });
+    }));
     
     res.status(201).json({ ok: true, data: type });
   } catch (e) {
@@ -375,8 +376,8 @@ router.put('/request-types/:id', async (req, res) => {
     const updates = req.body;
     updates.updatedAt = new Date();
     
-    const type = await RequestType.findByIdAndUpdate(
-      req.params.id,
+    const type = await RequestType.findOneAndUpdate(
+      withHospitalFilter(req, { _id: req.params.id }),
       updates,
       { new: true, runValidators: true }
     );
@@ -391,7 +392,7 @@ router.put('/request-types/:id', async (req, res) => {
 // DELETE request type
 router.delete('/request-types/:id', async (req, res) => {
   try {
-    const type = await RequestType.findByIdAndDelete(req.params.id);
+    const type = await RequestType.findOneAndDelete(withHospitalFilter(req, { _id: req.params.id }));
     if (!type) return res.status(404).json({ message: 'İstek türü bulunamadı' });
     res.json({ ok: true, message: 'Silindi' });
   } catch (e) {

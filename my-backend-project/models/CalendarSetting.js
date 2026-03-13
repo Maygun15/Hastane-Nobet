@@ -1,7 +1,14 @@
 // models/CalendarSetting.js
 const mongoose = require('mongoose');
+const { applyHospitalScope } = require('./plugins/hospitalScope');
 
 const CalendarSettingSchema = new mongoose.Schema({
+  hospitalId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Hospital',
+    default: null,
+    index: true,
+  },
   name: {
     type: String,
     required: true,
@@ -74,9 +81,10 @@ const CalendarSettingSchema = new mongoose.Schema({
 });
 
 // Index for faster queries
-CalendarSettingSchema.index({ date: 1 });
-CalendarSettingSchema.index({ year: 1, month: 1 });
-CalendarSettingSchema.index({ type: 1 });
-CalendarSettingSchema.index({ isHoliday: 1 });
+CalendarSettingSchema.index({ hospitalId: 1, date: 1 });
+CalendarSettingSchema.index({ hospitalId: 1, year: 1, month: 1 });
+CalendarSettingSchema.index({ hospitalId: 1, type: 1 });
+CalendarSettingSchema.index({ hospitalId: 1, isHoliday: 1 });
+applyHospitalScope(CalendarSettingSchema);
 
 module.exports = mongoose.model('CalendarSetting', CalendarSettingSchema);

@@ -101,7 +101,7 @@ function inferCalendarSettingKind(row = {}) {
   });
 }
 
-async function generateHolidays(year) {
+async function generateHolidays(year, { hospitalId = null } = {}) {
   const y = Number(year);
   if (!Number.isFinite(y) || y < 2000 || y > 2100) {
     throw new Error('Yıl geçersiz');
@@ -156,8 +156,10 @@ async function generateHolidays(year) {
 
   const ops = toInsert.map((doc) => ({
     updateOne: {
-      filter: { date: doc.date },
-      update: { $setOnInsert: doc },
+      filter: hospitalId ? { hospitalId, date: doc.date } : { date: doc.date },
+      update: {
+        $setOnInsert: hospitalId ? { ...doc, hospitalId } : doc,
+      },
       upsert: true,
     },
   }));
@@ -167,11 +169,11 @@ async function generateHolidays(year) {
   return { added, total: toInsert.length };
 }
 
-async function listHolidays({ year, month } = {}) {
+async function listHolidays({ year, month, hospitalId = null } = {}) {
   const y = Number(year);
   const m = Number(month);
-  const qHoliday = {};
-  const qCal = {};
+  const qHoliday = hospitalId ? { hospitalId } : {};
+  const qCal = hospitalId ? { hospitalId } : {};
   if (Number.isFinite(y)) qHoliday.year = y;
   if (Number.isFinite(y)) qCal.year = y;
   if (Number.isFinite(m)) {
@@ -216,20 +218,20 @@ async function listHolidays({ year, month } = {}) {
   return Array.from(byDate.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)));
 }
 
-async function upsertHoliday({ date, kind, name, source = 'manual' }) {
+async function upsertHoliday({ date, kind, name, source = 'manual', hospitalId = null }) {
   if (!date) throw new Error('date gerekli');
   const y = Number(String(date).slice(0, 4));
   const k = kind === 'arife' ? 'arife' : kind === 'half' ? 'half' : 'full';
   return Holiday.findOneAndUpdate(
-    { date },
-    { $set: { date, kind: k, name: name || '', source, year: y } },
+    hospitalId ? { hospitalId, date } : { date },
+    { $set: hospitalId ? { hospitalId, date, kind: k, name: name || '', source, year: y } : { date, kind: k, name: name || '', source, year: y } },
     { upsert: true, new: true }
   ).lean();
 }
 
-async function deleteHoliday(date) {
+async function deleteHoliday(date, { hospitalId = null } = {}) {
   if (!date) throw new Error('date gerekli');
-  return Holiday.findOneAndDelete({ date }).lean();
+  return Holiday.findOneAndDelete(hospitalId ? { hospitalId, date } : { date }).lean();
 }
 
 module.exports = {

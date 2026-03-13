@@ -9,9 +9,12 @@ const {
   sendLeaveApproved,
   sendLeaveRejected,
 } = require('../services/notificationService');
+const { withHospitalFilter, isSuperAdminRole } = require('../middleware/hospital');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
+const REQUEST_STATUS = new Set(['pending', 'approved', 'rejected', 'deleted']);
+const SOFT_DELETE_KEEP_DAYS = 180;
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -28,7 +31,12 @@ async function requireAuth(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     const user = await User.findById(decoded.uid).lean();
     if (!user) return res.status(401).json({ message: 'Yetkisiz' });
+    const role = String(user?.role || '').toLowerCase();
+    if (!isSuperAdminRole(role) && !user?.hospitalId) {
+      return res.status(403).json({ message: 'hospitalId gerekli' });
+    }
     req.user = user;
+    req.hospitalId = user?.hospitalId ? String(user.hospitalId) : null;
     next();
   } catch {
     res.status(401).json({ message: 'Yetkisiz' });
@@ -40,6 +48,12 @@ function isAdminOrStaff(user) {
   return role === 'admin' || role === 'staff';
 }
 
+function parseStatusFilter(status) {
+  const value = String(status || '').trim().toLowerCase();
+  if (!value || value === 'all') return null;
+  return REQUEST_STATUS.has(value) ? value : null;
+}
+
 // POST /api/requests — kullanıcı talep gönderir
 router.post('/', requireAuth, async (req, res) => {
   try {
@@ -48,9 +62,9 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({ message: 'Tür ve mesaj zorunlu' });
     }
 
-    const person = await Person.findOne({ userId: req.user._id }).lean();
+    const person = await Person.findOne(withHospitalFilter(req, { userId: req.user._id })).lean();
 
-    const request = await Request.create({
+    const request = await Request.create(withHospitalFilter(req, {
       type,
       fromUserId:   req.user._id,
       fromPersonId: person?._id || null,
@@ -61,7 +75,7 @@ router.post('/', requireAuth, async (req, res) => {
       swapWithPersonId: swapWithPersonId || null,
       message,
       status: 'pending',
-    });
+    }));
 
     res.json({ ok: true, request });
   } catch (err) {
@@ -72,6 +86,7 @@ router.post('/', requireAuth, async (req, res) => {
 // GET /api/requests — kullanıcı kendi taleplerini, yetkili/admin tümünü görür
 router.get('/', requireAuth, async (req, res) => {
   try {
+    const statusFilter = parseStatusFilter(req.query?.status);
     let filter = {};
 
     if (isAdminOrStaff(req.user)) {
@@ -90,8 +105,9 @@ router.get('/', requireAuth, async (req, res) => {
       // Normal kullanıcı sadece kendi taleplerini görür
       filter.fromUserId = req.user._id;
     }
+    if (statusFilter) filter.status = statusFilter;
 
-    const requests = await Request.find(filter)
+    const requests = await Request.find(withHospitalFilter(req, filter))
       .sort({ createdAt: -1 })
       .limit(200)
       .lean();
@@ -114,8 +130,11 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ message: 'Geçersiz durum' });
     }
 
-    const request = await Request.findById(req.params.id);
+    const request = await Request.findOne(withHospitalFilter(req, { _id: req.params.id }));
     if (!request) return res.status(404).json({ message: 'Talep bulunamadı' });
+    if (String(request.status || '') === 'deleted') {
+      return res.status(409).json({ message: 'Silinmiş talep güncellenemez' });
+    }
 
     // Yetkili sadece kendi servisindeki talebi işleyebilir
     const role = String(req.user.role || '').toLowerCase();
@@ -154,6 +173,52 @@ router.put('/:id', requireAuth, async (req, res) => {
   }
 });
 
+// DELETE /api/requests/:id — soft delete (180 gün sonra otomatik temizlenir)
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const request = await Request.findOne(withHospitalFilter(req, { _id: req.params.id }));
+    if (!request) return res.status(404).json({ message: 'Talep bulunamadı' });
+
+    const userIsManager = isAdminOrStaff(req.user);
+    const isOwner = String(request.fromUserId || '') === String(req.user?._id || '');
+
+    if (!userIsManager && !isOwner) {
+      return res.status(403).json({ message: 'Bu talebi silme yetkiniz yok' });
+    }
+
+    const role = String(req.user.role || '').toLowerCase();
+    if (userIsManager && role === 'staff') {
+      const serviceIds = Array.isArray(req.user.serviceIds)
+        ? req.user.serviceIds.filter(Boolean)
+        : [];
+      if (serviceIds.length && !serviceIds.includes(request.serviceId)) {
+        return res.status(403).json({ message: 'Bu talep sizin servisinize ait değil' });
+      }
+    }
+
+    if (String(request.status || '') === 'deleted') {
+      return res.json({ ok: true, request });
+    }
+
+    const now = new Date();
+    const keepMs = SOFT_DELETE_KEEP_DAYS * 24 * 60 * 60 * 1000;
+    const reason = String(req.body?.reason || '').trim().slice(0, 500);
+
+    request.status = 'deleted';
+    request.deletedAt = now;
+    request.deletedBy = req.user._id;
+    request.deletedReason = reason;
+    request.purgeAt = new Date(now.getTime() + keepMs);
+    request.resolvedBy = req.user._id;
+    request.resolvedAt = now;
+    await request.save();
+
+    res.json({ ok: true, request });
+  } catch (err) {
+    res.status(500).json({ message: safeMessage(err) });
+  }
+});
+
 // GET /api/requests/unread-count — header'daki zil için
 router.get('/unread-count', requireAuth, async (req, res) => {
   try {
@@ -169,7 +234,7 @@ router.get('/unread-count', requireAuth, async (req, res) => {
       if (serviceIds.length) filter.serviceId = { $in: serviceIds };
     }
 
-    const count = await Request.countDocuments(filter);
+    const count = await Request.countDocuments(withHospitalFilter(req, filter));
     res.json({ count });
   } catch {
     res.json({ count: 0 });
