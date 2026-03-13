@@ -254,7 +254,10 @@ async function auth(req, res, next) {
     if (!u) return res.status(401).json({ message: 'Kullanıcı bulunamadı' });
 
     req.user = {
+      _id: u._id,
+      id: String(u._id),
       uid: String(u._id),
+      name: u.name || '',
       role: u.role,
       serviceIds: u.serviceIds || [],
       active: !!u.active,
@@ -542,6 +545,11 @@ app.use('/api/holidays', ...secureTenant, holidayRoutes);
 app.get('/api/admin/ping', ...secureTenant, requireRole('admin'),
   (req, res) => res.json({ ok: true, role: req.user.role })
 );
+
+app.get('/api/test-slow', async (_req, res) => {
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  res.json({ ok: true, slow: true });
+});
 
 /* ========== 404 & ERROR ========== */
 app.use((req, res) => res.status(404).json({ status: 'error', message: 'Not Found' }));
