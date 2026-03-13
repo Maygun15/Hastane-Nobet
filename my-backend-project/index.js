@@ -16,6 +16,8 @@ const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 const jwt      = require('jsonwebtoken');
 const bcrypt   = require('bcryptjs');
+const pino     = require('pino');
+const pinoHttp = require('pino-http');
 const Sentry   = require('@sentry/node');
 const { isConfigured: isMailerConfigured } = require(path.join(__dirname, 'utils', 'mailer.js'));
 const { applyHospitalContext, extractHospital, withHospitalFilter } = require(path.join(__dirname, 'middleware', 'hospital.js'));
@@ -27,6 +29,7 @@ Sentry.init({
 
 const app  = express();
 const PORT = Number(process.env.PORT || 3000);
+const logger = pino();
 
 /* ================= ENV ================= */
 const MONGODB_URI     = process.env.MONGODB_URI;
@@ -89,6 +92,15 @@ const ALLOWED_ORIGINS = new Set(
     .filter(Boolean)
 );
 app.set('trust proxy', 1);
+app.use(pinoHttp({
+  logger,
+  customSuccessObject(req, res, val) {
+    return { ...val, method: req.method, url: req.url, statusCode: res.statusCode };
+  },
+  customErrorObject(req, res, err, val) {
+    return { ...val, method: req.method, url: req.url, statusCode: res.statusCode };
+  },
+}));
 const corsOptions = {
   origin(origin, cb) {
     if (!origin) return cb(null, true); // Postman/cURL
@@ -167,7 +179,6 @@ app.use((req, _res, next) => {
   }
   next();
 });
-app.use((req, _res, next) => { console.log('[REQ]', req.method, req.originalUrl); next(); });
 const globalApiLimiter = rateLimit({
   windowMs: API_RATE_WINDOW_MS,
   max: API_RATE_MAX,
