@@ -546,11 +546,6 @@ app.get('/api/admin/ping', ...secureTenant, requireRole('admin'),
   (req, res) => res.json({ ok: true, role: req.user.role })
 );
 
-app.get('/api/test-slow', async (_req, res) => {
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  res.json({ ok: true, slow: true });
-});
-
 /* ========== 404 & ERROR ========== */
 app.use((req, res) => res.status(404).json({ status: 'error', message: 'Not Found' }));
 // eslint-disable-next-line no-unused-vars
