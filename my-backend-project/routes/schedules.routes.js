@@ -158,6 +158,171 @@ function buildDefsIndex(defs = []) {
   return { byId, byShift };
 }
 
+function normalizeShiftToken(v) {
+  return String(v || '').trim().toUpperCase();
+}
+
+function buildTokens(...values) {
+  return values
+    .map((v) => normalizeShiftToken(v))
+    .filter(Boolean);
+}
+
+function hasAnyTokenOverlap(a = [], b = []) {
+  if (!a.length || !b.length) return false;
+  const setA = new Set(a);
+  return b.some((token) => setA.has(token));
+}
+
+function toDateParts(dateStr = '') {
+  const m = String(dateStr || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mon = Number(m[2]);
+  const day = Number(m[3]);
+  if (!y || !mon || !day) return null;
+  const dt = new Date(y, mon - 1, day);
+  if (Number.isNaN(dt.getTime())) return null;
+  const weekdaySun0 = dt.getDay();
+  const weekdayMon0 = (weekdaySun0 + 6) % 7;
+  return { y, mon, day, weekdaySun0, weekdayMon0 };
+}
+
+function getDailyDefRequiredCount(defs = [], targetTokens = [], dateParts = null) {
+  if (!targetTokens.length || !dateParts) return null;
+  for (const row of defs || []) {
+    const rowDate = String(row?.date || '').slice(0, 10);
+    const rowDay = Number(row?.day || 0);
+    const dateMatches =
+      (rowDate && rowDate === `${dateParts.y}-${String(dateParts.mon).padStart(2, '0')}-${String(dateParts.day).padStart(2, '0')}`) ||
+      (Number.isFinite(rowDay) && rowDay === dateParts.day);
+    if (!dateMatches || !Array.isArray(row?.shifts)) continue;
+    for (const sh of row.shifts) {
+      const shiftTokens = buildTokens(
+        sh?.id,
+        sh?.rowId,
+        sh?.shiftId,
+        sh?.code,
+        sh?.shiftCode
+      );
+      if (!hasAnyTokenOverlap(targetTokens, shiftTokens)) continue;
+      const need = Number(sh?.requiredCount ?? sh?.count ?? sh?.need ?? sh?.required ?? sh?.qty ?? 0);
+      return Number.isFinite(need) ? Math.max(0, need) : 0;
+    }
+  }
+  return null;
+}
+
+function getPatternDefRequiredCount(defs = [], overrides = {}, targetTokens = [], dateParts = null) {
+  if (!targetTokens.length || !dateParts) return null;
+  for (const row of defs || []) {
+    const rowTokens = buildTokens(
+      row?.id,
+      row?.rowId,
+      row?.shiftCode,
+      row?.code
+    );
+    if (!hasAnyTokenOverlap(targetTokens, rowTokens)) continue;
+
+    const rowId = String(row?.id || row?.rowId || '').trim();
+    let value = undefined;
+    if (rowId && overrides?.[rowId] && Object.prototype.hasOwnProperty.call(overrides[rowId], String(dateParts.day))) {
+      value = overrides[rowId][String(dateParts.day)];
+    } else {
+      const pattern = Array.isArray(row?.pattern) ? row.pattern : [];
+      value = pattern[dateParts.weekdayMon0];
+      if (value == null) value = row?.defaultCount;
+    }
+
+    if (row?.weekendOff && (dateParts.weekdaySun0 === 0 || dateParts.weekdaySun0 === 6)) {
+      value = 0;
+    }
+    const need = Number(value || 0);
+    return Number.isFinite(need) ? Math.max(0, need) : 0;
+  }
+  return null;
+}
+
+function getShiftCapacityForDate({ defs = [], overrides = {}, dateStr = '', shiftLike = {} }) {
+  const dateParts = toDateParts(dateStr);
+  if (!dateParts) return null;
+  const targetTokens = buildTokens(
+    shiftLike?.shiftId,
+    shiftLike?.shiftCode,
+    shiftLike?.shift,
+    shiftLike?.code
+  );
+  if (!targetTokens.length) return null;
+
+  const fromDaily = getDailyDefRequiredCount(defs, targetTokens, dateParts);
+  if (fromDaily != null) return fromDaily;
+  return getPatternDefRequiredCount(defs, overrides, targetTokens, dateParts);
+}
+
+function slotKey(item = {}) {
+  const date = String(item?.date || item?.day || '').slice(0, 10);
+  const shift = normalizeShiftToken(item?.shiftId || item?.shiftCode || item?.shift || item?.code);
+  return `${date}|${shift}`;
+}
+
+function trimOverbookedAssignments({ assignments = [], defs = [], overrides = {} }) {
+  const grouped = new Map();
+  assignments.forEach((item, idx) => {
+    const key = slotKey(item);
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push({ item, idx });
+  });
+
+  const keepIdx = new Set();
+  let changed = false;
+  let dropped = 0;
+
+  for (const rows of grouped.values()) {
+    if (!rows.length) continue;
+    const sample = rows[0]?.item || {};
+    const dateStr = String(sample?.date || sample?.day || '').slice(0, 10);
+    const cap = getShiftCapacityForDate({
+      defs,
+      overrides,
+      dateStr,
+      shiftLike: sample,
+    });
+
+    if (!Number.isFinite(cap)) {
+      rows.forEach((r) => keepIdx.add(r.idx));
+      continue;
+    }
+
+    const capacity = Math.max(0, Number(cap));
+    if (rows.length <= capacity) {
+      rows.forEach((r) => keepIdx.add(r.idx));
+      continue;
+    }
+
+    changed = true;
+    if (capacity <= 0) {
+      dropped += rows.length;
+      continue;
+    }
+
+    const ranked = [...rows].sort((a, b) => {
+      const ap = a.item?.pinned ? 1 : 0;
+      const bp = b.item?.pinned ? 1 : 0;
+      if (bp !== ap) return bp - ap;
+      const at = new Date(a.item?.createdAt || 0).getTime() || 0;
+      const bt = new Date(b.item?.createdAt || 0).getTime() || 0;
+      if (bt !== at) return bt - at;
+      return b.idx - a.idx;
+    });
+    const winners = ranked.slice(0, capacity).map((r) => r.idx);
+    winners.forEach((idx) => keepIdx.add(idx));
+    dropped += Math.max(0, rows.length - capacity);
+  }
+
+  const cleaned = assignments.filter((_row, idx) => keepIdx.has(idx));
+  return { assignments: cleaned, changed, dropped };
+}
+
 function countNamedAssignments(namedAssignments = {}) {
   let total = 0;
   for (const byRow of Object.values(namedAssignments || {})) {
@@ -525,7 +690,7 @@ router.get('/monthly',
       }
 
       if (doc && Array.isArray(scheduleData.assignments)) {
-        const holidays = await listHolidays({ year: query.year, month: query.month });
+        const holidays = await listHolidays({ year: query.year, month: query.month, hospitalId: req.hospitalId });
         const holidayKindByDate = buildHolidayKindByDateMap(holidays);
         const sanitized = sanitizeSupervisorAssignments(
           scheduleData.assignments,
@@ -534,6 +699,19 @@ router.get('/monthly',
         );
         if (sanitized.changed) {
           scheduleData = { ...scheduleData, assignments: sanitized.assignments };
+          dataChanged = true;
+        }
+
+        const overbookTrim = trimOverbookedAssignments({
+          assignments: scheduleData.assignments || [],
+          defs,
+          overrides:
+            scheduleData?.overrides && typeof scheduleData.overrides === 'object'
+              ? scheduleData.overrides
+              : {},
+        });
+        if (overbookTrim.changed) {
+          scheduleData = { ...scheduleData, assignments: overbookTrim.assignments };
           dataChanged = true;
         }
       }
@@ -598,7 +776,7 @@ async function upsertMonthly(req, res) {
     }
 
     if (payload && typeof payload === 'object' && Array.isArray(payload.assignments)) {
-      const holidays = await listHolidays({ year: query.year, month: query.month });
+      const holidays = await listHolidays({ year: query.year, month: query.month, hospitalId: req.hospitalId });
       const holidayKindByDate = buildHolidayKindByDateMap(holidays);
       const defs = Array.isArray(payload.defs)
         ? payload.defs
@@ -612,6 +790,18 @@ async function upsertMonthly(req, res) {
       );
       if (sanitized.changed) {
         payload = { ...payload, assignments: sanitized.assignments };
+      }
+
+      const overbookTrim = trimOverbookedAssignments({
+        assignments: payload.assignments || [],
+        defs,
+        overrides:
+          payload?.overrides && typeof payload.overrides === 'object'
+            ? payload.overrides
+            : {},
+      });
+      if (overbookTrim.changed) {
+        payload = { ...payload, assignments: overbookTrim.assignments };
       }
     }
 
@@ -723,8 +913,12 @@ router.post('/assign',
         : Array.isArray(data.rows)
         ? data.rows
         : [];
+      const overrides =
+        data?.overrides && typeof data.overrides === 'object'
+          ? data.overrides
+          : {};
       const supervisorRowIds = buildSupervisorRowIdSet(defs);
-      const holidays = await listHolidays({ year: query.year, month: query.month });
+      const holidays = await listHolidays({ year: query.year, month: query.month, hospitalId: req.hospitalId });
       const holidayKindByDate = buildHolidayKindByDateMap(holidays);
 
       let payload = { ...req.assignPayload };
@@ -796,6 +990,25 @@ router.post('/assign',
 
       const idx = nextAssignments.findIndex((a) => assignmentKey(a) === key);
       const existingAssignment = idx === -1 ? null : (nextAssignments[idx] || null);
+      const slotCapacity = getShiftCapacityForDate({
+        defs,
+        overrides,
+        dateStr: req.assignQuery?.dateStr || String(payload?.date || '').slice(0, 10),
+        shiftLike: payload,
+      });
+      if (idx === -1 && Number.isFinite(slotCapacity)) {
+        const slotUsage = nextAssignments.filter((a) => {
+          const aDate = String(a?.date || a?.day || '').slice(0, 10);
+          return aDate === req.assignQuery?.dateStr && shiftMatchLoose(a, payload);
+        }).length;
+        if (slotUsage >= Math.max(0, Number(slotCapacity))) {
+          return res.status(409).json({
+            ok: false,
+            message: 'Bu satır dolu. Önce mevcut kişiyi kaldırıp tekrar deneyin.',
+            errors: [{ type: 'SHIFT_CAPACITY', capacity: Number(slotCapacity), used: slotUsage }],
+          });
+        }
+      }
       if (idx === -1) {
         nextAssignments.push(payload);
       } else {
@@ -805,6 +1018,11 @@ router.post('/assign',
           merged.pinned = existing.pinned;
         }
         nextAssignments[idx] = merged;
+      }
+
+      const overbookTrim = trimOverbookedAssignments({ assignments: nextAssignments, defs, overrides });
+      if (overbookTrim.changed) {
+        nextAssignments = overbookTrim.assignments;
       }
 
       const update = {
