@@ -1,9 +1,7 @@
 // routes/requests.routes.js
 const express = require('express');
-const jwt = require('jsonwebtoken');
 const router = express.Router();
 const Request = require('../models/Request');
-const User = require('../models/User');
 const Person = require('../models/Person');
 const {
   sendLeaveApproved,
@@ -16,31 +14,15 @@ const safeMessage = (err, fallback = 'Sunucu hatası') =>
 const REQUEST_STATUS = new Set(['pending', 'approved', 'rejected', 'deleted']);
 const SOFT_DELETE_KEEP_DAYS = 180;
 
-const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET tanımlı değil');
-}
-
 // Auth middleware
-async function requireAuth(req, res, next) {
-  try {
-    const h = req.headers.authorization || '';
-    const token = h.startsWith('Bearer ') ? h.slice(7) : null;
-    if (!token) return res.status(401).json({ message: 'Yetkisiz' });
-    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-    const user = await User.findById(decoded.uid).lean();
-    if (!user) return res.status(401).json({ message: 'Yetkisiz' });
-    const role = String(user?.role || '').toLowerCase();
-    if (!isSuperAdminRole(role) && !user?.hospitalId) {
-      return res.status(403).json({ message: 'hospitalId gerekli' });
-    }
-    req.user = user;
-    req.hospitalId = user?.hospitalId ? String(user.hospitalId) : null;
-    next();
-  } catch {
-    res.status(401).json({ message: 'Yetkisiz' });
+// Not: Bu router, index.js içinde zaten `secureTenant` (auth + extractHospital) ile mount edilir.
+// Burada sadece guard yapıyoruz; tenant/hospital çözümlemesi dış middleware'den gelir.
+function requireAuth(req, res, next) {
+  if (!req.user) return res.status(401).json({ message: 'Yetkisiz' });
+  if (!req.hospitalId && !isSuperAdminRole(req.user?.role)) {
+    return res.status(403).json({ message: 'hospitalId gerekli' });
   }
+  return next();
 }
 
 function isAdminOrStaff(user) {
