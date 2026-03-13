@@ -1,6 +1,9 @@
 const { AsyncLocalStorage } = require('async_hooks');
+const Hospital = require('../models/Hospital');
 
 const hospitalContext = new AsyncLocalStorage();
+const DEFAULT_HOSPITAL_CACHE_MS = 60 * 1000;
+let defaultHospitalCache = { id: '', at: 0 };
 
 function normalizeRole(role) {
   return String(role || '').trim().toLowerCase();
@@ -10,7 +13,25 @@ function isSuperAdminRole(role) {
   return normalizeRole(role) === 'superadmin';
 }
 
-function extractHospital(req, res, next) {
+async function resolveDefaultHospitalId() {
+  const envId = String(process.env.DEFAULT_HOSPITAL_ID || '').trim();
+  if (envId) return envId;
+
+  const now = Date.now();
+  if (defaultHospitalCache.id && now - defaultHospitalCache.at < DEFAULT_HOSPITAL_CACHE_MS) {
+    return defaultHospitalCache.id;
+  }
+
+  const row = await Hospital.findOne({ active: true })
+    .sort({ createdAt: 1, _id: 1 })
+    .select('_id')
+    .lean();
+  const id = row?._id ? String(row._id) : '';
+  defaultHospitalCache = { id, at: now };
+  return id;
+}
+
+async function extractHospital(req, res, next) {
   const role = normalizeRole(req.user?.role);
   const rawHospitalId = req.user?.hospitalId ? String(req.user.hospitalId).trim() : '';
 
@@ -20,6 +41,18 @@ function extractHospital(req, res, next) {
   }
 
   if (!rawHospitalId) {
+    try {
+      const fallbackHospitalId = await resolveDefaultHospitalId();
+      if (fallbackHospitalId) {
+        req.hospitalId = fallbackHospitalId;
+        if (req.user && typeof req.user === 'object' && !req.user.hospitalId) {
+          req.user.hospitalId = fallbackHospitalId;
+        }
+        return next();
+      }
+    } catch (err) {
+      console.error('[hospital] default hospital resolve failed:', err?.message || err);
+    }
     return res.status(403).json({ message: 'hospitalId gerekli' });
   }
 
