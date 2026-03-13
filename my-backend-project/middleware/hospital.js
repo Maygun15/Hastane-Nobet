@@ -13,6 +13,25 @@ function isSuperAdminRole(role) {
   return normalizeRole(role) === 'superadmin';
 }
 
+async function resolveHospitalIdFromExistingData() {
+  const db = Hospital?.db?.db;
+  if (!db) return '';
+
+  const sources = ['users', 'people', 'services', 'settings', 'requests', 'schedules'];
+  for (const name of sources) {
+    try {
+      const row = await db.collection(name).findOne(
+        { hospitalId: { $exists: true, $ne: null } },
+        { projection: { hospitalId: 1 } }
+      );
+      if (row?.hospitalId) return String(row.hospitalId);
+    } catch {
+      // koleksiyon yoksa sıradakine geç
+    }
+  }
+  return '';
+}
+
 async function resolveDefaultHospitalId() {
   const envId = String(process.env.DEFAULT_HOSPITAL_ID || '').trim();
   if (envId) return envId;
@@ -27,6 +46,13 @@ async function resolveDefaultHospitalId() {
     .select('_id')
     .lean();
   let id = row?._id ? String(row._id) : '';
+  if (!id) {
+    id = await resolveHospitalIdFromExistingData();
+    if (id) {
+      defaultHospitalCache = { id, at: now };
+      return id;
+    }
+  }
   if (!id) {
     try {
       const created = await Hospital.create({
