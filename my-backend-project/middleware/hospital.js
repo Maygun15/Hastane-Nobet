@@ -26,7 +26,26 @@ async function resolveDefaultHospitalId() {
     .sort({ createdAt: 1, _id: 1 })
     .select('_id')
     .lean();
-  const id = row?._id ? String(row._id) : '';
+  let id = row?._id ? String(row._id) : '';
+  if (!id) {
+    try {
+      const created = await Hospital.create({
+        name: 'Default Hospital',
+        slug: 'default-hospital',
+        contactEmail: '',
+        active: true,
+      });
+      id = created?._id ? String(created._id) : '';
+    } catch (err) {
+      // paralel isteklerde unique slug çakışırsa tekrar oku
+      if (err?.code === 11000) {
+        const again = await Hospital.findOne({ slug: 'default-hospital' }).select('_id').lean();
+        id = again?._id ? String(again._id) : '';
+      } else {
+        throw err;
+      }
+    }
+  }
   defaultHospitalCache = { id, at: now };
   return id;
 }
