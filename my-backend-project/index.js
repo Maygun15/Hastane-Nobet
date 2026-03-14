@@ -195,6 +195,7 @@ app.get('/api/health', (_req, res) => res.json(buildHealthPayload()));
 
 /* ============ AUTH HELPERS (JWT) ============ */
 const User = require(path.join(__dirname, 'models', 'User.js'));
+const AuditLog = require(path.join(__dirname, 'models', 'AuditLog.js'));
 
 async function createAdmin() {
   try {
@@ -549,6 +550,13 @@ app.use('/api/holidays', ...secureTenant, holidayRoutes);
 app.get('/api/admin/ping', ...secureTenant, requireRole('admin'),
   (req, res) => res.json({ ok: true, role: req.user.role })
 );
+app.get('/api/admin/audit-logs', ...secureTenant, requireRole('admin'), async (_req, res) => {
+  const logs = await AuditLog.find({})
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .lean();
+  res.json(logs);
+});
 
 /* ========== 404 & ERROR ========== */
 app.use((req, res) => res.status(404).json({ status: 'error', message: 'Not Found' }));

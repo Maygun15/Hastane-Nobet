@@ -12,6 +12,7 @@ function auditLogger(req, res, next) {
       endpoint: req.path,
       method: req.method,
       ip: req.ip,
+      requestId: req.requestId || '',
     }).catch((err) => {
       console.error('[auditLogger]', err?.message || err);
     });

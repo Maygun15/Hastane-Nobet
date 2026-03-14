@@ -6,6 +6,7 @@ const AuditLogSchema = new mongoose.Schema({
   endpoint: { type: String, default: '' },
   method: { type: String, default: '' },
   ip: { type: String, default: '' },
+  requestId: { type: String, default: '', index: true },
   createdAt: { type: Date, default: Date.now },
 });
 
