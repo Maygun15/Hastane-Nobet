@@ -16,6 +16,7 @@ const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 const jwt      = require('jsonwebtoken');
 const bcrypt   = require('bcryptjs');
+const auditLogger = require('./middleware/auditLogger');
 const { isConfigured: isMailerConfigured } = require(path.join(__dirname, 'utils', 'mailer.js'));
 const { applyHospitalContext, extractHospital, withHospitalFilter } = require(path.join(__dirname, 'middleware', 'hospital.js'));
 
@@ -83,6 +84,7 @@ const ALLOWED_ORIGINS = new Set(
     .filter(Boolean)
 );
 app.set('trust proxy', 1);
+app.use(auditLogger);
 const corsOptions = {
   origin(origin, cb) {
     if (!origin) return cb(null, true); // Postman/cURL
