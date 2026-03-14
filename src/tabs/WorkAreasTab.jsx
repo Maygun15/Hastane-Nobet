@@ -227,7 +227,6 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [], per
           .map((r) => r.ALAN ?? r.alan ?? r.Alan ?? Object.values(r)[0])
           .map(String).map((s) => s.trim()).filter(Boolean);
 
-        // başlık/tekrar temizliği
         const cleaned = [];
         const seen = new Set();
         for (const v of list) {
@@ -237,15 +236,22 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [], per
             cleaned.push(v);
           }
         }
+
         cancelEdit();
         setAreas(cleaned);
-        if (typeof persistAreas === "function") {
-          await persistAreas(cleaned);
+
+        try {
+          if (typeof persistAreas === "function") {
+            await persistAreas(cleaned);
+          }
+          alert("Excel'den yükleme tamam.");
+        } catch (saveErr) {
+          console.error(saveErr);
+          alert(`Excel yüklendi ama kaydedilemedi: ${saveErr?.message || saveErr}`);
         }
-        alert("Excel'den yükleme tamam.");
       } catch (err) {
         console.error(err);
-        alert("Excel yüklenemedi. (Beklenen sayfa: CalismaAlanlari, başlık: ALAN)");
+        alert(`Excel yüklenemedi: ${err?.message || "Beklenen sayfa: CalismaAlanlari, başlık: ALAN"}`);
       } finally {
         e.target.value = "";
       }
