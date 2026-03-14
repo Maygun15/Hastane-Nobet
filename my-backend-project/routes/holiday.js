@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requireRole } = require('../middleware/authz');
 const {
+  buildLocalHolidayFallback,
   generateHolidays,
   listHolidays,
   upsertHoliday,
@@ -13,10 +14,9 @@ const safeMessage = (err, fallback = 'Sunucu hatası') =>
 
 // GET /api/holidays?y=2026&m=3
 router.get('/', async (req, res) => {
+  const year = Number(req.query.y || req.query.year);
+  const month = req.query.m != null ? Number(req.query.m) : (req.query.month != null ? Number(req.query.month) : undefined);
   try {
-    const year = Number(req.query.y || req.query.year);
-    const month = req.query.m != null ? Number(req.query.m) : (req.query.month != null ? Number(req.query.month) : undefined);
-
     if (!Number.isFinite(year)) {
       return res.json({ items: [] });
     }
@@ -27,10 +27,14 @@ router.get('/', async (req, res) => {
     }
 
     const items = await listHolidays({ year, month, hospitalId: req.hospitalId });
-    return res.json({ items });
+    return res.json({ items: items.length ? items : buildLocalHolidayFallback(year) });
   } catch (err) {
     console.error('holidays list error:', err?.message || err);
-    return res.status(500).json({ message: 'Tatil listesi alınamadı' });
+    return res.json({
+      items: buildLocalHolidayFallback(year),
+      fallback: true,
+      warning: 'Tatil listesi yerel fallback ile gosteriliyor',
+    });
   }
 });
 

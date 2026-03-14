@@ -125,6 +125,29 @@ function dedupeHolidayDocs(docs = []) {
   return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+function buildLocalHolidayFallback(year) {
+  const y = Number(year);
+  if (!Number.isFinite(y) || y < 2000 || y > 2100) return [];
+  const docs = [
+    ...buildFixedHolidayEntries(y),
+    ...buildHalfDayEntries(y),
+    ...getReligiousHolidays(y).map((row) => ({
+      date: row.date,
+      kind: row.kind === 'arife' ? 'arife' : row.kind === 'half' ? 'half' : 'full',
+      name: row.name || '',
+      source: 'local-fallback',
+      year: y,
+    })),
+  ].map((row) => ({
+    date: row.date,
+    kind: row.kind,
+    name: row.name || '',
+    source: row.source || 'local-fallback',
+    year: y,
+  }));
+  return dedupeHolidayDocs(docs);
+}
+
 async function generateHolidays(year, { hospitalId = null } = {}) {
   const y = Number(year);
   if (!Number.isFinite(y) || y < 2000 || y > 2100) {
@@ -277,6 +300,7 @@ async function deleteHoliday(date, { hospitalId = null } = {}) {
 }
 
 module.exports = {
+  buildLocalHolidayFallback,
   generateHolidays,
   listHolidays,
   upsertHoliday,
