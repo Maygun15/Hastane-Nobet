@@ -63,6 +63,20 @@ function buildHalfDayEntries(year) {
   ];
 }
 
+function buildFixedHolidayEntries(year) {
+  const y = Number(year);
+  if (!Number.isFinite(y)) return [];
+  return [
+    { date: `${y}-01-01`, kind: 'full', name: 'Yılbaşı' },
+    { date: `${y}-04-23`, kind: 'full', name: 'Ulusal Egemenlik ve Çocuk Bayramı' },
+    { date: `${y}-05-01`, kind: 'full', name: 'Emek ve Dayanışma Günü' },
+    { date: `${y}-05-19`, kind: 'full', name: "Atatürk'ü Anma, Gençlik ve Spor Bayramı" },
+    { date: `${y}-07-15`, kind: 'full', name: 'Demokrasi ve Millî Birlik Günü' },
+    { date: `${y}-08-30`, kind: 'full', name: 'Zafer Bayramı' },
+    { date: `${y}-10-29`, kind: 'full', name: 'Cumhuriyet Bayramı' },
+  ];
+}
+
 function inferHolidayKind(row = {}) {
   const kind = String(row?.kind || '').toLowerCase().trim();
   const name = normalizeText(row?.name || row?.localName || row?.globalName || '');
@@ -107,8 +121,16 @@ async function generateHolidays(year, { hospitalId = null } = {}) {
     throw new Error('Yıl geçersiz');
   }
 
-  const items = await fetchNager(y);
+  let items = [];
+  let useFixedFallback = false;
+  try {
+    items = await fetchNager(y);
+  } catch (err) {
+    useFixedFallback = true;
+    console.warn('[holidays] Nager fetch failed, using local fallback:', err?.message || err);
+  }
   const arifeItems = buildArifeEntries(items);
+  const fixedItems = useFixedFallback ? buildFixedHolidayEntries(y) : [];
   const halfItems = buildHalfDayEntries(y);
   const religious = await getReligiousHolidays(y);
 
@@ -120,6 +142,15 @@ async function generateHolidays(year, { hospitalId = null } = {}) {
       kind: 'full',
       name: h.name,
       source: 'nager',
+      year: y,
+    });
+  }
+  for (const h of fixedItems) {
+    toInsert.push({
+      date: h.date,
+      kind: h.kind,
+      name: h.name,
+      source: 'rule',
       year: y,
     });
   }
