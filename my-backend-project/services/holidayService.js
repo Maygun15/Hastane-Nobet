@@ -115,6 +115,16 @@ function inferCalendarSettingKind(row = {}) {
   });
 }
 
+function dedupeHolidayDocs(docs = []) {
+  const byDate = new Map();
+  for (const doc of docs) {
+    const date = String(doc?.date || '').trim();
+    if (!date) continue;
+    byDate.set(date, { ...doc, date });
+  }
+  return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
 async function generateHolidays(year, { hospitalId = null } = {}) {
   const y = Number(year);
   if (!Number.isFinite(y) || y < 2000 || y > 2100) {
@@ -183,9 +193,10 @@ async function generateHolidays(year, { hospitalId = null } = {}) {
     });
   }
 
-  if (!toInsert.length) return [];
+  const uniqueDocs = dedupeHolidayDocs(toInsert);
+  if (!uniqueDocs.length) return [];
 
-  const ops = toInsert.map((doc) => ({
+  const ops = uniqueDocs.map((doc) => ({
     updateOne: {
       filter: hospitalId ? { hospitalId, date: doc.date } : { date: doc.date },
       update: {
@@ -197,7 +208,7 @@ async function generateHolidays(year, { hospitalId = null } = {}) {
 
   const result = await Holiday.bulkWrite(ops, { ordered: false });
   const added = result.upsertedCount || 0;
-  return { added, total: toInsert.length };
+  return { added, total: uniqueDocs.length };
 }
 
 async function listHolidays({ year, month, hospitalId = null } = {}) {
