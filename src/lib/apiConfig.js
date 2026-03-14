@@ -102,6 +102,7 @@ const WRITE_ALLOWLIST = [
   /^\/health$/,
   /^\/api\/auth\//,
   /^\/auth\//,
+  /^\/api\/settings\//,
   /^\/api\/admin\/accept-invite/,
   /^\/admin\/accept-invite/,
   /^\/api\/staff\/accept-invite/,
