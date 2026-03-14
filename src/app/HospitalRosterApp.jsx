@@ -208,6 +208,7 @@ export default function HospitalRosterApp() {
   const settingsLoadedRef = useRef(false);
   const personnelLoadedRef = useRef(false);
   const saveTimersRef = useRef({ wa: null, wh: null, lt: null, rq: null });
+  const skipNextWorkAreasSaveRef = useRef(null);
 
   useEffect(() => {
     let alive = true;
@@ -245,12 +246,18 @@ export default function HospitalRosterApp() {
 
   const persistWorkAreas = useCallback(async (value) => {
     if (!isAdmin) return;
+    skipNextWorkAreasSaveRef.current = JSON.stringify(value ?? []);
     await saveSetting("workAreas", value);
   }, [isAdmin, saveSetting]);
 
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
     if (!isAdmin) return;
+    const serialized = JSON.stringify(workAreas ?? []);
+    if (skipNextWorkAreasSaveRef.current === serialized) {
+      skipNextWorkAreasSaveRef.current = null;
+      return;
+    }
     saveSetting("workAreas", workAreas).catch((err) =>
       console.warn("workAreas save failed:", err?.message || err)
     );
