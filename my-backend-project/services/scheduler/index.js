@@ -100,7 +100,15 @@ async function generateMonthlyPlan({
   return runScheduler(context);
 }
 
+function schedulerOrchestratorPlaceholder(_input = {}) {
+  return {
+    status: "placeholder",
+    message: "Modular scheduler orchestrator is not wired yet.",
+  };
+}
+
 module.exports = {
   buildContext,
   generateMonthlyPlan,
+  schedulerOrchestratorPlaceholder,
 };

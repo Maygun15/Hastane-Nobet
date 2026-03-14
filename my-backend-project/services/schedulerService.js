@@ -1,437 +1,45 @@
-const DutyRule = require('../models/DutyRule');
 const GeneratedSchedule = require('../models/GeneratedSchedule');
 const MonthlySchedule = require('../models/MonthlySchedule');
-const Person = require('../models/Person');
 const { listHolidays } = require('./holidayService');
 const { generateMonthlyPlan } = require('./scheduler');
 const { generateDraftRoster } = require('./scheduler/draftRoster');
-
-const DEFAULT_RULES = {
-  ONE_SHIFT_PER_DAY: true,
-  LEAVE_BLOCK: true,
-  MAX_CONSECUTIVE_DAYS: 6,
-  MIN_REST_HOURS: 12,
-  NIGHT_NEXT_DAY_OFF: false,
-  MAX_SHIFTS_PER_WEEK: 0,
-  MAX_TASK_PER_PERSON: 0,
-};
-
-const DEFAULT_WEIGHTS = {
-  hourBalance: 2,
-  shiftBalance: 3,
-  weekdayBalance: 3,
-  pairPenalty: 5,
-  requestBonus: -5,
-};
-
-const NIGHT_24_CODES = new Set(['N', 'V2']);
-const HALF_DAY_A_HOURS = 4;
-const normalizeCode = (s) => String(s || '').trim().toUpperCase();
-const normalizeText = (s = '') =>
-  String(s || '')
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim();
-const isServiceSupervisorLabel = (label = '') => normalizeText(label).includes('servis sorumlu');
-const buildShiftMetaLookup = (shiftOptions = []) => {
-  const out = Object.create(null);
-  for (const item of shiftOptions || []) {
-    const code = normalizeCode(item?.code || item?.id || '');
-    if (!code) continue;
-    out[code] = {
-      hours: item?.hours,
-      start: item?.start || null,
-      end: item?.end || null,
-      isNight: !!item?.isNight,
-    };
-  }
-  return out;
-};
-const prevDateStr = (dateStr) => {
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
-};
-
-function buildLeaveSet(leavesByPerson = {}) {
-  const out = new Map();
-  for (const [pidRaw, dates] of Object.entries(leavesByPerson || {})) {
-    const pid = String(pidRaw || '').trim();
-    if (!pid) continue;
-    const set = new Set();
-    if (Array.isArray(dates)) {
-      for (const d of dates) {
-        const ds = String(d || '').slice(0, 10);
-        if (/^\d{4}-\d{2}-\d{2}$/.test(ds)) set.add(ds);
-      }
-    } else if (dates && typeof dates === 'object') {
-      for (const k of Object.keys(dates)) {
-        const ds = String(k || '').slice(0, 10);
-        if (/^\d{4}-\d{2}-\d{2}$/.test(ds)) set.add(ds);
-      }
-    }
-    if (set.size) out.set(pid, set);
-  }
-  return out;
-}
-
-function applyHardConstraints(assignments = [], leavesByPerson = {}) {
-  const nightByPerson = new Map();
-  const leaveByPerson = buildLeaveSet(leavesByPerson);
-  for (const a of assignments || []) {
-    const pid = String(a?.personId || '').trim();
-    const dateStr = String(a?.date || a?.day || '').slice(0, 10);
-    if (!pid || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
-    const code = normalizeCode(a?.shiftCode || a?.shiftId || a?.shift || a?.code || '');
-    if (!code || !NIGHT_24_CODES.has(code)) continue;
-    if (!nightByPerson.has(pid)) nightByPerson.set(pid, new Set());
-    nightByPerson.get(pid).add(dateStr);
-  }
-
-  const issues = [];
-  const filtered = [];
-  for (const a of assignments || []) {
-    const pid = String(a?.personId || '').trim();
-    const dateStr = String(a?.date || a?.day || '').slice(0, 10);
-    if (!pid || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-      filtered.push(a);
-      continue;
-    }
-    const leaveSet = leaveByPerson.get(pid);
-    if (leaveSet && leaveSet.has(dateStr)) {
-      issues.push({ date: dateStr, shiftId: a?.shiftId || a?.shiftCode || '', reason: 'LEAVE_BLOCK' });
-      continue;
-    }
-    const prev = prevDateStr(dateStr);
-    if (prev && nightByPerson.get(pid)?.has(prev)) {
-      issues.push({ date: dateStr, shiftId: a?.shiftId || a?.shiftCode || '', reason: 'REST_AFTER_NIGHT' });
-      continue;
-    }
-    filtered.push(a);
-  }
-  return { assignments: filtered, issues };
-}
-
-const pad2 = (n) => String(n).padStart(2, '0');
-const monIndex = (wdSun0) => (wdSun0 + 6) % 7; // 0=Mon
-
-function buildShiftMetaMap(data) {
-  const map = new Map();
-  const src = Array.isArray(data?.shiftOptions) ? data.shiftOptions : [];
-  for (const s of src) {
-    const code = String(s.code || s.id || '').trim();
-    if (!code) continue;
-    map.set(code, {
-      hours: Number(s.hours || 0) || undefined,
-      start: s.start || null,
-      end: s.end || null,
-      isNight: !!s.isNight,
-    });
-  }
-  return map;
-}
-
-function buildDaysFromScheduleData({ year, month, data }) {
-  const defs = Array.isArray(data?.defs)
-    ? data.defs
-    : Array.isArray(data?.rows)
-    ? data.rows
-    : [];
-  if (!defs.length) return null;
-
-  const shiftMeta = buildShiftMetaMap(data);
-
-  const isDailyDefs = defs.some(
-    (d) => d && (d.date || d.day) && Array.isArray(d.shifts)
-  );
-
-  if (isDailyDefs) {
-    const last = new Date(year, month, 0).getDate();
-    const byDate = new Map();
-    for (const def of defs) {
-      if (!def || !Array.isArray(def.shifts)) continue;
-      let y = year;
-      let m = month;
-      let d = null;
-      if (def.date) {
-        const parts = String(def.date).split("-");
-        if (parts.length === 3) {
-          y = Number(parts[0]);
-          m = Number(parts[1]);
-          d = Number(parts[2]);
-        }
-      } else if (def.day) {
-        d = Number(def.day);
-      }
-      if (!d || y !== year || m !== month) continue;
-
-      const key = `${year}-${pad2(month)}-${pad2(d)}`;
-      const arr = byDate.get(key) || [];
-      for (const sh of def.shifts) {
-        if (!sh) continue;
-        const code = String(sh.code || sh.shiftCode || sh.id || sh.label || sh.name || "").trim();
-        const area = String(sh.area || sh.label || def.label || def.area || def.name || "").trim();
-        const need = Math.max(
-          0,
-          Number(sh.requiredCount ?? sh.count ?? sh.need ?? sh.required ?? sh.qty ?? 0) || 0
-        );
-        if (!code || need <= 0) continue;
-        const meta = shiftMeta.get(code) || {};
-        arr.push({
-          id: String(sh.id || code),
-          code,
-          area,
-          requiredCount: need,
-          hours: meta.hours,
-          start: meta.start,
-          end: meta.end,
-          isNight: meta.isNight || false,
-        });
-      }
-      byDate.set(key, arr);
-    }
-
-    const days = [];
-    for (let d = 1; d <= last; d++) {
-      const dt = new Date(year, month - 1, d);
-      const wd = dt.getDay();
-      const date = `${year}-${pad2(month)}-${pad2(d)}`;
-      days.push({
-        date,
-        weekday: wd,
-        shifts: byDate.get(date) || [],
-      });
-    }
-    return days;
-  }
-
-  const overrides = data?.overrides && typeof data.overrides === 'object' ? data.overrides : {};
-
-  const last = new Date(year, month, 0).getDate();
-  const days = [];
-  for (let d = 1; d <= last; d++) {
-    const dt = new Date(year, month - 1, d);
-    const wd = dt.getDay(); // 0=Sun
-    const patIdx = monIndex(wd);
-    const shifts = [];
-
-    for (const def of defs) {
-      const rowId = String(def?.id ?? def?.rowId ?? '');
-      const shiftCode = def?.shiftCode || def?.label || def?.code || '';
-      const area = String(def?.label || def?.area || def?.name || '').trim();
-      if (!rowId) continue;
-
-      let v = overrides?.[rowId]?.[d];
-      if (v == null) {
-        const pat = Array.isArray(def.pattern) ? def.pattern : Array(7).fill(def.defaultCount || 0);
-        v = pat[patIdx] ?? def.defaultCount ?? 0;
-      }
-
-      if (def.weekendOff && (wd === 0 || wd === 6)) v = 0;
-      const need = Math.max(0, Number(v) || 0);
-      if (need <= 0) continue;
-
-      const meta = shiftMeta.get(String(shiftCode)) || {};
-      shifts.push({
-        id: rowId,
-        code: shiftCode,
-        area,
-        requiredCount: need,
-        hours: meta.hours,
-        start: meta.start,
-        end: meta.end,
-        isNight: meta.isNight || false,
-      });
-    }
-
-    days.push({
-      date: `${year}-${pad2(month)}-${pad2(d)}`,
-      weekday: wd,
-      shifts,
-    });
-  }
-
-  return days;
-}
-
-function applySupervisorHolidayRules(days = [], holidayKindByDate = {}, shiftMetaByCode = {}) {
-  return (days || []).map((day) => {
-    const weekday = Number(day?.weekday);
-    const date = String(day?.date || '').slice(0, 10);
-    const holidayKind = String(holidayKindByDate?.[date] || '').toLowerCase();
-    const blockSupervisor = weekday === 0 || weekday === 6 || holidayKind === 'full';
-    const shifts = (day?.shifts || []).flatMap((shift) => {
-      const label = shift?.area || shift?.label || shift?.name || '';
-      if (!isServiceSupervisorLabel(label)) return [shift];
-      if (blockSupervisor) return [];
-      if (holidayKind === 'arife' || holidayKind === 'half') {
-        const aMeta = shiftMetaByCode.A || {};
-        const arifeHours = Number.isFinite(Number(aMeta.hours)) ? Number(aMeta.hours) : HALF_DAY_A_HOURS;
-        return [{
-          ...shift,
-          id: String(shift?.id || shift?.code || 'A'),
-          code: 'A',
-          hours: arifeHours,
-          start: aMeta.start ?? shift?.start ?? null,
-          end: aMeta.end ?? shift?.end ?? null,
-          isNight: aMeta.isNight ?? false,
-        }];
-      }
-      return [shift];
-    });
-    if (!blockSupervisor && holidayKind !== 'arife' && holidayKind !== 'half') return day;
-    return { ...day, shifts };
-  });
-}
-
-function buildSupervisorRowIdSet(defs = []) {
-  const set = new Set();
-  for (const row of defs || []) {
-    const id = String(row?.id || row?.rowId || '').trim();
-    const label = String(row?.label || row?.area || row?.name || '').trim();
-    if (!id || !label) continue;
-    if (isServiceSupervisorLabel(label)) set.add(id);
-  }
-  return set;
-}
-
-function sanitizeSupervisorAssignments(assignments = [], holidayKindByDate = {}, shiftMetaByCode = {}, defs = []) {
-  const supervisorRowIds = buildSupervisorRowIdSet(defs);
-  return (assignments || [])
-    .map((item) => {
-      const shiftId = String(item?.shiftId || item?.rowId || '').trim();
-      const label = String(item?.roleLabel || item?.label || item?.area || '').trim();
-      const isSupervisor = supervisorRowIds.has(shiftId) || isServiceSupervisorLabel(label);
-      if (!isSupervisor) return item;
-      const date = String(item?.date || item?.day || '').slice(0, 10);
-      if (!date) return item;
-      const dt = new Date(`${date}T00:00:00`);
-      const weekday = Number.isNaN(dt.getTime()) ? NaN : dt.getDay();
-      const kind = String(holidayKindByDate?.[date] || '').toLowerCase();
-      if (weekday === 0 || weekday === 6 || kind === 'full') return null;
-      if (kind === 'arife' || kind === 'half') {
-        const aMeta = shiftMetaByCode.A || {};
-        const arifeHours = Number.isFinite(Number(aMeta.hours)) ? Number(aMeta.hours) : HALF_DAY_A_HOURS;
-        return {
-          ...item,
-          shiftCode: 'A',
-          shiftId: 'A',
-          hours: arifeHours,
-        };
-      }
-      return item;
-    })
-    .filter(Boolean);
-}
-
-async function fetchDutyRules({ sectionId, serviceId = '', role = '', hospitalId = null }) {
-  // Önce en spesifik kuralı ara; yoksa daha genel kuralı kullan
-  const fallbacks = [
-    { sectionId, serviceId, role },
-    { sectionId, serviceId, role: '' },
-    { sectionId, serviceId: '', role },
-    { sectionId, serviceId: '', role: '' },
-  ];
-
-  let doc = null;
-  for (const q of fallbacks) {
-    doc = await DutyRule.findOne(hospitalId ? { ...q, hospitalId } : q).lean();
-    if (doc) break;
-  }
-
-  const rules = { ...DEFAULT_RULES, ...(doc?.rules || {}) };
-  const weights = { ...DEFAULT_WEIGHTS, ...(doc?.weights || {}) };
-  return { doc, rules, weights };
-}
-
-function normalizeRoleStr(s) {
-  return (s || "")
-    .toString()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase();
-}
-
-function roleTokens(role) {
-  const r = normalizeRoleStr(role);
-  if (!r) return [];
-  if (r.includes("nurse") || r.includes("hemsire") || r.includes("hemşire")) {
-    return ["nurse", "hemsire", "hemşire", "ebe", "att", "saglik", "sağlık"];
-  }
-  if (r.includes("doctor") || r.includes("doktor") || r.includes("hekim")) {
-    return ["doctor", "doktor", "hekim", "tabip"];
-  }
-  return [r];
-}
-
-async function buildStaff({ serviceId = '', role = '', hospitalId = null } = {}) {
-  const query = hospitalId ? { hospitalId } : {};
-  if (serviceId) query.serviceId = serviceId;
-  const list = await Person.find(query).lean();
-  if (!role) return { staff: list, debug: { rawCount: list.length, filteredCount: list.length, usedFallback: false, roleTokens: [] } };
-
-  const tokens = roleTokens(role);
-  const filtered = list.filter((p) => {
-    const metaRole = normalizeRoleStr(p?.meta?.role || p?.meta?.unvan || p?.meta?.title || p?.role || p?.title || "");
-    if (!metaRole) return true;
-    return tokens.some((t) => metaRole.includes(t));
-  });
-
-  if (filtered.length === 0 && list.length) {
-    return { staff: list, debug: { rawCount: list.length, filteredCount: 0, usedFallback: true, roleTokens: tokens } };
-  }
-
-  return { staff: filtered, debug: { rawCount: list.length, filteredCount: filtered.length, usedFallback: false, roleTokens: tokens } };
-}
+const { fetchDutyRules, DEFAULT_RULES, DEFAULT_WEIGHTS } = require('./scheduler/ruleResolver');
+const { resolveStaff } = require('./scheduler/staffResolver');
+const { validateAssignments } = require('./scheduler/validator');
+const { applyHolidayPolicies } = require('./scheduler/holidayPolicyAdapter');
+const { buildSchedulerInput } = require('./scheduler/inputBuilder');
 
 async function generateSchedule({ sectionId, serviceId = '', role = '', year, month, dryRun = false, userId, payload = {}, hospitalId = null }) {
   const query = hospitalId ? { hospitalId, sectionId, year, month } : { sectionId, year, month };
   if (serviceId) query.serviceId = serviceId;
   if (role) query.role = role;
   const scheduleDoc = await MonthlySchedule.findOne(query).lean();
-  const scheduleData = scheduleDoc?.data || {};
-  const defs = Array.isArray(scheduleData?.defs)
-    ? scheduleData.defs
-    : Array.isArray(scheduleData?.rows)
-    ? scheduleData.rows
-    : [];
-  const overrides = scheduleData?.overrides && typeof scheduleData.overrides === 'object' ? scheduleData.overrides : {};
-  const shiftOptions = Array.isArray(scheduleData?.shiftOptions) ? scheduleData.shiftOptions : [];
-  const payloadDefs = Array.isArray(payload?.defs)
-    ? payload.defs
-    : Array.isArray(payload?.rows)
-    ? payload.rows
-    : null;
-  const effectiveDefs = payloadDefs || defs;
-  const effectiveOverrides =
-    payload?.overrides && typeof payload.overrides === 'object' ? payload.overrides : overrides;
-  const effectiveShiftOptions = Array.isArray(payload?.shiftOptions)
-    ? payload.shiftOptions
-    : shiftOptions;
-  const days =
-    Array.isArray(payload.days) && payload.days.length
-      ? payload.days
-      : scheduleDoc
-      ? buildDaysFromScheduleData({ year, month, data: scheduleDoc.data || {} })
-      : null;
+  const holidays = await listHolidays({ year, month, hospitalId });
+  const {
+    effectiveDefs,
+    effectiveOverrides,
+    effectiveShiftOptions,
+    days,
+    holidayKindByDate,
+    shiftMetaByCode,
+  } = buildSchedulerInput({
+    scheduleDoc,
+    payload,
+    year,
+    month,
+    hospitalId,
+    holidays,
+  });
 
   if (!days || !days.length) {
     throw new Error('Vardiya şablonu bulunamadı (MonthlySchedule.data.defs bekleniyor).');
   }
 
-  const holidays = await listHolidays({ year, month, hospitalId });
-  const holidayKindByDate = Object.fromEntries(
-    (holidays || []).map((row) => [String(row.date || '').slice(0, 10), String(row.kind || 'full').toLowerCase()])
-  );
-  const shiftMetaByCode = buildShiftMetaLookup(effectiveShiftOptions);
-  const effectiveDays = applySupervisorHolidayRules(days, holidayKindByDate, shiftMetaByCode);
+  const effectiveDays = applyHolidayPolicies({ days, holidayKindByDate, shiftMetaByCode });
 
   const staffPack = Array.isArray(payload.staff) && payload.staff.length
     ? { staff: payload.staff, debug: { rawCount: payload.staff.length, filteredCount: payload.staff.length, usedFallback: false, roleTokens: [] } }
-    : await buildStaff({ serviceId, role, hospitalId });
+    : await resolveStaff({ serviceId, role, hospitalId });
   const staff = staffPack.staff;
 
   const leavesByPerson = payload.leavesByPerson || {};
@@ -521,19 +129,24 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   );
 
   const baseAssignmentsRaw = useDraft ? (draftResult?.assignments || []) : (context.assignments || []);
-  const baseAssignments = sanitizeSupervisorAssignments(baseAssignmentsRaw, holidayKindByDate, shiftMetaByCode, effectiveDefs);
   const baseIssues = useDraft ? (draftResult?.issues || []) : (context.issues || []);
-  const hard = applyHardConstraints(baseAssignments, leavesByPerson);
+  const validated = validateAssignments({
+    assignments: baseAssignmentsRaw,
+    leavesByPerson,
+    holidayKindByDate,
+    shiftMetaByCode,
+    defs: effectiveDefs,
+  });
   const data = {
-    assignments: hard.assignments,
-    issues: [...baseIssues, ...(hard.issues || [])],
+    assignments: validated.assignments,
+    issues: [...baseIssues, ...(validated.issues || [])],
     days: days.length,
     debug: {
       staff: staffPack.debug,
       shiftCount,
       requiredSlots,
       engine: useDraft ? "draft" : "optimized",
-      hardFiltered: (baseAssignments.length || 0) - (hard.assignments.length || 0),
+      hardFiltered: validated?.debug?.hardFiltered || 0,
     },
   };
 
