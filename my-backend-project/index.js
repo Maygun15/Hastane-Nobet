@@ -17,6 +17,7 @@ const mongoose = require('mongoose');
 const jwt      = require('jsonwebtoken');
 const bcrypt   = require('bcryptjs');
 const auditLogger = require('./middleware/auditLogger');
+const requestId = require('./middleware/requestId');
 const { isConfigured: isMailerConfigured } = require(path.join(__dirname, 'utils', 'mailer.js'));
 const { applyHospitalContext, extractHospital, withHospitalFilter } = require(path.join(__dirname, 'middleware', 'hospital.js'));
 
@@ -84,6 +85,7 @@ const ALLOWED_ORIGINS = new Set(
     .filter(Boolean)
 );
 app.set('trust proxy', 1);
+app.use(requestId);
 app.use(auditLogger);
 const corsOptions = {
   origin(origin, cb) {
@@ -551,14 +553,16 @@ app.get('/api/admin/ping', ...secureTenant, requireRole('admin'),
 /* ========== 404 & ERROR ========== */
 app.use((req, res) => res.status(404).json({ status: 'error', message: 'Not Found' }));
 // eslint-disable-next-line no-unused-vars
-app.use((err, _req, res, _next) => {
+app.use((err, req, res, _next) => {
   console.error('ERR:', err);
   const status = err?.status || err?.statusCode || 500;
   const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
-  res.status(status).json({
+  const payload = {
     status: 'error',
     message: isProd ? 'Internal Server Error' : (err?.message || 'Internal Server Error'),
-  });
+  };
+  if (req?.requestId) payload.requestId = req.requestId;
+  res.status(status).json(payload);
 });
 
 /* ============== SERVER ============== */
