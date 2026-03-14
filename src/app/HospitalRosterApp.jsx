@@ -132,8 +132,17 @@ export default function HospitalRosterApp() {
   });
   const [nurses, setNurses] = useState([]);
   const [doctors, setDoctors] = useState([]);
-  const [workingHours, setWorkingHours] = useState([]);
-  const [leaveTypes, setLeaveTypes] = useState([]);
+  const [workingHours, setWorkingHours] = useState(() => {
+    const v2 = LS.get("workingHoursV2", null);
+    const v1 = LS.get("workingHours", null);
+    return Array.isArray(v2) ? v2 : Array.isArray(v1) ? v1 : [];
+  });
+  const [leaveTypes, setLeaveTypes] = useState(() => {
+    const v2 = LS.get("leaveTypesV2", null);
+    const v1 = LS.get("leaveTypes", null);
+    const legacy = LS.get("izinTurleri", null);
+    return Array.isArray(v2) ? v2 : Array.isArray(v1) ? v1 : Array.isArray(legacy) ? legacy : [];
+  });
   const [personLeaves, setPersonLeaves] = useState({});
   const [requestBox, setRequestBox] = useState([]);
 
