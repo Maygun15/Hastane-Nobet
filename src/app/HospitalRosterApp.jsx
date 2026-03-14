@@ -243,6 +243,11 @@ export default function HospitalRosterApp() {
     });
   }, []);
 
+  const persistWorkAreas = useCallback(async (value) => {
+    if (!isAdmin) return;
+    await saveSetting("workAreas", value);
+  }, [isAdmin, saveSetting]);
+
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
     if (!isAdmin) return;
@@ -784,6 +789,7 @@ export default function HospitalRosterApp() {
               <ParametersTab
                 workAreas={workAreas}
                 setWorkAreas={setWorkAreas}
+                persistWorkAreas={persistWorkAreas}
                 workingHours={workingHours}
                 setWorkingHours={setWorkingHours}
                 leaveTypes={leaveTypes}

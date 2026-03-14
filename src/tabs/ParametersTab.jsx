@@ -187,6 +187,7 @@ function lsClear() {
 export default function ParametersTab({
   workAreas,
   setWorkAreas,
+  persistWorkAreas,
   workingHours,
   setWorkingHours,
   leaveTypes,
@@ -364,6 +365,7 @@ export default function ParametersTab({
           <WorkAreasTab
             workAreas={workAreas}
             setWorkAreas={setWorkAreas}
+            persistAreas={persistWorkAreas}
             people={people}
           />
         )}

@@ -131,7 +131,7 @@ function getPersonKey(p, i) {
   );
 }
 
-export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
+export default function WorkAreasTab({ workAreas, setWorkAreas, people = [], persistAreas }) {
   const [areas, setAreas] = useHybridAreas(workAreas, setWorkAreas);
   const peopleList = Array.isArray(people) ? people : [];
   const areaDefs = useMemo(
@@ -218,7 +218,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
     const f = e.target.files?.[0];
     if (!f) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const wb = XLSX.read(ev.target.result, { type: "binary" });
         const sheet = wb.Sheets["CalismaAlanlari"] ?? wb.Sheets[wb.SheetNames[0]];
@@ -239,6 +239,9 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
         }
         cancelEdit();
         setAreas(cleaned);
+        if (typeof persistAreas === "function") {
+          await persistAreas(cleaned);
+        }
         alert("Excel'den yükleme tamam.");
       } catch (err) {
         console.error(err);
