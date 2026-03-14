@@ -29,6 +29,81 @@ function buildFixedHolidays(year) {
   }));
 }
 
+function addDaysUTC(ymd, delta) {
+  const [y, m, d] = String(ymd).split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + delta);
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
+}
+
+function islamicToJD(y, m, d) {
+  return d + Math.ceil(29.5 * (m - 1)) + (y - 1) * 354 + Math.floor((3 + 11 * y) / 30) + 1948440 - 1;
+}
+
+function jdToGregorian(jd) {
+  let l = jd + 68569;
+  const n = Math.floor((4 * l) / 146097);
+  l -= Math.floor((146097 * n + 3) / 4);
+  const i = Math.floor((4000 * (l + 1)) / 1461001);
+  l = l - Math.floor((1461 * i) / 4) + 31;
+  const j = Math.floor((80 * l) / 2447);
+  const day = l - Math.floor((2447 * j) / 80);
+  l = Math.floor(j / 11);
+  const month = j + 2 - 12 * l;
+  const year = 100 * (n - 49) + i + l;
+  return { year, month, day };
+}
+
+function hijriToGregorianYmd(hDay, hMonth, hYear) {
+  const jd = islamicToJD(hYear, hMonth, hDay);
+  const g = jdToGregorian(jd);
+  return `${g.year}-${pad2(g.month)}-${pad2(g.day)}`;
+}
+
+function getHijriYearsForGregorian(gregorianYear) {
+  const approx = gregorianYear - 579;
+  return [approx, approx + 1];
+}
+
+function buildReligiousHolidays(year) {
+  const y = Number(year);
+  if (!Number.isFinite(y)) return [];
+  const holidays = [];
+  const hijriYears = getHijriYearsForGregorian(y);
+
+  for (const hijriYear of hijriYears) {
+    try {
+      const ramazan = hijriToGregorianYmd(1, 10, hijriYear);
+      if (ramazan.startsWith(String(y))) {
+        holidays.push({ date: addDaysUTC(ramazan, -1), kind: "arife", name: "Ramazan Bayramı Arifesi" });
+        holidays.push({ date: ramazan, kind: "full", name: "Ramazan Bayramı 1. Gün" });
+        holidays.push({ date: addDaysUTC(ramazan, 1), kind: "full", name: "Ramazan Bayramı 2. Gün" });
+        holidays.push({ date: addDaysUTC(ramazan, 2), kind: "full", name: "Ramazan Bayramı 3. Gün" });
+      }
+    } catch {}
+
+    try {
+      const kurban = hijriToGregorianYmd(10, 12, hijriYear);
+      if (kurban.startsWith(String(y))) {
+        holidays.push({ date: addDaysUTC(kurban, -1), kind: "arife", name: "Kurban Bayramı Arifesi" });
+        holidays.push({ date: kurban, kind: "full", name: "Kurban Bayramı 1. Gün" });
+        holidays.push({ date: addDaysUTC(kurban, 1), kind: "full", name: "Kurban Bayramı 2. Gün" });
+        holidays.push({ date: addDaysUTC(kurban, 2), kind: "full", name: "Kurban Bayramı 3. Gün" });
+        holidays.push({ date: addDaysUTC(kurban, 3), kind: "full", name: "Kurban Bayramı 4. Gün" });
+      }
+    } catch {}
+  }
+
+  return holidays;
+}
+
+function buildFallbackHolidays(year) {
+  const merged = [...buildFixedHolidays(year), ...buildReligiousHolidays(year)];
+  const byDate = new Map();
+  for (const item of merged) byDate.set(item.date, item);
+  return Array.from(byDate.values());
+}
+
 export default function HolidayCalendarTab() {
   const [list, setList] = useState([]);
   const [form, setForm] = useState({ date: "", kind: "full", name: "" });
@@ -44,12 +119,12 @@ export default function HolidayCalendarTab() {
         setNotice("");
         setList(sortByDate(items));
       } else {
-        setNotice("Sunucudan tatil kaydı gelmedi; sabit tatil şablonu gösteriliyor.");
-        setList(sortByDate(buildFixedHolidays(y)));
+        setNotice("Sunucudan tatil kaydı gelmedi; yerel tatil şablonu gösteriliyor.");
+        setList(sortByDate(buildFallbackHolidays(y)));
       }
     } catch (err) {
-      setNotice(err?.message || "Tatil listesi alınamadı; sabit tatil şablonu gösteriliyor.");
-      setList(sortByDate(buildFixedHolidays(y)));
+      setNotice(err?.message || "Tatil listesi alınamadı; yerel tatil şablonu gösteriliyor.");
+      setList(sortByDate(buildFallbackHolidays(y)));
     }
     try { window.dispatchEvent(new Event("holidays:changed")); } catch {}
   };
