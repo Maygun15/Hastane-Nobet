@@ -34,11 +34,23 @@ export default function HolidayCalendarTab() {
   const [form, setForm] = useState({ date: "", kind: "full", name: "" });
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState("");
 
   const loadYear = async (y) => {
-    const data = await http.get(`/api/holidays?y=${y}`);
-    const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-    setList(sortByDate(items));
+    try {
+      const data = await http.get(`/api/holidays?y=${y}`);
+      const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+      if (items.length > 0) {
+        setNotice("");
+        setList(sortByDate(items));
+      } else {
+        setNotice("Sunucudan tatil kaydı gelmedi; sabit tatil şablonu gösteriliyor.");
+        setList(sortByDate(buildFixedHolidays(y)));
+      }
+    } catch (err) {
+      setNotice(err?.message || "Tatil listesi alınamadı; sabit tatil şablonu gösteriliyor.");
+      setList(sortByDate(buildFixedHolidays(y)));
+    }
     try { window.dispatchEvent(new Event("holidays:changed")); } catch {}
   };
 
@@ -137,6 +149,12 @@ export default function HolidayCalendarTab() {
       </div>
 
       <h3 className="font-medium">Tatil Takvimi</h3>
+
+      {notice ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {notice}
+        </div>
+      ) : null}
 
       <form onSubmit={upsert} className="bg-white rounded-2xl shadow-sm p-4 grid md:grid-cols-5 gap-3 items-end">
         <input
