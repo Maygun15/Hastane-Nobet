@@ -246,15 +246,9 @@ export default function HospitalRosterApp() {
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
     if (!isAdmin) return;
-    if (saveTimersRef.current.wa) clearTimeout(saveTimersRef.current.wa);
-    saveTimersRef.current.wa = setTimeout(() => {
-      saveSetting("workAreas", workAreas).catch((err) =>
-        console.warn("workAreas save failed:", err?.message || err)
-      );
-    }, 600);
-    return () => {
-      if (saveTimersRef.current.wa) clearTimeout(saveTimersRef.current.wa);
-    };
+    saveSetting("workAreas", workAreas).catch((err) =>
+      console.warn("workAreas save failed:", err?.message || err)
+    );
   }, [workAreas, isAdmin, saveSetting]);
 
   useEffect(() => {
