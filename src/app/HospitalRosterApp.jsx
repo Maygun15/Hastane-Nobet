@@ -125,7 +125,11 @@ export default function HospitalRosterApp() {
   }, [isBasicUser, activeTab]);
 
   /* ---- Mongo-first state’ler (LS sadece cache) ---- */
-  const [workAreas, setWorkAreas] = useState([]);
+  const [workAreas, setWorkAreas] = useState(() => {
+    const v2 = LS.get("workAreasV2", null);
+    const v1 = LS.get("workAreas", null);
+    return Array.isArray(v2) ? v2 : Array.isArray(v1) ? v1 : [];
+  });
   const [nurses, setNurses] = useState([]);
   const [doctors, setDoctors] = useState([]);
   const [workingHours, setWorkingHours] = useState([]);
