@@ -1,7 +1,11 @@
 const AuditLog = require('../models/AuditLog');
 
-function auditLogger(req, res, next) {
-  res.on('finish', () => {
+module.exports = async function auditLogger(req, res, next) {
+  // noise filter
+  if (req.method === 'OPTIONS') return next();
+  if (req.path === '/health' || req.path === '/api/health') return next();
+
+  res.on('finish', async () => {
     const userId = req.user
       ? String(req.user.id || req.user._id || req.user.uid || 'anonymous')
       : 'anonymous';
@@ -19,6 +23,4 @@ function auditLogger(req, res, next) {
   });
 
   next();
-}
-
-module.exports = auditLogger;
+};
