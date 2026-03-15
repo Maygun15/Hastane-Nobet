@@ -1,4 +1,8 @@
-const NIGHT_24_CODES = new Set(['N', 'V2']);
+const { NIGHT_CODES, NIGHT_EQUIVALENT_CODES } = require('./utils/nightShift');
+
+// Validator cleanup is intentionally broader than "true night":
+// keep true night codes plus night-equivalent cleanup codes such as V2.
+const NIGHT_CLEANUP_CODES = new Set([...NIGHT_CODES, ...NIGHT_EQUIVALENT_CODES]);
 const HALF_DAY_A_HOURS = 4;
 
 const normalizeCode = (s) => String(s || '').trim().toUpperCase();
@@ -47,7 +51,7 @@ function applyHardConstraints(assignments = [], leavesByPerson = {}) {
     const dateStr = String(a?.date || a?.day || '').slice(0, 10);
     if (!pid || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
     const code = normalizeCode(a?.shiftCode || a?.shiftId || a?.shift || a?.code || '');
-    if (!code || !NIGHT_24_CODES.has(code)) continue;
+    if (!code || !NIGHT_CLEANUP_CODES.has(code)) continue;
     if (!nightByPerson.has(pid)) nightByPerson.set(pid, new Set());
     nightByPerson.get(pid).add(dateStr);
   }

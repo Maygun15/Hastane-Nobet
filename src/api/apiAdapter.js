@@ -72,19 +72,27 @@ export async function fetchPersonnel({
     const data = await httpRequest(`/api/personnel?${qs.toString()}`, { token });
     // G6 şemasına göre map et (items veya dizi)
     const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-    return items.map((p) => ({
-      id: p.id,
-      fullName: p.fullName ?? `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim(),
-      title: p.title ?? p.title_name ?? "",
-      role: p.role ?? p.departmentRole ?? p.meta?.role ?? p.meta?.unvan ?? p.meta?.title ?? "",
-      service: p.service ?? p.department ?? p.serviceId ?? "",
-      serviceId: p.serviceId ?? p.service ?? p.department ?? "",
-      areas: p.areas ?? p.meta?.areas ?? [],
-      shiftCodes: p.shiftCodes ?? p.meta?.shiftCodes ?? p.meta?.shifts ?? [],
-      meta: p.meta ?? {},
-      phone: p.phone || "",
-      email: p.email || "",
-    }));
+    return items.map((p) => {
+      const fullName = p.fullName ?? `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim();
+      return {
+        id: p.id,
+        name: p.name ?? fullName,
+        fullName,
+        title: p.title ?? p.title_name ?? "",
+        role: p.role ?? p.departmentRole ?? p.meta?.role ?? p.meta?.unvan ?? p.meta?.title ?? "",
+        service: p.service ?? p.department ?? p.serviceId ?? "",
+        serviceId: p.serviceId ?? p.service ?? p.department ?? p.meta?.serviceId ?? p.meta?.service ?? "",
+        active: p.active ?? p.isActive ?? p.meta?.active ?? p.meta?.isActive ?? null,
+        isActive: p.isActive ?? p.active ?? p.meta?.isActive ?? p.meta?.active ?? null,
+        status: p.status ?? p.meta?.status ?? null,
+        stats: p.stats ?? p.meta?.stats ?? null,
+        areas: p.areas ?? p.meta?.areas ?? [],
+        shiftCodes: p.shiftCodes ?? p.meta?.shiftCodes ?? p.meta?.shifts ?? [],
+        meta: p.meta ?? {},
+        phone: p.phone || "",
+        email: p.email || "",
+      };
+    });
   } catch (err) {
     if (err?.status !== 404) console.error("fetchPersonnel err:", err);
     return [];
@@ -219,6 +227,24 @@ export async function getMonthlySchedule({
 
   const payload = await httpRequest(`/api/schedules/monthly?${qs.toString()}`);
   return payload?.schedule || null;
+}
+
+export async function getGeneratedSchedule({
+  sectionId,
+  serviceId = "",
+  role = "",
+  year,
+  month,
+} = {}) {
+  if (!sectionId) throw new Error("sectionId gerekli");
+  const qs = new URLSearchParams({ sectionId });
+  if (year != null) qs.append("year", String(year));
+  if (month != null) qs.append("month", String(month));
+  if (serviceId !== undefined && serviceId !== null) qs.append("serviceId", String(serviceId));
+  if (role !== undefined && role !== null) qs.append("role", String(role));
+
+  const payload = await httpRequest(`/api/schedules/generated?${qs.toString()}`);
+  return payload?.data || null;
 }
 
 export async function saveMonthlySchedule({

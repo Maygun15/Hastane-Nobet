@@ -140,6 +140,8 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   const data = {
     assignments: validated.assignments,
     issues: [...baseIssues, ...(validated.issues || [])],
+    candidateAudit: useDraft ? [] : (Array.isArray(context?.candidateAudit) ? context.candidateAudit : []),
+    shadowAudit: useDraft ? null : (context?.shadowAudit || null),
     days: days.length,
     debug: {
       staff: staffPack.debug,

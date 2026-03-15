@@ -22,7 +22,7 @@ class RuleEngine {
   /**
    * 1. Personeli görev için kontrol et
    */
-  async checkPersonEligibility(person, taskCode, context = {}) {
+  checkPersonEligibility(person, taskCode, context = {}) {
     if (!this.rules) {
       return { eligible: true, reason: 'Kurallar yüklenmedi' };
     }

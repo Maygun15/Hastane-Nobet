@@ -25,7 +25,13 @@ import {
   buildNameUnavailability,
   loadLeavesFromBackend,
 } from "../lib/leaves.js";
-import { getMonthlySchedule, saveMonthlySchedule, generateSchedulerPlan, fetchPersonnel } from "../api/apiAdapter.js";
+import {
+  getMonthlySchedule,
+  getGeneratedSchedule,
+  saveMonthlySchedule,
+  generateSchedulerPlan,
+  fetchPersonnel,
+} from "../api/apiAdapter.js";
 
 /* ===== Toaster (opsiyonel) ===== */
 let toastSafe = null;
@@ -260,6 +266,35 @@ function pickDefaultShiftCode(area, shifts) {
   );
 }
 
+function createEmptyExplainability() {
+  return {
+    generatedId: null,
+    candidateAudit: [],
+    shadowAudit: null,
+    selectedPolicyBreakdowns: [],
+  };
+}
+
+function extractGeneratedExplainability(scheduleDoc) {
+  const data = scheduleDoc?.data && typeof scheduleDoc.data === "object" ? scheduleDoc.data : {};
+  const candidateAudit = Array.isArray(data.candidateAudit) ? data.candidateAudit : [];
+  const shadowAudit = data.shadowAudit && typeof data.shadowAudit === "object" ? data.shadowAudit : null;
+  const selectedPolicyBreakdowns = candidateAudit
+    .map((entry) => ({
+      selectedCandidateId: entry?.selectedCandidateId || null,
+      selectionReason: entry?.selectionReason || null,
+      breakdown: Array.isArray(entry?.selectedPolicyBreakdown) ? entry.selectedPolicyBreakdown : [],
+    }))
+    .filter((entry) => entry.breakdown.length > 0);
+
+  return {
+    generatedId: scheduleDoc?.id || (scheduleDoc?._id ? String(scheduleDoc._id) : null),
+    candidateAudit,
+    shadowAudit,
+    selectedPolicyBreakdowns,
+  };
+}
+
 /* ===== personel normalize ===== */
 function normalizeFromParamTable(x, role) {
   const name = x?.fullName || x?.name || x?.["AD SOYAD"];
@@ -469,6 +504,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const [loadingRemote, setLoadingRemote] = useState(false);
   const [saving, setSaving] = useState(false);
   const [lastSavedInfo, setLastSavedInfo] = useState(null);
+  const [generatedExplainability, setGeneratedExplainability] = useState(() => createEmptyExplainability());
   const serviceKey = serviceId == null ? "" : String(serviceId);
   const autoSaveTimerRef = useRef(null);
   const lastSavedSignatureRef = useRef(null);
@@ -519,6 +555,33 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
   /* Kurallar (Backend + LS Sync) */
   const [rules, setRules] = useState(() => LS.get("dutyRulesV2", []) || []);
+
+  const loadGeneratedExplainability = useCallback(async () => {
+    if (!sectionId) {
+      setGeneratedExplainability(createEmptyExplainability());
+      return createEmptyExplainability();
+    }
+
+    try {
+      const generated = await getGeneratedSchedule({
+        sectionId,
+        serviceId: serviceKey,
+        role,
+        year,
+        month: month1,
+      });
+      const next = generated ? extractGeneratedExplainability(generated) : createEmptyExplainability();
+      setGeneratedExplainability(next);
+      return next;
+    } catch (err) {
+      if (err?.status !== 404) {
+        console.error("[DutyRowsEditor] getGeneratedSchedule err:", err);
+      }
+      const empty = createEmptyExplainability();
+      setGeneratedExplainability(empty);
+      return empty;
+    }
+  }, [sectionId, serviceKey, role, year, month1]);
 
   const computeSignature = useCallback(
     () => makeSignature(rows, overrides, roster, preview, aiPlan, pins, rules),
@@ -1262,6 +1325,38 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       cancelled = true;
     };
   }, [sectionId, serviceKey, role, year, month1, replaceAllDefs, note]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!sectionId) {
+        if (!cancelled) setGeneratedExplainability(createEmptyExplainability());
+        return;
+      }
+      try {
+        const generated = await getGeneratedSchedule({
+          sectionId,
+          serviceId: serviceKey,
+          role,
+          year,
+          month: month1,
+        });
+        if (cancelled) return;
+        setGeneratedExplainability(
+          generated ? extractGeneratedExplainability(generated) : createEmptyExplainability()
+        );
+      } catch (err) {
+        if (cancelled) return;
+        if (err?.status !== 404) {
+          console.error("[DutyRowsEditor] getGeneratedSchedule err:", err);
+        }
+        setGeneratedExplainability(createEmptyExplainability());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sectionId, serviceKey, role, year, month1]);
   useEffect(() => {
     return () => setLoadingRemote(false);
   }, []);
@@ -1590,16 +1685,29 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       const areas = Array.isArray(s.areas) ? s.areas : [];
       const shiftCodes = Array.isArray(s.shiftCodes) ? s.shiftCodes : [];
       const meta = { ...(s.meta || {}) };
+      const active = s.active ?? s.isActive ?? meta.active ?? meta.isActive ?? null;
+      const isActive = s.isActive ?? s.active ?? meta.isActive ?? meta.active ?? null;
+      const status = s.status ?? meta.status ?? null;
+      const stats = s.stats ?? meta.stats ?? null;
+      const resolvedName = s.name || s.fullName || "";
       if (!meta.areas && areas.length) meta.areas = areas;
       if (!meta.shiftCodes && shiftCodes.length) meta.shiftCodes = shiftCodes;
       if (!meta.role && s.role) meta.role = s.role;
       if (!meta.serviceId && s.serviceId) meta.serviceId = s.serviceId;
+      if (meta.active == null && active != null) meta.active = active;
+      if (meta.isActive == null && isActive != null) meta.isActive = isActive;
+      if (meta.status == null && status != null) meta.status = status;
+      if (meta.stats == null && stats != null) meta.stats = stats;
       return {
         id: String(s.id || ""),
-        name: s.name || "",
-        fullName: s.name || "",
+        name: resolvedName,
+        fullName: resolvedName,
         role: s.role || "",
+        active,
+        isActive,
+        status,
         serviceId: s.serviceId || "",
+        stats,
         areas,
         shiftCodes,
         meta,
@@ -1650,7 +1758,6 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         year,
         month: month1,
         dryRun: false,
-        engine: "draft",
         defs: rows,
         overrides,
         shiftOptions,
@@ -1679,6 +1786,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           generatedAt: new Date().toISOString(),
         };
         await doSave({ silent: true, payloadOverride: payload });
+        await loadGeneratedExplainability();
         try {
           const monthKey = `${year}-${String(month0 + 1).padStart(2, "0")}`;
           LS.set("scheduleBuildTrigger", { ym: monthKey, ts: Date.now() });
@@ -1729,11 +1837,19 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   }));
 
   const hasLastSaved = !!lastSavedInfo?.updatedAt;
+  const shadowObservationCount = Array.isArray(generatedExplainability?.shadowAudit?.observations)
+    ? generatedExplainability.shadowAudit.observations.length
+    : 0;
+  const explainabilityReady =
+    generatedExplainability.candidateAudit.length > 0 ||
+    shadowObservationCount > 0 ||
+    generatedExplainability.selectedPolicyBreakdowns.length > 0;
   const showStatusBar =
     loadingRemote ||
     saving ||
     autoSaveStatus !== "idle" ||
-    hasLastSaved;
+    hasLastSaved ||
+    explainabilityReady;
 
   /* Render (toolbar yok) */
   return (
@@ -1770,6 +1886,11 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           )}
           {!loadingRemote && !saving && !hasLastSaved && autoSaveStatus === "idle" && (
             <span>Otomatik kaydetme aktif. İlk kayıt için değişiklik yapın.</span>
+          )}
+          {!loadingRemote && explainabilityReady && (
+            <span className="text-slate-600">
+              Explainability: {generatedExplainability.candidateAudit.length} slot audit, {shadowObservationCount} shadow observation, {generatedExplainability.selectedPolicyBreakdowns.length} policy trace
+            </span>
           )}
         </div>
       )}

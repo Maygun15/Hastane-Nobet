@@ -2,6 +2,7 @@
 
 const REASON_CODES = require("../reasonCodes");
 const { makeRulePass, makeRuleFail } = require("../utils/candidateResult");
+const { isNightShiftCode } = require("../../utils/nightShift");
 
 /**
  * Rule: enforce rest window after night shift.
@@ -51,7 +52,7 @@ function restAfterNightRule(context = {}) {
     if (assignmentDate !== previousDate) continue;
 
     const shiftCode = extractShiftCode(assignment);
-    if (!isNightShift(shiftCode)) continue;
+    if (!isNightShiftCode(shiftCode)) continue;
 
     return makeRuleFail({
       code: "REST_AFTER_NIGHT",
@@ -108,11 +109,6 @@ function normalizeShiftCode(value) {
   if (value == null) return null;
   const normalized = String(value).trim().toUpperCase();
   return normalized || null;
-}
-
-function isNightShift(code) {
-  if (!code) return false;
-  return code === "N" || code === "NIGHT";
 }
 
 function getPreviousDate(date) {

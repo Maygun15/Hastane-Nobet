@@ -1,7 +1,6 @@
 "use strict";
 
 const RULE_CODES = require("./ruleCodes");
-const { makeRulePass } = require("./utils/candidateResult");
 const activeRequiredRule = require("./rules/activeRequired.rule");
 const serviceMatchRule = require("./rules/serviceMatch.rule");
 const leaveBlockRule = require("./rules/leaveBlock.rule");
@@ -9,16 +8,8 @@ const restAfterNightRule = require("./rules/restAfterNight.rule");
 const oneShiftPerDayRule = require("./rules/oneShiftPerDay.rule");
 const roleEligibilityRule = require("./rules/roleEligibility.rule");
 const sectionEligibilityRule = require("./rules/sectionEligibility.rule");
-
-function makeTodoRule(ruleCode) {
-  return function todoRule() {
-    return makeRulePass({
-      code: ruleCode,
-      message: "Rule skeleton is registered; business logic is pending.",
-      meta: { todo: true },
-    });
-  };
-}
+const maxWeeklyShiftsRule = require("./rules/maxWeeklyShifts.rule");
+const maxConsecutiveDaysRule = require("./rules/maxConsecutiveDays.rule");
 
 const DEFAULT_RULE_FUNCTIONS = Object.freeze({
   [RULE_CODES.ACTIVE_REQUIRED]: activeRequiredRule,
@@ -28,8 +19,8 @@ const DEFAULT_RULE_FUNCTIONS = Object.freeze({
   [RULE_CODES.ONE_SHIFT_PER_DAY]: oneShiftPerDayRule,
   [RULE_CODES.ROLE_ELIGIBILITY]: roleEligibilityRule,
   [RULE_CODES.SECTION_ELIGIBILITY]: sectionEligibilityRule,
-  [RULE_CODES.MAX_WEEKLY_SHIFTS]: makeTodoRule(RULE_CODES.MAX_WEEKLY_SHIFTS),
-  [RULE_CODES.MAX_CONSECUTIVE_DAYS]: makeTodoRule(RULE_CODES.MAX_CONSECUTIVE_DAYS),
+  [RULE_CODES.MAX_WEEKLY_SHIFTS]: maxWeeklyShiftsRule,
+  [RULE_CODES.MAX_CONSECUTIVE_DAYS]: maxConsecutiveDaysRule,
 });
 
 /**

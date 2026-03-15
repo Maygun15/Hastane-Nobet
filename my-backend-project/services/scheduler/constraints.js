@@ -1,5 +1,7 @@
 // services/scheduler/constraints.js
 
+const { isNightShift } = require("./utils/nightShift");
+
 const parseTime = (s) => {
   if (!s) return null;
   const m = String(s).match(/^(\d{1,2}):(\d{2})$/);
@@ -25,8 +27,14 @@ const daysBetween = (a, b) => {
 
 const shiftIsNight = (shift) => {
   if (!shift) return false;
-  if (shift.isNight) return true;
-  return String(shift.code || shift.id || "").toUpperCase().includes("N");
+  // Prefer centralized true-night semantics first.
+  // Keep the broader includes("N") check as a transitional legacy fallback
+  // until all runtime/night-equivalent rules are aligned.
+  // This branch is only a temporary legacy/data-quality guard; once the
+  // production shift-code inventory is explicit, it can be narrowed or removed.
+  if (isNightShift(shift)) return true;
+  const legacyCode = String(shift.code || shift.id || "").toUpperCase();
+  return legacyCode.includes("N");
 };
 
 const normalizeCode = (s) =>
@@ -93,7 +101,15 @@ function isAvailable(person, day, context, shift) {
     : null;
 
   if (context?.ruleEngine && shift) {
-    const allow = context.ruleEngine.checkPersonEligibility(person, shift, dayKey, context);
+    const allow = context.ruleEngine.checkPersonEligibility(
+      person,
+      shift?.code || shift?.id || null,
+      {
+        date: dayKey,
+        isNightShift: shiftIsNight(shift),
+        taskType: shift?.taskType || shift?.type || null,
+      }
+    );
     if (!allow?.eligible) { if(logBlock)logBlock(allow.reason||"RULE_ENGINE"); return false; }
   }
 
@@ -113,11 +129,18 @@ function isAvailable(person, day, context, shift) {
 
   if (rules.ONE_SHIFT_PER_DAY&&Array.isArray(person.assignedDays)&&person.assignedDays.includes(dayKey)) { if(logBlock)logBlock("ONE_SHIFT_PER_DAY"); return false; }
 
+  // Duplicate by intent with candidateBuilder LEAVE_BLOCK.
+  // Kept active as a transitional runtime guard because engine fallback currently only hard-filters
+  // ACTIVE_REQUIRED and SERVICE_MATCH. Disabling this here would allow leave-blocked candidates
+  // to re-enter via fallback until fallback ownership is tightened in the engine path.
   if (rules.LEAVE_BLOCK) {
     const lv = leaves[person.id];
     if (lv&&(lv instanceof Set?lv.has(dayKey):Array.isArray(lv)&&lv.includes(dayKey))) { if(logBlock)logBlock("LEAVE_BLOCK"); return false; }
   }
 
+  // Transitional hard authority:
+  // candidateBuilder currently emits MAX_CONSECUTIVE_DAYS as a soft capacity signal,
+  // while runtime hard enforcement remains here until ownership/severity is aligned.
   if (rules.MAX_CONSECUTIVE_DAYS) {
     const max = Number(rules.MAX_CONSECUTIVE_DAYS);
     if (Number.isFinite(max)&&max>0) {
@@ -131,10 +154,17 @@ function isAvailable(person, day, context, shift) {
     if (daysBetween(person.lastShift.date,dayKey)===1) { if(logBlock)logBlock("NIGHT_NEXT_DAY_OFF"); return false; }
   }
 
+  // Transitional night-equivalent full-rest guard:
+  // this is not the canonical "true night" rule. V2 remains here as a
+  // night-equivalent code that still requires a full next-day rest window,
+  // so this block intentionally stays separate from NIGHT_NEXT_DAY_OFF.
+  const prevShiftCode = person.lastShift
+    ? normalizeCode(person.lastShift.code||person.lastShift.id||person.lastShift.shiftCode||"")
+    : "";
+
   // N veya V2 (24s) sonrası ertesi gün hiçbir vardiya yazılmasın
   if (person.lastShift) {
-    const prevCode = normalizeCode(person.lastShift.code||person.lastShift.id||person.lastShift.shiftCode||"");
-    if ((prevCode==="N"||prevCode==="V2") && daysBetween(person.lastShift.date,dayKey)===1) {
+    if ((prevShiftCode==="N"||prevShiftCode==="V2") && daysBetween(person.lastShift.date,dayKey)===1) {
       if (logBlock) logBlock("NIGHT_24H_NEXT_DAY_BLOCK");
       return false;
     }

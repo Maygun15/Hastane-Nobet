@@ -110,6 +110,7 @@ function sectionEligibilityRule(context = {}) {
     code: RULE_CODES.SECTION_ELIGIBILITY,
     message: "Person is not eligible for target section.",
     meta: {
+      reason: REASON_CODES.SECTION_NOT_ALLOWED,
       taskPlaceKind: taskPlaceDefinition.kind,
       resolvedLabel: taskPlaceDefinition.label,
       normalizedKey: taskPlaceDefinition.normalizedKey,

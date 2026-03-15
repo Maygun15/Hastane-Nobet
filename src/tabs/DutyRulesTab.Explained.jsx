@@ -1,6 +1,8 @@
 // src/tabs/DutyRulesTab.Explained.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import { getUiRuleMetaByUiRuleId } from "../rules/uiRuleAdapter.js";
+import UnifiedRulePreviewPanel from "../components/UnifiedRulePreviewPanel.jsx";
 
 /**
  * Nöbet Kuralları — Tam Sürüm
@@ -25,6 +27,32 @@ const toBool = (v) =>
 
 const humanizeId = (s = "") =>
   s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (m) => m.toUpperCase());
+
+function getRuleDisplayMeta(rule, ruleLibrary, categories) {
+  const adapterMeta = getUiRuleMetaByUiRuleId(rule?.id);
+  const libraryMeta = ruleLibrary?.[rule?.id] || {};
+
+  return {
+    title:
+      adapterMeta?.shortLabelTr ||
+      adapterMeta?.labelTr ||
+      libraryMeta.uiTitle ||
+      libraryMeta.desc ||
+      rule?.name ||
+      humanizeId(rule?.id),
+    description:
+      adapterMeta?.descriptionTr ||
+      libraryMeta.desc ||
+      rule?.note ||
+      rule?.dsl?.then ||
+      rule?.dsl?.when ||
+      null,
+    category:
+      adapterMeta?.categoryTr ||
+      (libraryMeta.cat ? categories.find((c) => c.id === libraryMeta.cat)?.label || null : null),
+    locked: adapterMeta?.locked === true,
+  };
+}
 
 function normalizeAndSort(arr = []) {
   const withIndex = (arr || []).map((it, i) => ({
@@ -848,7 +876,8 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
           const meta = RULE_LIBRARY[it.id] || {};
           const inferredCat = meta.cat || it.cat || null;
           const isOpen = !!expanded[it.id];
-          const displayTitle = meta.uiTitle || meta.desc || it.name || humanizeId(it.id);
+          const displayMeta = getRuleDisplayMeta(it, RULE_LIBRARY, CATS);
+          const displayTitle = displayMeta.title;
 
           return (
             <div key={it.id} className="p-4 border-b last:border-b-0">
@@ -868,6 +897,11 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
                     <div className="font-medium truncate" title={displayTitle}>
                       {displayTitle}
                     </div>
+                    {displayMeta.locked && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
+                        Sistem Kuralı
+                      </span>
+                    )}
                     <span className="text-[10px] px-1.5 py-0.5 rounded border bg-gray-50 text-gray-500 border-gray-200">
                       {it.id}
                     </span>
@@ -877,9 +911,9 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
                         {PRIORITY_LABEL[it.priority] || it.priority}
                       </span>
                     )}
-                    {inferredCat && (
+                    {(displayMeta.category || inferredCat) && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded border bg-gray-50 text-gray-700 border-gray-200">
-                        {CATS.find((c) => c.id === inferredCat)?.label}
+                        {displayMeta.category || CATS.find((c) => c.id === inferredCat)?.label}
                       </span>
                     )}
                     {/* aktif toggle (inline) */}
@@ -906,7 +940,7 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
                   </div>
 
                   <div className="text-gray-700 mt-1">
-                    {meta.desc || it.note || it.dsl?.then || it.dsl?.when || "Kural açıklaması"}
+                    {displayMeta.description || "Kural açıklaması"}
                   </div>
 
                   <div className="flex items-center gap-2 mt-2">
@@ -969,6 +1003,8 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
           );
         })}
       </div>
+
+      <UnifiedRulePreviewPanel rules={ordered} />
 
       {/* Sağdan kayan Düzenleme Paneli */}
       {showEditor && (
@@ -1157,41 +1193,49 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
                     Önizleme için RULE blokları veya numaralı maddeler içeren metin yapıştırın.
                   </div>
                 ) : (
-                  preview.map((r, i) => (
-                    <div
-                      key={`${r.id}_${i}`}
-                      className="flex items-center justify-between py-1 border-b last:border-b-0"
-                    >
-                      <div className="truncate space-x-1">
-                        <span className="text-gray-500 mr-2">{i + 1}.</span>
-                        <span className="font-medium">{r.name || humanizeId(r.id)}</span>
-                        {r.priority && (
-                          <span className="text-[10px] px-1 py-0.5 rounded border bg-gray-50 text-gray-600 border-gray-200">
-                            {PRIORITY_LABEL[r.priority] || r.priority}
+                  preview.map((r, i) => {
+                    const displayMeta = getRuleDisplayMeta(r, RULE_LIBRARY, CATS);
+                    return (
+                      <div
+                        key={`${r.id}_${i}`}
+                        className="flex items-center justify-between py-1 border-b last:border-b-0"
+                      >
+                        <div className="truncate space-x-1">
+                          <span className="text-gray-500 mr-2">{i + 1}.</span>
+                          <span className="font-medium">{displayMeta.title}</span>
+                          {displayMeta.locked && (
+                            <span className="text-[10px] px-1 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
+                              Sistem Kuralı
+                            </span>
+                          )}
+                          {r.priority && (
+                            <span className="text-[10px] px-1 py-0.5 rounded border bg-gray-50 text-gray-600 border-gray-200">
+                              {PRIORITY_LABEL[r.priority] || r.priority}
+                            </span>
+                          )}
+                          {r.weight && (
+                            <span className="text-[10px] px-1 py-0.5 rounded border bg-indigo-50 text-indigo-600 border-indigo-200">
+                              {r.weight}
+                            </span>
+                          )}
+                          {(displayMeta.category || r.cat) && (
+                            <span className="text-[10px] px-1 py-0.5 rounded border bg-gray-50 text-gray-600 border-gray-200">
+                              {displayMeta.category || CATS.find((c) => c.id === r.cat)?.label || r.cat}
+                            </span>
+                          )}
+                          {r.value != null && (
+                            <span className="text-xs text-gray-600">({r.value})</span>
+                          )}
+                        </div>
+                        {/* çakışma rozeti */}
+                        {ordered.some((x) => x.id === r.id) && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
+                            Mevcut ID
                           </span>
-                        )}
-                        {r.weight && (
-                          <span className="text-[10px] px-1 py-0.5 rounded border bg-indigo-50 text-indigo-600 border-indigo-200">
-                            {r.weight}
-                          </span>
-                        )}
-                        {r.cat && (
-                          <span className="text-[10px] px-1 py-0.5 rounded border bg-gray-50 text-gray-600 border-gray-200">
-                            {CATS.find((c) => c.id === r.cat)?.label || r.cat}
-                          </span>
-                        )}
-                        {r.value != null && (
-                          <span className="text-xs text-gray-600">({r.value})</span>
                         )}
                       </div>
-                      {/* çakışma rozeti */}
-                      {ordered.some((x) => x.id === r.id) && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
-                          Mevcut ID
-                        </span>
-                      )}
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
 

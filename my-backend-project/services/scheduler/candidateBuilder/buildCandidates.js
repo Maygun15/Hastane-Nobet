@@ -135,6 +135,11 @@ function resolveRuleCodes(ruleCodes, activeRuleCodes, options) {
     out.push(RULE_CODES.ROLE_ELIGIBILITY);
   }
 
+  if (shouldForceStrictSectionEligibility(options) && !seen.has(RULE_CODES.SECTION_ELIGIBILITY)) {
+    seen.add(RULE_CODES.SECTION_ELIGIBILITY);
+    out.push(RULE_CODES.SECTION_ELIGIBILITY);
+  }
+
   return out;
 }
 
@@ -144,6 +149,18 @@ function shouldForceStrictRoleEligibility(options) {
   if (Array.isArray(options?.strictCandidateHardRules)) {
     return options.strictCandidateHardRules.some(
       (item) => String(item || "").trim() === RULE_CODES.ROLE_ELIGIBILITY
+    );
+  }
+
+  return false;
+}
+
+function shouldForceStrictSectionEligibility(options) {
+  if (options?.strictSectionEligibility === true) return true;
+
+  if (Array.isArray(options?.strictCandidateHardRules)) {
+    return options.strictCandidateHardRules.some(
+      (item) => String(item || "").trim() === RULE_CODES.SECTION_ELIGIBILITY
     );
   }
 

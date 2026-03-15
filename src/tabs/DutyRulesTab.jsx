@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import { getUiRuleMetaByUiRuleId } from "../rules/uiRuleAdapter.js";
+import UnifiedRulePreviewPanel from "../components/UnifiedRulePreviewPanel.jsx";
 
 /**
  * src/tabs/DutyRulesTab.jsx (V2 – hibrit + Excel içe/dışa aktarım)
@@ -42,6 +44,16 @@ function toBool(v) {
   if (typeof v === "boolean") return v;
   const s = String(v ?? "").trim().toLowerCase();
   return s === "1" || s === "true" || s === "evet" || s === "aktif";
+}
+
+function getRuleDisplayMeta(rule) {
+  const meta = getUiRuleMetaByUiRuleId(rule?.id);
+  return {
+    title: meta?.shortLabelTr || meta?.labelTr || rule?.name || rule?.id || "",
+    description: meta?.descriptionTr || null,
+    category: meta?.categoryTr || null,
+    locked: meta?.locked === true,
+  };
 }
 
 /* ========================= Hibrit State ========================= */
@@ -279,15 +291,37 @@ export default function DutyRulesTab({ rules, setRules }) {
               <div key={it.id} className="p-3 flex items-center gap-3 border-b last:border-b-0 hover:bg-gray-50">
                 <div className="w-6 text-right text-xs font-semibold">{i + 1}.</div>
                 <button onClick={() => edit(it)} className="flex-1 text-left" title="Düzenlemek için tıklayın">
+                  {(() => {
+                    const displayMeta = getRuleDisplayMeta(it);
+                    return (
+                      <>
                   <div className="flex items-center gap-2">
-                    <span>{it.name}</span>
+                    <span>{displayMeta.title}</span>
                     {it.value !== null && it.value !== undefined && it.value !== "" && (
                       <span className="text-xs text-gray-600">= {it.value}</span>
+                    )}
+                    {displayMeta.locked && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
+                        Sistem Kuralı
+                      </span>
                     )}
                     <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded ${it.enabled ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-slate-100 text-slate-600"}`}>
                       {it.enabled ? "Aktif" : "Pasif"}
                     </span>
                   </div>
+                  {(displayMeta.category || displayMeta.description) && (
+                    <div className="mt-1 space-y-0.5">
+                      {displayMeta.category && (
+                        <div className="text-[11px] text-slate-500">{displayMeta.category}</div>
+                      )}
+                      {displayMeta.description && (
+                        <div className="text-xs text-slate-600">{displayMeta.description}</div>
+                      )}
+                    </div>
+                  )}
+                      </>
+                    );
+                  })()}
                 </button>
                 <div className="flex items-center gap-1">
                   <button onClick={() => move(it.id, "up")} className="px-2 py-1 text-xs bg-slate-100 rounded" title="Yukarı">↑</button>
@@ -346,6 +380,8 @@ export default function DutyRulesTab({ rules, setRules }) {
           </form>
         </div>
       </div>
+
+      <UnifiedRulePreviewPanel rules={ordered} />
     </div>
   );
 }

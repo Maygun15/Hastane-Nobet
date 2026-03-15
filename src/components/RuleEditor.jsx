@@ -4,6 +4,7 @@ import {
   saveDutyRules,
   testDutyRules,
 } from "../api/apiAdapter.js";
+import { getUiRuleMetaByUnifiedCode } from "../rules/uiRuleAdapter.js";
 
 const defaultDoc = {
   departman: "",
@@ -37,6 +38,22 @@ function safeJson(value) {
 function parseJson(str, fallback = {}) {
   if (!str || !String(str).trim()) return fallback;
   return JSON.parse(str);
+}
+
+function getRuntimeRuleMetaEntries(rules) {
+  return Object.entries(rules && typeof rules === "object" ? rules : {})
+    .map(([code, value]) => {
+      const meta = getUiRuleMetaByUnifiedCode(code);
+      return {
+        code,
+        value,
+        title: meta?.shortLabelTr || meta?.labelTr || code,
+        category: meta?.categoryTr || null,
+        description: meta?.descriptionTr || null,
+        locked: meta?.locked === true,
+      };
+    })
+    .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
 }
 
 export default function RuleEditor({ scope }) {
@@ -164,6 +181,7 @@ export default function RuleEditor({ scope }) {
     { id: "personnel", label: "Personel Kuralları" },
     { id: "test", label: "Kural Testi" },
   ];
+  const runtimeRuleMetaEntries = useMemo(() => getRuntimeRuleMetaEntries(form.rules), [form.rules]);
 
   if (loading) {
     return <div className="p-4 text-sm text-slate-500">Kurallar yükleniyor…</div>;
@@ -213,6 +231,36 @@ export default function RuleEditor({ scope }) {
           </button>
         ))}
       </div>
+
+      {!!runtimeRuleMetaEntries.length && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="text-xs font-medium text-slate-700">Runtime Hard Rule Özeti</div>
+          <div className="mt-2 space-y-2">
+            {runtimeRuleMetaEntries.map((item) => (
+              <div key={item.code} className="text-xs text-slate-600">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium text-slate-800">{item.title}</span>
+                  {item.locked && (
+                    <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
+                      Sistem Kuralı
+                    </span>
+                  )}
+                  <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-500">
+                    {item.code}
+                  </span>
+                  <span className="text-[11px] text-slate-500">= {String(item.value)}</span>
+                </div>
+                {(item.category || item.description) && (
+                  <div className="mt-0.5">
+                    {item.category && <div>{item.category}</div>}
+                    {item.description && <div>{item.description}</div>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {activeTab === "basic" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

@@ -11,7 +11,7 @@ const {
   aggregateShadowObservations,
 } = require("./audit");
 
-const FALLBACK_BLOCKING_RULE_CODES = Object.freeze(["ACTIVE_REQUIRED", "SERVICE_MATCH"]);
+const FALLBACK_BLOCKING_RULE_CODES = Object.freeze(["ACTIVE_REQUIRED", "SERVICE_MATCH", "LEAVE_BLOCK", "REST_AFTER_NIGHT"]);
 
 const getISOWeekKey = (dateStr) => {
   if (!dateStr) return null;
@@ -161,7 +161,8 @@ function runScheduler(context) {
         const scoredCandidates = candidates.map((candidate) => {
           const policyResult = evaluatePolicies({ person: candidate }, context);
           return {
-            ...candidate,
+            id: candidate?.id,
+            person: candidate,
             policyScore: Number(policyResult?.totalScore || 0),
             policyBreakdown: Array.isArray(policyResult?.policies) ? policyResult.policies : [],
             schedulerScore: calculateScore(candidate, day, shift, context),
@@ -184,7 +185,7 @@ function runScheduler(context) {
           selectionReason: determineSelectionReason(scoredCandidates),
           topCandidates: buildTopCandidateSummary(scoredCandidates, selected?.id),
         });
-        assign(selected, day, shift, context);
+        assign(selected?.person, day, shift, context);
         if (selected?.id) usedOnDay.add(selected.id);
       }
 

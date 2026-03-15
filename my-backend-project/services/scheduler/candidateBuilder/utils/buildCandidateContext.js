@@ -116,7 +116,12 @@ function resolveServiceId(serviceId, shift, day, schedulerContext) {
 }
 
 function resolveRules(rules, schedulerContext) {
-  if (Array.isArray(rules)) return rules;
+  if (Array.isArray(rules)) {
+    if (schedulerContext?.rules && typeof schedulerContext.rules === "object" && !Array.isArray(schedulerContext.rules)) {
+      return schedulerContext.rules;
+    }
+    return rules;
+  }
   if (rules && typeof rules === "object") return rules;
   if (Array.isArray(schedulerContext?.rules)) return schedulerContext.rules;
   if (schedulerContext?.rules && typeof schedulerContext.rules === "object") return schedulerContext.rules;
