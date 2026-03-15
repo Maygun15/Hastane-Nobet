@@ -74,6 +74,8 @@ function buildCandidates({
     totalStaff: safeStaff.length,
     eligibleCount: eligible.length,
     rejectedCount: rejected.length,
+    hardBlockedCount: rejected.filter((item) => item?.hardRejected).length,
+    blockingRules: summarizeBlockingRules(rejected),
     date: orchestrationContext.date,
     shift: orchestrationContext.shift,
     section: orchestrationContext.section,
@@ -88,11 +90,26 @@ function buildCandidates({
     eligible,
     rejected,
     stats,
+    hardBlockedCandidates: rejected.filter((item) => item?.hardRejected),
     // Backward-compatible aliases for existing scaffolding callers.
     candidates: eligible.map((item) => item.person).filter(Boolean),
     evaluations: [...eligible, ...rejected],
     ruleCodes: selectedRuleCodes,
   };
+}
+
+function summarizeBlockingRules(rejected = []) {
+  const counts = {};
+
+  for (const item of rejected) {
+    if (!item?.hardRejected || !Array.isArray(item?.blockingRules)) continue;
+    for (const code of item.blockingRules) {
+      if (!code) continue;
+      counts[code] = Number(counts[code] || 0) + 1;
+    }
+  }
+
+  return counts;
 }
 
 function resolveRuleCodes(ruleCodes, activeRuleCodes) {

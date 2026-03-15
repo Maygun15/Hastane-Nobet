@@ -118,6 +118,8 @@ function evaluateCandidate({
 
   const hardFailedRules = failedRules.filter((item) => isHardSeverity(item?.severity, hardSeverities));
   const softFailedRules = failedRules.filter((item) => !isHardSeverity(item?.severity, hardSeverities));
+  const blockingRules = dedupeCodes(hardFailedRules.map((item) => item?.code).filter(Boolean));
+  const reasonCodes = collectReasonCodes(ruleResults);
 
   const baseCandidate = makeCandidateResult({
     personId: ruleContext.personId,
@@ -131,6 +133,7 @@ function evaluateCandidate({
       requestedRuleCount: codes.length,
       hardFailureCount: hardFailedRules.length,
       softFailureCount: softFailedRules.length,
+      blockingRuleCount: blockingRules.length,
       stoppedByHardFail,
       stoppedAtRuleCode,
     },
@@ -143,9 +146,17 @@ function evaluateCandidate({
     person: ruleContext.person,
     passedRules,
     failedRules,
+    hardRejected: hardFailedRules.length > 0,
+    blockingRules,
+    reasonCodes,
     ruleResults: baseCandidate.ruleResults,
     status,
-    meta: baseCandidate.meta,
+    meta: {
+      ...baseCandidate.meta,
+      hardRejected: hardFailedRules.length > 0,
+      blockingRules,
+      reasonCodes,
+    },
   };
 }
 
@@ -217,6 +228,26 @@ function normalizeRuleResult(rawResult, code, severity, phase) {
       ...(rawResult?.meta && typeof rawResult.meta === "object" ? rawResult.meta : {}),
     },
   });
+}
+
+function collectReasonCodes(ruleResults) {
+  const out = [];
+  const seen = new Set();
+
+  for (const item of ruleResults || []) {
+    const reasonCode = normalizeReasonCode(item?.meta?.reason);
+    if (!reasonCode || seen.has(reasonCode)) continue;
+    seen.add(reasonCode);
+    out.push(reasonCode);
+  }
+
+  return out;
+}
+
+function normalizeReasonCode(value) {
+  if (value == null) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
 }
 
 module.exports = {

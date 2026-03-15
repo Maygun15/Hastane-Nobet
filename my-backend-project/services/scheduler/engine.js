@@ -10,6 +10,8 @@ const {
   aggregateShadowObservations,
 } = require("./audit");
 
+const FALLBACK_BLOCKING_RULE_CODES = Object.freeze(["ACTIVE_REQUIRED", "SERVICE_MATCH"]);
+
 const getISOWeekKey = (dateStr) => {
   if (!dateStr) return null;
   const d = new Date(`${dateStr}T00:00:00Z`);
@@ -190,6 +192,8 @@ function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null,
     rejectedCount: 0,
     fallbackUsed: false,
     fallbackReason: null,
+    hardFilteredByCandidateBuilderCount: 0,
+    hardFilteredBlockingRules: {},
     rejected: [],
   };
   const shadowResult = collectSlotShadowObservations({
@@ -229,15 +233,22 @@ function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null,
 
     const eligiblePeople = extractEligiblePeople(candidateResult);
     const rejected = Array.isArray(candidateResult?.rejected) ? candidateResult.rejected : [];
+    const fallbackPoolAfterHardFilter = filterFallbackPoolByHardBlocks(fallbackPool, rejected, context);
     const audit = {
       ...baseAudit,
       eligibleCount: eligiblePeople.length,
       rejectedCount: rejected.length,
+      hardFilteredByCandidateBuilderCount:
+        Math.max(0, fallbackPool.length - fallbackPoolAfterHardFilter.length),
+      hardFilteredBlockingRules: summarizeBlockingRules(rejected, context),
       rejected: rejected.map((item) => ({
         personId: item?.personId || null,
         failedRuleCodes: Array.isArray(item?.failedRules)
           ? item.failedRules.map((rule) => rule?.code).filter(Boolean)
           : [],
+        hardRejected: item?.hardRejected === true,
+        blockingRules: Array.isArray(item?.blockingRules) ? item.blockingRules.filter(Boolean) : [],
+        reasonCodes: Array.isArray(item?.reasonCodes) ? item.reasonCodes.filter(Boolean) : [],
       })),
     };
 
@@ -252,7 +263,7 @@ function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null,
 
     // Controlled fallback: keep scheduler running if builder has no eligible output for this slot.
     return {
-      pool: fallbackPool,
+      pool: fallbackPoolAfterHardFilter,
       audit: {
         ...audit,
         fallbackUsed: true,
@@ -320,6 +331,59 @@ function extractEligiblePeople(candidateResult) {
   return candidateResult.eligible
     .map((item) => item?.person || null)
     .filter(Boolean);
+}
+
+function filterFallbackPoolByHardBlocks(fallbackPool, rejected, context) {
+  const safePool = Array.isArray(fallbackPool) ? fallbackPool : [];
+  const blockedRules = getFallbackBlockingRuleCodes(context);
+  if (!safePool.length || blockedRules.size === 0) return safePool;
+
+  const blockedPersonIds = new Set();
+  for (const item of rejected || []) {
+    if (!item?.hardRejected || !Array.isArray(item?.blockingRules)) continue;
+    const hasBlockingRule = item.blockingRules.some((code) => blockedRules.has(String(code).trim()));
+    if (!hasBlockingRule) continue;
+    const personId = normalizePersonId(item?.personId || item?.person?.id || item?.person?._id);
+    if (personId) blockedPersonIds.add(personId);
+  }
+
+  if (!blockedPersonIds.size) return safePool;
+  return safePool.filter((person) => !blockedPersonIds.has(normalizePersonId(person?.id || person?._id || person?.personId)));
+}
+
+function summarizeBlockingRules(rejected, context) {
+  const blockedRules = getFallbackBlockingRuleCodes(context);
+  const counts = {};
+
+  for (const item of rejected || []) {
+    if (!item?.hardRejected || !Array.isArray(item?.blockingRules)) continue;
+    for (const code of item.blockingRules) {
+      const normalizedCode = String(code || "").trim();
+      if (!normalizedCode || !blockedRules.has(normalizedCode)) continue;
+      counts[normalizedCode] = Number(counts[normalizedCode] || 0) + 1;
+    }
+  }
+
+  return counts;
+}
+
+function getFallbackBlockingRuleCodes(context) {
+  const configured = context?.candidateBuilderOptions?.fallbackBlockingRuleCodes;
+  const source = Array.isArray(configured) && configured.length
+    ? configured
+    : FALLBACK_BLOCKING_RULE_CODES;
+
+  return new Set(
+    source
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+  );
+}
+
+function normalizePersonId(value) {
+  if (value == null) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
 }
 
 module.exports = { runScheduler, assign };

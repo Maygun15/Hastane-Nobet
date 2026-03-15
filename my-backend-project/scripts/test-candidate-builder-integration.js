@@ -155,6 +155,90 @@ function testFallbackOnEmpty() {
   });
 }
 
+function testFallbackExcludesActiveRequiredHardBlockedCandidates() {
+  const mockBuildCandidates = ({ staff }) => ({
+    eligible: [],
+    rejected: [
+      {
+        personId: "p1",
+        person: staff.find((item) => item.id === "p1") || null,
+        failedRules: [{ code: "ACTIVE_REQUIRED", severity: "hard" }],
+        hardRejected: true,
+        blockingRules: ["ACTIVE_REQUIRED"],
+        reasonCodes: ["PERSON_NOT_ACTIVE"],
+        status: "rejected",
+      },
+    ],
+    candidates: [],
+    stats: { totalStaff: Array.isArray(staff) ? staff.length : 0, eligibleCount: 0, rejectedCount: 1 },
+  });
+
+  withScheduler(mockBuildCandidates, (runScheduler) => {
+    const context = createBaseContext({
+      staff: [
+        createRuntimePerson("p1", { active: false, totalHours: 0 }),
+        createRuntimePerson("p2", { active: true, totalHours: 100 }),
+      ],
+      targetHours: 50,
+    });
+    const result = runScheduler(context);
+
+    assert.strictEqual(result.assignments.length, 1, "fallback should still allow assignment when safe pool remains");
+    assert.strictEqual(
+      result.assignments[0].personId,
+      "p2",
+      "ACTIVE_REQUIRED hard-blocked candidate must not re-enter fallback pool"
+    );
+
+    const audit = getSingleAudit(result);
+    assert.strictEqual(audit.fallbackUsed, true);
+    assert.strictEqual(audit.hardFilteredByCandidateBuilderCount, 1);
+    assert.strictEqual(audit.hardFilteredBlockingRules.ACTIVE_REQUIRED, 1);
+  });
+}
+
+function testFallbackExcludesServiceMatchHardBlockedCandidates() {
+  const mockBuildCandidates = ({ staff }) => ({
+    eligible: [],
+    rejected: [
+      {
+        personId: "p1",
+        person: staff.find((item) => item.id === "p1") || null,
+        failedRules: [{ code: "SERVICE_MATCH", severity: "hard" }],
+        hardRejected: true,
+        blockingRules: ["SERVICE_MATCH"],
+        reasonCodes: ["PERSON_SERVICE_MISSING"],
+        status: "rejected",
+      },
+    ],
+    candidates: [],
+    stats: { totalStaff: Array.isArray(staff) ? staff.length : 0, eligibleCount: 0, rejectedCount: 1 },
+  });
+
+  withScheduler(mockBuildCandidates, (runScheduler) => {
+    const context = createBaseContext({
+      staff: [
+        createRuntimePerson("p1", { serviceId: "svc-2", totalHours: 0 }),
+        createRuntimePerson("p2", { serviceId: "svc-1", totalHours: 100 }),
+      ],
+      targetHours: 50,
+    });
+    const result = runScheduler(context);
+
+    assert.strictEqual(result.assignments.length, 1, "fallback should keep service-matching candidate available");
+    assert.strictEqual(
+      result.assignments[0].personId,
+      "p2",
+      "SERVICE_MATCH hard-blocked candidate must not re-enter fallback pool"
+    );
+
+    const audit = getSingleAudit(result);
+    assert.strictEqual(audit.fallbackUsed, true);
+    assert.strictEqual(audit.hardFilteredByCandidateBuilderCount, 1);
+    assert.strictEqual(audit.hardFilteredBlockingRules.SERVICE_MATCH, 1);
+  });
+}
+
 function testFallbackOnError() {
   const mockBuildCandidates = () => {
     throw new Error("mock candidate builder failure");
@@ -254,6 +338,8 @@ function run() {
   const tests = [
     { name: "eligible path", fn: testEligiblePath },
     { name: "fallback on empty", fn: testFallbackOnEmpty },
+    { name: "fallback excludes ACTIVE_REQUIRED hard-blocked candidates", fn: testFallbackExcludesActiveRequiredHardBlockedCandidates },
+    { name: "fallback excludes SERVICE_MATCH hard-blocked candidates", fn: testFallbackExcludesServiceMatchHardBlockedCandidates },
     { name: "fallback on error", fn: testFallbackOnError },
     { name: "audit population", fn: testAuditPopulation },
     { name: "hard reject filtering", fn: testHardRejectFiltering },
