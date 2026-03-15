@@ -1,6 +1,14 @@
 // services/scheduler/engine.js
 const { isAvailable } = require("./constraints");
 const { calculateScore } = require("./scoring");
+const { buildCandidates } = require("./candidateBuilder");
+const {
+  createShadowAuditCollector,
+  collectShadowObservations,
+  appendShadowObservations,
+  recordShadowCollectionError,
+  aggregateShadowObservations,
+} = require("./audit");
 
 const getISOWeekKey = (dateStr) => {
   if (!dateStr) return null;
@@ -99,6 +107,13 @@ function assign(person, day, shift, context) {
 
 function runScheduler(context) {
   if (!context || !Array.isArray(context.days) || !Array.isArray(context.staff)) return context;
+  if (!Array.isArray(context.candidateAudit)) context.candidateAudit = [];
+  const shadowAuditEnabled = context?.auditOptions?.enableShadowCollection === true;
+  if (shadowAuditEnabled && !context.shadowAudit) {
+    context.shadowAudit = createShadowAuditCollector({
+      ruleCodes: context?.auditOptions?.shadowRuleCodes,
+    });
+  }
 
   for (const day of context.days) {
     const usedOnDay = new Set();
@@ -108,9 +123,34 @@ function runScheduler(context) {
       if (!shift.assignedPersons) shift.assignedPersons = [];
 
       for (let i = 0; i < need; i++) {
-        const candidates = context.staff.filter(
-          (p) => isAvailable(p, day, context, shift) && !usedOnDay.has(p.id)
+        const rawStaffPool = context.staff.filter((p) => !usedOnDay.has(p.id));
+        const candidateBuild = buildEligiblePoolForSlot({
+          rawStaffPool,
+          day,
+          shift,
+          context,
+          slotIndex: i,
+        });
+        if (shadowAuditEnabled) {
+          appendShadowObservations(context.shadowAudit, candidateBuild.shadowObservations);
+          if (candidateBuild.shadowError) {
+            recordShadowCollectionError(context.shadowAudit, candidateBuild.shadowError, {
+              date: day?.date || null,
+              shiftCode: shift?.code || shift?.id || null,
+              slotIndex: i,
+            });
+          }
+        }
+
+        const candidates = candidateBuild.pool.filter((p) =>
+          isAvailable(p, day, context, shift)
         );
+
+        context.candidateAudit.push({
+          ...candidateBuild.audit,
+          postConstraintCount: candidates.length,
+        });
+
         if (!candidates.length) break;
         candidates.sort((a, b) =>
           calculateScore(a, day, shift, context) - calculateScore(b, day, shift, context)
@@ -132,7 +172,154 @@ function runScheduler(context) {
     }
   }
 
+  if (shadowAuditEnabled && context?.shadowAudit) {
+    context.shadowAudit.summary = aggregateShadowObservations(context.shadowAudit.observations);
+  }
+
   return context;
+}
+
+function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null, context = null, slotIndex = 0 } = {}) {
+  const fallbackPool = Array.isArray(rawStaffPool) ? rawStaffPool : [];
+  const baseAudit = {
+    date: day?.date || null,
+    shiftId: shift?.id || shift?.code || "",
+    slotIndex,
+    inputStaffCount: fallbackPool.length,
+    eligibleCount: 0,
+    rejectedCount: 0,
+    fallbackUsed: false,
+    fallbackReason: null,
+    rejected: [],
+  };
+  const shadowResult = collectSlotShadowObservations({
+    rawStaffPool: fallbackPool,
+    day,
+    shift,
+    context,
+  });
+
+  if (!fallbackPool.length) {
+    return {
+      pool: [],
+      audit: baseAudit,
+      shadowObservations: shadowResult.observations,
+      shadowError: shadowResult.error,
+    };
+  }
+
+  try {
+    const candidateResult = buildCandidates({
+      staff: fallbackPool,
+      day,
+      shift,
+      section: shift?.section ?? day?.section ?? null,
+      serviceId: shift?.serviceId ?? day?.serviceId ?? null,
+      schedulerContext: {
+        leavesByPerson: context?.leavesByPerson || {},
+        assignments: context?.assignments || [],
+        rules: context?.rules || [],
+      },
+      assignmentState: {
+        assignments: context?.assignments || [],
+      },
+      ruleCodes: Array.isArray(context?.candidateRuleCodes) ? context.candidateRuleCodes : null,
+      options: context?.candidateBuilderOptions || {},
+    });
+
+    const eligiblePeople = extractEligiblePeople(candidateResult);
+    const rejected = Array.isArray(candidateResult?.rejected) ? candidateResult.rejected : [];
+    const audit = {
+      ...baseAudit,
+      eligibleCount: eligiblePeople.length,
+      rejectedCount: rejected.length,
+      rejected: rejected.map((item) => ({
+        personId: item?.personId || null,
+        failedRuleCodes: Array.isArray(item?.failedRules)
+          ? item.failedRules.map((rule) => rule?.code).filter(Boolean)
+          : [],
+      })),
+    };
+
+    if (eligiblePeople.length) {
+      return {
+        pool: eligiblePeople,
+        audit,
+        shadowObservations: shadowResult.observations,
+        shadowError: shadowResult.error,
+      };
+    }
+
+    // Controlled fallback: keep scheduler running if builder has no eligible output for this slot.
+    return {
+      pool: fallbackPool,
+      audit: {
+        ...audit,
+        fallbackUsed: true,
+        fallbackReason: "NO_ELIGIBLE_FROM_CANDIDATE_BUILDER",
+      },
+      shadowObservations: shadowResult.observations,
+      shadowError: shadowResult.error,
+    };
+  } catch (error) {
+    // Controlled fallback: any builder runtime error falls back to the existing raw pool.
+    return {
+      pool: fallbackPool,
+      audit: {
+        ...baseAudit,
+        fallbackUsed: true,
+        fallbackReason: "CANDIDATE_BUILDER_ERROR",
+        error: error?.message || "Unknown candidate builder error",
+      },
+      shadowObservations: shadowResult.observations,
+      shadowError: shadowResult.error,
+    };
+  }
+}
+
+function collectSlotShadowObservations({ rawStaffPool = [], day = null, shift = null, context = null } = {}) {
+  if (context?.auditOptions?.enableShadowCollection !== true) {
+    return { observations: [], error: null };
+  }
+
+  try {
+    return {
+      observations: collectShadowObservations({
+        staff: rawStaffPool,
+        day,
+        shift,
+        section: shift?.section ?? day?.section ?? null,
+        serviceId: shift?.serviceId ?? day?.serviceId ?? null,
+        schedulerContext: {
+          leavesByPerson: context?.leavesByPerson || {},
+          assignments: context?.assignments || [],
+          rules: context?.rules || [],
+        },
+        assignmentState: {
+          assignments: context?.assignments || [],
+        },
+        ruleCodes: context?.auditOptions?.shadowRuleCodes,
+        options: context?.auditOptions?.shadowOptions || null,
+      }),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      observations: [],
+      error,
+    };
+  }
+}
+
+function extractEligiblePeople(candidateResult) {
+  if (Array.isArray(candidateResult?.candidates) && candidateResult.candidates.length) {
+    return candidateResult.candidates.filter(Boolean);
+  }
+
+  if (!Array.isArray(candidateResult?.eligible)) return [];
+  return candidateResult.eligible
+    .map((item) => item?.person || null)
+    .filter(Boolean);
 }
 
 module.exports = { runScheduler, assign };

@@ -1,0 +1,6370 @@
+{
+  "staff": [
+    {
+      "_id": "69a9b28740e6a54e18596dba",
+      "serviceId": "ACİL",
+      "name": "BAYRAM DEMİR",
+      "firstName": "",
+      "lastName": "",
+      "tc": "20692566882",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "S.MEMURU",
+        "areas": [
+          "CERRAHİ MÜDAHELE"
+        ],
+        "shiftCodes": [
+          "M",
+          "N",
+          "M1",
+          "M2",
+          "M3"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.287Z",
+      "updatedAt": "2026-03-05T16:42:47.287Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dbf",
+      "serviceId": "ACİL",
+      "name": "CANPOLAT AVCI",
+      "firstName": "",
+      "lastName": "",
+      "tc": "45520755788",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL",
+          "EKİP SORUMLUSU"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.287Z",
+      "updatedAt": "2026-03-05T16:42:47.287Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dc1",
+      "serviceId": "ACİL",
+      "name": "DERYA SANCAR",
+      "firstName": "",
+      "lastName": "",
+      "tc": "46579873560",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dd5",
+      "serviceId": "ACİL",
+      "name": "HASAN ERTURGUT",
+      "firstName": "",
+      "lastName": "",
+      "tc": "24964428212",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "S.MEMURU",
+        "areas": [
+          "CERRAHİ MÜDAHELE"
+        ],
+        "shiftCodes": [
+          "M",
+          "N"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dd9",
+      "serviceId": "ACİL",
+      "name": "İBRAHİM FURKAN TÜRE",
+      "firstName": "",
+      "lastName": "",
+      "tc": "10886781504",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596ddf",
+      "serviceId": "ACİL",
+      "name": "MURAT BAYRAM",
+      "firstName": "",
+      "lastName": "",
+      "tc": "30424461712",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596db7",
+      "serviceId": "ACİL",
+      "name": "ARZU KONAK",
+      "firstName": "",
+      "lastName": "",
+      "tc": "15856736034",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "EBE",
+        "areas": [
+          "RESÜSİTASYON",
+          "SARI",
+          "KIRMIZI",
+          "TRİAJ",
+          "YEŞİL",
+          "ÇOCUK"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.287Z",
+      "updatedAt": "2026-03-05T23:02:55.552Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dc2",
+      "serviceId": "ACİL",
+      "name": "DOĞAN AVŞAR",
+      "firstName": "",
+      "lastName": "",
+      "tc": "49591177654",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dca",
+      "serviceId": "ACİL",
+      "name": "ERGÜL B. AĞALDAY",
+      "firstName": "",
+      "lastName": "",
+      "tc": "32833163560",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "ATT",
+        "areas": [
+          "EKİP SORUMLUSU",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL",
+          "ÇOCUK",
+          "ECZANE",
+          "SERVİS SORUMLUSU"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dcb",
+      "serviceId": "ACİL",
+      "name": "ERTUĞRUL YILMAZ",
+      "firstName": "",
+      "lastName": "",
+      "tc": "29221777928",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dd7",
+      "serviceId": "ACİL",
+      "name": "HAVVANUR KUBUZ",
+      "firstName": "",
+      "lastName": "",
+      "tc": "17767673408",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "ECZANE",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dd8",
+      "serviceId": "ACİL",
+      "name": "İBRAHİM COŞKUN",
+      "firstName": "",
+      "lastName": "",
+      "tc": "24127461186",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "S.MEMURU",
+        "areas": [
+          "CERRAHİ MÜDAHELE"
+        ],
+        "shiftCodes": [
+          "M",
+          "N"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596ddb",
+      "serviceId": "ACİL",
+      "name": "LEYLA ARAL",
+      "firstName": "",
+      "lastName": "",
+      "tc": "24932600534",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "ECZANE",
+          "EKİP SORUMLUSU",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M1",
+          "M2",
+          "V2",
+          "V1",
+          "N"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dc3",
+      "serviceId": "ACİL",
+      "name": "DÖNE YİĞİT DUKKUZ",
+      "firstName": "",
+      "lastName": "",
+      "tc": "10570904882",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ECZANE",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL",
+          "ÇOCUK"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dc8",
+      "serviceId": "ACİL",
+      "name": "EMİNE TURAN",
+      "firstName": "",
+      "lastName": "",
+      "tc": "15199926888",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "SARI",
+          "RESÜSİTASYON",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dd0",
+      "serviceId": "ACİL",
+      "name": "FULYA GILIÇ",
+      "firstName": "",
+      "lastName": "",
+      "tc": "13669809136",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "ECZANE",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dd2",
+      "serviceId": "ACİL",
+      "name": "GAMZE ÖZTÜRK",
+      "firstName": "",
+      "lastName": "",
+      "tc": "28999294934",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "SERVİS SORUMLUSU",
+          "EKİP SORUMLUSU",
+          "SÜPERVİZÖR"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": "68dad5dd879962bf487339a0",
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-10T08:58:22.193Z",
+      "active": true,
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596ddd",
+      "serviceId": "ACİL",
+      "name": "MELTEM KARAÇALI",
+      "firstName": "",
+      "lastName": "",
+      "tc": "29212295912",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "EBE",
+        "areas": [
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "ÇOCUK",
+          "ECZANE",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M4",
+          "M",
+          "M1",
+          "M2",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596de3",
+      "serviceId": "ACİL",
+      "name": "MUSTAFA ERGİN",
+      "firstName": "",
+      "lastName": "",
+      "tc": "20479585976",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "S.MEMURU",
+        "areas": [
+          "CERRAHİ MÜDAHELE"
+        ],
+        "shiftCodes": [
+          "M",
+          "N"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dda",
+      "serviceId": "ACİL",
+      "name": "İREM KAVAS",
+      "firstName": "",
+      "lastName": "",
+      "tc": "13711238938",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "ECZANE",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596de0",
+      "serviceId": "ACİL",
+      "name": "MURAT ÇELİK",
+      "firstName": "",
+      "lastName": "",
+      "tc": "31267635834",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596de4",
+      "serviceId": "ACİL",
+      "name": "NURSEL ÖNÜR",
+      "firstName": "",
+      "lastName": "",
+      "tc": "26422380872",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "EBE",
+        "areas": [
+          "TRİAJ",
+          "YEŞİL",
+          "ÇOCUK",
+          "ECZANE",
+          "EKİP SORUMLUSU",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dd3",
+      "serviceId": "ACİL",
+      "name": "GÜLDEN ORTAŞ",
+      "firstName": "",
+      "lastName": "",
+      "tc": "22171525274",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "TRİAJ",
+          "ÇOCUK",
+          "ECZANE",
+          "EKİP SORUMLUSU",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dc9",
+      "serviceId": "ACİL",
+      "name": "EREN KARACA",
+      "firstName": "",
+      "lastName": "",
+      "tc": "23911078180",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "PARAMEDİK",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dcd",
+      "serviceId": "ACİL",
+      "name": "FATMA IŞIK",
+      "firstName": "",
+      "lastName": "",
+      "tc": "61570007950",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596de5",
+      "serviceId": "ACİL",
+      "name": "OSMAN CAN ORHAN",
+      "firstName": "",
+      "lastName": "",
+      "tc": "38101171428",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "TRİAJ",
+          "SARI",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596deb",
+      "serviceId": "ACİL",
+      "name": "ZEHRA SOYUÇOK",
+      "firstName": "",
+      "lastName": "",
+      "tc": "19909875154",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "ECZANE",
+          "SARI",
+          "RESÜSİTASYON",
+          "KIRMIZI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596db3",
+      "serviceId": "ACİL",
+      "name": "ABDULLAH AYDOĞDU",
+      "firstName": "",
+      "lastName": "",
+      "tc": "19825604522",
+      "phone": "905351234567",
+      "email": "a@gmail.com",
+      "meta": {
+        "role": "Nurse",
+        "title": "ATT",
+        "areas": [
+          "ÇOCUK",
+          "ECZANE",
+          "EKİP SORUMLUSU",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "N",
+          "M4",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": "69a9b4f240e6a54e18596eae",
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.285Z",
+      "updatedAt": "2026-03-05T23:02:55.752Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596db6",
+      "serviceId": "ACİL",
+      "name": "AHMET NARTER",
+      "firstName": "",
+      "lastName": "",
+      "tc": "18329590782",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "ECZANE",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.287Z",
+      "updatedAt": "2026-03-05T16:42:47.287Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dbe",
+      "serviceId": "ACİL",
+      "name": "CANAN KILIÇ",
+      "firstName": "",
+      "lastName": "",
+      "tc": "18001987060",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "EBE",
+        "areas": [
+          "ECZANE",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL",
+          "EKİP SORUMLUSU",
+          "ÇOCUK"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.287Z",
+      "updatedAt": "2026-03-05T16:42:47.287Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dd4",
+      "serviceId": "ACİL",
+      "name": "GÜLŞEN TÜRK",
+      "firstName": "",
+      "lastName": "",
+      "tc": "24631442220",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "EKİP SORUMLUSU",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dd6",
+      "serviceId": "ACİL",
+      "name": "HATİCE KEVSER DİNÇ",
+      "firstName": "",
+      "lastName": "",
+      "tc": "11482878728",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "ECZANE",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596de6",
+      "serviceId": "ACİL",
+      "name": "ÖMER ERÇİFTÇİ",
+      "firstName": "",
+      "lastName": "",
+      "tc": "32113190156",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "S.MEMURU",
+        "areas": [
+          "CERRAHİ MÜDAHELE"
+        ],
+        "shiftCodes": [
+          "M",
+          "N"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596de8",
+      "serviceId": "ACİL",
+      "name": "TALİHE NİDANUR KARACA",
+      "firstName": "",
+      "lastName": "",
+      "tc": "15302266016",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "PARAMEDİK",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "SARI",
+          "RESÜSİTASYON",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596de1",
+      "serviceId": "ACİL",
+      "name": "MURAT ŞENÖZDEMİR",
+      "firstName": "",
+      "lastName": "",
+      "tc": "55213132574",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "S.MEMURU",
+        "areas": [
+          "CERRAHİ MÜDAHELE"
+        ],
+        "shiftCodes": [
+          "M",
+          "N"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dea",
+      "serviceId": "ACİL",
+      "name": "ÜLKÜ AYŞE GÜRBÜZ",
+      "firstName": "",
+      "lastName": "",
+      "tc": "23980110644",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ECZANE",
+          "ÇOCUK",
+          "KIRMIZI",
+          "KIRMIZI VE SARI GÖREVLENDİRME",
+          "EKİP SORUMLUSU",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "N",
+          "M4",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dec",
+      "serviceId": "ACİL",
+      "name": "ZEYNEP ERSOY",
+      "firstName": "",
+      "lastName": "",
+      "tc": "39226296874",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "EBE",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596db8",
+      "serviceId": "ACİL",
+      "name": "AYHAN ÇAKMAK",
+      "firstName": "",
+      "lastName": "",
+      "tc": "22825499562",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "S.MEMURU",
+        "areas": [
+          "CERRAHİ MÜDAHELE"
+        ],
+        "shiftCodes": [
+          "M",
+          "N"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.287Z",
+      "updatedAt": "2026-03-05T16:42:47.287Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dc5",
+      "serviceId": "ACİL",
+      "name": "EDA ERDUHAN",
+      "firstName": "",
+      "lastName": "",
+      "tc": "60379048232",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "EBE",
+        "areas": [
+          "ÇOCUK",
+          "EKİP SORUMLUSU",
+          "KIRMIZI",
+          "SARI",
+          "RESÜSİTASYON",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dd1",
+      "serviceId": "ACİL",
+      "name": "GAMZE FATMA BAĞCI",
+      "firstName": "",
+      "lastName": "",
+      "tc": "20773575826",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "EBE",
+        "areas": [
+          "ÇOCUK",
+          "EKİP SORUMLUSU",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dc0",
+      "serviceId": "ACİL",
+      "name": "ÇİĞDEM TERKENLİ",
+      "firstName": "",
+      "lastName": "",
+      "tc": "22073336220",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "ATT",
+        "areas": [
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL",
+          "EKİP SORUMLUSU",
+          "ÇOCUK"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.287Z",
+      "updatedAt": "2026-03-05T16:42:47.287Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dcc",
+      "serviceId": "ACİL",
+      "name": "ESRA BALCI",
+      "firstName": "",
+      "lastName": "",
+      "tc": "11449883390",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ECZANE",
+          "TRİAJ",
+          "EKİP SORUMLUSU",
+          "KIRMIZI",
+          "ÇOCUK",
+          "RESÜSİTASYON",
+          "SARI",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dce",
+      "serviceId": "ACİL",
+      "name": "FATMA ORTA",
+      "firstName": "",
+      "lastName": "",
+      "tc": "40697124924",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "EKİP SORUMLUSU",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596ddc",
+      "serviceId": "ACİL",
+      "name": "MELİHA DEMİR",
+      "firstName": "",
+      "lastName": "",
+      "tc": "30946406054",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "ECZANE",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dde",
+      "serviceId": "ACİL",
+      "name": "MERVE NUR ERKAN",
+      "firstName": "",
+      "lastName": "",
+      "tc": "35239095084",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "SARI",
+          "RESÜSİTASYON",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596db4",
+      "serviceId": "ACİL",
+      "name": "ADEM ERKAN",
+      "firstName": "",
+      "lastName": "",
+      "tc": "10993890144",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "S. MEMURU",
+        "areas": [
+          "KIRMIZI VE SARI ALAN GÖREVLENDİRME",
+          "RESÜSİTASYON",
+          "KIRMIZI",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL",
+          "ÇOCUK",
+          "ECZANE",
+          "EKİP SORUMLUSU"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": "69a9b46440e6a54e18596e41",
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.286Z",
+      "updatedAt": "2026-03-05T23:52:04.329Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596de2",
+      "serviceId": "ACİL",
+      "name": "MUSTAFA ERÇOBAN",
+      "firstName": "",
+      "lastName": "",
+      "tc": "",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "Hemşire",
+        "areas": [
+          "TRİAJ",
+          "CERRAHİ MÜDAHELE"
+        ],
+        "shiftCodes": [
+          "M",
+          "V1",
+          "M4"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596de9",
+      "serviceId": "ACİL",
+      "name": "TUĞBA SUİÇMEZ",
+      "firstName": "",
+      "lastName": "",
+      "tc": "52819561692",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "EBE",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596db9",
+      "serviceId": "ACİL",
+      "name": "AYŞE AKSOY DOĞAN",
+      "firstName": "",
+      "lastName": "",
+      "tc": "17983663788",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "EBE",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "TRİAJ",
+          "YEŞİL",
+          "ECZANE",
+          "RESÜSİTASYON",
+          "SARI"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.287Z",
+      "updatedAt": "2026-03-05T16:42:47.287Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dbb",
+      "serviceId": "ACİL",
+      "name": "BEKİR ÖZDEMİR",
+      "firstName": "",
+      "lastName": "",
+      "tc": "24946429190",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL",
+          "ECZANE",
+          "EKİP SORUMLUSU"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.287Z",
+      "updatedAt": "2026-03-05T16:42:47.287Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dbc",
+      "serviceId": "ACİL",
+      "name": "BUKET CEYHAN KAYGISIZ",
+      "firstName": "",
+      "lastName": "",
+      "tc": "13798502342",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "RESÜSİTASYON",
+          "YEŞİL",
+          "KIRMIZI",
+          "SARI",
+          "TRİAJ",
+          "ÇOCUK"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.287Z",
+      "updatedAt": "2026-03-05T16:42:47.287Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dc7",
+      "serviceId": "ACİL",
+      "name": "EFRAİM AYDIN",
+      "firstName": "",
+      "lastName": "",
+      "tc": "10055194364",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "EKİP SORUMLUSU",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL",
+          "ÇOCUK"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596de7",
+      "serviceId": "ACİL",
+      "name": "PELİN HÜLYA YARANGÜNÜ",
+      "firstName": "",
+      "lastName": "",
+      "tc": "29353286930",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "ATT",
+        "areas": [
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596ded",
+      "serviceId": "ACİL",
+      "name": "FULYA EKİNCİ",
+      "firstName": "",
+      "lastName": "",
+      "tc": "16495715244",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.289Z",
+      "updatedAt": "2026-03-05T16:42:47.289Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596db5",
+      "serviceId": "ACİL",
+      "name": "AHMET DURSUN",
+      "firstName": "",
+      "lastName": "",
+      "tc": "34444109166",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "S.MEMURU",
+        "areas": [
+          "CERRAHİ MÜDAHELE"
+        ],
+        "shiftCodes": [
+          "M",
+          "N"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.286Z",
+      "updatedAt": "2026-03-05T16:42:47.286Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dbd",
+      "serviceId": "ACİL",
+      "name": "CANAN GÖLGELİ",
+      "firstName": "",
+      "lastName": "",
+      "tc": "26140398418",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "HEMŞİRE",
+        "areas": [
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.287Z",
+      "updatedAt": "2026-03-05T16:42:47.287Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dc4",
+      "serviceId": "ACİL",
+      "name": "EBRU KIVRAK",
+      "firstName": "",
+      "lastName": "",
+      "tc": "31309367136",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "PARAMEDİK",
+        "areas": [
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    },
+    {
+      "_id": "69a9b28740e6a54e18596dc6",
+      "serviceId": "ACİL",
+      "name": "EDA SARIKAYA",
+      "firstName": "",
+      "lastName": "",
+      "tc": "11485492150",
+      "phone": "",
+      "email": "",
+      "meta": {
+        "role": "Nurse",
+        "title": "ATT",
+        "areas": [
+          "ÇOCUK",
+          "KIRMIZI",
+          "RESÜSİTASYON",
+          "SARI",
+          "TRİAJ",
+          "YEŞİL"
+        ],
+        "shiftCodes": [
+          "M",
+          "M4",
+          "N",
+          "V1",
+          "V2"
+        ]
+      },
+      "userId": null,
+      "createdBy": "6996d7f89e311e6091466a35",
+      "__v": 0,
+      "createdAt": "2026-03-05T16:42:47.288Z",
+      "updatedAt": "2026-03-05T16:42:47.288Z",
+      "hospitalId": "69b45590bf820456a1d7ad1f"
+    }
+  ],
+  "assignments": [
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891762",
+      "personName": "ESRA BALCI",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891740",
+      "personName": "AHMET NARTER",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891777",
+      "personName": "LEYLA ARAL",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891738",
+      "personName": "ADEM ERKAN",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891793",
+      "personName": "ÜLKÜ AYŞE GÜRBÜZ",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891758",
+      "personName": "EMİNE TURAN",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891748",
+      "personName": "CANAN KILIÇ",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891781",
+      "personName": "MERVE NUR ERKAN",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891757",
+      "personName": "EFRAİM AYDIN",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891754",
+      "personName": "EBRU KIVRAK",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891767",
+      "personName": "GAMZE FATMA BAĞCI",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891737",
+      "personName": "ABDULLAH AYDOĞDU",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891771",
+      "personName": "HASAN ERTURGUT",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-01",
+      "day": "2026-04-01",
+      "assignmentDate": "2026-04-01",
+      "personId": "1771887891789",
+      "personName": "ÖMER ERÇİFTÇİ",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891750",
+      "personName": "ÇİĞDEM TERKENLİ",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891770",
+      "personName": "GÜLŞEN TÜRK",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891766",
+      "personName": "FULYA GILIÇ",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891790",
+      "personName": "PELİN HÜLYA YARANGÜNÜ",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891756",
+      "personName": "EDA SARIKAYA",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891751",
+      "personName": "DERYA SANCAR",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891794",
+      "personName": "ZEHRA SOYUÇOK",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891788",
+      "personName": "OSMAN CAN ORHAN",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891792",
+      "personName": "TUĞBA SUİÇMEZ",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891761",
+      "personName": "ERTUĞRUL YILMAZ",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891752",
+      "personName": "DOĞAN AVŞAR",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891769",
+      "personName": "GÜLDEN ORTAŞ",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891784",
+      "personName": "MURAT ŞENÖZDEMİR",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-02",
+      "day": "2026-04-02",
+      "assignmentDate": "2026-04-02",
+      "personId": "1771887891786",
+      "personName": "MUSTAFA ERGİN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-03",
+      "day": "2026-04-03",
+      "assignmentDate": "2026-04-03",
+      "personId": "1771887891762",
+      "personName": "ESRA BALCI",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-03",
+      "day": "2026-04-03",
+      "assignmentDate": "2026-04-03",
+      "personId": "1771887891767",
+      "personName": "GAMZE FATMA BAĞCI",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-03",
+      "day": "2026-04-03",
+      "assignmentDate": "2026-04-03",
+      "personId": "1771887891781",
+      "personName": "MERVE NUR ERKAN",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-03",
+      "day": "2026-04-03",
+      "assignmentDate": "2026-04-03",
+      "personId": "1771887891759",
+      "personName": "EREN KARACA",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-03",
+      "day": "2026-04-03",
+      "assignmentDate": "2026-04-03",
+      "personId": "1771887891780",
+      "personName": "MELTEM KARAÇALI",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-03",
+      "day": "2026-04-03",
+      "assignmentDate": "2026-04-03",
+      "personId": "1771887891753",
+      "personName": "DÖNE YİĞİT DUKKUZ",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-03",
+      "day": "2026-04-03",
+      "assignmentDate": "2026-04-03",
+      "personId": "1771887891737",
+      "personName": "ABDULLAH AYDOĞDU",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-03",
+      "day": "2026-04-03",
+      "assignmentDate": "2026-04-03",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-03",
+      "day": "2026-04-03",
+      "assignmentDate": "2026-04-03",
+      "personId": "1771887891741",
+      "personName": "ARZU KONAK",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-03",
+      "day": "2026-04-03",
+      "assignmentDate": "2026-04-03",
+      "personId": "1771887891738",
+      "personName": "ADEM ERKAN",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-03",
+      "day": "2026-04-03",
+      "assignmentDate": "2026-04-03",
+      "personId": "1771887891777",
+      "personName": "LEYLA ARAL",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-03",
+      "day": "2026-04-03",
+      "assignmentDate": "2026-04-03",
+      "personId": "1771887891773",
+      "personName": "HAVVANUR KUBUZ",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-03",
+      "day": "2026-04-03",
+      "assignmentDate": "2026-04-03",
+      "personId": "1771887891771",
+      "personName": "HASAN ERTURGUT",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-03",
+      "day": "2026-04-03",
+      "assignmentDate": "2026-04-03",
+      "personId": "1771887891789",
+      "personName": "ÖMER ERÇİFTÇİ",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891793",
+      "personName": "ÜLKÜ AYŞE GÜRBÜZ",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891787",
+      "personName": "NURSEL ÖNÜR",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891772",
+      "personName": "HATİCE KEVSER DİNÇ",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891782",
+      "personName": "MURAT BAYRAM",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891761",
+      "personName": "ERTUĞRUL YILMAZ",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891791",
+      "personName": "TALİHE NİDANUR KARACA",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891766",
+      "personName": "FULYA GILIÇ",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891763",
+      "personName": "FATMA IŞIK",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891758",
+      "personName": "EMİNE TURAN",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891778",
+      "personName": "MELİHA DEMİR",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891776",
+      "personName": "İREM KAVAS",
+      "shiftCode": "1761072131851",
+      "shiftId": "1761072131851"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891743",
+      "personName": "AYŞE AKSOY DOĞAN",
+      "shiftCode": "1761072131853",
+      "shiftId": "1761072131853"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891749",
+      "personName": "CANPOLAT AVCI",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891740",
+      "personName": "AHMET NARTER",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891744",
+      "personName": "BAYRAM DEMİR",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-04",
+      "day": "2026-04-04",
+      "assignmentDate": "2026-04-04",
+      "personId": "1771887891786",
+      "personName": "MUSTAFA ERGİN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-05",
+      "day": "2026-04-05",
+      "assignmentDate": "2026-04-05",
+      "personId": "1771887891748",
+      "personName": "CANAN KILIÇ",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-05",
+      "day": "2026-04-05",
+      "assignmentDate": "2026-04-05",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-05",
+      "day": "2026-04-05",
+      "assignmentDate": "2026-04-05",
+      "personId": "1771887891752",
+      "personName": "DOĞAN AVŞAR",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-05",
+      "day": "2026-04-05",
+      "assignmentDate": "2026-04-05",
+      "personId": "1771887891757",
+      "personName": "EFRAİM AYDIN",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-05",
+      "day": "2026-04-05",
+      "assignmentDate": "2026-04-05",
+      "personId": "1771887891745",
+      "personName": "BEKİR ÖZDEMİR",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-05",
+      "day": "2026-04-05",
+      "assignmentDate": "2026-04-05",
+      "personId": "1771887891769",
+      "personName": "GÜLDEN ORTAŞ",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-05",
+      "day": "2026-04-05",
+      "assignmentDate": "2026-04-05",
+      "personId": "1771887891746",
+      "personName": "BUKET CEYHAN KAYGISIZ",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-05",
+      "day": "2026-04-05",
+      "assignmentDate": "2026-04-05",
+      "personId": "1771887891767",
+      "personName": "GAMZE FATMA BAĞCI",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-05",
+      "day": "2026-04-05",
+      "assignmentDate": "2026-04-05",
+      "personId": "1771887891788",
+      "personName": "OSMAN CAN ORHAN",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-05",
+      "day": "2026-04-05",
+      "assignmentDate": "2026-04-05",
+      "personId": "1771887891741",
+      "personName": "ARZU KONAK",
+      "shiftCode": "1761072131851",
+      "shiftId": "1761072131851"
+    },
+    {
+      "date": "2026-04-05",
+      "day": "2026-04-05",
+      "assignmentDate": "2026-04-05",
+      "personId": "1771887891795",
+      "personName": "ZEYNEP ERSOY",
+      "shiftCode": "1761072131853",
+      "shiftId": "1761072131853"
+    },
+    {
+      "date": "2026-04-05",
+      "day": "2026-04-05",
+      "assignmentDate": "2026-04-05",
+      "personId": "1771887891765",
+      "personName": "FULYA EKİNCİ",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-05",
+      "day": "2026-04-05",
+      "assignmentDate": "2026-04-05",
+      "personId": "1771887891750",
+      "personName": "ÇİĞDEM TERKENLİ",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-05",
+      "day": "2026-04-05",
+      "assignmentDate": "2026-04-05",
+      "personId": "1771887891771",
+      "personName": "HASAN ERTURGUT",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-05",
+      "day": "2026-04-05",
+      "assignmentDate": "2026-04-05",
+      "personId": "1771887891789",
+      "personName": "ÖMER ERÇİFTÇİ",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-06",
+      "day": "2026-04-06",
+      "assignmentDate": "2026-04-06",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-06",
+      "day": "2026-04-06",
+      "assignmentDate": "2026-04-06",
+      "personId": "1771887891738",
+      "personName": "ADEM ERKAN",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-06",
+      "day": "2026-04-06",
+      "assignmentDate": "2026-04-06",
+      "personId": "1771887891756",
+      "personName": "EDA SARIKAYA",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-06",
+      "day": "2026-04-06",
+      "assignmentDate": "2026-04-06",
+      "personId": "1771887891780",
+      "personName": "MELTEM KARAÇALI",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-06",
+      "day": "2026-04-06",
+      "assignmentDate": "2026-04-06",
+      "personId": "1771887891751",
+      "personName": "DERYA SANCAR",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-06",
+      "day": "2026-04-06",
+      "assignmentDate": "2026-04-06",
+      "personId": "1771887891762",
+      "personName": "ESRA BALCI",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-06",
+      "day": "2026-04-06",
+      "assignmentDate": "2026-04-06",
+      "personId": "1771887891773",
+      "personName": "HAVVANUR KUBUZ",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-06",
+      "day": "2026-04-06",
+      "assignmentDate": "2026-04-06",
+      "personId": "1771887891754",
+      "personName": "EBRU KIVRAK",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-06",
+      "day": "2026-04-06",
+      "assignmentDate": "2026-04-06",
+      "personId": "1771887891747",
+      "personName": "CANAN GÖLGELİ",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-06",
+      "day": "2026-04-06",
+      "assignmentDate": "2026-04-06",
+      "personId": "1771887891761",
+      "personName": "ERTUĞRUL YILMAZ",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-06",
+      "day": "2026-04-06",
+      "assignmentDate": "2026-04-06",
+      "personId": "1771887891758",
+      "personName": "EMİNE TURAN",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-06",
+      "day": "2026-04-06",
+      "assignmentDate": "2026-04-06",
+      "personId": "1771887891785",
+      "personName": "MUSTAFA ERÇOBAN",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-06",
+      "day": "2026-04-06",
+      "assignmentDate": "2026-04-06",
+      "personId": "1771887891784",
+      "personName": "MURAT ŞENÖZDEMİR",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-06",
+      "day": "2026-04-06",
+      "assignmentDate": "2026-04-06",
+      "personId": "1771887891739",
+      "personName": "AHMET DURSUN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891793",
+      "personName": "ÜLKÜ AYŞE GÜRBÜZ",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891753",
+      "personName": "DÖNE YİĞİT DUKKUZ",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891737",
+      "personName": "ABDULLAH AYDOĞDU",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891764",
+      "personName": "FATMA ORTA",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891790",
+      "personName": "PELİN HÜLYA YARANGÜNÜ",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891794",
+      "personName": "ZEHRA SOYUÇOK",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891778",
+      "personName": "MELİHA DEMİR",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891755",
+      "personName": "EDA ERDUHAN",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891743",
+      "personName": "AYŞE AKSOY DOĞAN",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891795",
+      "personName": "ZEYNEP ERSOY",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891777",
+      "personName": "LEYLA ARAL",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891772",
+      "personName": "HATİCE KEVSER DİNÇ",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891786",
+      "personName": "MUSTAFA ERGİN",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-07",
+      "day": "2026-04-07",
+      "assignmentDate": "2026-04-07",
+      "personId": "1771887891774",
+      "personName": "İBRAHİM COŞKUN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891787",
+      "personName": "NURSEL ÖNÜR",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891758",
+      "personName": "EMİNE TURAN",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891765",
+      "personName": "FULYA EKİNCİ",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891783",
+      "personName": "MURAT ÇELİK",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891759",
+      "personName": "EREN KARACA",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891749",
+      "personName": "CANPOLAT AVCI",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891773",
+      "personName": "HAVVANUR KUBUZ",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891782",
+      "personName": "MURAT BAYRAM",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891745",
+      "personName": "BEKİR ÖZDEMİR",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891780",
+      "personName": "MELTEM KARAÇALI",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891756",
+      "personName": "EDA SARIKAYA",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891788",
+      "personName": "OSMAN CAN ORHAN",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891744",
+      "personName": "BAYRAM DEMİR",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-08",
+      "day": "2026-04-08",
+      "assignmentDate": "2026-04-08",
+      "personId": "1771887891784",
+      "personName": "MURAT ŞENÖZDEMİR",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891764",
+      "personName": "FATMA ORTA",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891738",
+      "personName": "ADEM ERKAN",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891746",
+      "personName": "BUKET CEYHAN KAYGISIZ",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891781",
+      "personName": "MERVE NUR ERKAN",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891769",
+      "personName": "GÜLDEN ORTAŞ",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891791",
+      "personName": "TALİHE NİDANUR KARACA",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891762",
+      "personName": "ESRA BALCI",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891795",
+      "personName": "ZEYNEP ERSOY",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891750",
+      "personName": "ÇİĞDEM TERKENLİ",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891755",
+      "personName": "EDA ERDUHAN",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891751",
+      "personName": "DERYA SANCAR",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891766",
+      "personName": "FULYA GILIÇ",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891774",
+      "personName": "İBRAHİM COŞKUN",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-09",
+      "day": "2026-04-09",
+      "assignmentDate": "2026-04-09",
+      "personId": "1771887891771",
+      "personName": "HASAN ERTURGUT",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-10",
+      "day": "2026-04-10",
+      "assignmentDate": "2026-04-10",
+      "personId": "1771887891777",
+      "personName": "LEYLA ARAL",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-10",
+      "day": "2026-04-10",
+      "assignmentDate": "2026-04-10",
+      "personId": "1771887891741",
+      "personName": "ARZU KONAK",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-10",
+      "day": "2026-04-10",
+      "assignmentDate": "2026-04-10",
+      "personId": "1771887891782",
+      "personName": "MURAT BAYRAM",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-10",
+      "day": "2026-04-10",
+      "assignmentDate": "2026-04-10",
+      "personId": "1771887891743",
+      "personName": "AYŞE AKSOY DOĞAN",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-10",
+      "day": "2026-04-10",
+      "assignmentDate": "2026-04-10",
+      "personId": "1771887891757",
+      "personName": "EFRAİM AYDIN",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-10",
+      "day": "2026-04-10",
+      "assignmentDate": "2026-04-10",
+      "personId": "1771887891772",
+      "personName": "HATİCE KEVSER DİNÇ",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-10",
+      "day": "2026-04-10",
+      "assignmentDate": "2026-04-10",
+      "personId": "1771887891794",
+      "personName": "ZEHRA SOYUÇOK",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-10",
+      "day": "2026-04-10",
+      "assignmentDate": "2026-04-10",
+      "personId": "1771887891759",
+      "personName": "EREN KARACA",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-10",
+      "day": "2026-04-10",
+      "assignmentDate": "2026-04-10",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-10",
+      "day": "2026-04-10",
+      "assignmentDate": "2026-04-10",
+      "personId": "1771887891747",
+      "personName": "CANAN GÖLGELİ",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-10",
+      "day": "2026-04-10",
+      "assignmentDate": "2026-04-10",
+      "personId": "1771887891793",
+      "personName": "ÜLKÜ AYŞE GÜRBÜZ",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-10",
+      "day": "2026-04-10",
+      "assignmentDate": "2026-04-10",
+      "personId": "1771887891770",
+      "personName": "GÜLŞEN TÜRK",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-10",
+      "day": "2026-04-10",
+      "assignmentDate": "2026-04-10",
+      "personId": "1771887891786",
+      "personName": "MUSTAFA ERGİN",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-10",
+      "day": "2026-04-10",
+      "assignmentDate": "2026-04-10",
+      "personId": "1771887891742",
+      "personName": "AYHAN ÇAKMAK",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891755",
+      "personName": "EDA ERDUHAN",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891762",
+      "personName": "ESRA BALCI",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891788",
+      "personName": "OSMAN CAN ORHAN",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891748",
+      "personName": "CANAN KILIÇ",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891790",
+      "personName": "PELİN HÜLYA YARANGÜNÜ",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891792",
+      "personName": "TUĞBA SUİÇMEZ",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891787",
+      "personName": "NURSEL ÖNÜR",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891776",
+      "personName": "İREM KAVAS",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891751",
+      "personName": "DERYA SANCAR",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891754",
+      "personName": "EBRU KIVRAK",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891769",
+      "personName": "GÜLDEN ORTAŞ",
+      "shiftCode": "1761072131851",
+      "shiftId": "1761072131851"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891747",
+      "personName": "CANAN GÖLGELİ",
+      "shiftCode": "1761072131853",
+      "shiftId": "1761072131853"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891778",
+      "personName": "MELİHA DEMİR",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891750",
+      "personName": "ÇİĞDEM TERKENLİ",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891744",
+      "personName": "BAYRAM DEMİR",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-11",
+      "day": "2026-04-11",
+      "assignmentDate": "2026-04-11",
+      "personId": "1771887891739",
+      "personName": "AHMET DURSUN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-12",
+      "day": "2026-04-12",
+      "assignmentDate": "2026-04-12",
+      "personId": "1771887891767",
+      "personName": "GAMZE FATMA BAĞCI",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-12",
+      "day": "2026-04-12",
+      "assignmentDate": "2026-04-12",
+      "personId": "1771887891765",
+      "personName": "FULYA EKİNCİ",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-12",
+      "day": "2026-04-12",
+      "assignmentDate": "2026-04-12",
+      "personId": "1771887891764",
+      "personName": "FATMA ORTA",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-12",
+      "day": "2026-04-12",
+      "assignmentDate": "2026-04-12",
+      "personId": "1771887891766",
+      "personName": "FULYA GILIÇ",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-12",
+      "day": "2026-04-12",
+      "assignmentDate": "2026-04-12",
+      "personId": "1771887891757",
+      "personName": "EFRAİM AYDIN",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-12",
+      "day": "2026-04-12",
+      "assignmentDate": "2026-04-12",
+      "personId": "1771887891743",
+      "personName": "AYŞE AKSOY DOĞAN",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-12",
+      "day": "2026-04-12",
+      "assignmentDate": "2026-04-12",
+      "personId": "1771887891746",
+      "personName": "BUKET CEYHAN KAYGISIZ",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-12",
+      "day": "2026-04-12",
+      "assignmentDate": "2026-04-12",
+      "personId": "1771887891777",
+      "personName": "LEYLA ARAL",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-12",
+      "day": "2026-04-12",
+      "assignmentDate": "2026-04-12",
+      "personId": "1771887891782",
+      "personName": "MURAT BAYRAM",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-12",
+      "day": "2026-04-12",
+      "assignmentDate": "2026-04-12",
+      "personId": "1771887891753",
+      "personName": "DÖNE YİĞİT DUKKUZ",
+      "shiftCode": "1761072131851",
+      "shiftId": "1761072131851"
+    },
+    {
+      "date": "2026-04-12",
+      "day": "2026-04-12",
+      "assignmentDate": "2026-04-12",
+      "personId": "1771887891791",
+      "personName": "TALİHE NİDANUR KARACA",
+      "shiftCode": "1761072131853",
+      "shiftId": "1761072131853"
+    },
+    {
+      "date": "2026-04-12",
+      "day": "2026-04-12",
+      "assignmentDate": "2026-04-12",
+      "personId": "1771887891772",
+      "personName": "HATİCE KEVSER DİNÇ",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-12",
+      "day": "2026-04-12",
+      "assignmentDate": "2026-04-12",
+      "personId": "1771887891761",
+      "personName": "ERTUĞRUL YILMAZ",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-12",
+      "day": "2026-04-12",
+      "assignmentDate": "2026-04-12",
+      "personId": "1771887891742",
+      "personName": "AYHAN ÇAKMAK",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-12",
+      "day": "2026-04-12",
+      "assignmentDate": "2026-04-12",
+      "personId": "1771887891789",
+      "personName": "ÖMER ERÇİFTÇİ",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-13",
+      "day": "2026-04-13",
+      "assignmentDate": "2026-04-13",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-13",
+      "day": "2026-04-13",
+      "assignmentDate": "2026-04-13",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-13",
+      "day": "2026-04-13",
+      "assignmentDate": "2026-04-13",
+      "personId": "1771887891738",
+      "personName": "ADEM ERKAN",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-13",
+      "day": "2026-04-13",
+      "assignmentDate": "2026-04-13",
+      "personId": "1771887891790",
+      "personName": "PELİN HÜLYA YARANGÜNÜ",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-13",
+      "day": "2026-04-13",
+      "assignmentDate": "2026-04-13",
+      "personId": "1771887891748",
+      "personName": "CANAN KILIÇ",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-13",
+      "day": "2026-04-13",
+      "assignmentDate": "2026-04-13",
+      "personId": "1771887891751",
+      "personName": "DERYA SANCAR",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-13",
+      "day": "2026-04-13",
+      "assignmentDate": "2026-04-13",
+      "personId": "1771887891780",
+      "personName": "MELTEM KARAÇALI",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-13",
+      "day": "2026-04-13",
+      "assignmentDate": "2026-04-13",
+      "personId": "1771887891737",
+      "personName": "ABDULLAH AYDOĞDU",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-13",
+      "day": "2026-04-13",
+      "assignmentDate": "2026-04-13",
+      "personId": "1771887891773",
+      "personName": "HAVVANUR KUBUZ",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-13",
+      "day": "2026-04-13",
+      "assignmentDate": "2026-04-13",
+      "personId": "1771887891756",
+      "personName": "EDA SARIKAYA",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-13",
+      "day": "2026-04-13",
+      "assignmentDate": "2026-04-13",
+      "personId": "1771887891769",
+      "personName": "GÜLDEN ORTAŞ",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-13",
+      "day": "2026-04-13",
+      "assignmentDate": "2026-04-13",
+      "personId": "1771887891793",
+      "personName": "ÜLKÜ AYŞE GÜRBÜZ",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-13",
+      "day": "2026-04-13",
+      "assignmentDate": "2026-04-13",
+      "personId": "1771887891750",
+      "personName": "ÇİĞDEM TERKENLİ",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-13",
+      "day": "2026-04-13",
+      "assignmentDate": "2026-04-13",
+      "personId": "1771887891784",
+      "personName": "MURAT ŞENÖZDEMİR",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-13",
+      "day": "2026-04-13",
+      "assignmentDate": "2026-04-13",
+      "personId": "1771887891744",
+      "personName": "BAYRAM DEMİR",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891764",
+      "personName": "FATMA ORTA",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891776",
+      "personName": "İREM KAVAS",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891752",
+      "personName": "DOĞAN AVŞAR",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891758",
+      "personName": "EMİNE TURAN",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891767",
+      "personName": "GAMZE FATMA BAĞCI",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891749",
+      "personName": "CANPOLAT AVCI",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891745",
+      "personName": "BEKİR ÖZDEMİR",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891792",
+      "personName": "TUĞBA SUİÇMEZ",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891746",
+      "personName": "BUKET CEYHAN KAYGISIZ",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891782",
+      "personName": "MURAT BAYRAM",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891783",
+      "personName": "MURAT ÇELİK",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891794",
+      "personName": "ZEHRA SOYUÇOK",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891771",
+      "personName": "HASAN ERTURGUT",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-14",
+      "day": "2026-04-14",
+      "assignmentDate": "2026-04-14",
+      "personId": "1771887891786",
+      "personName": "MUSTAFA ERGİN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891737",
+      "personName": "ABDULLAH AYDOĞDU",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891775",
+      "personName": "İBRAHİM FURKAN TÜRE",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891777",
+      "personName": "LEYLA ARAL",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891757",
+      "personName": "EFRAİM AYDIN",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891753",
+      "personName": "DÖNE YİĞİT DUKKUZ",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891755",
+      "personName": "EDA ERDUHAN",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891740",
+      "personName": "AHMET NARTER",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891763",
+      "personName": "FATMA IŞIK",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891761",
+      "personName": "ERTUĞRUL YILMAZ",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891743",
+      "personName": "AYŞE AKSOY DOĞAN",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891780",
+      "personName": "MELTEM KARAÇALI",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891759",
+      "personName": "EREN KARACA",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891774",
+      "personName": "İBRAHİM COŞKUN",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-15",
+      "day": "2026-04-15",
+      "assignmentDate": "2026-04-15",
+      "personId": "1771887891789",
+      "personName": "ÖMER ERÇİFTÇİ",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891787",
+      "personName": "NURSEL ÖNÜR",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891750",
+      "personName": "ÇİĞDEM TERKENLİ",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891766",
+      "personName": "FULYA GILIÇ",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891758",
+      "personName": "EMİNE TURAN",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891749",
+      "personName": "CANPOLAT AVCI",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891778",
+      "personName": "MELİHA DEMİR",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891773",
+      "personName": "HAVVANUR KUBUZ",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891782",
+      "personName": "MURAT BAYRAM",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891795",
+      "personName": "ZEYNEP ERSOY",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891793",
+      "personName": "ÜLKÜ AYŞE GÜRBÜZ",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891746",
+      "personName": "BUKET CEYHAN KAYGISIZ",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891781",
+      "personName": "MERVE NUR ERKAN",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891739",
+      "personName": "AHMET DURSUN",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-16",
+      "day": "2026-04-16",
+      "assignmentDate": "2026-04-16",
+      "personId": "1771887891786",
+      "personName": "MUSTAFA ERGİN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-17",
+      "day": "2026-04-17",
+      "assignmentDate": "2026-04-17",
+      "personId": "1771887891748",
+      "personName": "CANAN KILIÇ",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-17",
+      "day": "2026-04-17",
+      "assignmentDate": "2026-04-17",
+      "personId": "1771887891743",
+      "personName": "AYŞE AKSOY DOĞAN",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-17",
+      "day": "2026-04-17",
+      "assignmentDate": "2026-04-17",
+      "personId": "1771887891747",
+      "personName": "CANAN GÖLGELİ",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-17",
+      "day": "2026-04-17",
+      "assignmentDate": "2026-04-17",
+      "personId": "1771887891791",
+      "personName": "TALİHE NİDANUR KARACA",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-17",
+      "day": "2026-04-17",
+      "assignmentDate": "2026-04-17",
+      "personId": "1771887891769",
+      "personName": "GÜLDEN ORTAŞ",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-17",
+      "day": "2026-04-17",
+      "assignmentDate": "2026-04-17",
+      "personId": "1771887891780",
+      "personName": "MELTEM KARAÇALI",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-17",
+      "day": "2026-04-17",
+      "assignmentDate": "2026-04-17",
+      "personId": "1771887891740",
+      "personName": "AHMET NARTER",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-17",
+      "day": "2026-04-17",
+      "assignmentDate": "2026-04-17",
+      "personId": "1771887891741",
+      "personName": "ARZU KONAK",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-17",
+      "day": "2026-04-17",
+      "assignmentDate": "2026-04-17",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-17",
+      "day": "2026-04-17",
+      "assignmentDate": "2026-04-17",
+      "personId": "1771887891792",
+      "personName": "TUĞBA SUİÇMEZ",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-17",
+      "day": "2026-04-17",
+      "assignmentDate": "2026-04-17",
+      "personId": "1771887891738",
+      "personName": "ADEM ERKAN",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-17",
+      "day": "2026-04-17",
+      "assignmentDate": "2026-04-17",
+      "personId": "1771887891751",
+      "personName": "DERYA SANCAR",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-17",
+      "day": "2026-04-17",
+      "assignmentDate": "2026-04-17",
+      "personId": "1771887891784",
+      "personName": "MURAT ŞENÖZDEMİR",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-17",
+      "day": "2026-04-17",
+      "assignmentDate": "2026-04-17",
+      "personId": "1771887891774",
+      "personName": "İBRAHİM COŞKUN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891787",
+      "personName": "NURSEL ÖNÜR",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891737",
+      "personName": "ABDULLAH AYDOĞDU",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891761",
+      "personName": "ERTUĞRUL YILMAZ",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891781",
+      "personName": "MERVE NUR ERKAN",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891766",
+      "personName": "FULYA GILIÇ",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891794",
+      "personName": "ZEHRA SOYUÇOK",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891793",
+      "personName": "ÜLKÜ AYŞE GÜRBÜZ",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891775",
+      "personName": "İBRAHİM FURKAN TÜRE",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891772",
+      "personName": "HATİCE KEVSER DİNÇ",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891783",
+      "personName": "MURAT ÇELİK",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891764",
+      "personName": "FATMA ORTA",
+      "shiftCode": "1761072131851",
+      "shiftId": "1761072131851"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891777",
+      "personName": "LEYLA ARAL",
+      "shiftCode": "1761072131853",
+      "shiftId": "1761072131853"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891746",
+      "personName": "BUKET CEYHAN KAYGISIZ",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891782",
+      "personName": "MURAT BAYRAM",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891789",
+      "personName": "ÖMER ERÇİFTÇİ",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-18",
+      "day": "2026-04-18",
+      "assignmentDate": "2026-04-18",
+      "personId": "1771887891742",
+      "personName": "AYHAN ÇAKMAK",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-19",
+      "day": "2026-04-19",
+      "assignmentDate": "2026-04-19",
+      "personId": "1771887891757",
+      "personName": "EFRAİM AYDIN",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-19",
+      "day": "2026-04-19",
+      "assignmentDate": "2026-04-19",
+      "personId": "1771887891740",
+      "personName": "AHMET NARTER",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-19",
+      "day": "2026-04-19",
+      "assignmentDate": "2026-04-19",
+      "personId": "1771887891792",
+      "personName": "TUĞBA SUİÇMEZ",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-19",
+      "day": "2026-04-19",
+      "assignmentDate": "2026-04-19",
+      "personId": "1771887891767",
+      "personName": "GAMZE FATMA BAĞCI",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-19",
+      "day": "2026-04-19",
+      "assignmentDate": "2026-04-19",
+      "personId": "1771887891755",
+      "personName": "EDA ERDUHAN",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-19",
+      "day": "2026-04-19",
+      "assignmentDate": "2026-04-19",
+      "personId": "1771887891778",
+      "personName": "MELİHA DEMİR",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-19",
+      "day": "2026-04-19",
+      "assignmentDate": "2026-04-19",
+      "personId": "1771887891773",
+      "personName": "HAVVANUR KUBUZ",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-19",
+      "day": "2026-04-19",
+      "assignmentDate": "2026-04-19",
+      "personId": "1771887891795",
+      "personName": "ZEYNEP ERSOY",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-19",
+      "day": "2026-04-19",
+      "assignmentDate": "2026-04-19",
+      "personId": "1771887891765",
+      "personName": "FULYA EKİNCİ",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-19",
+      "day": "2026-04-19",
+      "assignmentDate": "2026-04-19",
+      "personId": "1771887891756",
+      "personName": "EDA SARIKAYA",
+      "shiftCode": "1761072131851",
+      "shiftId": "1761072131851"
+    },
+    {
+      "date": "2026-04-19",
+      "day": "2026-04-19",
+      "assignmentDate": "2026-04-19",
+      "personId": "1771887891745",
+      "personName": "BEKİR ÖZDEMİR",
+      "shiftCode": "1761072131853",
+      "shiftId": "1761072131853"
+    },
+    {
+      "date": "2026-04-19",
+      "day": "2026-04-19",
+      "assignmentDate": "2026-04-19",
+      "personId": "1771887891741",
+      "personName": "ARZU KONAK",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-19",
+      "day": "2026-04-19",
+      "assignmentDate": "2026-04-19",
+      "personId": "1771887891752",
+      "personName": "DOĞAN AVŞAR",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-19",
+      "day": "2026-04-19",
+      "assignmentDate": "2026-04-19",
+      "personId": "1771887891744",
+      "personName": "BAYRAM DEMİR",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-19",
+      "day": "2026-04-19",
+      "assignmentDate": "2026-04-19",
+      "personId": "1771887891786",
+      "personName": "MUSTAFA ERGİN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-20",
+      "day": "2026-04-20",
+      "assignmentDate": "2026-04-20",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-20",
+      "day": "2026-04-20",
+      "assignmentDate": "2026-04-20",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-20",
+      "day": "2026-04-20",
+      "assignmentDate": "2026-04-20",
+      "personId": "1771887891748",
+      "personName": "CANAN KILIÇ",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-20",
+      "day": "2026-04-20",
+      "assignmentDate": "2026-04-20",
+      "personId": "1771887891794",
+      "personName": "ZEHRA SOYUÇOK",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-20",
+      "day": "2026-04-20",
+      "assignmentDate": "2026-04-20",
+      "personId": "1771887891758",
+      "personName": "EMİNE TURAN",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-20",
+      "day": "2026-04-20",
+      "assignmentDate": "2026-04-20",
+      "personId": "1771887891754",
+      "personName": "EBRU KIVRAK",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-20",
+      "day": "2026-04-20",
+      "assignmentDate": "2026-04-20",
+      "personId": "1771887891759",
+      "personName": "EREN KARACA",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-20",
+      "day": "2026-04-20",
+      "assignmentDate": "2026-04-20",
+      "personId": "1771887891743",
+      "personName": "AYŞE AKSOY DOĞAN",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-20",
+      "day": "2026-04-20",
+      "assignmentDate": "2026-04-20",
+      "personId": "1771887891766",
+      "personName": "FULYA GILIÇ",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-20",
+      "day": "2026-04-20",
+      "assignmentDate": "2026-04-20",
+      "personId": "1771887891747",
+      "personName": "CANAN GÖLGELİ",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-20",
+      "day": "2026-04-20",
+      "assignmentDate": "2026-04-20",
+      "personId": "1771887891737",
+      "personName": "ABDULLAH AYDOĞDU",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-20",
+      "day": "2026-04-20",
+      "assignmentDate": "2026-04-20",
+      "personId": "1771887891751",
+      "personName": "DERYA SANCAR",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-20",
+      "day": "2026-04-20",
+      "assignmentDate": "2026-04-20",
+      "personId": "1771887891769",
+      "personName": "GÜLDEN ORTAŞ",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-20",
+      "day": "2026-04-20",
+      "assignmentDate": "2026-04-20",
+      "personId": "1771887891774",
+      "personName": "İBRAHİM COŞKUN",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-20",
+      "day": "2026-04-20",
+      "assignmentDate": "2026-04-20",
+      "personId": "1771887891739",
+      "personName": "AHMET DURSUN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891745",
+      "personName": "BEKİR ÖZDEMİR",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891783",
+      "personName": "MURAT ÇELİK",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891761",
+      "personName": "ERTUĞRUL YILMAZ",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891792",
+      "personName": "TUĞBA SUİÇMEZ",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891781",
+      "personName": "MERVE NUR ERKAN",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891750",
+      "personName": "ÇİĞDEM TERKENLİ",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891773",
+      "personName": "HAVVANUR KUBUZ",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891787",
+      "personName": "NURSEL ÖNÜR",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891756",
+      "personName": "EDA SARIKAYA",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891795",
+      "personName": "ZEYNEP ERSOY",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891762",
+      "personName": "ESRA BALCI",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891791",
+      "personName": "TALİHE NİDANUR KARACA",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891789",
+      "personName": "ÖMER ERÇİFTÇİ",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-21",
+      "day": "2026-04-21",
+      "assignmentDate": "2026-04-21",
+      "personId": "1771887891744",
+      "personName": "BAYRAM DEMİR",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891755",
+      "personName": "EDA ERDUHAN",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891775",
+      "personName": "İBRAHİM FURKAN TÜRE",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891776",
+      "personName": "İREM KAVAS",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891737",
+      "personName": "ABDULLAH AYDOĞDU",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891748",
+      "personName": "CANAN KILIÇ",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891780",
+      "personName": "MELTEM KARAÇALI",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891743",
+      "personName": "AYŞE AKSOY DOĞAN",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891772",
+      "personName": "HATİCE KEVSER DİNÇ",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891765",
+      "personName": "FULYA EKİNCİ",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891753",
+      "personName": "DÖNE YİĞİT DUKKUZ",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891751",
+      "personName": "DERYA SANCAR",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891740",
+      "personName": "AHMET NARTER",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891784",
+      "personName": "MURAT ŞENÖZDEMİR",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-22",
+      "day": "2026-04-22",
+      "assignmentDate": "2026-04-22",
+      "personId": "1771887891774",
+      "personName": "İBRAHİM COŞKUN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-23",
+      "day": "2026-04-23",
+      "assignmentDate": "2026-04-23",
+      "personId": "1771887891769",
+      "personName": "GÜLDEN ORTAŞ",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-23",
+      "day": "2026-04-23",
+      "assignmentDate": "2026-04-23",
+      "personId": "1771887891794",
+      "personName": "ZEHRA SOYUÇOK",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-23",
+      "day": "2026-04-23",
+      "assignmentDate": "2026-04-23",
+      "personId": "1771887891795",
+      "personName": "ZEYNEP ERSOY",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-23",
+      "day": "2026-04-23",
+      "assignmentDate": "2026-04-23",
+      "personId": "1771887891781",
+      "personName": "MERVE NUR ERKAN",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-23",
+      "day": "2026-04-23",
+      "assignmentDate": "2026-04-23",
+      "personId": "1771887891749",
+      "personName": "CANPOLAT AVCI",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-23",
+      "day": "2026-04-23",
+      "assignmentDate": "2026-04-23",
+      "personId": "1771887891763",
+      "personName": "FATMA IŞIK",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-23",
+      "day": "2026-04-23",
+      "assignmentDate": "2026-04-23",
+      "personId": "1771887891773",
+      "personName": "HAVVANUR KUBUZ",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-23",
+      "day": "2026-04-23",
+      "assignmentDate": "2026-04-23",
+      "personId": "1771887891792",
+      "personName": "TUĞBA SUİÇMEZ",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-23",
+      "day": "2026-04-23",
+      "assignmentDate": "2026-04-23",
+      "personId": "1771887891761",
+      "personName": "ERTUĞRUL YILMAZ",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-23",
+      "day": "2026-04-23",
+      "assignmentDate": "2026-04-23",
+      "personId": "1771887891783",
+      "personName": "MURAT ÇELİK",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-23",
+      "day": "2026-04-23",
+      "assignmentDate": "2026-04-23",
+      "personId": "1771887891778",
+      "personName": "MELİHA DEMİR",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-23",
+      "day": "2026-04-23",
+      "assignmentDate": "2026-04-23",
+      "personId": "1771887891787",
+      "personName": "NURSEL ÖNÜR",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-23",
+      "day": "2026-04-23",
+      "assignmentDate": "2026-04-23",
+      "personId": "1771887891744",
+      "personName": "BAYRAM DEMİR",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-23",
+      "day": "2026-04-23",
+      "assignmentDate": "2026-04-23",
+      "personId": "1771887891771",
+      "personName": "HASAN ERTURGUT",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-24",
+      "day": "2026-04-24",
+      "assignmentDate": "2026-04-24",
+      "personId": "1771887891745",
+      "personName": "BEKİR ÖZDEMİR",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-24",
+      "day": "2026-04-24",
+      "assignmentDate": "2026-04-24",
+      "personId": "1771887891764",
+      "personName": "FATMA ORTA",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-24",
+      "day": "2026-04-24",
+      "assignmentDate": "2026-04-24",
+      "personId": "1771887891754",
+      "personName": "EBRU KIVRAK",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-24",
+      "day": "2026-04-24",
+      "assignmentDate": "2026-04-24",
+      "personId": "1771887891741",
+      "personName": "ARZU KONAK",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-24",
+      "day": "2026-04-24",
+      "assignmentDate": "2026-04-24",
+      "personId": "1771887891766",
+      "personName": "FULYA GILIÇ",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-24",
+      "day": "2026-04-24",
+      "assignmentDate": "2026-04-24",
+      "personId": "1771887891748",
+      "personName": "CANAN KILIÇ",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-24",
+      "day": "2026-04-24",
+      "assignmentDate": "2026-04-24",
+      "personId": "1771887891793",
+      "personName": "ÜLKÜ AYŞE GÜRBÜZ",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-24",
+      "day": "2026-04-24",
+      "assignmentDate": "2026-04-24",
+      "personId": "1771887891738",
+      "personName": "ADEM ERKAN",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-24",
+      "day": "2026-04-24",
+      "assignmentDate": "2026-04-24",
+      "personId": "1771887891747",
+      "personName": "CANAN GÖLGELİ",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-24",
+      "day": "2026-04-24",
+      "assignmentDate": "2026-04-24",
+      "personId": "1771887891743",
+      "personName": "AYŞE AKSOY DOĞAN",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-24",
+      "day": "2026-04-24",
+      "assignmentDate": "2026-04-24",
+      "personId": "1771887891777",
+      "personName": "LEYLA ARAL",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-24",
+      "day": "2026-04-24",
+      "assignmentDate": "2026-04-24",
+      "personId": "1771887891759",
+      "personName": "EREN KARACA",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-24",
+      "day": "2026-04-24",
+      "assignmentDate": "2026-04-24",
+      "personId": "1771887891774",
+      "personName": "İBRAHİM COŞKUN",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-24",
+      "day": "2026-04-24",
+      "assignmentDate": "2026-04-24",
+      "personId": "1771887891786",
+      "personName": "MUSTAFA ERGİN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891767",
+      "personName": "GAMZE FATMA BAĞCI",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891763",
+      "personName": "FATMA IŞIK",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891753",
+      "personName": "DÖNE YİĞİT DUKKUZ",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891756",
+      "personName": "EDA SARIKAYA",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891757",
+      "personName": "EFRAİM AYDIN",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891772",
+      "personName": "HATİCE KEVSER DİNÇ",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891787",
+      "personName": "NURSEL ÖNÜR",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891781",
+      "personName": "MERVE NUR ERKAN",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891792",
+      "personName": "TUĞBA SUİÇMEZ",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891775",
+      "personName": "İBRAHİM FURKAN TÜRE",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891752",
+      "personName": "DOĞAN AVŞAR",
+      "shiftCode": "1761072131851",
+      "shiftId": "1761072131851"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891788",
+      "personName": "OSMAN CAN ORHAN",
+      "shiftCode": "1761072131853",
+      "shiftId": "1761072131853"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891794",
+      "personName": "ZEHRA SOYUÇOK",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891790",
+      "personName": "PELİN HÜLYA YARANGÜNÜ",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891789",
+      "personName": "ÖMER ERÇİFTÇİ",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-25",
+      "day": "2026-04-25",
+      "assignmentDate": "2026-04-25",
+      "personId": "1771887891784",
+      "personName": "MURAT ŞENÖZDEMİR",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-26",
+      "day": "2026-04-26",
+      "assignmentDate": "2026-04-26",
+      "personId": "1771887891749",
+      "personName": "CANPOLAT AVCI",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-26",
+      "day": "2026-04-26",
+      "assignmentDate": "2026-04-26",
+      "personId": "1771887891758",
+      "personName": "EMİNE TURAN",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-26",
+      "day": "2026-04-26",
+      "assignmentDate": "2026-04-26",
+      "personId": "1771887891741",
+      "personName": "ARZU KONAK",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-26",
+      "day": "2026-04-26",
+      "assignmentDate": "2026-04-26",
+      "personId": "1771887891738",
+      "personName": "ADEM ERKAN",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-26",
+      "day": "2026-04-26",
+      "assignmentDate": "2026-04-26",
+      "personId": "1771887891743",
+      "personName": "AYŞE AKSOY DOĞAN",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-26",
+      "day": "2026-04-26",
+      "assignmentDate": "2026-04-26",
+      "personId": "1771887891740",
+      "personName": "AHMET NARTER",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-26",
+      "day": "2026-04-26",
+      "assignmentDate": "2026-04-26",
+      "personId": "1771887891777",
+      "personName": "LEYLA ARAL",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-26",
+      "day": "2026-04-26",
+      "assignmentDate": "2026-04-26",
+      "personId": "1771887891788",
+      "personName": "OSMAN CAN ORHAN",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-26",
+      "day": "2026-04-26",
+      "assignmentDate": "2026-04-26",
+      "personId": "1771887891746",
+      "personName": "BUKET CEYHAN KAYGISIZ",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-26",
+      "day": "2026-04-26",
+      "assignmentDate": "2026-04-26",
+      "personId": "1771887891783",
+      "personName": "MURAT ÇELİK",
+      "shiftCode": "1761072131851",
+      "shiftId": "1761072131851"
+    },
+    {
+      "date": "2026-04-26",
+      "day": "2026-04-26",
+      "assignmentDate": "2026-04-26",
+      "personId": "1771887891778",
+      "personName": "MELİHA DEMİR",
+      "shiftCode": "1761072131853",
+      "shiftId": "1761072131853"
+    },
+    {
+      "date": "2026-04-26",
+      "day": "2026-04-26",
+      "assignmentDate": "2026-04-26",
+      "personId": "1771887891750",
+      "personName": "ÇİĞDEM TERKENLİ",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-26",
+      "day": "2026-04-26",
+      "assignmentDate": "2026-04-26",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-26",
+      "day": "2026-04-26",
+      "assignmentDate": "2026-04-26",
+      "personId": "1771887891771",
+      "personName": "HASAN ERTURGUT",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-26",
+      "day": "2026-04-26",
+      "assignmentDate": "2026-04-26",
+      "personId": "1771887891739",
+      "personName": "AHMET DURSUN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-27",
+      "day": "2026-04-27",
+      "assignmentDate": "2026-04-27",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-27",
+      "day": "2026-04-27",
+      "assignmentDate": "2026-04-27",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-27",
+      "day": "2026-04-27",
+      "assignmentDate": "2026-04-27",
+      "personId": "1771887891793",
+      "personName": "ÜLKÜ AYŞE GÜRBÜZ",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-27",
+      "day": "2026-04-27",
+      "assignmentDate": "2026-04-27",
+      "personId": "1771887891791",
+      "personName": "TALİHE NİDANUR KARACA",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-27",
+      "day": "2026-04-27",
+      "assignmentDate": "2026-04-27",
+      "personId": "1771887891752",
+      "personName": "DOĞAN AVŞAR",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-27",
+      "day": "2026-04-27",
+      "assignmentDate": "2026-04-27",
+      "personId": "1771887891747",
+      "personName": "CANAN GÖLGELİ",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-27",
+      "day": "2026-04-27",
+      "assignmentDate": "2026-04-27",
+      "personId": "1771887891792",
+      "personName": "TUĞBA SUİÇMEZ",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-27",
+      "day": "2026-04-27",
+      "assignmentDate": "2026-04-27",
+      "personId": "1771887891778",
+      "personName": "MELİHA DEMİR",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-27",
+      "day": "2026-04-27",
+      "assignmentDate": "2026-04-27",
+      "personId": "1771887891769",
+      "personName": "GÜLDEN ORTAŞ",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-27",
+      "day": "2026-04-27",
+      "assignmentDate": "2026-04-27",
+      "personId": "1771887891765",
+      "personName": "FULYA EKİNCİ",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-27",
+      "day": "2026-04-27",
+      "assignmentDate": "2026-04-27",
+      "personId": "1771887891753",
+      "personName": "DÖNE YİĞİT DUKKUZ",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-27",
+      "day": "2026-04-27",
+      "assignmentDate": "2026-04-27",
+      "personId": "1771887891764",
+      "personName": "FATMA ORTA",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-27",
+      "day": "2026-04-27",
+      "assignmentDate": "2026-04-27",
+      "personId": "1771887891762",
+      "personName": "ESRA BALCI",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-27",
+      "day": "2026-04-27",
+      "assignmentDate": "2026-04-27",
+      "personId": "1771887891744",
+      "personName": "BAYRAM DEMİR",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-27",
+      "day": "2026-04-27",
+      "assignmentDate": "2026-04-27",
+      "personId": "1771887891786",
+      "personName": "MUSTAFA ERGİN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891757",
+      "personName": "EFRAİM AYDIN",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891790",
+      "personName": "PELİN HÜLYA YARANGÜNÜ",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891788",
+      "personName": "OSMAN CAN ORHAN",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891782",
+      "personName": "MURAT BAYRAM",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891763",
+      "personName": "FATMA IŞIK",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891738",
+      "personName": "ADEM ERKAN",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891772",
+      "personName": "HATİCE KEVSER DİNÇ",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891767",
+      "personName": "GAMZE FATMA BAĞCI",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891759",
+      "personName": "EREN KARACA",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891781",
+      "personName": "MERVE NUR ERKAN",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891746",
+      "personName": "BUKET CEYHAN KAYGISIZ",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891751",
+      "personName": "DERYA SANCAR",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891784",
+      "personName": "MURAT ŞENÖZDEMİR",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-28",
+      "day": "2026-04-28",
+      "assignmentDate": "2026-04-28",
+      "personId": "1771887891774",
+      "personName": "İBRAHİM COŞKUN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891750",
+      "personName": "ÇİĞDEM TERKENLİ",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891762",
+      "personName": "ESRA BALCI",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891758",
+      "personName": "EMİNE TURAN",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891793",
+      "personName": "ÜLKÜ AYŞE GÜRBÜZ",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891756",
+      "personName": "EDA SARIKAYA",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891755",
+      "personName": "EDA ERDUHAN",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891766",
+      "personName": "FULYA GILIÇ",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891743",
+      "personName": "AYŞE AKSOY DOĞAN",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891783",
+      "personName": "MURAT ÇELİK",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891791",
+      "personName": "TALİHE NİDANUR KARACA",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891761",
+      "personName": "ERTUĞRUL YILMAZ",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891795",
+      "personName": "ZEYNEP ERSOY",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891771",
+      "personName": "HASAN ERTURGUT",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-29",
+      "day": "2026-04-29",
+      "assignmentDate": "2026-04-29",
+      "personId": "1771887891739",
+      "personName": "AHMET DURSUN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891760",
+      "personName": "ERGÜL B. AĞALDAY",
+      "shiftCode": "1761072131831",
+      "shiftId": "1761072131831"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891768",
+      "personName": "GAMZE ÖZTÜRK TEZKİN",
+      "shiftCode": "1761072131832",
+      "shiftId": "1761072131832"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891738",
+      "personName": "ADEM ERKAN",
+      "shiftCode": "1761072131834",
+      "shiftId": "1761072131834"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891737",
+      "personName": "ABDULLAH AYDOĞDU",
+      "shiftCode": "1761072131835",
+      "shiftId": "1761072131835"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891751",
+      "personName": "DERYA SANCAR",
+      "shiftCode": "1761072131836",
+      "shiftId": "1761072131836"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891767",
+      "personName": "GAMZE FATMA BAĞCI",
+      "shiftCode": "1761072131837",
+      "shiftId": "1761072131837"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891749",
+      "personName": "CANPOLAT AVCI",
+      "shiftCode": "1761072131838",
+      "shiftId": "1761072131838"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891746",
+      "personName": "BUKET CEYHAN KAYGISIZ",
+      "shiftCode": "1761072131839",
+      "shiftId": "1761072131839"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891740",
+      "personName": "AHMET NARTER",
+      "shiftCode": "1761072131847",
+      "shiftId": "1761072131847"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891747",
+      "personName": "CANAN GÖLGELİ",
+      "shiftCode": "1761072131848",
+      "shiftId": "1761072131848"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891764",
+      "personName": "FATMA ORTA",
+      "shiftCode": "1761072131849",
+      "shiftId": "1761072131849"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891741",
+      "personName": "ARZU KONAK",
+      "shiftCode": "1761072131850",
+      "shiftId": "1761072131850"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891776",
+      "personName": "İREM KAVAS",
+      "shiftCode": "1761072131860",
+      "shiftId": "1761072131860"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891772",
+      "personName": "HATİCE KEVSER DİNÇ",
+      "shiftCode": "1761072131861",
+      "shiftId": "1761072131861"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891742",
+      "personName": "AYHAN ÇAKMAK",
+      "shiftCode": "1761072131866",
+      "shiftId": "1761072131866"
+    },
+    {
+      "date": "2026-04-30",
+      "day": "2026-04-30",
+      "assignmentDate": "2026-04-30",
+      "personId": "1771887891774",
+      "personName": "İBRAHİM COŞKUN",
+      "shiftCode": "1761072131867",
+      "shiftId": "1761072131867"
+    }
+  ],
+  "date": "2026-04-01",
+  "shift": {
+    "id": "1761072131831",
+    "code": "M",
+    "serviceId": "",
+    "section": "SERVİS SORUMLUSU",
+    "area": "SERVİS SORUMLUSU",
+    "requiredCount": 1,
+    "hours": 0,
+    "start": null,
+    "end": null,
+    "isNight": false
+  },
+  "serviceId": "",
+  "section": "SERVİS SORUMLUSU",
+  "shifts": [
+    {
+      "id": "1761072131831",
+      "code": "M",
+      "serviceId": "",
+      "section": "SERVİS SORUMLUSU",
+      "area": "SERVİS SORUMLUSU",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    },
+    {
+      "id": "1761072131832",
+      "code": "M",
+      "serviceId": "",
+      "section": "SERVİS SORUMLUSU",
+      "area": "SERVİS SORUMLUSU",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    },
+    {
+      "id": "1761072131834",
+      "code": "N",
+      "serviceId": "",
+      "section": "EKİP SORUMLUSU",
+      "area": "EKİP SORUMLUSU",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    },
+    {
+      "id": "1761072131835",
+      "code": "N",
+      "serviceId": "",
+      "section": "RESÜSİTASYON",
+      "area": "RESÜSİTASYON",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    },
+    {
+      "id": "1761072131836",
+      "code": "N",
+      "serviceId": "",
+      "section": "RESÜSİTASYON",
+      "area": "RESÜSİTASYON",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    },
+    {
+      "id": "1761072131837",
+      "code": "N",
+      "serviceId": "",
+      "section": "KIRMIZI",
+      "area": "KIRMIZI",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    },
+    {
+      "id": "1761072131838",
+      "code": "N",
+      "serviceId": "",
+      "section": "SARI",
+      "area": "SARI",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    },
+    {
+      "id": "1761072131839",
+      "code": "N",
+      "serviceId": "",
+      "section": "ÇOCUK",
+      "area": "ÇOCUK",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    },
+    {
+      "id": "1761072131847",
+      "code": "N",
+      "serviceId": "",
+      "section": "ECZANE",
+      "area": "ECZANE",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    },
+    {
+      "id": "1761072131848",
+      "code": "V1",
+      "serviceId": "",
+      "section": "YEŞİL",
+      "area": "YEŞİL",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    },
+    {
+      "id": "1761072131849",
+      "code": "V1",
+      "serviceId": "",
+      "section": "YEŞİL",
+      "area": "YEŞİL",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    },
+    {
+      "id": "1761072131850",
+      "code": "V1",
+      "serviceId": "",
+      "section": "YEŞİL",
+      "area": "YEŞİL",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    },
+    {
+      "id": "1761072131860",
+      "code": "N",
+      "serviceId": "",
+      "section": "TRİAJ",
+      "area": "TRİAJ",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    },
+    {
+      "id": "1761072131861",
+      "code": "V1",
+      "serviceId": "",
+      "section": "TRİAJ",
+      "area": "TRİAJ",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    },
+    {
+      "id": "1761072131866",
+      "code": "N",
+      "serviceId": "",
+      "section": "CERRAHİ MÜDAHELE",
+      "area": "CERRAHİ MÜDAHELE",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    },
+    {
+      "id": "1761072131867",
+      "code": "N",
+      "serviceId": "",
+      "section": "CERRAHİ MÜDAHELE",
+      "area": "CERRAHİ MÜDAHELE",
+      "requiredCount": 1,
+      "hours": 0,
+      "start": null,
+      "end": null,
+      "isNight": false
+    }
+  ],
+  "schedule": {
+    "scheduleId": "68f7dc2c32c8b3e9e201e9e4",
+    "sectionId": "calisma-cizelgesi",
+    "serviceId": "",
+    "role": "Nurse",
+    "year": 2026,
+    "month": 4,
+    "hospitalId": "69b45590bf820456a1d7ad1f"
+  }
+}

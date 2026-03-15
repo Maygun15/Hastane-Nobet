@@ -12,6 +12,7 @@ function buildContext({
   rules = {},
   weights = {},
   debug = {},
+  auditOptions = {},
 } = {}) {
   const staffRuntime = (staff || []).map((p) => {
     const metaRaw = p?.meta && typeof p.meta === "object" ? p.meta : {};
@@ -52,6 +53,7 @@ function buildContext({
     weights,
     randomize: true,
     debug,
+    auditOptions: auditOptions && typeof auditOptions === "object" ? auditOptions : {},
     assignments: [],
     issues: [],
   };
@@ -70,6 +72,7 @@ async function generateMonthlyPlan({
   targetHours,
   targetShifts,
   debug,
+  auditOptions,
 } = {}) {
   if (!getActiveStaff || !getMonthlyShifts) {
     throw new Error("generateMonthlyPlan: getActiveStaff ve getMonthlyShifts zorunlu");
@@ -92,6 +95,7 @@ async function generateMonthlyPlan({
     rules,
     weights,
     debug: debug || {},
+    auditOptions,
   });
   if (ruleEngineDoc) {
     const engine = new RuleEngine(ruleEngineDoc);

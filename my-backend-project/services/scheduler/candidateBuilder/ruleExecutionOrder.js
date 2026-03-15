@@ -1,0 +1,20 @@
+"use strict";
+
+const RULE_CODES = require("./ruleCodes");
+
+// This is the single source of truth for candidate rule execution order.
+const DEFAULT_RULE_EXECUTION_ORDER = Object.freeze([
+  RULE_CODES.ACTIVE_REQUIRED,
+  RULE_CODES.SERVICE_MATCH,
+  RULE_CODES.LEAVE_BLOCK,
+  RULE_CODES.REST_AFTER_NIGHT,
+  RULE_CODES.ONE_SHIFT_PER_DAY,
+  RULE_CODES.ROLE_ELIGIBILITY,
+  RULE_CODES.SECTION_ELIGIBILITY,
+  RULE_CODES.MAX_WEEKLY_SHIFTS,
+  RULE_CODES.MAX_CONSECUTIVE_DAYS,
+]);
+
+module.exports = {
+  DEFAULT_RULE_EXECUTION_ORDER,
+};
