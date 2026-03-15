@@ -2,6 +2,7 @@
 const { isAvailable } = require("./constraints");
 const { calculateScore } = require("./scoring");
 const { buildCandidates } = require("./candidateBuilder");
+const evaluatePolicies = require("./policies/evaluatePolicies");
 const {
   createShadowAuditCollector,
   collectShadowObservations,
@@ -148,16 +149,41 @@ function runScheduler(context) {
           isAvailable(p, day, context, shift)
         );
 
-        context.candidateAudit.push({
+        const slotAudit = {
           ...candidateBuild.audit,
           postConstraintCount: candidates.length,
-        });
+        };
 
-        if (!candidates.length) break;
-        candidates.sort((a, b) =>
-          calculateScore(a, day, shift, context) - calculateScore(b, day, shift, context)
-        );
-        const selected = candidates[0];
+        if (!candidates.length) {
+          context.candidateAudit.push(slotAudit);
+          break;
+        }
+        const scoredCandidates = candidates.map((candidate) => {
+          const policyResult = evaluatePolicies({ person: candidate }, context);
+          return {
+            ...candidate,
+            policyScore: Number(policyResult?.totalScore || 0),
+            policyBreakdown: Array.isArray(policyResult?.policies) ? policyResult.policies : [],
+            schedulerScore: calculateScore(candidate, day, shift, context),
+          };
+        });
+        scoredCandidates.sort((a, b) => {
+          const schedulerDiff = Number(a.schedulerScore || 0) - Number(b.schedulerScore || 0);
+          if (schedulerDiff !== 0) return schedulerDiff;
+          return Number(b.policyScore || 0) - Number(a.policyScore || 0);
+        });
+        const selected = scoredCandidates[0];
+        context.candidateAudit.push({
+          ...slotAudit,
+          selectedCandidateId: normalizePersonId(selected?.id),
+          selectedSchedulerScore: Number(selected?.schedulerScore || 0),
+          selectedPolicyScore: Number(selected?.policyScore || 0),
+          selectedPolicyBreakdown: Array.isArray(selected?.policyBreakdown)
+            ? selected.policyBreakdown.map(clonePolicyResult)
+            : [],
+          selectionReason: determineSelectionReason(scoredCandidates),
+          topCandidates: buildTopCandidateSummary(scoredCandidates, selected?.id),
+        });
         assign(selected, day, shift, context);
         if (selected?.id) usedOnDay.add(selected.id);
       }
@@ -194,6 +220,9 @@ function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null,
     fallbackReason: null,
     hardFilteredByCandidateBuilderCount: 0,
     hardFilteredBlockingRules: {},
+    sectionEligibilityCheckedCount: 0,
+    sectionEligibilityHardRejectCount: 0,
+    sectionEligibilityPassCount: 0,
     rejected: [],
   };
   const shadowResult = collectSlotShadowObservations({
@@ -234,6 +263,7 @@ function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null,
     const eligiblePeople = extractEligiblePeople(candidateResult);
     const rejected = Array.isArray(candidateResult?.rejected) ? candidateResult.rejected : [];
     const fallbackPoolAfterHardFilter = filterFallbackPoolByHardBlocks(fallbackPool, rejected, context);
+    const sectionEligibilityMetrics = buildSectionEligibilityMetrics(candidateResult);
     const audit = {
       ...baseAudit,
       eligibleCount: eligiblePeople.length,
@@ -242,6 +272,9 @@ function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null,
         Math.max(0, fallbackPool.length - fallbackPoolAfterHardFilter.length),
       hardFilteredBlockingRules: summarizeBlockingRules(rejected, context),
       roleEligibilityHardRejectCount: countHardRejectedByRule(rejected, "ROLE_ELIGIBILITY"),
+      sectionEligibilityCheckedCount: sectionEligibilityMetrics.checkedCount,
+      sectionEligibilityHardRejectCount: sectionEligibilityMetrics.hardRejectCount,
+      sectionEligibilityPassCount: sectionEligibilityMetrics.passCount,
       rejected: rejected.map((item) => ({
         personId: item?.personId || null,
         failedRuleCodes: Array.isArray(item?.failedRules)
@@ -378,6 +411,10 @@ function getFallbackBlockingRuleCodes(context) {
     source.push("ROLE_ELIGIBILITY");
   }
 
+  if (context?.candidateBuilderOptions?.strictSectionEligibility === true) {
+    source.push("SECTION_ELIGIBILITY");
+  }
+
   if (Array.isArray(context?.candidateBuilderOptions?.strictCandidateHardRules)) {
     source.push(...context.candidateBuilderOptions.strictCandidateHardRules);
   }
@@ -407,6 +444,80 @@ function countHardRejectedByRule(rejected, ruleCode) {
     }
   }
   return count;
+}
+
+function buildSectionEligibilityMetrics(candidateResult) {
+  const evaluations = Array.isArray(candidateResult?.evaluations) ? candidateResult.evaluations : [];
+  let checkedCount = 0;
+  let hardRejectCount = 0;
+  let passCount = 0;
+
+  for (const item of evaluations) {
+    const hasSectionResult = Array.isArray(item?.ruleResults)
+      && item.ruleResults.some((rule) => rule?.code === "SECTION_ELIGIBILITY");
+    if (!hasSectionResult) continue;
+
+    checkedCount += 1;
+    const blockedBySection = item?.hardRejected === true
+      && Array.isArray(item?.blockingRules)
+      && item.blockingRules.some((code) => String(code || "").trim() === "SECTION_ELIGIBILITY");
+
+    if (blockedBySection) {
+      hardRejectCount += 1;
+    } else {
+      passCount += 1;
+    }
+  }
+
+  return {
+    checkedCount,
+    hardRejectCount,
+    passCount,
+  };
+}
+
+function determineSelectionReason(scoredCandidates = []) {
+  if (!Array.isArray(scoredCandidates) || scoredCandidates.length <= 1) {
+    return "ONLY_ELIGIBLE_CANDIDATE";
+  }
+
+  const [first, second] = scoredCandidates;
+  const firstSchedulerScore = Number(first?.schedulerScore || 0);
+  const secondSchedulerScore = Number(second?.schedulerScore || 0);
+  if (firstSchedulerScore !== secondSchedulerScore) {
+    return "SCHEDULER_SCORE_BEST";
+  }
+
+  const firstPolicyScore = Number(first?.policyScore || 0);
+  const secondPolicyScore = Number(second?.policyScore || 0);
+  if (firstPolicyScore !== secondPolicyScore) {
+    return "POLICY_TIE_BREAK";
+  }
+
+  return "SCHEDULER_SCORE_BEST";
+}
+
+function buildTopCandidateSummary(scoredCandidates = [], selectedId = null) {
+  return (Array.isArray(scoredCandidates) ? scoredCandidates : [])
+    .slice(0, 3)
+    .map((candidate) => ({
+      personId: normalizePersonId(candidate?.id),
+      schedulerScore: Number(candidate?.schedulerScore || 0),
+      policyScore: Number(candidate?.policyScore || 0),
+      selected: normalizePersonId(candidate?.id) === normalizePersonId(selectedId),
+    }));
+}
+
+function clonePolicyResult(policyResult) {
+  return {
+    policy: policyResult?.policy || "UNKNOWN_POLICY",
+    score: Number(policyResult?.score || 0),
+    reason: policyResult?.reason ?? null,
+    meta:
+      policyResult?.meta && typeof policyResult.meta === "object" && !Array.isArray(policyResult.meta)
+        ? { ...policyResult.meta }
+        : {},
+  };
 }
 
 module.exports = { runScheduler, assign };
