@@ -241,6 +241,7 @@ function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null,
       hardFilteredByCandidateBuilderCount:
         Math.max(0, fallbackPool.length - fallbackPoolAfterHardFilter.length),
       hardFilteredBlockingRules: summarizeBlockingRules(rejected, context),
+      roleEligibilityHardRejectCount: countHardRejectedByRule(rejected, "ROLE_ELIGIBILITY"),
       rejected: rejected.map((item) => ({
         personId: item?.personId || null,
         failedRuleCodes: Array.isArray(item?.failedRules)
@@ -370,8 +371,16 @@ function summarizeBlockingRules(rejected, context) {
 function getFallbackBlockingRuleCodes(context) {
   const configured = context?.candidateBuilderOptions?.fallbackBlockingRuleCodes;
   const source = Array.isArray(configured) && configured.length
-    ? configured
-    : FALLBACK_BLOCKING_RULE_CODES;
+    ? configured.slice()
+    : Array.from(FALLBACK_BLOCKING_RULE_CODES);
+
+  if (context?.candidateBuilderOptions?.strictRoleEligibility === true) {
+    source.push("ROLE_ELIGIBILITY");
+  }
+
+  if (Array.isArray(context?.candidateBuilderOptions?.strictCandidateHardRules)) {
+    source.push(...context.candidateBuilderOptions.strictCandidateHardRules);
+  }
 
   return new Set(
     source
@@ -384,6 +393,20 @@ function normalizePersonId(value) {
   if (value == null) return null;
   const normalized = String(value).trim();
   return normalized || null;
+}
+
+function countHardRejectedByRule(rejected, ruleCode) {
+  const normalizedRuleCode = String(ruleCode || "").trim();
+  if (!normalizedRuleCode) return 0;
+
+  let count = 0;
+  for (const item of rejected || []) {
+    if (!item?.hardRejected || !Array.isArray(item?.blockingRules)) continue;
+    if (item.blockingRules.some((code) => String(code || "").trim() === normalizedRuleCode)) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 module.exports = { runScheduler, assign };

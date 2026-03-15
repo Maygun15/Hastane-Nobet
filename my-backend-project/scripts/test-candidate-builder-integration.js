@@ -239,6 +239,92 @@ function testFallbackExcludesServiceMatchHardBlockedCandidates() {
   });
 }
 
+function testStrictRoleEligibilityFiltersMismatchedCandidate() {
+  withScheduler(null, (runScheduler) => {
+    const context = createBaseContext({
+      staff: [
+        createRuntimePerson("p1", { role: "doctor", totalHours: 0 }),
+        createRuntimePerson("p2", { role: "nurse", totalHours: 100 }),
+      ],
+      targetHours: 50,
+      candidateBuilderOptions: {
+        strictRoleEligibility: true,
+      },
+      days: [
+        {
+          date: "2026-03-14",
+          weekday: 6,
+          shifts: [
+            {
+              id: "D",
+              code: "D",
+              serviceId: "svc-1",
+              section: "ER",
+              requiredRole: "nurse",
+              requiredCount: 1,
+              hours: 8,
+            },
+          ],
+        },
+      ],
+    });
+    const result = runScheduler(context);
+
+    assert.strictEqual(result.assignments.length, 1, "strict role mode should still assign eligible candidate");
+    assert.strictEqual(result.assignments[0].personId, "p2", "role-mismatched candidate must be rejected");
+
+    const audit = getSingleAudit(result);
+    assert.strictEqual(audit.fallbackUsed, false, "fallback should not be used when role-eligible candidate exists");
+    assert.strictEqual(audit.rejectedCount, 1, "one role-mismatched candidate should be rejected");
+  });
+}
+
+function testFallbackExcludesRoleEligibilityHardBlockedCandidates() {
+  const mockBuildCandidates = ({ staff }) => ({
+    eligible: [],
+    rejected: [
+      {
+        personId: "p1",
+        person: staff.find((item) => item.id === "p1") || null,
+        failedRules: [{ code: "ROLE_ELIGIBILITY", severity: "hard" }],
+        hardRejected: true,
+        blockingRules: ["ROLE_ELIGIBILITY"],
+        reasonCodes: ["PERSON_ROLE_MISSING_FAIL_CLOSED"],
+        status: "rejected",
+      },
+    ],
+    candidates: [],
+    stats: { totalStaff: Array.isArray(staff) ? staff.length : 0, eligibleCount: 0, rejectedCount: 1 },
+  });
+
+  withScheduler(mockBuildCandidates, (runScheduler) => {
+    const context = createBaseContext({
+      staff: [
+        createRuntimePerson("p1", { role: "doctor", totalHours: 0 }),
+        createRuntimePerson("p2", { role: "nurse", totalHours: 100 }),
+      ],
+      targetHours: 50,
+      candidateBuilderOptions: {
+        strictRoleEligibility: true,
+      },
+    });
+    const result = runScheduler(context);
+
+    assert.strictEqual(result.assignments.length, 1, "fallback should still assign from safe pool");
+    assert.strictEqual(
+      result.assignments[0].personId,
+      "p2",
+      "ROLE_ELIGIBILITY hard-blocked candidate must not re-enter fallback pool"
+    );
+
+    const audit = getSingleAudit(result);
+    assert.strictEqual(audit.fallbackUsed, true);
+    assert.strictEqual(audit.hardFilteredByCandidateBuilderCount, 1);
+    assert.strictEqual(audit.hardFilteredBlockingRules.ROLE_ELIGIBILITY, 1);
+    assert.strictEqual(audit.roleEligibilityHardRejectCount, 1);
+  });
+}
+
 function testFallbackOnError() {
   const mockBuildCandidates = () => {
     throw new Error("mock candidate builder failure");
@@ -340,6 +426,8 @@ function run() {
     { name: "fallback on empty", fn: testFallbackOnEmpty },
     { name: "fallback excludes ACTIVE_REQUIRED hard-blocked candidates", fn: testFallbackExcludesActiveRequiredHardBlockedCandidates },
     { name: "fallback excludes SERVICE_MATCH hard-blocked candidates", fn: testFallbackExcludesServiceMatchHardBlockedCandidates },
+    { name: "strict ROLE_ELIGIBILITY filters mismatched candidate", fn: testStrictRoleEligibilityFiltersMismatchedCandidate },
+    { name: "fallback excludes ROLE_ELIGIBILITY hard-blocked candidates", fn: testFallbackExcludesRoleEligibilityHardBlockedCandidates },
     { name: "fallback on error", fn: testFallbackOnError },
     { name: "audit population", fn: testAuditPopulation },
     { name: "hard reject filtering", fn: testHardRejectFiltering },

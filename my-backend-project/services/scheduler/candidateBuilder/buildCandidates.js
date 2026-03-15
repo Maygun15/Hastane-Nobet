@@ -2,6 +2,7 @@
 
 const { evaluateCandidate, DEFAULT_RULE_ORDER } = require("./evaluateCandidate");
 const { buildCandidateContext } = require("./utils/buildCandidateContext");
+const RULE_CODES = require("./ruleCodes");
 
 /**
  * Builds candidate evaluation list for a day/shift pair.
@@ -26,7 +27,7 @@ function buildCandidates({
     : Array.isArray(personList)
       ? personList
       : [];
-  const selectedRuleCodes = resolveRuleCodes(ruleCodes, activeRuleCodes);
+  const selectedRuleCodes = resolveRuleCodes(ruleCodes, activeRuleCodes, options);
   const orchestrationContext = buildCandidateContext({
     day,
     shift,
@@ -112,7 +113,7 @@ function summarizeBlockingRules(rejected = []) {
   return counts;
 }
 
-function resolveRuleCodes(ruleCodes, activeRuleCodes) {
+function resolveRuleCodes(ruleCodes, activeRuleCodes, options) {
   const source = Array.isArray(ruleCodes) && ruleCodes.length
     ? ruleCodes
     : Array.isArray(activeRuleCodes) && activeRuleCodes.length
@@ -128,7 +129,25 @@ function resolveRuleCodes(ruleCodes, activeRuleCodes) {
     seen.add(code);
     out.push(code);
   }
+
+  if (shouldForceStrictRoleEligibility(options) && !seen.has(RULE_CODES.ROLE_ELIGIBILITY)) {
+    seen.add(RULE_CODES.ROLE_ELIGIBILITY);
+    out.push(RULE_CODES.ROLE_ELIGIBILITY);
+  }
+
   return out;
+}
+
+function shouldForceStrictRoleEligibility(options) {
+  if (options?.strictRoleEligibility === true) return true;
+
+  if (Array.isArray(options?.strictCandidateHardRules)) {
+    return options.strictCandidateHardRules.some(
+      (item) => String(item || "").trim() === RULE_CODES.ROLE_ELIGIBILITY
+    );
+  }
+
+  return false;
 }
 
 module.exports = {
