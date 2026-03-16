@@ -1,6 +1,7 @@
 const GeneratedSchedule = require('../models/GeneratedSchedule');
 const MonthlySchedule = require('../models/MonthlySchedule');
 const Person = require('../models/Person');
+const mongoose = require('mongoose');
 const { listHolidays } = require('./holidayService');
 const { generateMonthlyPlan } = require('./scheduler');
 const { generateDraftRoster } = require('./scheduler/draftRoster');
@@ -198,19 +199,39 @@ async function hydratePayloadStaffFromDb(payloadStaff = [], hospitalId = null) {
     };
   }
 
-  const query = { _id: { $in: ids } };
+  const objectIds = ids.filter((id) => mongoose.Types.ObjectId.isValid(id));
+  const legacyIds = ids.filter((id) => !mongoose.Types.ObjectId.isValid(id));
+  const queryClauses = [];
+  if (objectIds.length) queryClauses.push({ _id: { $in: objectIds } });
+  if (legacyIds.length) queryClauses.push({ tc: { $in: legacyIds } });
+
+  if (!queryClauses.length) {
+    return {
+      staff: safePayloadStaff,
+      debug: { rawCount: safePayloadStaff.length, hydratedCount: 0, missingDbCount: safePayloadStaff.length },
+    };
+  }
+
+  const query = queryClauses.length === 1 ? queryClauses[0] : { $or: queryClauses };
   if (hospitalId) query.hospitalId = hospitalId;
   const dbStaff = await Person.find(query)
     .select({
       _id: 1,
       name: 1,
+      tc: 1,
       active: 1,
       serviceId: 1,
       meta: 1,
     })
     .lean();
 
-  const dbMap = new Map(dbStaff.map((person) => [String(person._id), person]));
+  const dbMap = new Map();
+  dbStaff.forEach((person) => {
+    const objectIdKey = String(person?._id || '').trim();
+    const tcKey = String(person?.tc || '').trim();
+    if (objectIdKey) dbMap.set(objectIdKey, person);
+    if (tcKey) dbMap.set(tcKey, person);
+  });
   let hydratedCount = 0;
   let missingDbCount = 0;
 

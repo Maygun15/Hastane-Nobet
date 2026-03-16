@@ -1456,7 +1456,8 @@ async function runPayloadStaffHydrationCheck() {
         select: () => ({
           lean: async () => [
             {
-              _id: "p-hydrate-1",
+              _id: "507f1f77bcf86cd799439011",
+              tc: "1772096480294",
               name: "Hydrated Nurse",
               active: true,
               serviceId: "svc-db",
@@ -1536,7 +1537,7 @@ async function runPayloadStaffHydrationCheck() {
       payload: {
         staff: [
           {
-            id: "p-hydrate-1",
+            id: "1772096480294",
             name: "UI Nurse",
             active: true,
             serviceId: "svc-ui",
