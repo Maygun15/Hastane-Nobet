@@ -76,6 +76,24 @@ function preferSingleAssignment(list) {
   return [scored[0]];
 }
 
+function buildRemoteScheduleCandidate({ schedule, serviceId, role, year, month, countPersonMatches }) {
+  if (!schedule) return null;
+  const data = schedule?.data || {};
+  const defs = Array.isArray(data.defs) ? data.defs : Array.isArray(data.rows) ? data.rows : [];
+  const normalizedAssignments = normalizeRemoteAssignments({ ...data, year, month }, defs);
+  return {
+    schedule,
+    serviceId,
+    role,
+    defs,
+    normalizedAssignments,
+    personMatches: countPersonMatches(normalizedAssignments),
+    assignmentCount: normalizedAssignments.length,
+    defCount: defs.length,
+    updatedAtTs: Date.parse(schedule?.updatedAt || "") || 0,
+  };
+}
+
 function collectLeaveDays(leavesForPerson, year, month0) {
   const out = new Set();
   if (!leavesForPerson) return out;
@@ -826,6 +844,8 @@ export default function PersonScheduleCalendar({
     setRemoteLoading(true);
     (async () => {
       try {
+        const explicitServiceKey = String(effectiveServiceId ?? "").trim();
+        const explicitRoleKey = String(scheduleRole ?? "").trim();
         const candidates = Array.from(
           new Set([effectiveServiceId, String(serviceId ?? "").trim(), ""].filter(v => v !== undefined))
         );
@@ -850,6 +870,35 @@ export default function PersonScheduleCalendar({
           return count;
         };
 
+        // Prefer the explicit monthly key first. If that exact read-model row exists,
+        // do not guess across other service/role combinations.
+        if (explicitServiceKey || explicitRoleKey) {
+          const explicitSchedule = await getMonthlySchedule({
+            sectionId,
+            serviceId: explicitServiceKey,
+            role: explicitRoleKey,
+            year,
+            month,
+          });
+          if (explicitSchedule) {
+            const explicitCandidate = buildRemoteScheduleCandidate({
+              schedule: explicitSchedule,
+              serviceId: explicitServiceKey,
+              role: explicitRoleKey,
+              year,
+              month,
+              countPersonMatches,
+            });
+            if (!active) return;
+            setRemoteDefs(explicitCandidate?.defs || []);
+            setRemoteAssignmentsRaw(explicitCandidate?.normalizedAssignments || []);
+            setRemoteServiceIdUsed(explicitServiceKey || null);
+            setRemoteRoleUsed(explicitRoleKey || null);
+            setRemoteError("");
+            return;
+          }
+        }
+
         const fetched = [];
         const roleList = roleCandidates.length ? roleCandidates : [""];
         for (const roleKey of roleList) {
@@ -862,24 +911,14 @@ export default function PersonScheduleCalendar({
               month,
             });
             if (!s) continue;
-            const data = s?.data || {};
-            const defs = Array.isArray(data.defs) ? data.defs : Array.isArray(data.rows) ? data.rows : [];
-            const normalizedAssignments = normalizeRemoteAssignments(
-              { ...data, year, month },
-              defs
-            );
-            const personMatches = countPersonMatches(normalizedAssignments);
-            fetched.push({
+            fetched.push(buildRemoteScheduleCandidate({
               schedule: s,
               serviceId: sid,
               role: roleKey,
-              defs,
-              normalizedAssignments,
-              personMatches,
-              assignmentCount: normalizedAssignments.length,
-              defCount: defs.length,
-              updatedAtTs: Date.parse(s?.updatedAt || "") || 0,
-            });
+              year,
+              month,
+              countPersonMatches,
+            }));
           }
         }
 
