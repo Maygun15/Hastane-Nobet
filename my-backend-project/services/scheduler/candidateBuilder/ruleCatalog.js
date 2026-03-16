@@ -6,6 +6,10 @@ const { DEFAULT_RULE_EXECUTION_ORDER } = require("./ruleExecutionOrder");
 /**
  * Metadata-only rule catalog.
  * Keep evaluator mapping out of this file.
+ * V4 hard authority intent:
+ * - enabled + severity=hard rules are the primary candidate-level hard authority
+ * - enabled + severity=soft rules remain capacity signals only
+ * - shadow rules are not yet authoritative
  */
 const RULE_CATALOG = Object.freeze([
   {

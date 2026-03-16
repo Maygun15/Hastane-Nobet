@@ -1,5 +1,9 @@
 const { NIGHT_CODES, NIGHT_EQUIVALENT_CODES } = require('./utils/nightShift');
 
+// Validator is the post-run safety-net layer.
+// It should clean up violations that escaped earlier stages, not define
+// primary hard-rule ownership for candidate selection.
+
 // Validator cleanup is intentionally broader than "true night":
 // keep true night codes plus night-equivalent cleanup codes such as V2.
 const NIGHT_CLEANUP_CODES = new Set([...NIGHT_CODES, ...NIGHT_EQUIVALENT_CODES]);
@@ -127,6 +131,8 @@ function validateAssignments({
   shiftMetaByCode = {},
   defs = [],
 } = {}) {
+  // Post-run cleanup only: assignment-time authority remains in candidateBuilder
+  // and constraints/runtime guard layers.
   const sanitizedAssignments = sanitizeSupervisorAssignments(assignments, holidayKindByDate, shiftMetaByCode, defs);
   const hard = applyHardConstraints(sanitizedAssignments, leavesByPerson);
   const issues = [...(hard.issues || [])];

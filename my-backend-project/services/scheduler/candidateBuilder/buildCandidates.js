@@ -7,6 +7,9 @@ const RULE_CODES = require("./ruleCodes");
 /**
  * Builds candidate evaluation list for a day/shift pair.
  * Orchestrates context + candidate evaluation only.
+ * Ownership note:
+ * - rejected + hardRejected candidates come from candidateBuilder primary authority
+ * - eligible candidates may still be filtered later by runtime guards in constraints.js
  */
 function buildCandidates({
   staff = [],

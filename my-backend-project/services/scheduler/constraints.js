@@ -2,6 +2,12 @@
 
 const { isNightShift } = require("./utils/nightShift");
 
+// Runtime guard layer for optimized scheduler:
+// - keeps imperative/live-state checks close to assignment-time availability
+// - may temporarily carry transitional hard authority where candidateBuilder
+//   ownership is not fully aligned yet
+// - does not replace validator safety-net cleanup
+
 const parseTime = (s) => {
   if (!s) return null;
   const m = String(s).match(/^(\d{1,2}):(\d{2})$/);
@@ -171,6 +177,7 @@ function isAvailable(person, day, context, shift) {
   }
 
   if (rules.MIN_REST_HOURS&&person.lastShift) {
+    // Independent runtime rest guard: this is not a canonical night-code rule.
     const minRest = Number(rules.MIN_REST_HOURS);
     if (Number.isFinite(minRest)&&minRest>0) {
       const prev = person.lastShift;

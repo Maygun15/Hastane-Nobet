@@ -11,6 +11,9 @@ const {
   aggregateShadowObservations,
 } = require("./audit");
 
+// CandidateBuilder hard-reject fallback exclusion allowlist.
+// Only blocking rule codes listed here remain authoritative when the engine
+// falls back after an empty eligible pool.
 const FALLBACK_BLOCKING_RULE_CODES = Object.freeze(["ACTIVE_REQUIRED", "SERVICE_MATCH", "LEAVE_BLOCK", "REST_AFTER_NIGHT"]);
 
 const getISOWeekKey = (dateStr) => {

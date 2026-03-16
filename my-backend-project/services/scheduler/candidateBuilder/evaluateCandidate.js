@@ -7,6 +7,9 @@ const { buildCandidateContext } = require("./utils/buildCandidateContext");
 const { DEFAULT_RULE_EXECUTION_ORDER } = require("./ruleExecutionOrder");
 const REASON_CODES = require("./reasonCodes");
 
+// CandidateBuilder is the primary candidate-level rule authority.
+// Only hard-severity failures become blocking rules; soft failures remain
+// observable capacity signals for downstream scoring/audit layers.
 const DEFAULT_HARD_SEVERITIES = Object.freeze(["hard", "error"]);
 const DEFAULT_RULE_ORDER = Object.freeze(
   DEFAULT_RULE_EXECUTION_ORDER.filter((code) => ruleCatalog.getRuleMetaByCode(code)?.enabled)
@@ -14,7 +17,8 @@ const DEFAULT_RULE_ORDER = Object.freeze(
 
 /**
  * Evaluates one candidate against active rule set.
- * Hard-severity failures stop execution immediately (fail-fast).
+ * Hard-severity failures stop execution immediately (fail-fast) and become
+ * the authoritative blockingRules payload used by engine fallback filtering.
  */
 function evaluateCandidate({
   person = null,
