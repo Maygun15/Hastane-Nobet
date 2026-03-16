@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const { applyHospitalScope } = require('./plugins/hospitalScope');
 
+// Scheduler write model:
+// stores the full generated output and explainability authority for a month.
 const GeneratedScheduleSchema = new mongoose.Schema(
   {
     hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null, index: true },

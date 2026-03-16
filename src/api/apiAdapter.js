@@ -209,6 +209,7 @@ export async function fetchLeaves({ personId, year, month, token } = {}) {
 }
 
 /* ================= Monthly Schedule Storage ================= */
+// MonthlySchedule remains the operational read model for editable roster/snapshot data.
 export async function getMonthlySchedule({
   sectionId,
   serviceId = "",
@@ -243,6 +244,7 @@ export async function getGeneratedSchedule({
   if (serviceId !== undefined && serviceId !== null) qs.append("serviceId", String(serviceId));
   if (role !== undefined && role !== null) qs.append("role", String(role));
 
+  // GeneratedSchedule is the authoritative explainability/full scheduler output read path.
   const payload = await httpRequest(`/api/schedules/generated?${qs.toString()}`);
   return payload?.data || null;
 }

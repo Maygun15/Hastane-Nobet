@@ -9,6 +9,74 @@ const { validateAssignments } = require('./scheduler/validator');
 const { applyHolidayPolicies } = require('./scheduler/holidayPolicyAdapter');
 const { buildSchedulerInput } = require('./scheduler/inputBuilder');
 
+function buildGeneratedScheduleData({
+  useDraft = false,
+  draftResult = null,
+  context = null,
+  validated = null,
+  days = [],
+  staffPack = null,
+  shiftCount = 0,
+  requiredSlots = 0,
+} = {}) {
+  const baseAssignmentsRaw = useDraft ? (draftResult?.assignments || []) : (context?.assignments || []);
+  const baseIssues = useDraft ? (draftResult?.issues || []) : (context?.issues || []);
+
+  return {
+    assignments: Array.isArray(validated?.assignments) ? validated.assignments : baseAssignmentsRaw,
+    issues: [...baseIssues, ...(validated?.issues || [])],
+    candidateAudit: useDraft ? [] : (Array.isArray(context?.candidateAudit) ? context.candidateAudit : []),
+    shadowAudit: useDraft ? null : (context?.shadowAudit || null),
+    days: Array.isArray(days) ? days.length : 0,
+    debug: {
+      staff: staffPack?.debug || null,
+      shiftCount: Number(shiftCount || 0),
+      requiredSlots: Number(requiredSlots || 0),
+      engine: useDraft ? 'draft' : 'optimized',
+      hardFiltered: validated?.debug?.hardFiltered || 0,
+    },
+  };
+}
+
+// GeneratedSchedule is the authoritative scheduler write model:
+// full assignments, issues, explainability, and scheduler meta are persisted here.
+function buildGeneratedSchedulePayload({
+  hospitalId = null,
+  sectionId,
+  serviceId = '',
+  role = '',
+  year,
+  month,
+  scheduleDoc = null,
+  data = {},
+  rules = {},
+  weights = {},
+  userId = null,
+} = {}) {
+  return {
+    ...(hospitalId ? { hospitalId } : {}),
+    sectionId,
+    serviceId,
+    role,
+    year,
+    month,
+    sourceScheduleId: scheduleDoc?._id || null,
+    data,
+    meta: { rules, weights },
+    createdBy: userId || null,
+    updatedBy: userId || null,
+  };
+}
+
+// MonthlySchedule remains the operational assignment snapshot read model.
+// Only assignment-shaped data is written back here for legacy/monthly readers.
+function buildMonthlyScheduleWriteback({ data = {} } = {}) {
+  return {
+    'data.assignments': Array.isArray(data?.assignments) ? data.assignments : [],
+    'data.generatedAt': new Date().toISOString(),
+  };
+}
+
 async function generateSchedule({ sectionId, serviceId = '', role = '', year, month, dryRun = false, userId, payload = {}, hospitalId = null }) {
   const query = hospitalId ? { hospitalId, sectionId, year, month } : { sectionId, year, month };
   if (serviceId) query.serviceId = serviceId;
@@ -129,7 +197,6 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   );
 
   const baseAssignmentsRaw = useDraft ? (draftResult?.assignments || []) : (context.assignments || []);
-  const baseIssues = useDraft ? (draftResult?.issues || []) : (context.issues || []);
   const validated = validateAssignments({
     assignments: baseAssignmentsRaw,
     leavesByPerson,
@@ -137,45 +204,44 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     shiftMetaByCode,
     defs: effectiveDefs,
   });
-  const data = {
-    assignments: validated.assignments,
-    issues: [...baseIssues, ...(validated.issues || [])],
-    candidateAudit: useDraft ? [] : (Array.isArray(context?.candidateAudit) ? context.candidateAudit : []),
-    shadowAudit: useDraft ? null : (context?.shadowAudit || null),
-    days: days.length,
-    debug: {
-      staff: staffPack.debug,
-      shiftCount,
-      requiredSlots,
-      engine: useDraft ? "draft" : "optimized",
-      hardFiltered: validated?.debug?.hardFiltered || 0,
-    },
-  };
+  const data = buildGeneratedScheduleData({
+    useDraft,
+    draftResult,
+    context,
+    validated,
+    days,
+    staffPack,
+    shiftCount,
+    requiredSlots,
+  });
 
   if (dryRun) {
     return { data, rules, weights, sourceScheduleId: scheduleDoc?._id || null };
   }
 
-  const doc = await GeneratedSchedule.create({
-    ...(hospitalId ? { hospitalId } : {}),
-    sectionId,
-    serviceId,
-    role,
-    year,
-    month,
-    sourceScheduleId: scheduleDoc?._id || null,
-    data,
-    meta: { rules, weights },
-    createdBy: userId || null,
-    updatedBy: userId || null,
-  });
+  const doc = await GeneratedSchedule.create(
+    buildGeneratedSchedulePayload({
+      hospitalId,
+      sectionId,
+      serviceId,
+      role,
+      year,
+      month,
+      scheduleDoc,
+      data,
+      rules,
+      weights,
+      userId,
+    })
+  );
 
-  // Atamaları MonthlySchedule'a da yaz (PersonScheduleCalendar okuyabilsin)
+  // MonthlySchedule write-back intentionally stays assignment-only:
+  // legacy monthly readers should not become explainability authorities.
   try {
     if (scheduleDoc?._id) {
       await MonthlySchedule.findByIdAndUpdate(
         scheduleDoc._id,
-        { $set: { 'data.assignments': data.assignments || [], 'data.generatedAt': new Date().toISOString() } },
+        { $set: buildMonthlyScheduleWriteback({ data }) },
         { new: true }
       );
     }

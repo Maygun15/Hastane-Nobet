@@ -2,6 +2,8 @@
 const mongoose = require('mongoose');
 const { applyHospitalScope } = require('./plugins/hospitalScope');
 
+// Operational monthly read model:
+// editable roster input + assignment snapshot for existing calendar/editor flows.
 const MonthlyScheduleSchema = new mongoose.Schema(
   {
     hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null, index: true },

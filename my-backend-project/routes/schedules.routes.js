@@ -639,6 +639,8 @@ async function loadRules(req, res, next) {
   }
 }
 
+// MonthlySchedule GET is the operational monthly read model.
+// It serves assignment snapshot + editable monthly schedule data for existing UI paths.
 router.get('/monthly',
   requireAuth,
   (req, res, next) => {
@@ -1315,7 +1317,8 @@ module.exports = router;
 
 /* =========================================================
    GET /api/schedules/generated
-   Son generate edilmiş planı döndürür
+   GeneratedSchedule explainability/full-output read model.
+   Returns the latest scheduler write-model document for a month.
 ========================================================= */
 const GeneratedSchedule = require('../models/GeneratedSchedule');
 
