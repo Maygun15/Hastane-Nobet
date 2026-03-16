@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireRole } = require('../middleware/authz');
+const { scheduleGenerateSchema, validate } = require('../middleware/validate');
 const { generateSchedule } = require('../services/schedulerService');
 
 function parseBody(req) {
@@ -17,7 +18,7 @@ function parseBody(req) {
   return { sectionId, serviceId, role, year, month, dryRun: !!b.dryRun, payload: b };
 }
 
-router.post('/generate', requireAuth, requireRole('admin', 'authorized'), async (req, res) => {
+router.post('/generate', requireAuth, requireRole('admin', 'authorized'), validate(scheduleGenerateSchema), async (req, res) => {
   try {
     const params = parseBody(req);
     const result = await generateSchedule({

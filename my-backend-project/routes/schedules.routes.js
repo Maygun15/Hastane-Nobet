@@ -8,6 +8,7 @@ const { listHolidays } = require('../services/holidayService');
 const { sendShiftChanged } = require('../services/notificationService');
 const { validateAssignment } = require('../utils/rulesValidator');
 const { requireAuth, sameServiceOrAdmin, requireRole } = require('../middleware/authz');
+const { assignShiftSchema, validate } = require('../middleware/validate');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
@@ -873,6 +874,7 @@ router.post('/',
 
 router.post('/assign',
   requireAuth,
+  validate(assignShiftSchema),
   (req, res, next) => {
     try {
       const query = buildAssignQuery(req.body || {});
