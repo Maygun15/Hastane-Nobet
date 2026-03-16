@@ -281,6 +281,75 @@ function createEmptyExplainability() {
   };
 }
 
+const ISSUE_REASON_LABELS = {
+  SERVICE_MATCH: "servis uyumsuz",
+  ROLE_ELIGIBILITY: "rol uygun değil",
+  SECTION_ELIGIBILITY: "birim uygun değil",
+  ACTIVE_REQUIRED: "aktif personel değil",
+  REST_AFTER_NIGHT: "gece sonrası dinlenme",
+  MAX_WEEKLY_SHIFTS: "haftalık limit",
+  MAX_CONSECUTIVE_DAYS: "ardışık gün limiti",
+  ONE_SHIFT_PER_DAY: "aynı gün tek vardiya",
+  LEAVE_BLOCK: "izin çakışması",
+};
+
+function formatIssueReason(code) {
+  const normalized = String(code || "").trim().toUpperCase();
+  return ISSUE_REASON_LABELS[normalized] || normalized || null;
+}
+
+function summarizeIssueAudit(audits = []) {
+  if (!Array.isArray(audits) || !audits.length) return null;
+
+  const blockers = new Map();
+  let inputStaffCount = 0;
+  let candidateBuilderEligibleCount = 0;
+  let postConstraintCount = 0;
+
+  const addBlockers = (src) => {
+    Object.entries(src || {}).forEach(([code, count]) => {
+      const normalized = String(code || "").trim().toUpperCase();
+      if (!normalized) return;
+      blockers.set(normalized, Number(blockers.get(normalized) || 0) + (Number(count || 0) || 0));
+    });
+  };
+
+  audits.forEach((audit) => {
+    inputStaffCount = Math.max(inputStaffCount, Number(audit?.inputStaffCount || 0));
+    candidateBuilderEligibleCount = Math.max(
+      candidateBuilderEligibleCount,
+      Number((audit?.candidateBuilderEligibleCount ?? audit?.eligibleCount) || 0)
+    );
+    postConstraintCount = Math.max(postConstraintCount, Number(audit?.postConstraintCount || 0));
+    addBlockers(audit?.hardFilteredBlockingRules);
+    addBlockers(audit?.runtimeGuardBlockingRules);
+
+    (Array.isArray(audit?.rejected) ? audit.rejected : []).forEach((item) => {
+      (Array.isArray(item?.failedRuleCodes) ? item.failedRuleCodes : []).forEach((code) => {
+        const normalized = String(code || "").trim().toUpperCase();
+        if (!normalized) return;
+        blockers.set(normalized, Number(blockers.get(normalized) || 0) + 1);
+      });
+      (Array.isArray(item?.reasonCodes) ? item.reasonCodes : []).forEach((code) => {
+        const normalized = String(code || "")
+          .trim()
+          .toUpperCase()
+          .replace(/_EXCEEDED$/, "");
+        if (!normalized) return;
+        blockers.set(normalized, Number(blockers.get(normalized) || 0) + 1);
+      });
+    });
+  });
+
+  const topBlockers = Array.from(blockers.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([code, count]) => `${formatIssueReason(code)} x${count}`);
+
+  const pipeline = `havuz ${inputStaffCount} -> builder ${candidateBuilderEligibleCount} -> runtime ${postConstraintCount}`;
+  return topBlockers.length ? `${pipeline}; engeller: ${topBlockers.join(", ")}` : pipeline;
+}
+
 function extractGeneratedExplainability(scheduleDoc) {
   const data = scheduleDoc?.data && typeof scheduleDoc.data === "object" ? scheduleDoc.data : {};
   const candidateAudit = Array.isArray(data.candidateAudit) ? data.candidateAudit : [];
@@ -1350,7 +1419,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           if ("preview" in data) setPreview(data.preview || null);
           const rosterFromData = "roster" in data ? (data.roster || null) : null;
           const rosterFromAssignments = remoteAssignments.length
-            ? buildRosterFromBackend(remoteAssignments, data.issues, defsForUI)
+            ? buildRosterFromBackend(remoteAssignments, data.issues, defsForUI, data.candidateAudit)
             : null;
           const rosterForUI = rosterFromData && rosterFromAssignments
             ? mergeRosterNamedAssignments(rosterFromData, rosterFromAssignments)
@@ -1679,7 +1748,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       note("Plan üretiminde hata: " + (err?.message || err), "error");
     }
   };
-  const buildRosterFromBackend = useCallback((assignments, issues, defsSource = rows) => {
+  const buildRosterFromBackend = useCallback((assignments, issues, defsSource = rows, candidateAudit = []) => {
     const named = {};
     const defsList = Array.isArray(defsSource) ? defsSource : [];
     const rowLabelById = new Map(defsList.map((r) => [String(r.id), r.label || r.id]));
@@ -1713,13 +1782,21 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       if (nm && !isGroupLabel(nm) && !named[day][rowId].includes(nm)) named[day][rowId].push(nm);
     });
 
+    const issueAuditMap = new Map();
+    (Array.isArray(candidateAudit) ? candidateAudit : []).forEach((entry) => {
+      const key = `${String(entry?.date || "")}|${String(entry?.shiftId || "")}`;
+      if (!issueAuditMap.has(key)) issueAuditMap.set(key, []);
+      issueAuditMap.get(key).push(entry);
+    });
+
     const issueList = (issues || []).map((it) => {
       const date = it?.date || "";
       const day = Number(String(date).slice(8, 10));
       const rowId = String(it.shiftId || it.rowId || it.shiftCode || "");
       const label = rowLabelById.get(rowId) || rowId || "-";
       const reason = it.reason || (it.missing ? `Eksik ${it.missing}` : "");
-      return { day: day || 0, label, reason };
+      const auditSummary = summarizeIssueAudit(issueAuditMap.get(`${date}|${rowId}`) || []);
+      return { day: day || 0, label, reason, auditSummary };
     });
 
     return { namedAssignments: named, issues: issueList };
@@ -1873,7 +1950,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       const data = res?.data || res;
       if (data?.assignments?.length) {
         savedAssignmentsRef.current = Array.isArray(data.assignments) ? data.assignments : [];
-        const rosterFromServer = buildRosterFromBackend(data.assignments, data.issues);
+        const rosterFromServer = buildRosterFromBackend(data.assignments, data.issues, rows, data.candidateAudit);
         setRoster(rosterFromServer);
         const payload = {
           version: 1,
@@ -1900,7 +1977,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
       // EĞER atama yok ama uyarılar (issues) varsa, bunları göster ki kullanıcı nedenini anlasın
       if (data?.issues?.length) {
-        const rosterFromServer = buildRosterFromBackend([], data.issues);
+        const rosterFromServer = buildRosterFromBackend([], data.issues, rows, data.candidateAudit);
         setRoster(rosterFromServer);
         note("Plan oluşturulamadı, ancak uyarılar mevcut. 'Kişilere Atama' panelini inceleyin.", "warning");
         return;
@@ -2185,6 +2262,11 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                 {roster.issues.map((x, i) => (
                   <li key={i}>
                     Gün {x.day}, “{x.label}” için yeterli aday bulunamadı{ x.reason ? ` (${x.reason})` : "" }.
+                    {x.auditSummary ? (
+                      <div className="text-xs text-amber-900/80">
+                        Neden özeti: {x.auditSummary}
+                      </div>
+                    ) : null}
                   </li>
                 ))}
               </ul>
