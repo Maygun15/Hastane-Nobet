@@ -350,6 +350,25 @@ function summarizeIssueAudit(audits = []) {
   return topBlockers.length ? `${pipeline}; engeller: ${topBlockers.join(", ")}` : pipeline;
 }
 
+function summarizeIssueDiagnostic(diagnostic = null) {
+  if (!diagnostic || typeof diagnostic !== "object") return null;
+  const inputStaffCount = Number(diagnostic?.inputStaffCount || 0);
+  const candidateBuilderEligibleCount = Number(diagnostic?.candidateBuilderEligibleCount || 0);
+  const postConstraintCount = Number(diagnostic?.postConstraintCount || 0);
+  const topBlockers = Array.isArray(diagnostic?.topBlockers)
+    ? diagnostic.topBlockers
+        .map((item) => {
+          const label = formatIssueReason(item?.code);
+          const count = Number(item?.count || 0);
+          return label && count > 0 ? `${label} x${count}` : null;
+        })
+        .filter(Boolean)
+        .slice(0, 3)
+    : [];
+  const pipeline = `havuz ${inputStaffCount} -> builder ${candidateBuilderEligibleCount} -> runtime ${postConstraintCount}`;
+  return topBlockers.length ? `${pipeline}; engeller: ${topBlockers.join(", ")}` : pipeline;
+}
+
 function extractGeneratedExplainability(scheduleDoc) {
   const data = scheduleDoc?.data && typeof scheduleDoc.data === "object" ? scheduleDoc.data : {};
   const candidateAudit = Array.isArray(data.candidateAudit) ? data.candidateAudit : [];
@@ -1419,7 +1438,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           if ("preview" in data) setPreview(data.preview || null);
           const rosterFromData = "roster" in data ? (data.roster || null) : null;
           const rosterFromAssignments = remoteAssignments.length
-            ? buildRosterFromBackend(remoteAssignments, data.issues, defsForUI, data.candidateAudit)
+            ? buildRosterFromBackend(remoteAssignments, data.issues, defsForUI, data.candidateAudit, data.issueDiagnostics)
             : null;
           const rosterForUI = rosterFromData && rosterFromAssignments
             ? mergeRosterNamedAssignments(rosterFromData, rosterFromAssignments)
@@ -1748,7 +1767,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       note("Plan üretiminde hata: " + (err?.message || err), "error");
     }
   };
-  const buildRosterFromBackend = useCallback((assignments, issues, defsSource = rows, candidateAudit = []) => {
+  const buildRosterFromBackend = useCallback((assignments, issues, defsSource = rows, candidateAudit = [], issueDiagnostics = []) => {
     const named = {};
     const defsList = Array.isArray(defsSource) ? defsSource : [];
     const rowLabelById = new Map(defsList.map((r) => [String(r.id), r.label || r.id]));
@@ -1788,6 +1807,11 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       if (!issueAuditMap.has(key)) issueAuditMap.set(key, []);
       issueAuditMap.get(key).push(entry);
     });
+    const issueDiagnosticMap = new Map();
+    (Array.isArray(issueDiagnostics) ? issueDiagnostics : []).forEach((entry) => {
+      const key = `${String(entry?.date || "")}|${String(entry?.shiftId || "")}`;
+      issueDiagnosticMap.set(key, entry);
+    });
 
     const issueList = (issues || []).map((it) => {
       const date = it?.date || "";
@@ -1795,7 +1819,10 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       const rowId = String(it.shiftId || it.rowId || it.shiftCode || "");
       const label = rowLabelById.get(rowId) || rowId || "-";
       const reason = it.reason || (it.missing ? `Eksik ${it.missing}` : "");
-      const auditSummary = summarizeIssueAudit(issueAuditMap.get(`${date}|${rowId}`) || []);
+      const issueKey = `${date}|${rowId}`;
+      const auditSummary =
+        summarizeIssueDiagnostic(issueDiagnosticMap.get(issueKey))
+        || summarizeIssueAudit(issueAuditMap.get(issueKey) || []);
       return { day: day || 0, label, reason, auditSummary };
     });
 
@@ -1950,7 +1977,13 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       const data = res?.data || res;
       if (data?.assignments?.length) {
         savedAssignmentsRef.current = Array.isArray(data.assignments) ? data.assignments : [];
-        const rosterFromServer = buildRosterFromBackend(data.assignments, data.issues, rows, data.candidateAudit);
+        const rosterFromServer = buildRosterFromBackend(
+          data.assignments,
+          data.issues,
+          rows,
+          data.candidateAudit,
+          data.issueDiagnostics
+        );
         setRoster(rosterFromServer);
         const payload = {
           version: 1,
@@ -1977,7 +2010,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
       // EĞER atama yok ama uyarılar (issues) varsa, bunları göster ki kullanıcı nedenini anlasın
       if (data?.issues?.length) {
-        const rosterFromServer = buildRosterFromBackend([], data.issues, rows, data.candidateAudit);
+        const rosterFromServer = buildRosterFromBackend([], data.issues, rows, data.candidateAudit, data.issueDiagnostics);
         setRoster(rosterFromServer);
         note("Plan oluşturulamadı, ancak uyarılar mevcut. 'Kişilere Atama' panelini inceleyin.", "warning");
         return;

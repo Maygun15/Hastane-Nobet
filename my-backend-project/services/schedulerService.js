@@ -17,6 +17,80 @@ const MONTHLY_SCHEDULER_INPUT_PROJECTION = {
   'data.shiftOptions': 1,
 };
 
+function normalizeRuleCode(code) {
+  return String(code || '').trim().toUpperCase();
+}
+
+function addRuleCounts(target = {}, source = {}) {
+  Object.entries(source || {}).forEach(([code, count]) => {
+    const normalized = normalizeRuleCode(code);
+    if (!normalized) return;
+    target[normalized] = Number(target[normalized] || 0) + (Number(count || 0) || 0);
+  });
+}
+
+function buildIssueDiagnostics({ issues = [], candidateAudit = [] } = {}) {
+  if (!Array.isArray(issues) || !issues.length) return [];
+
+  const auditBySlot = new Map();
+  (Array.isArray(candidateAudit) ? candidateAudit : []).forEach((entry) => {
+    const key = `${String(entry?.date || '')}|${String(entry?.shiftId || '')}`;
+    if (!auditBySlot.has(key)) auditBySlot.set(key, []);
+    auditBySlot.get(key).push(entry);
+  });
+
+  return issues.map((issue) => {
+    const key = `${String(issue?.date || '')}|${String(issue?.shiftId || issue?.rowId || issue?.shiftCode || '')}`;
+    const audits = auditBySlot.get(key) || [];
+    const blockers = {};
+    let inputStaffCount = 0;
+    let candidateBuilderEligibleCount = 0;
+    let postConstraintCount = 0;
+
+    audits.forEach((audit) => {
+      inputStaffCount = Math.max(inputStaffCount, Number(audit?.inputStaffCount || 0));
+      candidateBuilderEligibleCount = Math.max(
+        candidateBuilderEligibleCount,
+        Number((audit?.candidateBuilderEligibleCount ?? audit?.eligibleCount) || 0)
+      );
+      postConstraintCount = Math.max(postConstraintCount, Number(audit?.postConstraintCount || 0));
+
+      addRuleCounts(blockers, audit?.hardFilteredBlockingRules);
+      addRuleCounts(blockers, audit?.runtimeGuardBlockingRules);
+
+      (Array.isArray(audit?.rejected) ? audit.rejected : []).forEach((item) => {
+        (Array.isArray(item?.failedRuleCodes) ? item.failedRuleCodes : []).forEach((code) => {
+          const normalized = normalizeRuleCode(code);
+          if (!normalized) return;
+          blockers[normalized] = Number(blockers[normalized] || 0) + 1;
+        });
+        (Array.isArray(item?.reasonCodes) ? item.reasonCodes : []).forEach((code) => {
+          const normalized = normalizeRuleCode(code).replace(/_EXCEEDED$/, '');
+          if (!normalized) return;
+          blockers[normalized] = Number(blockers[normalized] || 0) + 1;
+        });
+      });
+    });
+
+    const topBlockers = Object.entries(blockers)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([code, count]) => ({ code, count: Number(count || 0) }));
+
+    return {
+      date: issue?.date || null,
+      shiftId: issue?.shiftId || issue?.rowId || issue?.shiftCode || '',
+      reason: issue?.reason || null,
+      missing: Number(issue?.missing || 0) || 0,
+      inputStaffCount,
+      candidateBuilderEligibleCount,
+      postConstraintCount,
+      blockers,
+      topBlockers,
+    };
+  });
+}
+
 function buildGeneratedScheduleData({
   useDraft = false,
   draftResult = null,
@@ -35,6 +109,12 @@ function buildGeneratedScheduleData({
     issues: [...baseIssues, ...(validated?.issues || [])],
     candidateAudit: useDraft ? [] : (Array.isArray(context?.candidateAudit) ? context.candidateAudit : []),
     shadowAudit: useDraft ? null : (context?.shadowAudit || null),
+    issueDiagnostics: useDraft
+      ? []
+      : buildIssueDiagnostics({
+          issues: [...baseIssues, ...(validated?.issues || [])],
+          candidateAudit: Array.isArray(context?.candidateAudit) ? context.candidateAudit : [],
+        }),
     days: Array.isArray(days) ? days.length : 0,
     debug: {
       staff: staffPack?.debug || null,
