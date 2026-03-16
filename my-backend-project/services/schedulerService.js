@@ -9,6 +9,14 @@ const { validateAssignments } = require('./scheduler/validator');
 const { applyHolidayPolicies } = require('./scheduler/holidayPolicyAdapter');
 const { buildSchedulerInput } = require('./scheduler/inputBuilder');
 
+const MONTHLY_SCHEDULER_INPUT_PROJECTION = {
+  _id: 1,
+  'data.defs': 1,
+  'data.rows': 1,
+  'data.overrides': 1,
+  'data.shiftOptions': 1,
+};
+
 function buildGeneratedScheduleData({
   useDraft = false,
   draftResult = null,
@@ -151,7 +159,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   const query = hospitalId ? { hospitalId, sectionId, year, month } : { sectionId, year, month };
   if (serviceId) query.serviceId = serviceId;
   if (role) query.role = role;
-  const scheduleDoc = await MonthlySchedule.findOne(query).lean();
+  const scheduleDoc = await MonthlySchedule.findOne(query).select(MONTHLY_SCHEDULER_INPUT_PROJECTION).lean();
   const holidays = await listHolidays({ year, month, hospitalId });
   const {
     effectiveDefs,
