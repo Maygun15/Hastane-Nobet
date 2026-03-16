@@ -1,6 +1,10 @@
 // services/scheduler/constraints.js
 
-const { isNightShift } = require("./utils/nightShift");
+const {
+  isNightEquivalentShiftCode,
+  isNightShift,
+  normalizeNightCode,
+} = require("./utils/nightShift");
 
 // Runtime guard layer for optimized scheduler:
 // - keeps imperative/live-state checks close to assignment-time availability
@@ -33,14 +37,9 @@ const daysBetween = (a, b) => {
 
 const shiftIsNight = (shift) => {
   if (!shift) return false;
-  // Prefer centralized true-night semantics first.
-  // Keep the broader includes("N") check as a transitional legacy fallback
-  // until all runtime/night-equivalent rules are aligned.
-  // This branch is only a temporary legacy/data-quality guard; once the
-  // production shift-code inventory is explicit, it can be narrowed or removed.
-  if (isNightShift(shift)) return true;
-  const legacyCode = String(shift.code || shift.id || "").toUpperCase();
-  return legacyCode.includes("N");
+  // Runtime night guard now relies only on canonical helper semantics.
+  // Legacy includes("N") fallback has been retired after inventory validation.
+  return isNightShift(shift);
 };
 
 const normalizeCode = (s) =>
@@ -144,33 +143,21 @@ function isAvailable(person, day, context, shift) {
     if (lv&&(lv instanceof Set?lv.has(dayKey):Array.isArray(lv)&&lv.includes(dayKey))) { if(logBlock)logBlock("LEAVE_BLOCK"); return false; }
   }
 
-  // Transitional hard authority:
-  // candidateBuilder currently emits MAX_CONSECUTIVE_DAYS as a soft capacity signal,
-  // while runtime hard enforcement remains here until ownership/severity is aligned.
-  if (rules.MAX_CONSECUTIVE_DAYS) {
-    const max = Number(rules.MAX_CONSECUTIVE_DAYS);
-    if (Number.isFinite(max)&&max>0) {
-      const diff = daysBetween(person.lastAssignedDate,dayKey);
-      const nextCons = diff===1?(Number(person.consecutiveDays||0)+1):1;
-      if (nextCons>max) { if(logBlock)logBlock("MAX_CONSECUTIVE_DAYS"); return false; }
-    }
-  }
-
   if (rules.NIGHT_NEXT_DAY_OFF&&person.lastShift&&shiftIsNight(person.lastShift)) {
     if (daysBetween(person.lastShift.date,dayKey)===1) { if(logBlock)logBlock("NIGHT_NEXT_DAY_OFF"); return false; }
   }
 
   // Transitional night-equivalent full-rest guard:
-  // this is not the canonical "true night" rule. V2 remains here as a
-  // night-equivalent code that still requires a full next-day rest window,
-  // so this block intentionally stays separate from NIGHT_NEXT_DAY_OFF.
+  // this is not the canonical "true night" rule. V2 remains a night-equivalent
+  // full-rest code, so this block intentionally stays separate from
+  // NIGHT_NEXT_DAY_OFF and candidateBuilder REST_AFTER_NIGHT.
   const prevShiftCode = person.lastShift
-    ? normalizeCode(person.lastShift.code||person.lastShift.id||person.lastShift.shiftCode||"")
+    ? normalizeNightCode(person.lastShift.code||person.lastShift.id||person.lastShift.shiftCode||"")
     : "";
 
   // N veya V2 (24s) sonrası ertesi gün hiçbir vardiya yazılmasın
   if (person.lastShift) {
-    if ((prevShiftCode==="N"||prevShiftCode==="V2") && daysBetween(person.lastShift.date,dayKey)===1) {
+    if ((prevShiftCode==="N"||isNightEquivalentShiftCode(prevShiftCode)) && daysBetween(person.lastShift.date,dayKey)===1) {
       if (logBlock) logBlock("NIGHT_24H_NEXT_DAY_BLOCK");
       return false;
     }
@@ -191,14 +178,6 @@ function isAvailable(person, day, context, shift) {
         const diff=daysBetween(prev.date,dayKey);
         if ((diff===0&&minRest>0)||(diff===1&&minRest>24)) { if(logBlock)logBlock("MIN_REST_HOURS"); return false; }
       }
-    }
-  }
-
-  if (rules.MAX_SHIFTS_PER_WEEK) {
-    const max=Number(rules.MAX_SHIFTS_PER_WEEK);
-    if (Number.isFinite(max)&&max>0) {
-      const wk=getISOWeekKey(dayKey);
-      if (wk&&Number(person.weeklyCounts?.[wk]||0)>=max) { if(logBlock)logBlock("MAX_SHIFTS_PER_WEEK"); return false; }
     }
   }
 

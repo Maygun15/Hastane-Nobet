@@ -1,12 +1,12 @@
-const { NIGHT_CODES, NIGHT_EQUIVALENT_CODES } = require('./utils/nightShift');
+const { isNightCleanupCode } = require('./utils/nightShift');
 
 // Validator is the post-run safety-net layer.
 // It should clean up violations that escaped earlier stages, not define
 // primary hard-rule ownership for candidate selection.
 
-// Validator cleanup is intentionally broader than "true night":
-// keep true night codes plus night-equivalent cleanup codes such as V2.
-const NIGHT_CLEANUP_CODES = new Set([...NIGHT_CODES, ...NIGHT_EQUIVALENT_CODES]);
+// Validator cleanup is intentionally broader than candidateBuilder true-night
+// authority: it still removes assignments that violate next-day rest after
+// true-night codes and night-equivalent cleanup codes such as V2.
 const HALF_DAY_A_HOURS = 4;
 
 const normalizeCode = (s) => String(s || '').trim().toUpperCase();
@@ -55,7 +55,7 @@ function applyHardConstraints(assignments = [], leavesByPerson = {}) {
     const dateStr = String(a?.date || a?.day || '').slice(0, 10);
     if (!pid || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
     const code = normalizeCode(a?.shiftCode || a?.shiftId || a?.shift || a?.code || '');
-    if (!code || !NIGHT_CLEANUP_CODES.has(code)) continue;
+    if (!code || !isNightCleanupCode(code)) continue;
     if (!nightByPerson.has(pid)) nightByPerson.set(pid, new Set());
     nightByPerson.get(pid).add(dateStr);
   }

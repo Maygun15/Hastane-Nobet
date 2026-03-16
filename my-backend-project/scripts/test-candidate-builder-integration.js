@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("assert");
+const fs = require("fs");
 const path = require("path");
 
 const candidateBuilderPath = path.join(
@@ -11,7 +12,9 @@ const candidateBuilderPath = path.join(
   "candidateBuilder",
   "index.js"
 );
+const constraintsPath = path.join(__dirname, "..", "services", "scheduler", "constraints.js");
 const enginePath = path.join(__dirname, "..", "services", "scheduler", "engine.js");
+const standardProfilePath = path.join(__dirname, "..", "..", "config", "rules", "standard-profile.json");
 
 function createRuntimePerson(id, overrides = {}) {
   return {
@@ -82,6 +85,31 @@ function withScheduler(mockBuildCandidates, fn) {
     fn(runScheduler);
   } finally {
     candidateBuilder.buildCandidates = originalBuildCandidates;
+    delete require.cache[require.resolve(enginePath)];
+  }
+}
+
+function withSchedulerHarness({ mockBuildCandidates = null, mockIsAvailable = null } = {}, fn) {
+  const candidateBuilder = require(candidateBuilderPath);
+  const constraints = require(constraintsPath);
+  const originalBuildCandidates = candidateBuilder.buildCandidates;
+  const originalIsAvailable = constraints.isAvailable;
+
+  if (typeof mockBuildCandidates === "function") {
+    candidateBuilder.buildCandidates = mockBuildCandidates;
+  }
+  if (typeof mockIsAvailable === "function") {
+    constraints.isAvailable = mockIsAvailable;
+  }
+
+  delete require.cache[require.resolve(enginePath)];
+  const { runScheduler } = require(enginePath);
+
+  try {
+    fn(runScheduler);
+  } finally {
+    candidateBuilder.buildCandidates = originalBuildCandidates;
+    constraints.isAvailable = originalIsAvailable;
     delete require.cache[require.resolve(enginePath)];
   }
 }
@@ -237,6 +265,377 @@ function testFallbackExcludesServiceMatchHardBlockedCandidates() {
     assert.strictEqual(audit.hardFilteredByCandidateBuilderCount, 1);
     assert.strictEqual(audit.hardFilteredBlockingRules.SERVICE_MATCH, 1);
   });
+}
+
+function testFallbackExcludesMaxConsecutiveDaysHardBlockedCandidates() {
+  const mockBuildCandidates = ({ staff }) => ({
+    eligible: [],
+    rejected: [
+      {
+        personId: "p1",
+        person: staff.find((item) => item.id === "p1") || null,
+        failedRules: [{ code: "MAX_CONSECUTIVE_DAYS", severity: "hard" }],
+        hardRejected: true,
+        blockingRules: ["MAX_CONSECUTIVE_DAYS"],
+        reasonCodes: ["MAX_CONSECUTIVE_DAYS_EXCEEDED"],
+        status: "rejected",
+      },
+    ],
+    candidates: [],
+    stats: { totalStaff: Array.isArray(staff) ? staff.length : 0, eligibleCount: 0, rejectedCount: 1 },
+  });
+
+  withScheduler(mockBuildCandidates, (runScheduler) => {
+    const context = createBaseContext({
+      staff: [
+        createRuntimePerson("p1", {
+          totalHours: 0,
+          consecutiveDays: 3,
+          lastAssignedDate: "2026-03-13",
+        }),
+        createRuntimePerson("p2", {
+          totalHours: 100,
+          consecutiveDays: 0,
+          lastAssignedDate: null,
+        }),
+      ],
+      targetHours: 50,
+    });
+    const result = runScheduler(context);
+
+    assert.strictEqual(result.assignments.length, 1, "fallback should still allow assignment when safe pool remains");
+    assert.strictEqual(
+      result.assignments[0].personId,
+      "p2",
+      "MAX_CONSECUTIVE_DAYS hard-blocked candidate must not re-enter fallback pool"
+    );
+
+    const audit = getSingleAudit(result);
+    assert.strictEqual(audit.fallbackUsed, true);
+    assert.strictEqual(audit.hardFilteredByCandidateBuilderCount, 1);
+    assert.strictEqual(audit.hardFilteredBlockingRules.MAX_CONSECUTIVE_DAYS, 1);
+  });
+}
+
+function testFallbackExcludesMaxWeeklyShiftsHardBlockedCandidates() {
+  const mockBuildCandidates = ({ staff }) => ({
+    eligible: [],
+    rejected: [
+      {
+        personId: "p1",
+        person: staff.find((item) => item.id === "p1") || null,
+        failedRules: [{ code: "MAX_WEEKLY_SHIFTS", severity: "hard" }],
+        hardRejected: true,
+        blockingRules: ["MAX_WEEKLY_SHIFTS"],
+        reasonCodes: ["MAX_WEEKLY_SHIFTS_EXCEEDED"],
+        status: "rejected",
+      },
+    ],
+    candidates: [],
+    stats: { totalStaff: Array.isArray(staff) ? staff.length : 0, eligibleCount: 0, rejectedCount: 1 },
+  });
+
+  withScheduler(mockBuildCandidates, (runScheduler) => {
+    const context = createBaseContext({
+      staff: [
+        createRuntimePerson("p1", {
+          totalHours: 0,
+          weeklyCounts: { "2026-W11": 4 },
+        }),
+        createRuntimePerson("p2", {
+          totalHours: 100,
+          weeklyCounts: { "2026-W11": 1 },
+        }),
+      ],
+      targetHours: 50,
+    });
+    const result = runScheduler(context);
+
+    assert.strictEqual(result.assignments.length, 1, "fallback should still allow assignment when safe pool remains");
+    assert.strictEqual(
+      result.assignments[0].personId,
+      "p2",
+      "MAX_WEEKLY_SHIFTS hard-blocked candidate must not re-enter fallback pool"
+    );
+
+    const audit = getSingleAudit(result);
+    assert.strictEqual(audit.fallbackUsed, true);
+    assert.strictEqual(audit.hardFilteredByCandidateBuilderCount, 1);
+    assert.strictEqual(audit.hardFilteredBlockingRules.MAX_WEEKLY_SHIFTS, 1);
+  });
+}
+
+function testMaxConsecutiveDaysBuilderOnlyParity() {
+  const contextFactory = () =>
+    createBaseContext({
+      staff: [
+        createRuntimePerson("p1", {
+          totalHours: 0,
+          consecutiveDays: 3,
+          lastAssignedDate: "2026-03-13",
+        }),
+      ],
+      rules: { MAX_CONSECUTIVE_DAYS: 3 },
+      days: [
+        {
+          date: "2026-03-14",
+          weekday: 6,
+          shifts: [
+            {
+              id: "D",
+              code: "D",
+              serviceId: "svc-1",
+              section: "ER",
+              requiredCount: 1,
+              hours: 8,
+            },
+          ],
+        },
+      ],
+    });
+
+  let baseline;
+  withSchedulerHarness({}, (runScheduler) => {
+    baseline = runScheduler(contextFactory());
+  });
+
+  let builderOnly;
+  withSchedulerHarness({ mockIsAvailable: () => true }, (runScheduler) => {
+    builderOnly = runScheduler(contextFactory());
+  });
+
+  assert.strictEqual(builderOnly.assignments.length, baseline.assignments.length);
+  assert.deepStrictEqual(builderOnly.issues, baseline.issues);
+
+  const baselineAudit = getSingleAudit(baseline);
+  const builderOnlyAudit = getSingleAudit(builderOnly);
+  assert.strictEqual(builderOnlyAudit.selectedCandidateId, baselineAudit.selectedCandidateId);
+  assert.strictEqual(builderOnlyAudit.fallbackUsed, baselineAudit.fallbackUsed);
+  assert.strictEqual(builderOnlyAudit.hardFilteredByCandidateBuilderCount, baselineAudit.hardFilteredByCandidateBuilderCount);
+  assert.deepStrictEqual(builderOnlyAudit.hardFilteredBlockingRules, baselineAudit.hardFilteredBlockingRules);
+  assert.strictEqual(builderOnlyAudit.postConstraintCount, baselineAudit.postConstraintCount);
+}
+
+function testMaxWeeklyShiftsBuilderOnlyParity() {
+  const contextFactory = () =>
+    createBaseContext({
+      staff: [
+        createRuntimePerson("p1", {
+          totalHours: 0,
+          weeklyCounts: { "2026-W11": 4 },
+        }),
+      ],
+      rules: { MAX_SHIFTS_PER_WEEK: 4 },
+      days: [
+        {
+          date: "2026-03-14",
+          weekday: 6,
+          shifts: [
+            {
+              id: "D",
+              code: "D",
+              serviceId: "svc-1",
+              section: "ER",
+              requiredCount: 1,
+              hours: 8,
+            },
+          ],
+        },
+      ],
+    });
+
+  let baseline;
+  withSchedulerHarness({}, (runScheduler) => {
+    baseline = runScheduler(contextFactory());
+  });
+
+  let builderOnly;
+  withSchedulerHarness({ mockIsAvailable: () => true }, (runScheduler) => {
+    builderOnly = runScheduler(contextFactory());
+  });
+
+  assert.strictEqual(builderOnly.assignments.length, baseline.assignments.length);
+  assert.deepStrictEqual(builderOnly.issues, baseline.issues);
+
+  const baselineAudit = getSingleAudit(baseline);
+  const builderOnlyAudit = getSingleAudit(builderOnly);
+  assert.strictEqual(builderOnlyAudit.selectedCandidateId, baselineAudit.selectedCandidateId);
+  assert.strictEqual(builderOnlyAudit.fallbackUsed, baselineAudit.fallbackUsed);
+  assert.strictEqual(builderOnlyAudit.hardFilteredByCandidateBuilderCount, baselineAudit.hardFilteredByCandidateBuilderCount);
+  assert.deepStrictEqual(builderOnlyAudit.hardFilteredBlockingRules, baselineAudit.hardFilteredBlockingRules);
+  assert.strictEqual(builderOnlyAudit.postConstraintCount, baselineAudit.postConstraintCount);
+}
+
+function testMaxWeeklyShiftsAliasMatrixHardRejects() {
+  const aliases = [
+    "MAX_WEEKLY_SHIFTS",
+    "MAX_SHIFTS_PER_WEEK",
+    "WEEKLY_MAX_SHIFTS",
+    "WEEKLY_MAX_DUTIES",
+  ];
+
+  for (const key of aliases) {
+    const candidateBuilder = require(candidateBuilderPath);
+    const result = candidateBuilder.evaluateCandidate({
+      person: {
+        id: "p1",
+        name: "Nurse A",
+        weeklyCounts: { "2026-W12": 3 },
+      },
+      context: {
+        person: {
+          id: "p1",
+          name: "Nurse A",
+          weeklyCounts: { "2026-W12": 3 },
+        },
+        personId: "p1",
+        date: "2026-03-20",
+        rules: { [key]: 3 },
+        shift: { id: "D", code: "D" },
+      },
+      activeRuleCodes: ["MAX_WEEKLY_SHIFTS"],
+    });
+
+    assert.strictEqual(result.status, "rejected", `${key} should produce hard rejection`);
+    assert.strictEqual(result.hardRejected, true, `${key} should mark candidate as hard rejected`);
+    assert.deepStrictEqual(result.blockingRules, ["MAX_WEEKLY_SHIFTS"], `${key} should block on canonical weekly code`);
+  }
+}
+
+function testRestAfterNightRejectsCanonicalNightCodes() {
+  const candidateBuilder = require(candidateBuilderPath);
+
+  for (const shiftCode of ["N", "NIGHT"]) {
+    const result = candidateBuilder.evaluateCandidate({
+      person: {
+        id: "p1",
+        name: "Nurse Night",
+      },
+      context: {
+        person: {
+          id: "p1",
+          name: "Nurse Night",
+        },
+        personId: "p1",
+        date: "2026-03-20",
+        existingAssignments: [
+          {
+            personId: "p1",
+            date: "2026-03-19",
+            shiftCode,
+          },
+        ],
+        shift: { id: "D", code: "D" },
+        rules: {},
+      },
+      activeRuleCodes: ["REST_AFTER_NIGHT"],
+    });
+
+    assert.strictEqual(result.status, "rejected", `${shiftCode} should trigger REST_AFTER_NIGHT hard reject`);
+    assert.strictEqual(result.hardRejected, true, `${shiftCode} should mark candidate as hard rejected`);
+    assert.deepStrictEqual(result.blockingRules, ["REST_AFTER_NIGHT"], `${shiftCode} should block on REST_AFTER_NIGHT`);
+  }
+}
+
+function testRestAfterNightIgnoresV2NightEquivalent() {
+  const candidateBuilder = require(candidateBuilderPath);
+  const result = candidateBuilder.evaluateCandidate({
+    person: {
+      id: "p1",
+      name: "Nurse V2",
+    },
+    context: {
+      person: {
+        id: "p1",
+        name: "Nurse V2",
+      },
+      personId: "p1",
+      date: "2026-03-20",
+      existingAssignments: [
+        {
+          personId: "p1",
+          date: "2026-03-19",
+          shiftCode: "V2",
+        },
+      ],
+      shift: { id: "D", code: "D" },
+      rules: {},
+    },
+    activeRuleCodes: ["REST_AFTER_NIGHT"],
+  });
+
+  assert.strictEqual(result.status, "eligible", "V2 should not be treated as canonical true-night in candidateBuilder");
+  assert.strictEqual(result.hardRejected, false, "V2 should not hard reject via REST_AFTER_NIGHT");
+  assert.deepStrictEqual(result.blockingRules, [], "V2 should not populate blockingRules for REST_AFTER_NIGHT");
+}
+
+function testValidatorCleansUpNightEquivalentV2Assignments() {
+  const { validateAssignments } = require(path.join(
+    __dirname,
+    "..",
+    "services",
+    "scheduler",
+    "validator.js"
+  ));
+
+  const result = validateAssignments({
+    assignments: [
+      {
+        date: "2026-03-19",
+        personId: "p1",
+        shiftId: "V2",
+        shiftCode: "V2",
+      },
+      {
+        date: "2026-03-20",
+        personId: "p1",
+        shiftId: "D",
+        shiftCode: "D",
+      },
+    ],
+  });
+
+  assert.strictEqual(result.assignments.length, 1, "validator should drop next-day assignment after V2");
+  assert.strictEqual(result.assignments[0].shiftCode, "V2", "validator should keep the original V2 assignment");
+  assert.deepStrictEqual(result.issues, [
+    {
+      date: "2026-03-20",
+      shiftId: "D",
+      reason: "REST_AFTER_NIGHT",
+    },
+  ]);
+}
+
+function testLegacyNightFallbackActualInventoryIsCanonical() {
+  const {
+    isNightEquivalentShiftCode,
+    isNightShiftCode,
+  } = require(path.join(__dirname, "..", "services", "scheduler", "utils", "nightShift.js"));
+
+  const usesLegacyNightMarker = (code) => String(code || "").trim().toUpperCase().includes("N");
+
+  const standardProfile = JSON.parse(fs.readFileSync(standardProfilePath, "utf8"));
+  const inventory = new Set(
+    (Array.isArray(standardProfile?.shifts) ? standardProfile.shifts : [])
+      .map((shift) => String(shift?.id || "").trim().toUpperCase())
+      .filter(Boolean)
+  );
+
+  // Repo also carries canonical NIGHT in backend-adjacent code paths.
+  inventory.add("NIGHT");
+
+  const fallbackOnly = Array.from(inventory).filter(
+    (code) =>
+      usesLegacyNightMarker(code) &&
+      !isNightShiftCode(code) &&
+      !isNightEquivalentShiftCode(code)
+  );
+
+  assert.deepStrictEqual(
+    fallbackOnly,
+    [],
+    "current repo shift inventory should not rely on includes(\"N\") legacy fallback"
+  );
 }
 
 function testStrictRoleEligibilityFiltersMismatchedCandidate() {
@@ -618,6 +1017,15 @@ function run() {
     { name: "fallback on empty", fn: testFallbackOnEmpty },
     { name: "fallback excludes ACTIVE_REQUIRED hard-blocked candidates", fn: testFallbackExcludesActiveRequiredHardBlockedCandidates },
     { name: "fallback excludes SERVICE_MATCH hard-blocked candidates", fn: testFallbackExcludesServiceMatchHardBlockedCandidates },
+    { name: "fallback excludes MAX_WEEKLY_SHIFTS hard-blocked candidates", fn: testFallbackExcludesMaxWeeklyShiftsHardBlockedCandidates },
+    { name: "fallback excludes MAX_CONSECUTIVE_DAYS hard-blocked candidates", fn: testFallbackExcludesMaxConsecutiveDaysHardBlockedCandidates },
+    { name: "MAX_CONSECUTIVE_DAYS builder-only parity", fn: testMaxConsecutiveDaysBuilderOnlyParity },
+    { name: "MAX_WEEKLY_SHIFTS builder-only parity", fn: testMaxWeeklyShiftsBuilderOnlyParity },
+    { name: "MAX_WEEKLY_SHIFTS alias matrix hard rejects", fn: testMaxWeeklyShiftsAliasMatrixHardRejects },
+    { name: "REST_AFTER_NIGHT rejects canonical night codes", fn: testRestAfterNightRejectsCanonicalNightCodes },
+    { name: "REST_AFTER_NIGHT ignores V2 night-equivalent codes", fn: testRestAfterNightIgnoresV2NightEquivalent },
+    { name: "validator cleans up V2 night-equivalent assignments", fn: testValidatorCleansUpNightEquivalentV2Assignments },
+    { name: "legacy night fallback actual inventory is canonical", fn: testLegacyNightFallbackActualInventoryIsCanonical },
     { name: "strict ROLE_ELIGIBILITY filters mismatched candidate", fn: testStrictRoleEligibilityFiltersMismatchedCandidate },
     { name: "fallback excludes ROLE_ELIGIBILITY hard-blocked candidates", fn: testFallbackExcludesRoleEligibilityHardBlockedCandidates },
     { name: "strict SECTION_ELIGIBILITY filters mismatched candidate", fn: testStrictSectionEligibilityFiltersMismatchedCandidate },

@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
@@ -8,8 +9,11 @@ const require = createRequire(import.meta.url);
 
 const repoRoot = path.join(__dirname, "..");
 const backendRoot = path.join(repoRoot, "my-backend-project");
+const standardProfilePath = path.join(repoRoot, "config", "rules", "standard-profile.json");
 const schedulerRoot = path.join(backendRoot, "services", "scheduler");
 const candidateBuilderRoot = path.join(schedulerRoot, "candidateBuilder");
+const constraintsPath = path.join(schedulerRoot, "constraints.js");
+const enginePath = path.join(schedulerRoot, "engine.js");
 
 const { buildContext } = require(path.join(schedulerRoot, "index.js"));
 const { runScheduler } = require(path.join(schedulerRoot, "engine.js"));
@@ -18,6 +22,12 @@ const { evaluateCandidate } = require(path.join(candidateBuilderRoot, "evaluateC
 const activeRequiredRule = require(path.join(candidateBuilderRoot, "rules", "activeRequired.rule.js"));
 const serviceMatchRule = require(path.join(candidateBuilderRoot, "rules", "serviceMatch.rule.js"));
 const fairnessPolicy = require(path.join(schedulerRoot, "policies", "fairness.policy.js"));
+const { validateAssignments } = require(path.join(schedulerRoot, "validator.js"));
+const {
+  isNightCleanupCode,
+  isNightEquivalentShiftCode,
+  isNightShiftCode,
+} = require(path.join(schedulerRoot, "utils", "nightShift.js"));
 
 function buildUiStaffPayload(staff = []) {
   return (Array.isArray(staff) ? staff : []).map((s) => {
@@ -327,6 +337,260 @@ function runCandidateRuleChecks() {
     failedRules: maxConsecutive.failedRules,
     ruleResults: maxConsecutive.ruleResults,
   });
+
+  const weeklyAliasMatrix = {};
+  for (const key of [
+    "MAX_WEEKLY_SHIFTS",
+    "MAX_SHIFTS_PER_WEEK",
+    "WEEKLY_MAX_SHIFTS",
+    "WEEKLY_MAX_DUTIES",
+  ]) {
+    const aliasResult = evaluateCandidate({
+      person: {
+        id: "p1",
+        name: "Nurse A",
+        weeklyCounts: { "2026-W12": 3 },
+      },
+      context: {
+        person: {
+          id: "p1",
+          name: "Nurse A",
+          weeklyCounts: { "2026-W12": 3 },
+        },
+        personId: "p1",
+        date: "2026-03-20",
+        rules: { [key]: 3 },
+        shift: { id: "D", code: "D" },
+      },
+      activeRuleCodes: ["MAX_WEEKLY_SHIFTS"],
+    });
+
+    weeklyAliasMatrix[key] = {
+      status: aliasResult.status,
+      hardRejected: aliasResult.hardRejected,
+      blockingRules: aliasResult.blockingRules,
+    };
+  }
+
+  logJson("MAX_WEEKLY_SHIFTS_ALIAS_MATRIX", weeklyAliasMatrix);
+}
+
+function runNightSemanticsChecks() {
+  const usesLegacyNightMarker = (code) => String(code || "").trim().toUpperCase().includes("N");
+  const standardProfile = JSON.parse(fs.readFileSync(standardProfilePath, "utf8"));
+  const actualInventory = Array.from(
+    new Set(
+      [
+        ...((Array.isArray(standardProfile?.shifts) ? standardProfile.shifts : [])
+          .map((shift) => String(shift?.id || "").trim().toUpperCase())
+          .filter(Boolean)),
+        "NIGHT",
+      ]
+    )
+  );
+
+  const semanticsMatrix = {};
+  for (const code of ["N", "NIGHT", "V2", "N-LEGACY", "D"]) {
+    semanticsMatrix[code] = {
+      trueNight: isNightShiftCode(code),
+      nightEquivalent: isNightEquivalentShiftCode(code),
+      cleanupCode: isNightCleanupCode(code),
+      legacyNightMarker: usesLegacyNightMarker(code),
+    };
+  }
+
+  const legacyFallbackMatrix = {};
+  for (const code of ["N", "NIGHT", "V2", "V1", "SV", "GECE", "24", "N-LEGACY", "AN"]) {
+    legacyFallbackMatrix[code] = {
+      trueNight: isNightShiftCode(code),
+      nightEquivalent: isNightEquivalentShiftCode(code),
+      cleanupCode: isNightCleanupCode(code),
+      legacyNightMarker: usesLegacyNightMarker(code),
+      fallbackOnly: usesLegacyNightMarker(code) && !isNightShiftCode(code) && !isNightEquivalentShiftCode(code),
+    };
+  }
+
+  const restAfterNightTrueNight = evaluateCandidate({
+    person: { id: "p-night", name: "Night Nurse" },
+    context: {
+      person: { id: "p-night", name: "Night Nurse" },
+      personId: "p-night",
+      date: "2026-03-20",
+      existingAssignments: [{ personId: "p-night", date: "2026-03-19", shiftCode: "NIGHT" }],
+      shift: { id: "D", code: "D" },
+      rules: {},
+    },
+    activeRuleCodes: ["REST_AFTER_NIGHT"],
+  });
+
+  const restAfterNightV2 = evaluateCandidate({
+    person: { id: "p-v2", name: "V2 Nurse" },
+    context: {
+      person: { id: "p-v2", name: "V2 Nurse" },
+      personId: "p-v2",
+      date: "2026-03-20",
+      existingAssignments: [{ personId: "p-v2", date: "2026-03-19", shiftCode: "V2" }],
+      shift: { id: "D", code: "D" },
+      rules: {},
+    },
+    activeRuleCodes: ["REST_AFTER_NIGHT"],
+  });
+
+  const validatorNightCleanup = validateAssignments({
+    assignments: [
+      { date: "2026-03-19", personId: "p-v2", shiftId: "V2", shiftCode: "V2" },
+      { date: "2026-03-20", personId: "p-v2", shiftId: "D", shiftCode: "D" },
+    ],
+  });
+
+  logJson("NIGHT_SHIFT_INVENTORY", {
+    standardProfileShiftCodes: actualInventory,
+    fallbackOnlyActualCodes: actualInventory.filter(
+      (code) => usesLegacyNightMarker(code) && !isNightShiftCode(code) && !isNightEquivalentShiftCode(code)
+    ),
+  });
+  logJson("NIGHT_SEMANTICS_MATRIX", semanticsMatrix);
+  logJson("LEGACY_NIGHT_FALLBACK_MATRIX", legacyFallbackMatrix);
+  logJson("REST_AFTER_NIGHT_TRUE_NIGHT", {
+    status: restAfterNightTrueNight.status,
+    hardRejected: restAfterNightTrueNight.hardRejected,
+    blockingRules: restAfterNightTrueNight.blockingRules,
+    failedRules: restAfterNightTrueNight.failedRules,
+  });
+  logJson("REST_AFTER_NIGHT_V2_EQUIVALENT", {
+    status: restAfterNightV2.status,
+    hardRejected: restAfterNightV2.hardRejected,
+    blockingRules: restAfterNightV2.blockingRules,
+    failedRules: restAfterNightV2.failedRules,
+  });
+  logJson("VALIDATOR_NIGHT_CLEANUP_V2", validatorNightCleanup);
+}
+
+function runCapacityGuardParityChecks() {
+  const constraints = require(constraintsPath);
+  const originalIsAvailable = constraints.isAvailable;
+
+  const runWithOverride = (override) => {
+    constraints.isAvailable = override;
+    delete require.cache[require.resolve(enginePath)];
+    const { runScheduler: overriddenRunScheduler } = require(enginePath);
+    return overriddenRunScheduler;
+  };
+
+  try {
+    const baseConsecutiveContext = {
+      staff: [
+        {
+          id: "p1",
+          name: "Nurse B",
+          active: true,
+          serviceId: "svc-1",
+          totalHours: 0,
+          totalShifts: 0,
+          weekdayCount: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
+          pairHistory: {},
+          assignedDays: ["2026-03-17", "2026-03-18", "2026-03-19"],
+          weeklyCounts: {},
+          taskCounts: {},
+          consecutiveDays: 3,
+          lastAssignedDate: "2026-03-19",
+          lastShift: null,
+        },
+      ],
+      days: [
+        {
+          date: "2026-03-20",
+          weekday: 5,
+          shifts: [{ id: "D", code: "D", serviceId: "svc-1", requiredCount: 1, hours: 8 }],
+        },
+      ],
+      leavesByPerson: {},
+      requestsByPerson: {},
+      rules: { MAX_CONSECUTIVE_DAYS: 3 },
+      weights: {},
+      issues: [],
+      assignments: [],
+      targetHours: 0,
+      targetShifts: 0,
+      randomize: false,
+    };
+
+    const baseWeeklyContext = {
+      staff: [
+        {
+          id: "p1",
+          name: "Nurse A",
+          active: true,
+          serviceId: "svc-1",
+          totalHours: 0,
+          totalShifts: 0,
+          weekdayCount: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
+          pairHistory: {},
+          assignedDays: [],
+          weeklyCounts: { "2026-W12": 3 },
+          taskCounts: {},
+          consecutiveDays: 0,
+          lastAssignedDate: null,
+          lastShift: null,
+        },
+      ],
+      days: [
+        {
+          date: "2026-03-20",
+          weekday: 5,
+          shifts: [{ id: "D", code: "D", serviceId: "svc-1", requiredCount: 1, hours: 8 }],
+        },
+      ],
+      leavesByPerson: {},
+      requestsByPerson: {},
+      rules: { MAX_SHIFTS_PER_WEEK: 3 },
+      weights: {},
+      issues: [],
+      assignments: [],
+      targetHours: 0,
+      targetShifts: 0,
+      randomize: false,
+    };
+
+    const consecutiveBaseline = runScheduler(structuredClone(baseConsecutiveContext));
+    const consecutiveBuilderOnly = runWithOverride(() => true)(structuredClone(baseConsecutiveContext));
+
+    logJson("MAX_CONSECUTIVE_DAYS_PARITY", {
+      baseline: {
+        assignments: consecutiveBaseline.assignments,
+        issues: consecutiveBaseline.issues,
+        audit: consecutiveBaseline.candidateAudit?.[0] || null,
+      },
+      builderOnly: {
+        assignments: consecutiveBuilderOnly.assignments,
+        issues: consecutiveBuilderOnly.issues,
+        audit: consecutiveBuilderOnly.candidateAudit?.[0] || null,
+      },
+    });
+
+    constraints.isAvailable = originalIsAvailable;
+    delete require.cache[require.resolve(enginePath)];
+    const { runScheduler: restoredRunScheduler } = require(enginePath);
+
+    const weeklyBaseline = restoredRunScheduler(structuredClone(baseWeeklyContext));
+    const weeklyBuilderOnly = runWithOverride(() => true)(structuredClone(baseWeeklyContext));
+
+    logJson("MAX_WEEKLY_SHIFTS_PARITY", {
+      baseline: {
+        assignments: weeklyBaseline.assignments,
+        issues: weeklyBaseline.issues,
+        audit: weeklyBaseline.candidateAudit?.[0] || null,
+      },
+      builderOnly: {
+        assignments: weeklyBuilderOnly.assignments,
+        issues: weeklyBuilderOnly.issues,
+        audit: weeklyBuilderOnly.candidateAudit?.[0] || null,
+      },
+    });
+  } finally {
+    constraints.isAvailable = originalIsAvailable;
+    delete require.cache[require.resolve(enginePath)];
+  }
 }
 
 async function runAuditPersistenceCheck() {
@@ -627,6 +891,12 @@ async function main() {
 
   printSection("CANDIDATE BUILDER SOFT RULES");
   runCandidateRuleChecks();
+
+  printSection("NIGHT SEMANTICS");
+  runNightSemanticsChecks();
+
+  printSection("CAPACITY GUARD PARITY");
+  runCapacityGuardParityChecks();
 
   printSection("AUDIT PERSISTENCE");
   await runAuditPersistenceCheck();

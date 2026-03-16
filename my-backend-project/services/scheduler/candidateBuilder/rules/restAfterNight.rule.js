@@ -5,7 +5,9 @@ const { makeRulePass, makeRuleFail } = require("../utils/candidateResult");
 const { isNightShiftCode } = require("../../utils/nightShift");
 
 /**
- * Rule: enforce rest window after night shift.
+ * Rule: enforce rest window after canonical true-night shifts only.
+ * Night-equivalent cleanup codes such as V2 remain outside this authority and
+ * are handled by runtime/validator safety layers.
  */
 function restAfterNightRule(context = {}) {
   const personId = normalizeId(
@@ -99,6 +101,8 @@ function extractShiftCode(assignment) {
 
   return normalizeShiftCode(
     assignment?.shiftType ??
+      assignment?.shiftCode ??
+      assignment?.shiftId ??
       assignment?.code ??
       assignment?.shift?.code ??
       assignment?.shift?.id
