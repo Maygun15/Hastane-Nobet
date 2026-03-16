@@ -633,6 +633,7 @@ function runCapacityGuardParityChecks() {
 }
 
 async function runAuditPersistenceCheck() {
+  const personModelPath = path.join(backendRoot, "models", "Person.js");
   const generatedSchedulePath = path.join(backendRoot, "models", "GeneratedSchedule.js");
   const monthlySchedulePath = path.join(backendRoot, "models", "MonthlySchedule.js");
   const holidayServicePath = path.join(backendRoot, "services", "holidayService.js");
@@ -647,6 +648,7 @@ async function runAuditPersistenceCheck() {
 
   const originalCache = new Map();
   const touchedModules = [
+    personModelPath,
     generatedSchedulePath,
     monthlySchedulePath,
     holidayServicePath,
@@ -682,6 +684,13 @@ async function runAuditPersistenceCheck() {
   };
 
   try {
+    putMock(personModelPath, {
+      find: () => ({
+        select: () => ({
+          lean: async () => [],
+        }),
+      }),
+    });
     putMock(generatedSchedulePath, {
       create: async (payload) => {
         createdPayload = payload;
@@ -783,6 +792,7 @@ async function runAuditPersistenceCheck() {
 }
 
 async function runMonthlyWriteBackDiagnosticCheck() {
+  const personModelPath = path.join(backendRoot, "models", "Person.js");
   const generatedSchedulePath = path.join(backendRoot, "models", "GeneratedSchedule.js");
   const monthlySchedulePath = path.join(backendRoot, "models", "MonthlySchedule.js");
   const holidayServicePath = path.join(backendRoot, "services", "holidayService.js");
@@ -797,6 +807,7 @@ async function runMonthlyWriteBackDiagnosticCheck() {
 
   const originalCache = new Map();
   const touchedModules = [
+    personModelPath,
     generatedSchedulePath,
     monthlySchedulePath,
     holidayServicePath,
@@ -833,6 +844,13 @@ async function runMonthlyWriteBackDiagnosticCheck() {
   };
 
   try {
+    putMock(personModelPath, {
+      find: () => ({
+        select: () => ({
+          lean: async () => [],
+        }),
+      }),
+    });
     putMock(generatedSchedulePath, {
       create: async (payload) => {
         createdPayload = payload;
@@ -927,6 +945,7 @@ async function runMonthlyWriteBackDiagnosticCheck() {
 }
 
 async function runGeneratedOversizeRetryCheck() {
+  const personModelPath = path.join(backendRoot, "models", "Person.js");
   const generatedSchedulePath = path.join(backendRoot, "models", "GeneratedSchedule.js");
   const monthlySchedulePath = path.join(backendRoot, "models", "MonthlySchedule.js");
   const holidayServicePath = path.join(backendRoot, "services", "holidayService.js");
@@ -941,6 +960,7 @@ async function runGeneratedOversizeRetryCheck() {
 
   const originalCache = new Map();
   const touchedModules = [
+    personModelPath,
     generatedSchedulePath,
     monthlySchedulePath,
     holidayServicePath,
@@ -978,6 +998,13 @@ async function runGeneratedOversizeRetryCheck() {
   };
 
   try {
+    putMock(personModelPath, {
+      find: () => ({
+        select: () => ({
+          lean: async () => [],
+        }),
+      }),
+    });
     putMock(generatedSchedulePath, {
       create: async (payload) => {
         createCallCount += 1;
@@ -1091,6 +1118,7 @@ async function runGeneratedOversizeRetryCheck() {
 }
 
 async function runMonthlyScheduleProjectionCheck() {
+  const personModelPath = path.join(backendRoot, "models", "Person.js");
   const generatedSchedulePath = path.join(backendRoot, "models", "GeneratedSchedule.js");
   const monthlySchedulePath = path.join(backendRoot, "models", "MonthlySchedule.js");
   const holidayServicePath = path.join(backendRoot, "services", "holidayService.js");
@@ -1105,6 +1133,7 @@ async function runMonthlyScheduleProjectionCheck() {
 
   const originalCache = new Map();
   const touchedModules = [
+    personModelPath,
     generatedSchedulePath,
     monthlySchedulePath,
     holidayServicePath,
@@ -1140,6 +1169,13 @@ async function runMonthlyScheduleProjectionCheck() {
   };
 
   try {
+    putMock(personModelPath, {
+      find: () => ({
+        select: () => ({
+          lean: async () => [],
+        }),
+      }),
+    });
     putMock(generatedSchedulePath, {
       create: async () => ({ _id: "generated-projection-check" }),
       findByIdAndUpdate: async () => null,
@@ -1220,6 +1256,7 @@ async function runMonthlyScheduleProjectionCheck() {
 }
 
 async function runIssueDiagnosticsCheck() {
+  const personModelPath = path.join(backendRoot, "models", "Person.js");
   const generatedSchedulePath = path.join(backendRoot, "models", "GeneratedSchedule.js");
   const monthlySchedulePath = path.join(backendRoot, "models", "MonthlySchedule.js");
   const holidayServicePath = path.join(backendRoot, "services", "holidayService.js");
@@ -1234,6 +1271,7 @@ async function runIssueDiagnosticsCheck() {
 
   const originalCache = new Map();
   const touchedModules = [
+    personModelPath,
     generatedSchedulePath,
     monthlySchedulePath,
     holidayServicePath,
@@ -1266,6 +1304,13 @@ async function runIssueDiagnosticsCheck() {
   };
 
   try {
+    putMock(personModelPath, {
+      find: () => ({
+        select: () => ({
+          lean: async () => [],
+        }),
+      }),
+    });
     putMock(generatedSchedulePath, {
       create: async (payload) => ({ _id: "generated-issue-diagnostics", data: payload.data }),
       findByIdAndUpdate: async () => null,
@@ -1356,6 +1401,178 @@ async function runIssueDiagnosticsCheck() {
   }
 }
 
+async function runPayloadStaffHydrationCheck() {
+  const personModelPath = path.join(backendRoot, "models", "Person.js");
+  const generatedSchedulePath = path.join(backendRoot, "models", "GeneratedSchedule.js");
+  const monthlySchedulePath = path.join(backendRoot, "models", "MonthlySchedule.js");
+  const holidayServicePath = path.join(backendRoot, "services", "holidayService.js");
+  const schedulerIndexPath = path.join(backendRoot, "services", "scheduler", "index.js");
+  const draftRosterPath = path.join(backendRoot, "services", "scheduler", "draftRoster.js");
+  const ruleResolverPath = path.join(backendRoot, "services", "scheduler", "ruleResolver.js");
+  const staffResolverPath = path.join(backendRoot, "services", "scheduler", "staffResolver.js");
+  const validatorPath = path.join(backendRoot, "services", "scheduler", "validator.js");
+  const holidayPolicyAdapterPath = path.join(backendRoot, "services", "scheduler", "holidayPolicyAdapter.js");
+  const inputBuilderPath = path.join(backendRoot, "services", "scheduler", "inputBuilder.js");
+  const schedulerServicePath = path.join(backendRoot, "services", "schedulerService.js");
+
+  const originalCache = new Map();
+  const touchedModules = [
+    personModelPath,
+    generatedSchedulePath,
+    monthlySchedulePath,
+    holidayServicePath,
+    schedulerIndexPath,
+    draftRosterPath,
+    ruleResolverPath,
+    staffResolverPath,
+    validatorPath,
+    holidayPolicyAdapterPath,
+    inputBuilderPath,
+    schedulerServicePath,
+  ];
+
+  for (const modulePath of touchedModules) {
+    try {
+      const resolved = require.resolve(modulePath);
+      originalCache.set(resolved, require.cache[resolved]);
+      delete require.cache[resolved];
+    } catch {}
+  }
+
+  let hydratedStaffSnapshot = [];
+  const putMock = (modulePath, exportsValue) => {
+    const resolved = require.resolve(modulePath);
+    require.cache[resolved] = {
+      id: resolved,
+      filename: resolved,
+      loaded: true,
+      exports: exportsValue,
+    };
+  };
+
+  try {
+    putMock(personModelPath, {
+      find: () => ({
+        select: () => ({
+          lean: async () => [
+            {
+              _id: "p-hydrate-1",
+              name: "Hydrated Nurse",
+              active: true,
+              serviceId: "svc-db",
+              meta: {
+                areas: ["RESUSITASYON"],
+                shiftCodes: ["N", "V2"],
+                role: "nurse",
+                title: "Uzman",
+              },
+            },
+          ],
+        }),
+      }),
+    });
+    putMock(generatedSchedulePath, {
+      create: async (payload) => ({ _id: "generated-hydration-check", data: payload.data }),
+      findByIdAndUpdate: async () => null,
+    });
+    putMock(monthlySchedulePath, {
+      findOne: () => ({
+        select: () => ({
+          lean: async () => null,
+        }),
+      }),
+      findByIdAndUpdate: async () => null,
+    });
+    putMock(holidayServicePath, { listHolidays: async () => [] });
+    putMock(schedulerIndexPath, {
+      generateMonthlyPlan: async ({ getActiveStaff }) => {
+        hydratedStaffSnapshot = await getActiveStaff();
+        return {
+          assignments: [],
+          issues: [],
+          candidateAudit: [],
+          shadowAudit: null,
+        };
+      },
+    });
+    putMock(draftRosterPath, {
+      generateDraftRoster: () => ({ assignments: [], issues: [] }),
+    });
+    putMock(ruleResolverPath, {
+      fetchDutyRules: async () => ({ doc: null, rules: {}, weights: {} }),
+      DEFAULT_RULES: {},
+      DEFAULT_WEIGHTS: {},
+    });
+    putMock(staffResolverPath, {
+      resolveStaff: async () => ({ staff: [], debug: { rawCount: 0, filteredCount: 0, usedFallback: false, roleTokens: [] } }),
+    });
+    putMock(validatorPath, {
+      validateAssignments: ({ assignments, issues = [] }) => ({ assignments, issues, debug: { hardFiltered: 0 } }),
+    });
+    putMock(holidayPolicyAdapterPath, {
+      applyHolidayPolicies: ({ days }) => days,
+    });
+    putMock(inputBuilderPath, {
+      buildSchedulerInput: ({ payload }) => ({
+        effectiveDefs: payload.defs || [],
+        effectiveOverrides: {},
+        effectiveShiftOptions: [],
+        days: payload.days || [{ date: "2026-03-15", weekday: 0, shifts: [] }],
+        holidayKindByDate: {},
+        shiftMetaByCode: {},
+      }),
+    });
+
+    const { generateSchedule } = require(schedulerServicePath);
+    const result = await generateSchedule({
+      sectionId: "sec-1",
+      serviceId: "svc-ui",
+      role: "nurse",
+      year: 2026,
+      month: 3,
+      dryRun: false,
+      userId: "user-1",
+      hospitalId: null,
+      payload: {
+        staff: [
+          {
+            id: "p-hydrate-1",
+            name: "UI Nurse",
+            active: true,
+            serviceId: "svc-ui",
+            stats: { assignmentsThisMonth: 4 },
+            meta: {},
+          },
+        ],
+        days: [{ date: "2026-03-15", weekday: 0, shifts: [] }],
+      },
+    });
+
+    logJson("PAYLOAD_STAFF_HYDRATION", {
+      debug: result?.data?.debug?.staff || null,
+      hydratedStaff: hydratedStaffSnapshot.map((person) => ({
+        id: person?.id,
+        name: person?.name,
+        serviceId: person?.serviceId,
+        areas: person?.areas,
+        shiftCodes: person?.shiftCodes,
+        role: person?.role,
+        title: person?.title,
+        stats: person?.stats,
+        meta: person?.meta,
+      })),
+    });
+  } finally {
+    for (const modulePath of touchedModules) {
+      const resolved = require.resolve(modulePath);
+      delete require.cache[resolved];
+      if (originalCache.has(resolved) && originalCache.get(resolved)) {
+        require.cache[resolved] = originalCache.get(resolved);
+      }
+    }
+  }
+}
+
 async function main() {
   printSection("UI PAYLOAD + SHAPE CHECKS");
   runShapeChecks();
@@ -1392,6 +1609,9 @@ async function main() {
 
   printSection("ISSUE DIAGNOSTICS");
   await runIssueDiagnosticsCheck();
+
+  printSection("PAYLOAD STAFF HYDRATION");
+  await runPayloadStaffHydrationCheck();
 }
 
 main().catch((error) => {

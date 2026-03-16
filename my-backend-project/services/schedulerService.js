@@ -1,5 +1,6 @@
 const GeneratedSchedule = require('../models/GeneratedSchedule');
 const MonthlySchedule = require('../models/MonthlySchedule');
+const Person = require('../models/Person');
 const { listHolidays } = require('./holidayService');
 const { generateMonthlyPlan } = require('./scheduler');
 const { generateDraftRoster } = require('./scheduler/draftRoster');
@@ -164,6 +165,112 @@ function buildGeneratedPayloadSizeDiagnostic(error) {
   };
 }
 
+function toNonEmptyArray(value) {
+  if (!Array.isArray(value)) return null;
+  const cleaned = value.filter((item) => item != null && String(item).trim() !== '');
+  return cleaned.length ? cleaned : null;
+}
+
+function pickFirstDefined(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null) return value;
+  }
+  return undefined;
+}
+
+async function hydratePayloadStaffFromDb(payloadStaff = [], hospitalId = null) {
+  const safePayloadStaff = Array.isArray(payloadStaff) ? payloadStaff : [];
+  if (!safePayloadStaff.length) {
+    return {
+      staff: [],
+      debug: { rawCount: 0, hydratedCount: 0, missingDbCount: 0 },
+    };
+  }
+
+  const ids = safePayloadStaff
+    .map((person) => String(person?._id || person?.id || '').trim())
+    .filter(Boolean);
+
+  if (!ids.length) {
+    return {
+      staff: safePayloadStaff,
+      debug: { rawCount: safePayloadStaff.length, hydratedCount: 0, missingDbCount: safePayloadStaff.length },
+    };
+  }
+
+  const query = { _id: { $in: ids } };
+  if (hospitalId) query.hospitalId = hospitalId;
+  const dbStaff = await Person.find(query)
+    .select({
+      _id: 1,
+      name: 1,
+      active: 1,
+      serviceId: 1,
+      meta: 1,
+    })
+    .lean();
+
+  const dbMap = new Map(dbStaff.map((person) => [String(person._id), person]));
+  let hydratedCount = 0;
+  let missingDbCount = 0;
+
+  const hydratedStaff = safePayloadStaff.map((person) => {
+    const personId = String(person?._id || person?.id || '').trim();
+    const db = personId ? dbMap.get(personId) : null;
+    if (!db) {
+      missingDbCount += 1;
+      return person;
+    }
+
+    hydratedCount += 1;
+    const payloadMeta = person?.meta && typeof person.meta === 'object' ? person.meta : {};
+    const dbMeta = db?.meta && typeof db.meta === 'object' ? db.meta : {};
+    const payloadAreas = toNonEmptyArray(person?.areas);
+    const payloadShiftCodes = toNonEmptyArray(person?.shiftCodes);
+    const dbAreas = toNonEmptyArray(db?.areas) || toNonEmptyArray(dbMeta?.areas) || toNonEmptyArray(dbMeta?.sections);
+    const dbShiftCodes = toNonEmptyArray(db?.shiftCodes) || toNonEmptyArray(dbMeta?.shiftCodes) || toNonEmptyArray(dbMeta?.shifts);
+
+    return {
+      ...db,
+      ...person,
+      id: person?.id || personId,
+      _id: db?._id || person?._id || personId,
+      name: pickFirstDefined(person?.name, person?.fullName, db?.name, personId),
+      fullName: pickFirstDefined(person?.fullName, person?.name, db?.name, personId),
+      active: pickFirstDefined(person?.active, db?.active, dbMeta?.active, true),
+      isActive: pickFirstDefined(person?.isActive, dbMeta?.isActive, db?.active, true),
+      status: pickFirstDefined(person?.status, dbMeta?.status, null),
+      serviceId: pickFirstDefined(person?.serviceId, db?.serviceId, dbMeta?.serviceId, ''),
+      role: pickFirstDefined(person?.role, payloadMeta?.role, dbMeta?.role, dbMeta?.unvan, ''),
+      title: pickFirstDefined(person?.title, payloadMeta?.title, dbMeta?.title, dbMeta?.unvan, ''),
+      stats: pickFirstDefined(person?.stats, payloadMeta?.stats, dbMeta?.stats, {}),
+      areas: payloadAreas || dbAreas || [],
+      shiftCodes: payloadShiftCodes || dbShiftCodes || [],
+      meta: {
+        ...dbMeta,
+        ...payloadMeta,
+        active: pickFirstDefined(person?.active, payloadMeta?.active, db?.active, dbMeta?.active, true),
+        isActive: pickFirstDefined(person?.isActive, payloadMeta?.isActive, dbMeta?.isActive, db?.active, true),
+        serviceId: pickFirstDefined(person?.serviceId, payloadMeta?.serviceId, db?.serviceId, dbMeta?.serviceId, ''),
+        role: pickFirstDefined(person?.role, payloadMeta?.role, dbMeta?.role, dbMeta?.unvan, ''),
+        title: pickFirstDefined(person?.title, payloadMeta?.title, dbMeta?.title, dbMeta?.unvan, ''),
+        stats: pickFirstDefined(person?.stats, payloadMeta?.stats, dbMeta?.stats, {}),
+        areas: payloadAreas || dbAreas || [],
+        shiftCodes: payloadShiftCodes || dbShiftCodes || [],
+      },
+    };
+  });
+
+  return {
+    staff: hydratedStaff,
+    debug: {
+      rawCount: safePayloadStaff.length,
+      hydratedCount,
+      missingDbCount,
+    },
+  };
+}
+
 function attachMonthlyWriteBackDiagnostic(data = {}, diagnostic = null) {
   if (!diagnostic || typeof diagnostic !== 'object') return data;
   const nextDebug =
@@ -264,7 +371,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   const effectiveDays = applyHolidayPolicies({ days, holidayKindByDate, shiftMetaByCode });
 
   const staffPack = Array.isArray(payload.staff) && payload.staff.length
-    ? { staff: payload.staff, debug: { rawCount: payload.staff.length, filteredCount: payload.staff.length, usedFallback: false, roleTokens: [] } }
+    ? await hydratePayloadStaffFromDb(payload.staff, hospitalId)
     : await resolveStaff({ serviceId, role, hospitalId });
   const staff = staffPack.staff;
 
