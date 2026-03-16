@@ -108,7 +108,9 @@ export async function fetchMonthlySchedule({ personId, year, month, token } = {}
       year: String(year),
       month: String(month),
     });
-    if (personId != null) qs.append("personId", String(personId));
+    // MonthlySchedule is keyed by section/service/role/month on the backend.
+    // Keep personId here only as a client-side assignment filter for consumers
+    // like overtime reporting; do not send a misleading no-op query param.
     const payload = await httpRequest(`/api/schedules/monthly?${qs.toString()}`, { token });
 
     const data = payload?.schedule?.data || {};

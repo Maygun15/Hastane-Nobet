@@ -76,14 +76,14 @@ const RULE_CATALOG = Object.freeze([
   {
     code: RULE_CODES.MAX_WEEKLY_SHIFTS,
     title: "Max Weekly Shifts",
-    severity: "soft",
+    severity: "hard",
     phase: "capacity",
     enabled: true,
   },
   {
     code: RULE_CODES.MAX_CONSECUTIVE_DAYS,
     title: "Max Consecutive Days",
-    severity: "soft",
+    severity: "hard",
     phase: "capacity",
     enabled: true,
   },

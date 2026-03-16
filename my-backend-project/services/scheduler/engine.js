@@ -14,7 +14,14 @@ const {
 // CandidateBuilder hard-reject fallback exclusion allowlist.
 // Only blocking rule codes listed here remain authoritative when the engine
 // falls back after an empty eligible pool.
-const FALLBACK_BLOCKING_RULE_CODES = Object.freeze(["ACTIVE_REQUIRED", "SERVICE_MATCH", "LEAVE_BLOCK", "REST_AFTER_NIGHT"]);
+const FALLBACK_BLOCKING_RULE_CODES = Object.freeze([
+  "ACTIVE_REQUIRED",
+  "SERVICE_MATCH",
+  "LEAVE_BLOCK",
+  "REST_AFTER_NIGHT",
+  "MAX_WEEKLY_SHIFTS",
+  "MAX_CONSECUTIVE_DAYS",
+]);
 
 const getISOWeekKey = (dateStr) => {
   if (!dateStr) return null;
@@ -255,19 +262,21 @@ function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null,
       options: context?.candidateBuilderOptions || {},
     });
 
-    const eligiblePeople = extractEligiblePeople(candidateResult);
-    const rejected = Array.isArray(candidateResult?.rejected) ? candidateResult.rejected : [];
-    const fallbackPoolAfterHardFilter = filterFallbackPoolByHardBlocks(fallbackPool, rejected, context);
-    const sectionEligibilityMetrics = buildSectionEligibilityMetrics(candidateResult);
-    const audit = buildCandidateBuilderAuditEntry({
-      baseAudit,
-      fallbackPool,
-      fallbackPoolAfterHardFilter,
-      eligiblePeople,
-      rejected,
-      sectionEligibilityMetrics,
-      context,
-    });
+	    const eligiblePeople = extractEligiblePeople(candidateResult);
+	    const rejected = Array.isArray(candidateResult?.rejected) ? candidateResult.rejected : [];
+	    const fallbackPoolAfterHardFilter = filterFallbackPoolByHardBlocks(fallbackPool, rejected, context);
+	    const sectionEligibilityMetrics = buildSectionEligibilityMetrics(candidateResult);
+      const softSignalMetrics = buildSoftSignalMetrics(candidateResult);
+	    const audit = buildCandidateBuilderAuditEntry({
+	      baseAudit,
+	      fallbackPool,
+	      fallbackPoolAfterHardFilter,
+	      eligiblePeople,
+	      rejected,
+	      sectionEligibilityMetrics,
+        softSignalMetrics,
+	      context,
+	    });
 
     if (eligiblePeople.length) {
       return {
@@ -311,12 +320,13 @@ function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null,
 
 function buildSelectionStage({ candidateBuild = null, day = null, shift = null, context = null } = {}) {
   const candidateBuilderEligiblePool = Array.isArray(candidateBuild?.pool) ? candidateBuild.pool : [];
-  const postConstraintPool = buildPostConstraintPool({
+  const postConstraintResult = buildPostConstraintPool({
     candidatePool: candidateBuilderEligiblePool,
     day,
     shift,
     context,
   });
+  const postConstraintPool = Array.isArray(postConstraintResult?.pool) ? postConstraintResult.pool : [];
   const scoredCandidates = scoreCandidatesForSelection({
     candidatePool: postConstraintPool,
     day,
@@ -334,6 +344,7 @@ function buildSelectionStage({ candidateBuild = null, day = null, shift = null, 
     audit: buildCandidateAuditEntry({
       candidateBuildAudit: candidateBuild?.audit || {},
       candidateBuilderEligiblePool,
+      postConstraintResult,
       postConstraintPool,
       scoredCandidates,
       selectedCandidate,
@@ -342,9 +353,46 @@ function buildSelectionStage({ candidateBuild = null, day = null, shift = null, 
 }
 
 function buildPostConstraintPool({ candidatePool = [], day = null, shift = null, context = null } = {}) {
-  return (Array.isArray(candidatePool) ? candidatePool : []).filter((person) =>
-    isAvailable(person, day, context, shift)
-  );
+  const pool = [];
+  const blockingRules = {};
+  const blockedCandidates = [];
+
+  for (const person of Array.isArray(candidatePool) ? candidatePool : []) {
+    const collectedBlocks = [];
+    const runtimeGuardContext = attachRuntimeGuardCollector(context, (code, meta) => {
+      collectedBlocks.push({
+        code: normalizeRuleCode(code),
+        meta: meta && typeof meta === "object" ? { ...meta } : {},
+      });
+    });
+
+    if (isAvailable(person, day, runtimeGuardContext, shift)) {
+      pool.push(person);
+      continue;
+    }
+
+    const dedupedBlockingRules = dedupeRuleCodes(
+      collectedBlocks
+        .map((item) => item?.code)
+        .filter(Boolean)
+    );
+
+    for (const code of dedupedBlockingRules) {
+      blockingRules[code] = Number(blockingRules[code] || 0) + 1;
+    }
+
+    blockedCandidates.push({
+      personId: normalizePersonId(person?.id || person?._id || person?.personId),
+      blockingRules: dedupedBlockingRules,
+    });
+  }
+
+  return {
+    pool,
+    blockedCount: blockedCandidates.length,
+    blockingRules,
+    blockedCandidates,
+  };
 }
 
 function scoreCandidatesForSelection({ candidatePool = [], day = null, shift = null, context = null } = {}) {
@@ -380,6 +428,7 @@ function buildCandidateBuilderAuditEntry({
   eligiblePeople = [],
   rejected = [],
   sectionEligibilityMetrics = {},
+  softSignalMetrics = {},
   context = null,
 } = {}) {
   return {
@@ -393,6 +442,11 @@ function buildCandidateBuilderAuditEntry({
     sectionEligibilityCheckedCount: Number(sectionEligibilityMetrics?.checkedCount || 0),
     sectionEligibilityHardRejectCount: Number(sectionEligibilityMetrics?.hardRejectCount || 0),
     sectionEligibilityPassCount: Number(sectionEligibilityMetrics?.passCount || 0),
+    eligibleSoftSignalCount: Number(softSignalMetrics?.count || 0),
+    eligibleSoftSignalRules:
+      softSignalMetrics?.rules && typeof softSignalMetrics.rules === "object"
+        ? { ...softSignalMetrics.rules }
+        : {},
     rejected: buildRejectedCandidateSummary(rejected),
   };
 }
@@ -408,6 +462,7 @@ function buildFallbackAuditSummary({ fallbackUsed = false, fallbackReason = null
 function buildCandidateAuditEntry({
   candidateBuildAudit = {},
   candidateBuilderEligiblePool = [],
+  postConstraintResult = {},
   postConstraintPool = [],
   scoredCandidates = [],
   selectedCandidate = null,
@@ -416,6 +471,7 @@ function buildCandidateAuditEntry({
     ...candidateBuildAudit,
     ...buildSelectionExplainability({
       candidateBuilderEligiblePool,
+      postConstraintResult,
       postConstraintPool,
       scoredCandidates,
       selectedCandidate,
@@ -425,6 +481,7 @@ function buildCandidateAuditEntry({
 
 function buildSelectionExplainability({
   candidateBuilderEligiblePool = [],
+  postConstraintResult = {},
   postConstraintPool = [],
   scoredCandidates = [],
   selectedCandidate = null,
@@ -434,6 +491,11 @@ function buildSelectionExplainability({
       ? candidateBuilderEligiblePool.length
       : 0,
     postConstraintCount: Array.isArray(postConstraintPool) ? postConstraintPool.length : 0,
+    runtimeGuardBlockedCount: Number(postConstraintResult?.blockedCount || 0),
+    runtimeGuardBlockingRules:
+      postConstraintResult?.blockingRules && typeof postConstraintResult.blockingRules === "object"
+        ? { ...postConstraintResult.blockingRules }
+        : {},
     scoredCandidateCount: Array.isArray(scoredCandidates) ? scoredCandidates.length : 0,
     selectedCandidateId: normalizePersonId(selectedCandidate?.id),
     selectedSchedulerScore: Number(selectedCandidate?.schedulerScore || 0),
@@ -566,6 +628,60 @@ function buildRejectedCandidateSummary(rejected = []) {
     blockingRules: Array.isArray(item?.blockingRules) ? item.blockingRules.filter(Boolean) : [],
     reasonCodes: Array.isArray(item?.reasonCodes) ? item.reasonCodes.filter(Boolean) : [],
   }));
+}
+
+function buildSoftSignalMetrics(candidateResult = null) {
+  const counts = {};
+  let totalCount = 0;
+
+  for (const item of Array.isArray(candidateResult?.eligible) ? candidateResult.eligible : []) {
+    for (const failedRule of Array.isArray(item?.failedRules) ? item.failedRules : []) {
+      const severity = String(failedRule?.severity || "").trim().toLowerCase();
+      const code = normalizeRuleCode(failedRule?.code);
+      if (!code || severity === "hard" || severity === "error") continue;
+      counts[code] = Number(counts[code] || 0) + 1;
+      totalCount += 1;
+    }
+  }
+
+  return {
+    count: totalCount,
+    rules: counts,
+  };
+}
+
+function attachRuntimeGuardCollector(context, collectBlock) {
+  const baseContext = context && typeof context === "object" ? context : {};
+  const baseDebug =
+    baseContext.debug && typeof baseContext.debug === "object" && !Array.isArray(baseContext.debug)
+      ? baseContext.debug
+      : {};
+
+  return {
+    ...baseContext,
+    debug: {
+      ...baseDebug,
+      collectBlock,
+    },
+  };
+}
+
+function normalizeRuleCode(code) {
+  if (code == null) return null;
+  const normalized = String(code).trim();
+  return normalized || null;
+}
+
+function dedupeRuleCodes(codes = []) {
+  const out = [];
+  const seen = new Set();
+  for (const code of codes) {
+    const normalized = normalizeRuleCode(code);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
 }
 
 function countHardRejectedByRule(rejected, ruleCode) {
