@@ -66,6 +66,25 @@ export default function useServicesModel() {
 
   const list = useCallback(() => _cache, []);
 
+  const refresh = useCallback(async () => {
+    try {
+      const url = makeUrl(BASE);
+      const res = await fetch(url, { headers: authHeaders() });
+      const json = await res.json();
+      if (json?.ok) {
+        _cache = Array.isArray(json.data) ? json.data : [];
+        _loaded = true;
+        notifyAll();
+      }
+    } catch (e) {
+      console.error("Servisler yüklenemedi:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!_loaded) refresh();
+  }, [refresh]);
+
   const add = useCallback(async (payload) => {
     try {
       const url = makeUrl(BASE);
@@ -134,5 +153,5 @@ export default function useServicesModel() {
     await update(id, { active: !item.active });
   }, [update]);
 
-  return { list, add, update, remove, toggle };
+  return { list, refresh, add, update, remove, toggle };
 }
