@@ -4,6 +4,7 @@ const router = express.Router();
 const DutyRule = require('../models/DutyRule');
 const RuleEngine = require('../services/ruleEngine');
 const { withHospitalFilter } = require('../middleware/hospital');
+const { requireRole } = require('../middleware/authz');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
@@ -25,7 +26,7 @@ router.get('/', async (req, res) => {
 });
 
 // PUT /api/duty-rules
-router.put('/', async (req, res) => {
+router.put('/', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const {
       serviceId,
@@ -112,7 +113,7 @@ router.get('/:serviceId', async (req, res) => {
  * POST /api/duty-rules
  * Yeni kural oluştur
  */
-router.post('/', async (req, res) => {
+router.post('/', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const {
       departman,
@@ -181,7 +182,7 @@ router.post('/', async (req, res) => {
  * PUT /api/duty-rules/:id
  * Kuralı güncelle
  */
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -233,7 +234,7 @@ router.put('/:id', async (req, res) => {
  * DELETE /api/duty-rules/:id
  * Kuralı sil (deactivate)
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -268,7 +269,7 @@ router.delete('/:id', async (req, res) => {
  * POST /api/duty-rules/test
  * Kuralları test et
  */
-router.post('/test', async (req, res) => {
+router.post('/test', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const { serviceId, testScenario } = req.body;
 
@@ -303,7 +304,7 @@ router.post('/test', async (req, res) => {
  * POST /api/duty-rules/validate-shift
  * Vardiyayı valide et
  */
-router.post('/validate-shift', async (req, res) => {
+router.post('/validate-shift', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const { serviceId, person, shift, date, assignments } = req.body;
 
@@ -342,7 +343,7 @@ router.post('/validate-shift', async (req, res) => {
  * POST /api/duty-rules/check-eligibility
  * Personelin uygunluğunu kontrol et
  */
-router.post('/check-eligibility', async (req, res) => {
+router.post('/check-eligibility', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const { serviceId, person, taskCode } = req.body;
 
@@ -377,7 +378,7 @@ router.post('/check-eligibility', async (req, res) => {
  * POST /api/duty-rules/calculate-hours
  * Saatleri hesapla
  */
-router.post('/calculate-hours', async (req, res) => {
+router.post('/calculate-hours', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const { serviceId, person, newShiftHours, assignments, date } = req.body;
 

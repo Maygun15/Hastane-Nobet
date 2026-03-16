@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
+const { requireRole } = require(path.join(__dirname, '..', 'middleware', 'authz.js'));
 
 // Models
 const WorkArea = require(path.join(__dirname, '..', 'models', 'WorkArea.js'));
@@ -35,7 +36,7 @@ router.get('/work-areas/:id', async (req, res) => {
 });
 
 // POST new work area
-router.post('/work-areas', async (req, res) => {
+router.post('/work-areas', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const { name, description, color } = req.body;
     if (!name) return res.status(400).json({ message: 'İsim gerekli' });
@@ -53,7 +54,7 @@ router.post('/work-areas', async (req, res) => {
 });
 
 // PUT update work area
-router.put('/work-areas/:id', async (req, res) => {
+router.put('/work-areas/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const { name, description, color, status } = req.body;
     const area = await WorkArea.findOneAndUpdate(
@@ -70,7 +71,7 @@ router.put('/work-areas/:id', async (req, res) => {
 });
 
 // DELETE work area
-router.delete('/work-areas/:id', async (req, res) => {
+router.delete('/work-areas/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const area = await WorkArea.findOneAndDelete(withHospitalFilter(req, { _id: req.params.id }));
     if (!area) return res.status(404).json({ message: 'Çalışma alanı bulunamadı' });
@@ -109,7 +110,7 @@ router.get('/working-hours/:id', async (req, res) => {
 });
 
 // POST new working hours
-router.post('/working-hours', async (req, res) => {
+router.post('/working-hours', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const { name, startTime, endTime, workAreaId, isDefault } = req.body;
     if (!name || !startTime || !endTime) {
@@ -131,7 +132,7 @@ router.post('/working-hours', async (req, res) => {
 });
 
 // PUT update working hours
-router.put('/working-hours/:id', async (req, res) => {
+router.put('/working-hours/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const { name, startTime, endTime, workAreaId, isDefault, status } = req.body;
     const hours = await WorkingHours.findOneAndUpdate(
@@ -148,7 +149,7 @@ router.put('/working-hours/:id', async (req, res) => {
 });
 
 // DELETE working hours
-router.delete('/working-hours/:id', async (req, res) => {
+router.delete('/working-hours/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const hours = await WorkingHours.findOneAndDelete(withHospitalFilter(req, { _id: req.params.id }));
     if (!hours) return res.status(404).json({ message: 'Çalışma saati bulunamadı' });
@@ -182,7 +183,7 @@ router.get('/leave-types/:id', async (req, res) => {
 });
 
 // POST new leave type
-router.post('/leave-types', async (req, res) => {
+router.post('/leave-types', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const { name, description, color, category, maxDaysPerYear, paidLeave } = req.body;
     if (!name) return res.status(400).json({ message: 'İsim gerekli' });
@@ -203,7 +204,7 @@ router.post('/leave-types', async (req, res) => {
 });
 
 // PUT update leave type
-router.put('/leave-types/:id', async (req, res) => {
+router.put('/leave-types/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const updates = req.body;
     updates.updatedAt = new Date();
@@ -222,7 +223,7 @@ router.put('/leave-types/:id', async (req, res) => {
 });
 
 // DELETE leave type
-router.delete('/leave-types/:id', async (req, res) => {
+router.delete('/leave-types/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const type = await LeaveType.findOneAndDelete(withHospitalFilter(req, { _id: req.params.id }));
     if (!type) return res.status(404).json({ message: 'İzin türü bulunamadı' });
@@ -268,7 +269,7 @@ router.get('/calendar/:id', async (req, res) => {
 });
 
 // POST new calendar setting
-router.post('/calendar', async (req, res) => {
+router.post('/calendar', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const { name, date, type, isHoliday, startDate, endDate } = req.body;
     if (!name || !date) return res.status(400).json({ message: 'İsim ve tarih gerekli' });
@@ -293,7 +294,7 @@ router.post('/calendar', async (req, res) => {
 });
 
 // PUT update calendar setting
-router.put('/calendar/:id', async (req, res) => {
+router.put('/calendar/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const updates = req.body;
     updates.updatedAt = new Date();
@@ -318,7 +319,7 @@ router.put('/calendar/:id', async (req, res) => {
 });
 
 // DELETE calendar setting
-router.delete('/calendar/:id', async (req, res) => {
+router.delete('/calendar/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const setting = await CalendarSetting.findOneAndDelete(withHospitalFilter(req, { _id: req.params.id }));
     if (!setting) return res.status(404).json({ message: 'Takvim ayarı bulunamadı' });
@@ -352,7 +353,7 @@ router.get('/request-types/:id', async (req, res) => {
 });
 
 // POST new request type
-router.post('/request-types', async (req, res) => {
+router.post('/request-types', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const { name, description, category, requiresApproval } = req.body;
     if (!name) return res.status(400).json({ message: 'İsim gerekli' });
@@ -371,7 +372,7 @@ router.post('/request-types', async (req, res) => {
 });
 
 // PUT update request type
-router.put('/request-types/:id', async (req, res) => {
+router.put('/request-types/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const updates = req.body;
     updates.updatedAt = new Date();
@@ -390,7 +391,7 @@ router.put('/request-types/:id', async (req, res) => {
 });
 
 // DELETE request type
-router.delete('/request-types/:id', async (req, res) => {
+router.delete('/request-types/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const type = await RequestType.findOneAndDelete(withHospitalFilter(req, { _id: req.params.id }));
     if (!type) return res.status(404).json({ message: 'İstek türü bulunamadı' });
