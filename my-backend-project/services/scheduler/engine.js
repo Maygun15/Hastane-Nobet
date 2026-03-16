@@ -129,7 +129,7 @@ function runScheduler(context) {
       if (!shift.assignedPersons) shift.assignedPersons = [];
 
       for (let i = 0; i < need; i++) {
-        const rawStaffPool = context.staff.filter((p) => !usedOnDay.has(p.id));
+        const rawStaffPool = buildRawStaffPoolForSlot(context.staff, usedOnDay);
         const candidateBuild = buildEligiblePoolForSlot({
           rawStaffPool,
           day,
@@ -148,48 +148,23 @@ function runScheduler(context) {
           }
         }
 
-        const candidates = candidateBuild.pool.filter((p) =>
-          isAvailable(p, day, context, shift)
-        );
+        const selectionStage = buildSelectionStage({
+          candidateBuild,
+          day,
+          shift,
+          context,
+        });
 
-        const slotAudit = {
-          ...candidateBuild.audit,
-          postConstraintCount: candidates.length,
-        };
-
-        if (!candidates.length) {
-          context.candidateAudit.push(slotAudit);
+        if (!selectionStage.postConstraintPool.length) {
+          context.candidateAudit.push(selectionStage.audit);
           break;
         }
-        const scoredCandidates = candidates.map((candidate) => {
-          const policyResult = evaluatePolicies({ person: candidate }, context);
-          return {
-            id: candidate?.id,
-            person: candidate,
-            policyScore: Number(policyResult?.totalScore || 0),
-            policyBreakdown: Array.isArray(policyResult?.policies) ? policyResult.policies : [],
-            schedulerScore: calculateScore(candidate, day, shift, context),
-          };
-        });
-        scoredCandidates.sort((a, b) => {
-          const schedulerDiff = Number(a.schedulerScore || 0) - Number(b.schedulerScore || 0);
-          if (schedulerDiff !== 0) return schedulerDiff;
-          return Number(b.policyScore || 0) - Number(a.policyScore || 0);
-        });
-        const selected = scoredCandidates[0];
-        context.candidateAudit.push({
-          ...slotAudit,
-          selectedCandidateId: normalizePersonId(selected?.id),
-          selectedSchedulerScore: Number(selected?.schedulerScore || 0),
-          selectedPolicyScore: Number(selected?.policyScore || 0),
-          selectedPolicyBreakdown: Array.isArray(selected?.policyBreakdown)
-            ? selected.policyBreakdown.map(clonePolicyResult)
-            : [],
-          selectionReason: determineSelectionReason(scoredCandidates),
-          topCandidates: buildTopCandidateSummary(scoredCandidates, selected?.id),
-        });
-        assign(selected?.person, day, shift, context);
-        if (selected?.id) usedOnDay.add(selected.id);
+
+        context.candidateAudit.push(selectionStage.audit);
+        assign(selectionStage.selectedCandidate?.person, day, shift, context);
+        if (selectionStage.selectedCandidate?.id) {
+          usedOnDay.add(selectionStage.selectedCandidate.id);
+        }
       }
 
       if (shift.assignedPersons.length < need) {
@@ -209,6 +184,10 @@ function runScheduler(context) {
   }
 
   return context;
+}
+
+function buildRawStaffPoolForSlot(staff = [], usedOnDay = new Set()) {
+  return (Array.isArray(staff) ? staff : []).filter((person) => !usedOnDay.has(person.id));
 }
 
 function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null, context = null, slotIndex = 0 } = {}) {
@@ -324,6 +303,95 @@ function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null,
       shadowError: shadowResult.error,
     };
   }
+}
+
+function buildSelectionStage({ candidateBuild = null, day = null, shift = null, context = null } = {}) {
+  const candidateBuilderEligiblePool = Array.isArray(candidateBuild?.pool) ? candidateBuild.pool : [];
+  const postConstraintPool = buildPostConstraintPool({
+    candidatePool: candidateBuilderEligiblePool,
+    day,
+    shift,
+    context,
+  });
+  const scoredCandidates = scoreCandidatesForSelection({
+    candidatePool: postConstraintPool,
+    day,
+    shift,
+    context,
+  });
+  const selectedCandidate = selectCandidateFromScoredPool(scoredCandidates);
+
+  return {
+    rawPoolCount: Number(candidateBuild?.audit?.inputStaffCount || 0),
+    candidateBuilderEligiblePool,
+    postConstraintPool,
+    scoredCandidates,
+    selectedCandidate,
+    audit: buildSelectionAudit({
+      candidateBuildAudit: candidateBuild?.audit || {},
+      candidateBuilderEligiblePool,
+      postConstraintPool,
+      scoredCandidates,
+      selectedCandidate,
+    }),
+  };
+}
+
+function buildPostConstraintPool({ candidatePool = [], day = null, shift = null, context = null } = {}) {
+  return (Array.isArray(candidatePool) ? candidatePool : []).filter((person) =>
+    isAvailable(person, day, context, shift)
+  );
+}
+
+function scoreCandidatesForSelection({ candidatePool = [], day = null, shift = null, context = null } = {}) {
+  const scoredCandidates = (Array.isArray(candidatePool) ? candidatePool : []).map((candidate) => {
+    const policyResult = evaluatePolicies({ person: candidate }, context);
+    return {
+      id: candidate?.id,
+      person: candidate,
+      policyScore: Number(policyResult?.totalScore || 0),
+      policyBreakdown: Array.isArray(policyResult?.policies) ? policyResult.policies : [],
+      schedulerScore: calculateScore(candidate, day, shift, context),
+    };
+  });
+
+  scoredCandidates.sort((a, b) => {
+    const schedulerDiff = Number(a.schedulerScore || 0) - Number(b.schedulerScore || 0);
+    if (schedulerDiff !== 0) return schedulerDiff;
+    return Number(b.policyScore || 0) - Number(a.policyScore || 0);
+  });
+
+  return scoredCandidates;
+}
+
+function selectCandidateFromScoredPool(scoredCandidates = []) {
+  if (!Array.isArray(scoredCandidates) || !scoredCandidates.length) return null;
+  return scoredCandidates[0];
+}
+
+function buildSelectionAudit({
+  candidateBuildAudit = {},
+  candidateBuilderEligiblePool = [],
+  postConstraintPool = [],
+  scoredCandidates = [],
+  selectedCandidate = null,
+} = {}) {
+  return {
+    ...candidateBuildAudit,
+    candidateBuilderEligibleCount: Array.isArray(candidateBuilderEligiblePool)
+      ? candidateBuilderEligiblePool.length
+      : 0,
+    postConstraintCount: Array.isArray(postConstraintPool) ? postConstraintPool.length : 0,
+    scoredCandidateCount: Array.isArray(scoredCandidates) ? scoredCandidates.length : 0,
+    selectedCandidateId: normalizePersonId(selectedCandidate?.id),
+    selectedSchedulerScore: Number(selectedCandidate?.schedulerScore || 0),
+    selectedPolicyScore: Number(selectedCandidate?.policyScore || 0),
+    selectedPolicyBreakdown: Array.isArray(selectedCandidate?.policyBreakdown)
+      ? selectedCandidate.policyBreakdown.map(clonePolicyResult)
+      : [],
+    selectionReason: determineSelectionReason(scoredCandidates),
+    topCandidates: buildTopCandidateSummary(scoredCandidates, selectedCandidate?.id),
+  };
 }
 
 function collectSlotShadowObservations({ rawStaffPool = [], day = null, shift = null, context = null } = {}) {
