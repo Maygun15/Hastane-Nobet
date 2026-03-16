@@ -181,12 +181,11 @@ function runScheduler(context) {
       }
 
       if (shift.assignedPersons.length < need) {
-        if (!context.issues) context.issues = [];
-        context.issues.push({
-          date: day.date,
-          shiftId: shift.id || shift.code || "",
+        recordNoCandidateIssue({
+          context,
+          day,
+          shift,
           missing: need - shift.assignedPersons.length,
-          reason: "NO_CANDIDATE",
         });
       }
     }
@@ -260,27 +259,15 @@ function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null,
     const rejected = Array.isArray(candidateResult?.rejected) ? candidateResult.rejected : [];
     const fallbackPoolAfterHardFilter = filterFallbackPoolByHardBlocks(fallbackPool, rejected, context);
     const sectionEligibilityMetrics = buildSectionEligibilityMetrics(candidateResult);
-    const audit = {
-      ...baseAudit,
-      eligibleCount: eligiblePeople.length,
-      rejectedCount: rejected.length,
-      hardFilteredByCandidateBuilderCount:
-        Math.max(0, fallbackPool.length - fallbackPoolAfterHardFilter.length),
-      hardFilteredBlockingRules: summarizeBlockingRules(rejected, context),
-      roleEligibilityHardRejectCount: countHardRejectedByRule(rejected, "ROLE_ELIGIBILITY"),
-      sectionEligibilityCheckedCount: sectionEligibilityMetrics.checkedCount,
-      sectionEligibilityHardRejectCount: sectionEligibilityMetrics.hardRejectCount,
-      sectionEligibilityPassCount: sectionEligibilityMetrics.passCount,
-      rejected: rejected.map((item) => ({
-        personId: item?.personId || null,
-        failedRuleCodes: Array.isArray(item?.failedRules)
-          ? item.failedRules.map((rule) => rule?.code).filter(Boolean)
-          : [],
-        hardRejected: item?.hardRejected === true,
-        blockingRules: Array.isArray(item?.blockingRules) ? item.blockingRules.filter(Boolean) : [],
-        reasonCodes: Array.isArray(item?.reasonCodes) ? item.reasonCodes.filter(Boolean) : [],
-      })),
-    };
+    const audit = buildCandidateBuilderAuditEntry({
+      baseAudit,
+      fallbackPool,
+      fallbackPoolAfterHardFilter,
+      eligiblePeople,
+      rejected,
+      sectionEligibilityMetrics,
+      context,
+    });
 
     if (eligiblePeople.length) {
       return {
@@ -296,8 +283,10 @@ function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null,
       pool: fallbackPoolAfterHardFilter,
       audit: {
         ...audit,
-        fallbackUsed: true,
-        fallbackReason: "NO_ELIGIBLE_FROM_CANDIDATE_BUILDER",
+        ...buildFallbackAuditSummary({
+          fallbackUsed: true,
+          fallbackReason: "NO_ELIGIBLE_FROM_CANDIDATE_BUILDER",
+        }),
       },
       shadowObservations: shadowResult.observations,
       shadowError: shadowResult.error,
@@ -308,9 +297,11 @@ function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null,
       pool: fallbackPool,
       audit: {
         ...baseAudit,
-        fallbackUsed: true,
-        fallbackReason: "CANDIDATE_BUILDER_ERROR",
-        error: error?.message || "Unknown candidate builder error",
+        ...buildFallbackAuditSummary({
+          fallbackUsed: true,
+          fallbackReason: "CANDIDATE_BUILDER_ERROR",
+          error: error?.message || "Unknown candidate builder error",
+        }),
       },
       shadowObservations: shadowResult.observations,
       shadowError: shadowResult.error,
@@ -340,7 +331,7 @@ function buildSelectionStage({ candidateBuild = null, day = null, shift = null, 
     postConstraintPool,
     scoredCandidates,
     selectedCandidate,
-    audit: buildSelectionAudit({
+    audit: buildCandidateAuditEntry({
       candidateBuildAudit: candidateBuild?.audit || {},
       candidateBuilderEligiblePool,
       postConstraintPool,
@@ -382,7 +373,39 @@ function selectCandidateFromScoredPool(scoredCandidates = []) {
   return scoredCandidates[0];
 }
 
-function buildSelectionAudit({
+function buildCandidateBuilderAuditEntry({
+  baseAudit = {},
+  fallbackPool = [],
+  fallbackPoolAfterHardFilter = [],
+  eligiblePeople = [],
+  rejected = [],
+  sectionEligibilityMetrics = {},
+  context = null,
+} = {}) {
+  return {
+    ...baseAudit,
+    eligibleCount: Array.isArray(eligiblePeople) ? eligiblePeople.length : 0,
+    rejectedCount: Array.isArray(rejected) ? rejected.length : 0,
+    hardFilteredByCandidateBuilderCount:
+      Math.max(0, Number(fallbackPool.length || 0) - Number(fallbackPoolAfterHardFilter.length || 0)),
+    hardFilteredBlockingRules: summarizeBlockingRules(rejected, context),
+    roleEligibilityHardRejectCount: countHardRejectedByRule(rejected, "ROLE_ELIGIBILITY"),
+    sectionEligibilityCheckedCount: Number(sectionEligibilityMetrics?.checkedCount || 0),
+    sectionEligibilityHardRejectCount: Number(sectionEligibilityMetrics?.hardRejectCount || 0),
+    sectionEligibilityPassCount: Number(sectionEligibilityMetrics?.passCount || 0),
+    rejected: buildRejectedCandidateSummary(rejected),
+  };
+}
+
+function buildFallbackAuditSummary({ fallbackUsed = false, fallbackReason = null, error = null } = {}) {
+  return {
+    fallbackUsed: fallbackUsed === true,
+    fallbackReason: fallbackReason || null,
+    ...(error ? { error } : {}),
+  };
+}
+
+function buildCandidateAuditEntry({
   candidateBuildAudit = {},
   candidateBuilderEligiblePool = [],
   postConstraintPool = [],
@@ -391,6 +414,22 @@ function buildSelectionAudit({
 } = {}) {
   return {
     ...candidateBuildAudit,
+    ...buildSelectionExplainability({
+      candidateBuilderEligiblePool,
+      postConstraintPool,
+      scoredCandidates,
+      selectedCandidate,
+    }),
+  };
+}
+
+function buildSelectionExplainability({
+  candidateBuilderEligiblePool = [],
+  postConstraintPool = [],
+  scoredCandidates = [],
+  selectedCandidate = null,
+} = {}) {
+  return {
     candidateBuilderEligibleCount: Array.isArray(candidateBuilderEligiblePool)
       ? candidateBuilderEligiblePool.length
       : 0,
@@ -517,6 +556,18 @@ function normalizePersonId(value) {
   return normalized || null;
 }
 
+function buildRejectedCandidateSummary(rejected = []) {
+  return (Array.isArray(rejected) ? rejected : []).map((item) => ({
+    personId: item?.personId || null,
+    failedRuleCodes: Array.isArray(item?.failedRules)
+      ? item.failedRules.map((rule) => rule?.code).filter(Boolean)
+      : [],
+    hardRejected: item?.hardRejected === true,
+    blockingRules: Array.isArray(item?.blockingRules) ? item.blockingRules.filter(Boolean) : [],
+    reasonCodes: Array.isArray(item?.reasonCodes) ? item.reasonCodes.filter(Boolean) : [],
+  }));
+}
+
 function countHardRejectedByRule(rejected, ruleCode) {
   const normalizedRuleCode = String(ruleCode || "").trim();
   if (!normalizedRuleCode) return 0;
@@ -603,6 +654,17 @@ function clonePolicyResult(policyResult) {
         ? { ...policyResult.meta }
         : {},
   };
+}
+
+function recordNoCandidateIssue({ context = null, day = null, shift = null, missing = 0 } = {}) {
+  if (!context) return;
+  if (!context.issues) context.issues = [];
+  context.issues.push({
+    date: day?.date || null,
+    shiftId: shift?.id || shift?.code || "",
+    missing: Number(missing || 0),
+    reason: "NO_CANDIDATE",
+  });
 }
 
 module.exports = { runScheduler, assign };
