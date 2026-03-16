@@ -52,6 +52,30 @@ function buildMonthlyWriteBackDiagnostic(error) {
   };
 }
 
+function isGeneratedPayloadTooLargeError(error) {
+  const message = safeDiagnosticMessage(error, '').toLowerCase();
+  return (
+    (message.includes('offset') && message.includes('out of range')) ||
+    message.includes('bson') ||
+    message.includes('object to insert too large') ||
+    message.includes('document is larger than') ||
+    message.includes('rangeerror')
+  );
+}
+
+function buildGeneratedPayloadSizeDiagnostic(error) {
+  return {
+    ok: false,
+    stage: 'GENERATED_WRITE',
+    severity: 'warning',
+    code: 'GENERATED_PAYLOAD_TOO_LARGE',
+    message: safeDiagnosticMessage(
+      error,
+      'Generated scheduler payload exceeded persistence size limits; explainability was truncated.'
+    ),
+  };
+}
+
 function attachMonthlyWriteBackDiagnostic(data = {}, diagnostic = null) {
   if (!diagnostic || typeof diagnostic !== 'object') return data;
   const nextDebug =
@@ -61,6 +85,26 @@ function attachMonthlyWriteBackDiagnostic(data = {}, diagnostic = null) {
   return {
     ...data,
     debug: nextDebug,
+  };
+}
+
+function attachGeneratedWriteDiagnostic(data = {}, diagnostic = null) {
+  if (!diagnostic || typeof diagnostic !== 'object') return data;
+  const baseDebug =
+    data?.debug && typeof data.debug === 'object' && !Array.isArray(data.debug)
+      ? data.debug
+      : {};
+  return {
+    ...data,
+    candidateAudit: [],
+    shadowAudit: null,
+    debug: {
+      ...baseDebug,
+      generatedWrite: diagnostic,
+      explainabilityTruncated: true,
+      candidateAuditEntriesBeforeTruncation: Array.isArray(data?.candidateAudit) ? data.candidateAudit.length : 0,
+      shadowAuditPresentBeforeTruncation: Boolean(data?.shadowAudit),
+    },
   };
 }
 
@@ -245,21 +289,45 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     return { data, rules, weights, sourceScheduleId: scheduleDoc?._id || null };
   }
 
-  let doc = await GeneratedSchedule.create(
-    buildGeneratedSchedulePayload({
-      hospitalId,
-      sectionId,
-      serviceId,
-      role,
-      year,
-      month,
-      scheduleDoc,
-      data,
-      rules,
-      weights,
-      userId,
-    })
-  );
+  let persistedData = data;
+  let doc = null;
+  try {
+    doc = await GeneratedSchedule.create(
+      buildGeneratedSchedulePayload({
+        hospitalId,
+        sectionId,
+        serviceId,
+        role,
+        year,
+        month,
+        scheduleDoc,
+        data: persistedData,
+        rules,
+        weights,
+        userId,
+      })
+    );
+  } catch (error) {
+    if (!isGeneratedPayloadTooLargeError(error)) throw error;
+
+    const generatedWriteDiagnostic = buildGeneratedPayloadSizeDiagnostic(error);
+    persistedData = attachGeneratedWriteDiagnostic(data, generatedWriteDiagnostic);
+    doc = await GeneratedSchedule.create(
+      buildGeneratedSchedulePayload({
+        hospitalId,
+        sectionId,
+        serviceId,
+        role,
+        year,
+        month,
+        scheduleDoc,
+        data: persistedData,
+        rules,
+        weights,
+        userId,
+      })
+    );
+  }
 
   // MonthlySchedule write-back intentionally stays assignment-only:
   // legacy monthly readers should not become explainability authorities.
@@ -267,13 +335,13 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     if (scheduleDoc?._id) {
       await MonthlySchedule.findByIdAndUpdate(
         scheduleDoc._id,
-        { $set: buildMonthlyScheduleWriteback({ data }) },
+        { $set: buildMonthlyScheduleWriteback({ data: persistedData }) },
         { new: true }
       );
     }
   } catch (e) {
     const monthlyWriteBackDiagnostic = buildMonthlyWriteBackDiagnostic(e);
-    Object.assign(data, attachMonthlyWriteBackDiagnostic(data, monthlyWriteBackDiagnostic));
+    Object.assign(persistedData, attachMonthlyWriteBackDiagnostic(persistedData, monthlyWriteBackDiagnostic));
     console.warn('[scheduler] MonthlySchedule assignments yazma hatası:', e.message);
     try {
       if (doc?._id) {
@@ -288,7 +356,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     }
   }
 
-  return { data, rules, weights, generatedId: String(doc._id) };
+  return { data: persistedData, rules, weights, generatedId: String(doc._id) };
 }
 
 module.exports = {
