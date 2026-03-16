@@ -269,9 +269,15 @@ function pickDefaultShiftCode(area, shifts) {
 function createEmptyExplainability() {
   return {
     generatedId: null,
+    sourceScheduleId: null,
+    generatedCreatedAt: null,
+    generatedUpdatedAt: null,
+    monthlyWriteBack: null,
     candidateAudit: [],
     shadowAudit: null,
     selectedPolicyBreakdowns: [],
+    isStale: false,
+    staleReasons: [],
   };
 }
 
@@ -289,9 +295,83 @@ function extractGeneratedExplainability(scheduleDoc) {
 
   return {
     generatedId: scheduleDoc?.id || (scheduleDoc?._id ? String(scheduleDoc._id) : null),
+    sourceScheduleId: scheduleDoc?.sourceScheduleId ? String(scheduleDoc.sourceScheduleId) : null,
+    generatedCreatedAt: scheduleDoc?.createdAt || null,
+    generatedUpdatedAt: scheduleDoc?.updatedAt || null,
+    monthlyWriteBack:
+      data?.debug?.monthlyWriteBack && typeof data.debug.monthlyWriteBack === "object"
+        ? data.debug.monthlyWriteBack
+        : null,
     candidateAudit,
     shadowAudit,
     selectedPolicyBreakdowns,
+    isStale: false,
+    staleReasons: [],
+  };
+}
+
+function parseTimestamp(value) {
+  if (!value) return null;
+  const ts = Date.parse(value);
+  return Number.isFinite(ts) ? ts : null;
+}
+
+function getExplainabilityStaleReasons({
+  explainability = null,
+  monthlyReadModel = null,
+  autoSaveStatus = "idle",
+} = {}) {
+  const reasons = [];
+  if (!explainability?.generatedId) return reasons;
+
+  if (explainability?.monthlyWriteBack?.ok === false) {
+    reasons.push("MONTHLY_WRITE_BACK_FAILED");
+  }
+
+  const monthlyScheduleId = monthlyReadModel?.scheduleId ? String(monthlyReadModel.scheduleId) : null;
+  const sourceScheduleId = explainability?.sourceScheduleId ? String(explainability.sourceScheduleId) : null;
+  if (monthlyScheduleId && sourceScheduleId && monthlyScheduleId !== sourceScheduleId) {
+    reasons.push("SOURCE_SCHEDULE_MISMATCH");
+  }
+
+  const monthlyGeneratedAtTs = parseTimestamp(monthlyReadModel?.generatedAt);
+  const generatedCreatedAtTs = parseTimestamp(explainability?.generatedCreatedAt);
+  if (monthlyGeneratedAtTs != null && generatedCreatedAtTs != null) {
+    const skewMs = Math.abs(monthlyGeneratedAtTs - generatedCreatedAtTs);
+    if (skewMs > 60 * 1000) {
+      reasons.push("GENERATED_RUN_TIMESTAMP_MISMATCH");
+    }
+  }
+
+  const monthlyUpdatedAtTs = parseTimestamp(monthlyReadModel?.updatedAt);
+  if (monthlyUpdatedAtTs != null && monthlyGeneratedAtTs != null && monthlyUpdatedAtTs > monthlyGeneratedAtTs + 1000) {
+    reasons.push("MONTHLY_UPDATED_AFTER_GENERATION");
+  }
+
+  if (autoSaveStatus === "dirty" || autoSaveStatus === "saving" || autoSaveStatus === "error") {
+    reasons.push("EDITOR_HAS_LOCAL_CHANGES");
+  }
+
+  return Array.from(new Set(reasons));
+}
+
+function applyExplainabilityGuard({
+  explainability = null,
+  monthlyReadModel = null,
+  autoSaveStatus = "idle",
+} = {}) {
+  const base = explainability && typeof explainability === "object"
+    ? explainability
+    : createEmptyExplainability();
+  const staleReasons = getExplainabilityStaleReasons({
+    explainability: base,
+    monthlyReadModel,
+    autoSaveStatus,
+  });
+  return {
+    ...base,
+    isStale: staleReasons.length > 0,
+    staleReasons,
   };
 }
 
@@ -504,7 +584,12 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const [loadingRemote, setLoadingRemote] = useState(false);
   const [saving, setSaving] = useState(false);
   const [lastSavedInfo, setLastSavedInfo] = useState(null);
-  const [generatedExplainability, setGeneratedExplainability] = useState(() => createEmptyExplainability());
+  const [rawGeneratedExplainability, setRawGeneratedExplainability] = useState(() => createEmptyExplainability());
+  const [monthlyReadModelState, setMonthlyReadModelState] = useState(() => ({
+    scheduleId: null,
+    updatedAt: null,
+    generatedAt: null,
+  }));
   const serviceKey = serviceId == null ? "" : String(serviceId);
   const autoSaveTimerRef = useRef(null);
   const lastSavedSignatureRef = useRef(null);
@@ -558,7 +643,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
   const loadGeneratedExplainability = useCallback(async () => {
     if (!sectionId) {
-      setGeneratedExplainability(createEmptyExplainability());
+      setRawGeneratedExplainability(createEmptyExplainability());
       return createEmptyExplainability();
     }
 
@@ -571,17 +656,27 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         month: month1,
       });
       const next = generated ? extractGeneratedExplainability(generated) : createEmptyExplainability();
-      setGeneratedExplainability(next);
+      setRawGeneratedExplainability(next);
       return next;
     } catch (err) {
       if (err?.status !== 404) {
         console.error("[DutyRowsEditor] getGeneratedSchedule err:", err);
       }
       const empty = createEmptyExplainability();
-      setGeneratedExplainability(empty);
+      setRawGeneratedExplainability(empty);
       return empty;
     }
   }, [sectionId, serviceKey, role, year, month1]);
+
+  const generatedExplainability = useMemo(
+    () =>
+      applyExplainabilityGuard({
+        explainability: rawGeneratedExplainability,
+        monthlyReadModel: monthlyReadModelState,
+        autoSaveStatus,
+      }),
+    [rawGeneratedExplainability, monthlyReadModelState, autoSaveStatus]
+  );
 
   const computeSignature = useCallback(
     () => makeSignature(rows, overrides, roster, preview, aiPlan, pins, rules),
@@ -1273,6 +1368,11 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             updatedAt: schedule.updatedAt || schedule.createdAt || null,
             updatedBy: schedule.updatedBy || schedule.createdBy || null,
           });
+          setMonthlyReadModelState({
+            scheduleId: schedule.id || null,
+            updatedAt: schedule.updatedAt || schedule.createdAt || null,
+            generatedAt: data.generatedAt || null,
+          });
           if (autoSaveTimerRef.current) {
             clearTimeout(autoSaveTimerRef.current);
             autoSaveTimerRef.current = null;
@@ -1291,6 +1391,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         } else {
           savedAssignmentsRef.current = [];
           setLastSavedInfo(null);
+          setMonthlyReadModelState({ scheduleId: null, updatedAt: null, generatedAt: null });
           if (autoSaveTimerRef.current) {
             clearTimeout(autoSaveTimerRef.current);
             autoSaveTimerRef.current = null;
@@ -1304,6 +1405,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         if (err?.status === 404) {
           savedAssignmentsRef.current = [];
           setLastSavedInfo(null);
+          setMonthlyReadModelState({ scheduleId: null, updatedAt: null, generatedAt: null });
           if (autoSaveTimerRef.current) {
             clearTimeout(autoSaveTimerRef.current);
             autoSaveTimerRef.current = null;
@@ -1330,7 +1432,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     let cancelled = false;
     (async () => {
       if (!sectionId) {
-        if (!cancelled) setGeneratedExplainability(createEmptyExplainability());
+        if (!cancelled) setRawGeneratedExplainability(createEmptyExplainability());
         return;
       }
       try {
@@ -1342,7 +1444,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           month: month1,
         });
         if (cancelled) return;
-        setGeneratedExplainability(
+        setRawGeneratedExplainability(
           generated ? extractGeneratedExplainability(generated) : createEmptyExplainability()
         );
       } catch (err) {
@@ -1350,7 +1452,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         if (err?.status !== 404) {
           console.error("[DutyRowsEditor] getGeneratedSchedule err:", err);
         }
-        setGeneratedExplainability(createEmptyExplainability());
+        setRawGeneratedExplainability(createEmptyExplainability());
       }
     })();
     return () => {
@@ -1849,7 +1951,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     saving ||
     autoSaveStatus !== "idle" ||
     hasLastSaved ||
-    explainabilityReady;
+    explainabilityReady ||
+    generatedExplainability.isStale;
 
   /* Render (toolbar yok) */
   return (
@@ -1890,6 +1993,14 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           {!loadingRemote && explainabilityReady && (
             <span className="text-slate-600">
               Explainability: {generatedExplainability.candidateAudit.length} slot audit, {shadowObservationCount} shadow observation, {generatedExplainability.selectedPolicyBreakdowns.length} policy trace
+            </span>
+          )}
+          {!loadingRemote && generatedExplainability.isStale && (
+            <span className="text-amber-700">
+              Explainability uyarısı: bu trace mevcut monthly revision ile tam eşleşmeyebilir
+              {generatedExplainability.staleReasons.length
+                ? ` (${generatedExplainability.staleReasons.join(", ")})`
+                : ""}
             </span>
           )}
         </div>

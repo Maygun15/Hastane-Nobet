@@ -475,6 +475,146 @@ async function runAuditPersistenceCheck() {
   }
 }
 
+async function runMonthlyWriteBackDiagnosticCheck() {
+  const generatedSchedulePath = path.join(backendRoot, "models", "GeneratedSchedule.js");
+  const monthlySchedulePath = path.join(backendRoot, "models", "MonthlySchedule.js");
+  const holidayServicePath = path.join(backendRoot, "services", "holidayService.js");
+  const schedulerIndexPath = path.join(backendRoot, "services", "scheduler", "index.js");
+  const draftRosterPath = path.join(backendRoot, "services", "scheduler", "draftRoster.js");
+  const ruleResolverPath = path.join(backendRoot, "services", "scheduler", "ruleResolver.js");
+  const staffResolverPath = path.join(backendRoot, "services", "scheduler", "staffResolver.js");
+  const validatorPath = path.join(backendRoot, "services", "scheduler", "validator.js");
+  const holidayPolicyAdapterPath = path.join(backendRoot, "services", "scheduler", "holidayPolicyAdapter.js");
+  const inputBuilderPath = path.join(backendRoot, "services", "scheduler", "inputBuilder.js");
+  const schedulerServicePath = path.join(backendRoot, "services", "schedulerService.js");
+
+  const originalCache = new Map();
+  const touchedModules = [
+    generatedSchedulePath,
+    monthlySchedulePath,
+    holidayServicePath,
+    schedulerIndexPath,
+    draftRosterPath,
+    ruleResolverPath,
+    staffResolverPath,
+    validatorPath,
+    holidayPolicyAdapterPath,
+    inputBuilderPath,
+    schedulerServicePath,
+  ];
+
+  for (const modulePath of touchedModules) {
+    try {
+      const resolved = require.resolve(modulePath);
+      originalCache.set(resolved, require.cache[resolved]);
+      delete require.cache[resolved];
+    } catch {
+      // ignore missing cache entry
+    }
+  }
+
+  let createdPayload = null;
+  let generatedUpdate = null;
+  const putMock = (modulePath, exportsValue) => {
+    const resolved = require.resolve(modulePath);
+    require.cache[resolved] = {
+      id: resolved,
+      filename: resolved,
+      loaded: true,
+      exports: exportsValue,
+    };
+  };
+
+  try {
+    putMock(generatedSchedulePath, {
+      create: async (payload) => {
+        createdPayload = payload;
+        return { _id: "generated-writeback-failure" };
+      },
+      findByIdAndUpdate: async (_id, update) => {
+        generatedUpdate = update;
+        return null;
+      },
+    });
+    putMock(monthlySchedulePath, {
+      findOne: () => ({ lean: async () => ({ _id: "monthly-1", data: {} }) }),
+      findByIdAndUpdate: async () => {
+        throw new Error("monthly write-back unavailable");
+      },
+    });
+    putMock(holidayServicePath, {
+      listHolidays: async () => [],
+    });
+    putMock(schedulerIndexPath, {
+      generateMonthlyPlan: async () => ({
+        assignments: [{ date: "2026-03-15", shiftId: "D", personId: "p1", personName: "Alice", hours: 8 }],
+        issues: [],
+        candidateAudit: [],
+        shadowAudit: null,
+      }),
+    });
+    putMock(draftRosterPath, {
+      generateDraftRoster: () => ({ assignments: [], issues: [] }),
+    });
+    putMock(ruleResolverPath, {
+      fetchDutyRules: async () => ({ doc: null, rules: {}, weights: {} }),
+      DEFAULT_RULES: {},
+      DEFAULT_WEIGHTS: {},
+    });
+    putMock(staffResolverPath, {
+      resolveStaff: async () => ({ staff: [], debug: { rawCount: 0, filteredCount: 0, usedFallback: false, roleTokens: [] } }),
+    });
+    putMock(validatorPath, {
+      validateAssignments: ({ assignments }) => ({ assignments, issues: [], debug: { hardFiltered: 0 } }),
+    });
+    putMock(holidayPolicyAdapterPath, {
+      applyHolidayPolicies: ({ days }) => days,
+    });
+    putMock(inputBuilderPath, {
+      buildSchedulerInput: ({ payload }) => ({
+        effectiveDefs: payload.defs || [],
+        effectiveOverrides: {},
+        effectiveShiftOptions: [],
+        days: payload.days || [
+          { date: "2026-03-15", weekday: 0, shifts: [{ id: "D", code: "D", serviceId: "svc-1", requiredCount: 1, hours: 8 }] },
+        ],
+        holidayKindByDate: {},
+        shiftMetaByCode: {},
+      }),
+    });
+
+    const { generateSchedule } = require(schedulerServicePath);
+    const result = await generateSchedule({
+      sectionId: "sec-1",
+      serviceId: "svc-1",
+      role: "nurse",
+      year: 2026,
+      month: 3,
+      dryRun: false,
+      userId: "user-1",
+      hospitalId: null,
+      payload: {
+        staff: [{ id: "p1", name: "Alice", active: true, serviceId: "svc-1", stats: { assignmentsThisMonth: 1 } }],
+        days: [
+          { date: "2026-03-15", weekday: 0, shifts: [{ id: "D", code: "D", serviceId: "svc-1", requiredCount: 1, hours: 8 }] },
+        ],
+      },
+    });
+
+    logJson("monthlyWriteBackFailureResult", result?.data?.debug?.monthlyWriteBack || null);
+    logJson("monthlyWriteBackFailurePersistedData", createdPayload?.data?.debug?.monthlyWriteBack || null);
+    logJson("monthlyWriteBackFailureGeneratedUpdate", generatedUpdate || null);
+  } finally {
+    for (const modulePath of touchedModules) {
+      const resolved = require.resolve(modulePath);
+      delete require.cache[resolved];
+      if (originalCache.has(resolved) && originalCache.get(resolved)) {
+        require.cache[resolved] = originalCache.get(resolved);
+      }
+    }
+  }
+}
+
 async function main() {
   printSection("UI PAYLOAD + SHAPE CHECKS");
   runShapeChecks();
@@ -490,6 +630,9 @@ async function main() {
 
   printSection("AUDIT PERSISTENCE");
   await runAuditPersistenceCheck();
+
+  printSection("MONTHLY WRITE-BACK DIAGNOSTIC");
+  await runMonthlyWriteBackDiagnosticCheck();
 }
 
 main().catch((error) => {

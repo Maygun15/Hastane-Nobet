@@ -38,6 +38,32 @@ function buildGeneratedScheduleData({
   };
 }
 
+function safeDiagnosticMessage(error, fallback = 'MonthlySchedule write-back failed.') {
+  const message = error?.message != null ? String(error.message).trim() : '';
+  return message || fallback;
+}
+
+function buildMonthlyWriteBackDiagnostic(error) {
+  return {
+    ok: false,
+    stage: 'MONTHLY_WRITE_BACK',
+    severity: 'warning',
+    message: safeDiagnosticMessage(error),
+  };
+}
+
+function attachMonthlyWriteBackDiagnostic(data = {}, diagnostic = null) {
+  if (!diagnostic || typeof diagnostic !== 'object') return data;
+  const nextDebug =
+    data?.debug && typeof data.debug === 'object' && !Array.isArray(data.debug)
+      ? { ...data.debug, monthlyWriteBack: diagnostic }
+      : { monthlyWriteBack: diagnostic };
+  return {
+    ...data,
+    debug: nextDebug,
+  };
+}
+
 // GeneratedSchedule is the authoritative scheduler write model:
 // full assignments, issues, explainability, and scheduler meta are persisted here.
 function buildGeneratedSchedulePayload({
@@ -219,7 +245,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     return { data, rules, weights, sourceScheduleId: scheduleDoc?._id || null };
   }
 
-  const doc = await GeneratedSchedule.create(
+  let doc = await GeneratedSchedule.create(
     buildGeneratedSchedulePayload({
       hospitalId,
       sectionId,
@@ -246,7 +272,20 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
       );
     }
   } catch (e) {
+    const monthlyWriteBackDiagnostic = buildMonthlyWriteBackDiagnostic(e);
+    Object.assign(data, attachMonthlyWriteBackDiagnostic(data, monthlyWriteBackDiagnostic));
     console.warn('[scheduler] MonthlySchedule assignments yazma hatası:', e.message);
+    try {
+      if (doc?._id) {
+        await GeneratedSchedule.findByIdAndUpdate(
+          doc._id,
+          { $set: { 'data.debug.monthlyWriteBack': monthlyWriteBackDiagnostic } },
+          { new: false }
+        );
+      }
+    } catch (persistErr) {
+      console.warn('[scheduler] GeneratedSchedule monthlyWriteBack diagnostic yazma hatası:', persistErr?.message || persistErr);
+    }
   }
 
   return { data, rules, weights, generatedId: String(doc._id) };

@@ -659,7 +659,6 @@ router.get('/monthly',
       const query = req.scheduleQuery;
       const doc = await MonthlySchedule.findOne(query).lean();
       let scheduleData = doc?.data && typeof doc.data === 'object' ? doc.data : {};
-      let dataChanged = false;
 
       const defs = Array.isArray(scheduleData.defs)
         ? scheduleData.defs
@@ -686,12 +685,13 @@ router.get('/monthly',
           });
           if (rebuilt.length > assignmentCount) {
             scheduleData = { ...scheduleData, assignments: rebuilt };
-            dataChanged = true;
           }
         }
       }
 
       if (doc && Array.isArray(scheduleData.assignments)) {
+        // Keep light response shaping here for legacy monthly consumers.
+        // Repair/persistence is intentionally not performed inside GET.
         const holidays = await listHolidays({ year: query.year, month: query.month, hospitalId: req.hospitalId });
         const holidayKindByDate = buildHolidayKindByDateMap(holidays);
         const sanitized = sanitizeSupervisorAssignments(
@@ -701,7 +701,6 @@ router.get('/monthly',
         );
         if (sanitized.changed) {
           scheduleData = { ...scheduleData, assignments: sanitized.assignments };
-          dataChanged = true;
         }
 
         const overbookTrim = trimOverbookedAssignments({
@@ -714,16 +713,7 @@ router.get('/monthly',
         });
         if (overbookTrim.changed) {
           scheduleData = { ...scheduleData, assignments: overbookTrim.assignments };
-          dataChanged = true;
         }
-      }
-
-      if (doc && dataChanged) {
-        await MonthlySchedule.findByIdAndUpdate(
-          doc._id,
-          { $set: { data: scheduleData } },
-          { new: false }
-        );
       }
 
       const issues =
