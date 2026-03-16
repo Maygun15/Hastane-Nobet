@@ -49,56 +49,8 @@ function assign(person, day, shift, context) {
   if (!person || !day || !shift) return;
   const hours = Number(shift.hours || context.defaultShiftHours || 0);
 
-  person.totalHours = Number(person.totalHours || 0) + (Number.isFinite(hours) ? hours : 0);
-  person.totalShifts = Number(person.totalShifts || 0) + 1;
-  if (!Array.isArray(person.assignedDays)) person.assignedDays = [];
-  if (!person.assignedDays.includes(day.date)) person.assignedDays.push(day.date);
-
-  const diff = daysBetween(person.lastAssignedDate, day.date);
-  person.consecutiveDays = diff === 1 ? Number(person.consecutiveDays || 0) + 1 : 1;
-  person.lastAssignedDate = day.date;
-
-  const wk = getISOWeekKey(day.date);
-  if (wk) {
-    if (!person.weeklyCounts) person.weeklyCounts = {};
-    person.weeklyCounts[wk] = Number(person.weeklyCounts[wk] || 0) + 1;
-  }
-
-  const wd = Number(day.weekday ?? -1);
-  if (!person.weekdayCount) person.weekdayCount = {};
-  if (wd >= 0 && wd <= 6) {
-    person.weekdayCount[wd] = Number(person.weekdayCount[wd] || 0) + 1;
-  }
-
-  if (!person.pairHistory) person.pairHistory = {};
-  if (!shift.assignedPersons) shift.assignedPersons = [];
-
-  // Pair history: selected with already assigned in this shift
-  for (const other of shift.assignedPersons) {
-    if (!other?.id) continue;
-    const key1 = `${person.id}-${other.id}`;
-    const key2 = `${other.id}-${person.id}`;
-    person.pairHistory[key1] = Number(person.pairHistory[key1] || 0) + 1;
-    if (!other.pairHistory) other.pairHistory = {};
-    other.pairHistory[key2] = Number(other.pairHistory[key2] || 0) + 1;
-  }
-
-  shift.assignedPersons.push({ id: person.id, name: person.name || "" });
-
-  const taskKey = getShiftKey(shift);
-  if (taskKey) {
-    if (!person.taskCounts) person.taskCounts = {};
-    person.taskCounts[taskKey] = Number(person.taskCounts[taskKey] || 0) + 1;
-  }
-
-  // last shift snapshot
-  person.lastShift = {
-    date: day.date,
-    code: shift.code || shift.id || "",
-    start: shift.start || null,
-    end: shift.end || null,
-    isNight: !!shift.isNight,
-  };
+  applyAssignmentStateMutation({ person, day, shift, hours });
+  appendAssignedPersonToShift({ person, shift });
 
   if (!context.assignments) context.assignments = [];
   context.assignments.push({
@@ -109,6 +61,67 @@ function assign(person, day, shift, context) {
     personName: person.name || "",
     hours,
   });
+}
+
+// Runtime state authority point:
+// scheduler counters and mutable per-person assignment state are updated here.
+function applyAssignmentStateMutation({ person, day, shift, hours = 0 } = {}) {
+  const safeHours = Number.isFinite(hours) ? hours : 0;
+
+  person.totalHours = Number(person.totalHours || 0) + safeHours;
+  person.totalShifts = Number(person.totalShifts || 0) + 1;
+
+  if (!Array.isArray(person.assignedDays)) person.assignedDays = [];
+  if (!person.assignedDays.includes(day.date)) person.assignedDays.push(day.date);
+
+  const diff = daysBetween(person.lastAssignedDate, day.date);
+  person.consecutiveDays = diff === 1 ? Number(person.consecutiveDays || 0) + 1 : 1;
+  person.lastAssignedDate = day.date;
+
+  const weekKey = getISOWeekKey(day.date);
+  if (weekKey) {
+    if (!person.weeklyCounts) person.weeklyCounts = {};
+    person.weeklyCounts[weekKey] = Number(person.weeklyCounts[weekKey] || 0) + 1;
+  }
+
+  const weekday = Number(day.weekday ?? -1);
+  if (!person.weekdayCount) person.weekdayCount = {};
+  if (weekday >= 0 && weekday <= 6) {
+    person.weekdayCount[weekday] = Number(person.weekdayCount[weekday] || 0) + 1;
+  }
+
+  const taskKey = getShiftKey(shift);
+  if (taskKey) {
+    if (!person.taskCounts) person.taskCounts = {};
+    person.taskCounts[taskKey] = Number(person.taskCounts[taskKey] || 0) + 1;
+  }
+
+  person.lastShift = {
+    date: day.date,
+    code: shift.code || shift.id || "",
+    start: shift.start || null,
+    end: shift.end || null,
+    isNight: !!shift.isNight,
+  };
+}
+
+function appendAssignedPersonToShift({ person, shift } = {}) {
+  if (!person || !shift) return;
+
+  if (!person.pairHistory) person.pairHistory = {};
+  if (!shift.assignedPersons) shift.assignedPersons = [];
+
+  // Pair history: selected with already assigned in this shift.
+  for (const other of shift.assignedPersons) {
+    if (!other?.id) continue;
+    const key1 = `${person.id}-${other.id}`;
+    const key2 = `${other.id}-${person.id}`;
+    person.pairHistory[key1] = Number(person.pairHistory[key1] || 0) + 1;
+    if (!other.pairHistory) other.pairHistory = {};
+    other.pairHistory[key2] = Number(other.pairHistory[key2] || 0) + 1;
+  }
+
+  shift.assignedPersons.push({ id: person.id, name: person.name || "" });
 }
 
 function runScheduler(context) {
