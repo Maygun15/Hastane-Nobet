@@ -12,11 +12,13 @@ const backendRoot = path.join(repoRoot, "my-backend-project");
 const standardProfilePath = path.join(repoRoot, "config", "rules", "standard-profile.json");
 const schedulerRoot = path.join(backendRoot, "services", "scheduler");
 const candidateBuilderRoot = path.join(schedulerRoot, "candidateBuilder");
+const inputBuilderPath = path.join(schedulerRoot, "inputBuilder.js");
 const constraintsPath = path.join(schedulerRoot, "constraints.js");
 const enginePath = path.join(schedulerRoot, "engine.js");
 
 const { buildContext } = require(path.join(schedulerRoot, "index.js"));
 const { runScheduler } = require(path.join(schedulerRoot, "engine.js"));
+const { buildSchedulerInput } = require(inputBuilderPath);
 const RuleEngine = require(path.join(backendRoot, "services", "ruleEngine.js"));
 const { evaluateCandidate } = require(path.join(candidateBuilderRoot, "evaluateCandidate.js"));
 const activeRequiredRule = require(path.join(candidateBuilderRoot, "rules", "activeRequired.rule.js"));
@@ -277,6 +279,43 @@ function runRuleEngineCheck() {
   logJson("ruleEngineActive", {
     assignments: activeResult.assignments,
     issues: activeResult.issues,
+  });
+}
+
+function runPayloadOnlySchedulerInputCheck() {
+  const result = buildSchedulerInput({
+    scheduleDoc: null,
+    payload: {
+      defs: [
+        {
+          id: "row-triage-day",
+          label: "TRIAJ",
+          shiftCode: "D",
+          pattern: [1, 1, 1, 1, 1, 1, 1],
+        },
+      ],
+      overrides: {
+        "row-triage-day": {
+          1: 2,
+          2: 0,
+        },
+      },
+      shiftOptions: [
+        { id: "D", code: "D", hours: 8, start: "08:00", end: "16:00", isNight: false },
+      ],
+    },
+    year: 2026,
+    month: 3,
+    hospitalId: null,
+    holidays: [],
+  });
+
+  logJson("PAYLOAD_ONLY_SCHEDULER_INPUT", {
+    effectiveDefs: result.effectiveDefs,
+    effectiveOverrides: result.effectiveOverrides,
+    dayCount: Array.isArray(result.days) ? result.days.length : 0,
+    firstDay: result.days?.[0] || null,
+    secondDay: result.days?.[1] || null,
   });
 }
 
@@ -888,6 +927,9 @@ async function main() {
 
   printSection("RULE ENGINE PATH");
   runRuleEngineCheck();
+
+  printSection("PAYLOAD ONLY SCHEDULER INPUT");
+  runPayloadOnlySchedulerInputCheck();
 
   printSection("CANDIDATE BUILDER SOFT RULES");
   runCandidateRuleChecks();

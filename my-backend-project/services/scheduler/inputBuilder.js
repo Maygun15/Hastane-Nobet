@@ -183,11 +183,16 @@ function buildSchedulerInput({
   const effectiveShiftOptions = Array.isArray(payload?.shiftOptions)
     ? payload.shiftOptions
     : shiftOptions;
+  const effectiveScheduleData = {
+    defs: effectiveDefs,
+    overrides: effectiveOverrides,
+    shiftOptions: effectiveShiftOptions,
+  };
   const days =
     Array.isArray(payload.days) && payload.days.length
       ? payload.days
-      : scheduleDoc
-      ? buildDaysFromScheduleData({ year, month, data: scheduleDoc.data || {} })
+      : (effectiveDefs && effectiveDefs.length)
+      ? buildDaysFromScheduleData({ year, month, data: effectiveScheduleData })
       : null;
 
   const holidayKindByDate = Object.fromEntries(
