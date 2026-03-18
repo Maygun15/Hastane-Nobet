@@ -1580,6 +1580,12 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const buildRosterFromBackend = useCallback((assignments, issues, defsSource = rows) => {
     const named = {};
     const defsList = Array.isArray(defsSource) ? defsSource : [];
+    const knownPeople = getPeople(role);
+    const knownNameSet = new Set(
+      (Array.isArray(knownPeople) ? knownPeople : [])
+        .map((p) => canonName(p?.fullName || p?.name || ""))
+        .filter(Boolean)
+    );
     const rowLabelById = new Map(defsList.map((r) => [String(r.id), r.label || r.id]));
     const rowIdByLabel = new Map();
     defsList.forEach((r) => {
@@ -1608,7 +1614,16 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       if (!named[day]) named[day] = {};
       if (!named[day][rowId]) named[day][rowId] = [];
       const nm = a.personName || a.name || "";
-      if (nm && !isGroupLabel(nm) && !named[day][rowId].includes(nm)) named[day][rowId].push(nm);
+      const canon = canonName(nm);
+      if (
+        nm &&
+        !isGroupLabel(nm) &&
+        canon &&
+        (!knownNameSet.size || knownNameSet.has(canon)) &&
+        !named[day][rowId].includes(nm)
+      ) {
+        named[day][rowId].push(nm);
+      }
     });
 
     const issueList = (issues || []).map((it) => {
@@ -1621,7 +1636,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     });
 
     return { namedAssignments: named, issues: issueList };
-  }, [rows, daysInMonth]);
+  }, [rows, daysInMonth, role]);
 
   const mergeRosterNamedAssignments = useCallback((baseRoster, addonRoster) => {
     const base = baseRoster && typeof baseRoster === "object" ? { ...baseRoster } : {};

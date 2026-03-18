@@ -2,13 +2,34 @@ const express = require('express');
 const router = express.Router();
 const Setting = require('../models/Setting');
 const { requireAuth, requireRole } = require('../middleware/authz');
-const { withHospitalFilter } = require('../middleware/hospital');
+const { isSuperAdminRole, withHospitalFilter } = require('../middleware/hospital');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
 
 const normalizeKey = (k) => String(k || '').trim();
-const normalizeServiceId = (s) => String(s || '').trim();
+const normalizeServiceId = (s) => {
+  const value = String(s == null ? '' : s).trim();
+  return !value || value.toLowerCase() === 'global' ? '' : value;
+};
+
+function buildSettingScopeFilter(req, key, serviceId) {
+  const filter = { key, serviceId };
+  if (isSuperAdminRole(req.user?.role)) return filter;
+  if (!req.hospitalId) return withHospitalFilter(req, filter);
+  return {
+    ...filter,
+    $or: [
+      { hospitalId: req.hospitalId },
+      { hospitalId: null },
+      { hospitalId: { $exists: false } },
+    ],
+  };
+}
+
+function buildScopedSettingFilter(req, key, serviceId) {
+  return withHospitalFilter(req, { key, serviceId });
+}
 
 async function findLegacySetting(req, key, serviceId) {
   if (!req.hospitalId) return null;
@@ -56,20 +77,24 @@ router.put('/:key', requireAuth, requireRole('admin', 'authorized'), async (req,
   try {
     const key = normalizeKey(req.params.key);
     if (!key) return res.status(400).json({ ok: false, message: 'key gerekli' });
-    const serviceId = normalizeServiceId(req.body?.serviceId || req.query?.serviceId || '');
+    const serviceId = normalizeServiceId(req.body?.serviceId ?? req.query?.serviceId);
     const value = req.body?.value ?? null;
-    const existing = await ensureScopedSetting(req, key, serviceId);
-    let doc;
-
-    if (existing) {
-      existing.value = value;
-      existing.updatedBy = req.user?.uid || null;
-      if (!existing.createdBy) existing.createdBy = req.user?.uid || null;
-      await existing.save();
-      doc = existing.toObject ? existing.toObject() : existing;
-    } else {
+    // First update an existing scoped/legacy record; if none exists, create the scoped record.
+    let doc = await Setting.findOneAndUpdate(
+      buildSettingScopeFilter(req, key, serviceId),
+      {
+        $set: {
+          key,
+          serviceId,
+          value,
+          updatedBy: req.user?.uid || null,
+        },
+      },
+      { new: true }
+    ).lean();
+    if (!doc) {
       doc = await Setting.findOneAndUpdate(
-        withHospitalFilter(req, { key, serviceId }),
+        buildScopedSettingFilter(req, key, serviceId),
         {
           $set: {
             key,
@@ -78,6 +103,7 @@ router.put('/:key', requireAuth, requireRole('admin', 'authorized'), async (req,
             updatedBy: req.user?.uid || null,
           },
           $setOnInsert: {
+            ...(req.hospitalId ? { hospitalId: req.hospitalId } : {}),
             createdBy: req.user?.uid || null,
           },
         },

@@ -20,6 +20,17 @@ const toNum = (v) => {
   const n = Number(String(v).replace(",", "."));
   return Number.isFinite(n) ? n : null;
 };
+const stripDiacritics = (s) =>
+  (s ?? "")
+    .toString()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+const normalizeHeader = (s) =>
+  stripDiacritics(s)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj || {}, key);
 const defaultRule = (code) => DEFAULT_LEAVE_RULES?.[upTR(code)] || null;
 
@@ -73,6 +84,99 @@ function dedupeByCode(items) {
     }
   }
   return Array.from(map.values());
+}
+
+const HEADER_ALIASES = Object.freeze({
+  code: ["kod", "kisaltma", "kisalma", "kisa ad", "kisaadi", "kisa adi", "code", "abbr", "short", "short code"],
+  name: ["ad", "adi", "tur", "tur adi", "tur adı", "turadi", "tur adi", "name", "title", "izin turu", "izin türü"],
+  countsAsWorked: [
+    "calisilmis",
+    "calisilmis say",
+    "calisilmis sayilir",
+    "calisilir",
+    "calisilan",
+    "worked",
+    "counts as worked",
+    "worked count",
+    "worked flag",
+  ],
+  hoursPerDay: ["saat", "gunluk saat", "günlük saat", "hours", "hours per day", "day hours"],
+});
+
+const REJECTION_LABELS = Object.freeze({
+  MISSING_CODE: "Kısaltma eksik",
+  MISSING_NAME: "Tür adı eksik",
+  EMPTY_ROW: "Boş satır",
+  UNKNOWN: "Bilinmeyen neden",
+});
+
+function resolveHeaderIndexes(headerRow = []) {
+  const normalized = headerRow.map(normalizeHeader);
+  const findIndex = (field) =>
+    normalized.findIndex((value) =>
+      HEADER_ALIASES[field].some((alias) => value === normalizeHeader(alias))
+    );
+  const indexes = {
+    code: findIndex("code"),
+    name: findIndex("name"),
+    countsAsWorked: findIndex("countsAsWorked"),
+    hoursPerDay: findIndex("hoursPerDay"),
+  };
+  const hasExplicitHeader = indexes.code >= 0 || indexes.name >= 0;
+  if (!hasExplicitHeader) {
+    indexes.code = 0;
+    indexes.name = 1;
+  }
+  return { indexes, hasExplicitHeader };
+}
+
+function parseImportedRow(raw = {}, rowNumber = 0) {
+  const code = upTR(raw.code ?? "");
+  const name = norm(raw.name ?? "");
+  if (!code && !name) {
+    return { status: "ignored", reason: "EMPTY_ROW", rowNumber };
+  }
+  if (!code) {
+    return { status: "rejected", reason: "MISSING_CODE", rowNumber, raw };
+  }
+  if (!name) {
+    return { status: "rejected", reason: "MISSING_NAME", rowNumber, raw };
+  }
+  return {
+    status: "valid",
+    rowNumber,
+    item: {
+      id: genId(),
+      code,
+      name,
+      ...(raw.countsAsWorked !== undefined ? { countsAsWorked: raw.countsAsWorked } : {}),
+      ...(raw.hoursPerDay !== undefined ? { hoursPerDay: raw.hoursPerDay } : {}),
+    },
+  };
+}
+
+function summarizeRejectedRows(rows = []) {
+  const summary = {};
+  for (const row of rows) {
+    const reason = String(row?.reason || "UNKNOWN");
+    summary[reason] = Number(summary[reason] || 0) + 1;
+  }
+  return summary;
+}
+
+function buildImportMessage({ totalRows, validRows, added, updated, rejectedSummary }) {
+  const rejectedTotal = Object.values(rejectedSummary || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+  const reasons = Object.entries(rejectedSummary || {})
+    .map(([reason, count]) => `${REJECTION_LABELS[reason] || reason}:${count}`)
+    .join(", ");
+  let message = `${added} eklendi, ${updated} güncellendi. ${totalRows} satır okundu, ${validRows} geçerli.`;
+  if (rejectedTotal > 0) {
+    message += ` ${rejectedTotal} satır elendi${reasons ? ` (${reasons})` : ""}.`;
+  }
+  if (added === 0 && updated === 0 && validRows === 0) {
+    message += " Zorunlu alanlar: Kısaltma ve Tür Adı.";
+  }
+  return message;
 }
 
 function useHybridLeaveTypes(external, setExternal) {
@@ -203,21 +307,28 @@ export default function LeaveTypesTab({ leaveTypes, setLeaveTypes }) {
   const triggerImport = () => importRef.current?.click();
 
   const parseCSV = (text) => {
-    const lines = (text || "").replace(/\r/g, "").split("\n").filter(Boolean);
-    if (!lines.length) return [];
-    const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
-    const idxCode = header.indexOf("kod") >= 0 ? header.indexOf("kod") : 0;
-    const idxName = header.indexOf("ad") >= 0 ? header.indexOf("ad") : 1;
-    const idxWorked = header.findIndex((h) => h.includes("calis") || h.includes("çalış") || h.includes("worked") || h.includes("cs"));
-    const idxHours = header.findIndex((h) => h.includes("saat") || h.includes("hour"));
-    const rows = lines.slice(1).map((ln) => ln.split(","));
-    return rows.map((r) => ({
-      id: genId(),
-      code: upTR(r[idxCode] ?? ""),
-      name: norm(r[idxName] ?? ""),
-      countsAsWorked: idxWorked >= 0 ? toBool(r[idxWorked]) : undefined,
-      hoursPerDay: idxHours >= 0 ? toNum(r[idxHours]) : undefined,
-    })).filter((x) => x.code && x.name);
+    const lines = (text || "").replace(/\r/g, "").split("\n").filter((line) => line.trim());
+    if (!lines.length) return { parsed: [], totalRows: 0, rejectedRows: [] };
+    const delimiter = lines[0].includes(";") ? ";" : ",";
+    const headerRow = lines[0].split(delimiter);
+    const { indexes } = resolveHeaderIndexes(headerRow);
+    const parsed = [];
+    const rejectedRows = [];
+    const rows = lines.slice(1).map((ln) => ln.split(delimiter));
+    rows.forEach((r, idx) => {
+      const result = parseImportedRow(
+        {
+          code: r[indexes.code],
+          name: r[indexes.name],
+          countsAsWorked: indexes.countsAsWorked >= 0 ? toBool(r[indexes.countsAsWorked]) : undefined,
+          hoursPerDay: indexes.hoursPerDay >= 0 ? toNum(r[indexes.hoursPerDay]) : undefined,
+        },
+        idx + 2
+      );
+      if (result.status === "valid") parsed.push(result.item);
+      if (result.status === "rejected") rejectedRows.push(result);
+    });
+    return { parsed, totalRows: rows.length, rejectedRows };
   };
 
   const importExcel = async (e) => {
@@ -225,38 +336,41 @@ export default function LeaveTypesTab({ leaveTypes, setLeaveTypes }) {
     try {
       const ext = (f.name.split(".").pop() || "").toLowerCase();
       let parsed = [];
+      let totalRows = 0;
+      let rejectedRows = [];
       if (ext === "csv" || (f.type && f.type.includes("csv"))) {
         const txt = await f.text();
-        parsed = parseCSV(txt);
+        const csvResult = parseCSV(txt);
+        parsed = csvResult.parsed;
+        totalRows = csvResult.totalRows;
+        rejectedRows = csvResult.rejectedRows;
       } else {
         const data = new Uint8Array(await f.arrayBuffer());
         const wb = XLSX.read(data, { type: "array" });
         const sh = wb.Sheets["IzinTurleri"] ?? wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(sh, { header: 1, defval: "" });
-        // başlık tespiti (esnek)
-        let startIdx = 1;
-        let idxWorked = -1;
-        let idxHours = -1;
-        if (rows.length && rows[0].length) {
-          const h0 = rows[0].map((x) => norm(x).toLowerCase());
-          if (!(h0.includes("kod") && h0.includes("ad"))) {
-            // ilk satır başlık değilse datayı 0'dan al
-            startIdx = 0;
-          }
-          idxWorked = h0.findIndex((h) => h.includes("calis") || h.includes("çalış") || h.includes("worked") || h.includes("cs"));
-          idxHours = h0.findIndex((h) => h.includes("saat") || h.includes("hour"));
-        }
-        parsed = rows.slice(startIdx).map((r) => ({
-          id: genId(),
-          code: upTR(r[0]),
-          name: norm(r[1]),
-          countsAsWorked: idxWorked >= 0 ? toBool(r[idxWorked]) : undefined,
-          hoursPerDay: idxHours >= 0 ? toNum(r[idxHours]) : undefined,
-        })).filter((x) => x.code && x.name);
+        const headerRow = Array.isArray(rows[0]) ? rows[0] : [];
+        const { indexes, hasExplicitHeader } = resolveHeaderIndexes(headerRow);
+        const startIdx = hasExplicitHeader ? 1 : 0;
+        totalRows = Math.max(0, rows.length - startIdx);
+        rows.slice(startIdx).forEach((r, idx) => {
+          const result = parseImportedRow(
+            {
+              code: r[indexes.code],
+              name: r[indexes.name],
+              countsAsWorked: indexes.countsAsWorked >= 0 ? toBool(r[indexes.countsAsWorked]) : undefined,
+              hoursPerDay: indexes.hoursPerDay >= 0 ? toNum(r[indexes.hoursPerDay]) : undefined,
+            },
+            idx + startIdx + 1
+          );
+          if (result.status === "valid") parsed.push(result.item);
+          if (result.status === "rejected") rejectedRows.push(result);
+        });
       }
 
       if (!parsed.length) {
-        alert("Şablon: 'KOD, AD' (ilk iki sütun).");
+        const rejectedSummary = summarizeRejectedRows(rejectedRows);
+        alert(buildImportMessage({ totalRows, validRows: 0, added: 0, updated: 0, rejectedSummary }));
         return;
       }
 
@@ -269,19 +383,24 @@ export default function LeaveTypesTab({ leaveTypes, setLeaveTypes }) {
           const k = upTR(it.code);
           if (map.has(k)) {
             const old = map.get(k);
-            if (norm(old.name) !== norm(it.name)) {
-              map.set(k, { ...old, name: it.name }); // update name
+            const merged = normalizeType({ ...old, ...it, code: k });
+            const changed =
+              norm(old.name) !== norm(merged.name) ||
+              !!old.countsAsWorked !== !!merged.countsAsWorked ||
+              Number(old.hoursPerDay ?? 0) !== Number(merged.hoursPerDay ?? 0);
+            if (changed) {
+              map.set(k, merged);
               updated++;
             }
           } else {
-            map.set(k, { id: genId(), code: k, name: it.name });
+            map.set(k, normalizeType({ id: genId(), ...it, code: k }));
             added++;
           }
         }
         return sortTR(Array.from(map.values()));
       });
-
-      alert(`${added} eklendi, ${updated} güncellendi.`);
+      const rejectedSummary = summarizeRejectedRows(rejectedRows);
+      alert(buildImportMessage({ totalRows, validRows: parsed.length, added, updated, rejectedSummary }));
     } catch (err) {
       console.error(err);
       alert("Dosya yüklenirken hata oluştu.");

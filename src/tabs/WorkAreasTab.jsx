@@ -131,7 +131,7 @@ function getPersonKey(p, i) {
   );
 }
 
-export default function WorkAreasTab({ workAreas, setWorkAreas, people = [], persistAreas }) {
+export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
   const [areas, setAreas] = useHybridAreas(workAreas, setWorkAreas);
   const peopleList = Array.isArray(people) ? people : [];
   const areaDefs = useMemo(
@@ -239,16 +239,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [], per
 
         cancelEdit();
         setAreas(cleaned);
-
-        try {
-          if (typeof persistAreas === "function") {
-            await persistAreas(cleaned);
-          }
-          alert("Excel'den yükleme tamam.");
-        } catch (saveErr) {
-          console.error(saveErr);
-          alert(`Excel yüklendi ama kaydedilemedi: ${saveErr?.message || saveErr}`);
-        }
+        alert("Excel'den yükleme tamam.");
       } catch (err) {
         console.error(err);
         alert(`Excel yüklenemedi: ${err?.message || "Beklenen sayfa: CalismaAlanlari, başlık: ALAN"}`);
