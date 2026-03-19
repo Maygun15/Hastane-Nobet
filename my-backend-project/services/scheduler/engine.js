@@ -1,5 +1,5 @@
 // services/scheduler/engine.js
-const { isAvailable } = require("./constraints");
+const { explainAvailability } = require("./constraints");
 const { calculateScore } = require("./scoring");
 const { buildCandidates } = require("./candidateBuilder");
 const evaluatePolicies = require("./policies/evaluatePolicies");
@@ -111,6 +111,10 @@ function assign(person, day, shift, context) {
 function runScheduler(context) {
   if (!context || !Array.isArray(context.days) || !Array.isArray(context.staff)) return context;
   if (!Array.isArray(context.candidateAudit)) context.candidateAudit = [];
+  if (!context.audit || typeof context.audit !== "object" || Array.isArray(context.audit)) {
+    context.audit = {};
+  }
+  if (!Array.isArray(context.audit.observations)) context.audit.observations = [];
   const shadowAuditEnabled = context?.auditOptions?.enableShadowCollection === true;
   if (shadowAuditEnabled && !context.shadowAudit) {
     context.shadowAudit = createShadowAuditCollector({
@@ -145,17 +149,56 @@ function runScheduler(context) {
           }
         }
 
-        const candidates = candidateBuild.pool.filter((p) =>
-          isAvailable(p, day, context, shift)
-        );
+        const availabilityChecks = candidateBuild.pool.map((person) => {
+          const availability = explainAvailability(person, day, context, shift);
+          if (!availability.allowed && context?.debug?.logBlocks) {
+            console.log("[SCHED-BLOCK]", availability.reason || "UNAVAILABLE", {
+              pid: person?.id,
+              name: person?.name,
+              date: day?.date,
+              shift: shift?.code || "",
+              area: shift?.label || "",
+            });
+          }
+          return {
+            person,
+            allowed: availability.allowed === true,
+            reason: availability.reason || null,
+          };
+        });
+        const candidates = availabilityChecks.filter((item) => item.allowed).map((item) => item.person);
+        const constraintRejected = availabilityChecks
+          .filter((item) => !item.allowed)
+          .map((item) => ({
+            personId: normalizePersonId(item?.person?.id),
+            personName: item?.person?.name || "",
+            reason: item?.reason || "UNAVAILABLE",
+          }));
 
         const slotAudit = {
           ...candidateBuild.audit,
           postConstraintCount: candidates.length,
+          constraintRejectedCount: constraintRejected.length,
+          constraintRejectedByReason: summarizeConstraintRejections(constraintRejected),
+          observationSummary: buildSlotObservationSummary({
+            date: day?.date || null,
+            shift,
+            slotIndex: i,
+            inputStaffCount: candidateBuild.audit?.inputStaffCount || rawStaffPool.length,
+            candidateAudit: candidateBuild.audit,
+            postConstraintCount: candidates.length,
+            constraintRejected,
+          }),
         };
 
         if (!candidates.length) {
           context.candidateAudit.push(slotAudit);
+          context.audit.observations.push({
+            ...slotAudit.observationSummary,
+            selectedCandidateId: null,
+            selectedCandidateName: null,
+            noCandidateReasonSummary: buildNoCandidateReasonSummary(slotAudit),
+          });
           break;
         }
         const scoredCandidates = candidates.map((candidate) => {
@@ -183,7 +226,7 @@ function runScheduler(context) {
         });
         scoredCandidates.sort(compareCandidates);
         const selected = scoredCandidates[0];
-        context.candidateAudit.push({
+        const selectedAudit = {
           ...slotAudit,
           selectedCandidateId: normalizePersonId(selected?.id),
           selectedCandidate: selected?.person
@@ -199,6 +242,15 @@ function runScheduler(context) {
             : [],
           selectionReason: determineSelectionReason(scoredCandidates),
           topCandidates: buildTopCandidateSummary(scoredCandidates, selected?.id),
+        };
+        context.candidateAudit.push(selectedAudit);
+        context.audit.observations.push({
+          ...slotAudit.observationSummary,
+          selectedCandidateId: normalizePersonId(selected?.id),
+          selectedCandidateName: selected?.person?.name || "",
+          selectionReason: selectedAudit.selectionReason,
+          topCandidates: selectedAudit.topCandidates,
+          noCandidateReasonSummary: null,
         });
         assign(selected?.person, day, shift, context);
         if (selected?.id) usedOnDay.add(selected.id);
@@ -219,6 +271,7 @@ function runScheduler(context) {
   if (shadowAuditEnabled && context?.shadowAudit) {
     context.shadowAudit.summary = aggregateShadowObservations(context.shadowAudit.observations);
   }
+  context.audit.summary = buildObservationSummary(context.audit.observations);
 
   return context;
 }
@@ -523,6 +576,101 @@ function buildTopCandidateSummary(scoredCandidates = [], selectedId = null) {
       totalScore: Number(candidate?.policyScore || 0),
       selected: normalizePersonId(candidate?.id) === normalizePersonId(selectedId),
     }));
+}
+
+function summarizeConstraintRejections(constraintRejected = []) {
+  const counts = {};
+  for (const item of constraintRejected || []) {
+    const reason = String(item?.reason || "").trim();
+    if (!reason) continue;
+    counts[reason] = Number(counts[reason] || 0) + 1;
+  }
+  return counts;
+}
+
+function summarizeCandidateBuilderRejections(rejected = []) {
+  const counts = {};
+  for (const item of rejected || []) {
+    const reasons = []
+      .concat(Array.isArray(item?.blockingRules) ? item.blockingRules : [])
+      .concat(Array.isArray(item?.reasonCodes) ? item.reasonCodes : [])
+      .concat(Array.isArray(item?.failedRuleCodes) ? item.failedRuleCodes : []);
+    for (const reason of reasons) {
+      const key = String(reason || "").trim();
+      if (!key) continue;
+      counts[key] = Number(counts[key] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
+function buildSlotObservationSummary({
+  date = null,
+  shift = null,
+  slotIndex = 0,
+  inputStaffCount = 0,
+  candidateAudit = {},
+  postConstraintCount = 0,
+  constraintRejected = [],
+} = {}) {
+  return {
+    date,
+    shiftId: shift?.id || shift?.code || "",
+    shiftLabel: shift?.label || shift?.name || shift?.code || shift?.id || "",
+    slotIndex,
+    totalCandidates: Number(inputStaffCount || 0),
+    candidateBuilderEligibleCount: Number(candidateAudit?.eligibleCount || 0),
+    eligibleCandidates: Number(postConstraintCount || 0),
+    candidateBuilderRejectedByReason: summarizeCandidateBuilderRejections(candidateAudit?.rejected),
+    constraintRejectedByReason: summarizeConstraintRejections(constraintRejected),
+    fallbackUsed: candidateAudit?.fallbackUsed === true,
+    fallbackReason: candidateAudit?.fallbackReason || null,
+  };
+}
+
+function buildNoCandidateReasonSummary(slotAudit = {}) {
+  const builderReasons = summarizeCandidateBuilderRejections(slotAudit?.rejected);
+  const constraintReasons = slotAudit?.constraintRejectedByReason || {};
+  return {
+    candidateBuilder: builderReasons,
+    constraints: constraintReasons,
+    fallbackUsed: slotAudit?.fallbackUsed === true,
+    fallbackReason: slotAudit?.fallbackReason || null,
+  };
+}
+
+function buildObservationSummary(observations = []) {
+  const safe = Array.isArray(observations) ? observations : [];
+  const selectionReasons = {};
+  const rejectedByReason = {};
+  let noCandidateCount = 0;
+
+  for (const item of safe) {
+    if (!item?.selectedCandidateId) noCandidateCount += 1;
+    const selectionReason = String(item?.selectionReason || "").trim();
+    if (selectionReason) {
+      selectionReasons[selectionReason] = Number(selectionReasons[selectionReason] || 0) + 1;
+    }
+
+    const sources = [
+      item?.candidateBuilderRejectedByReason,
+      item?.constraintRejectedByReason,
+    ];
+    for (const source of sources) {
+      for (const [reason, count] of Object.entries(source || {})) {
+        if (!reason) continue;
+        rejectedByReason[reason] = Number(rejectedByReason[reason] || 0) + Number(count || 0);
+      }
+    }
+  }
+
+  return {
+    slotCount: safe.length,
+    noCandidateCount,
+    selectedCount: safe.length - noCandidateCount,
+    selectionReasons,
+    rejectedByReason,
+  };
 }
 
 function clonePolicyResult(policyResult) {

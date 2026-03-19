@@ -90,15 +90,18 @@ function areaMatches(personAreas, shiftArea) {
   return false;
 }
 
-function isAvailable(person, day, context, shift) {
-  if (!person||!day) return false;
+function buildBlockLogger(context, person, day, shift) {
+  return context?.debug?.logBlocks
+    ? (r) => console.log("[SCHED-BLOCK]",r,{pid:person?.id,name:person?.name,date:day?.date,shift:shift?.code||"",area:shift?.label||""})
+    : null;
+}
+
+function explainAvailability(person, day, context, shift) {
+  if (!person||!day) return { allowed: false, reason: "INVALID_INPUT" };
   const rules = context?.rules||{};
   const leaves = context?.leavesByPerson||{};
   const dayKey = day.date;
-  if (!dayKey) return false;
-  const logBlock = context?.debug?.logBlocks
-    ? (r) => console.log("[SCHED-BLOCK]",r,{pid:person?.id,name:person?.name,date:dayKey,shift:shift?.code||"",area:shift?.label||""})
-    : null;
+  if (!dayKey) return { allowed: false, reason: "INVALID_DAY" };
 
   if (context?.ruleEngine && shift) {
     const allow = context.ruleEngine.checkPersonEligibility(
@@ -110,24 +113,24 @@ function isAvailable(person, day, context, shift) {
         taskType: shift?.taskType || shift?.type || null,
       }
     );
-    if (!allow?.eligible) { if(logBlock)logBlock(allow.reason||"RULE_ENGINE"); return false; }
+    if (!allow?.eligible) return { allowed: false, reason: allow.reason || "RULE_ENGINE" };
   }
 
   if (shift) {
     const areas = getPersonAreas(person);
     const shiftArea = getShiftArea(shift);
     if (areas.length > 0 && shiftArea) {
-      if (!areaMatches(areas,shiftArea)) { if(logBlock)logBlock("AREA_NOT_ALLOWED"); return false; }
+      if (!areaMatches(areas,shiftArea)) return { allowed: false, reason: "AREA_NOT_ALLOWED" };
     }
   }
 
   if (shift) {
     const codes = getPersonShiftCodes(person);
     const shiftCode = normalizeCode(shift.code||shift.id||"");
-    if (shiftCode&&codes.length&&!codes.includes(shiftCode)) { if(logBlock)logBlock("SHIFT_CODE_NOT_ALLOWED"); return false; }
+    if (shiftCode&&codes.length&&!codes.includes(shiftCode)) return { allowed: false, reason: "SHIFT_CODE_NOT_ALLOWED" };
   }
 
-  if (rules.ONE_SHIFT_PER_DAY&&Array.isArray(person.assignedDays)&&person.assignedDays.includes(dayKey)) { if(logBlock)logBlock("ONE_SHIFT_PER_DAY"); return false; }
+  if (rules.ONE_SHIFT_PER_DAY&&Array.isArray(person.assignedDays)&&person.assignedDays.includes(dayKey)) return { allowed: false, reason: "ONE_SHIFT_PER_DAY" };
 
   // Duplicate by intent with candidateBuilder LEAVE_BLOCK.
   // Kept active as a transitional runtime guard because engine fallback currently only hard-filters
@@ -135,7 +138,7 @@ function isAvailable(person, day, context, shift) {
   // to re-enter via fallback until fallback ownership is tightened in the engine path.
   if (rules.LEAVE_BLOCK) {
     const lv = leaves[person.id];
-    if (lv&&(lv instanceof Set?lv.has(dayKey):Array.isArray(lv)&&lv.includes(dayKey))) { if(logBlock)logBlock("LEAVE_BLOCK"); return false; }
+    if (lv&&(lv instanceof Set?lv.has(dayKey):Array.isArray(lv)&&lv.includes(dayKey))) return { allowed: false, reason: "LEAVE_BLOCK" };
   }
 
   // Transitional hard authority:
@@ -146,12 +149,12 @@ function isAvailable(person, day, context, shift) {
     if (Number.isFinite(max)&&max>0) {
       const diff = daysBetween(person.lastAssignedDate,dayKey);
       const nextCons = diff===1?(Number(person.consecutiveDays||0)+1):1;
-      if (nextCons>max) { if(logBlock)logBlock("MAX_CONSECUTIVE_DAYS"); return false; }
+      if (nextCons>max) return { allowed: false, reason: "MAX_CONSECUTIVE_DAYS" };
     }
   }
 
   if (rules.NIGHT_NEXT_DAY_OFF&&person.lastShift&&shiftIsNight(person.lastShift)) {
-    if (daysBetween(person.lastShift.date,dayKey)===1) { if(logBlock)logBlock("NIGHT_NEXT_DAY_OFF"); return false; }
+    if (daysBetween(person.lastShift.date,dayKey)===1) return { allowed: false, reason: "NIGHT_NEXT_DAY_OFF" };
   }
 
   // Transitional night-equivalent full-rest guard:
@@ -165,8 +168,7 @@ function isAvailable(person, day, context, shift) {
   // N veya V2 (24s) sonrası ertesi gün hiçbir vardiya yazılmasın
   if (person.lastShift) {
     if ((prevShiftCode==="N"||prevShiftCode==="V2") && daysBetween(person.lastShift.date,dayKey)===1) {
-      if (logBlock) logBlock("NIGHT_24H_NEXT_DAY_BLOCK");
-      return false;
+      return { allowed: false, reason: "NIGHT_24H_NEXT_DAY_BLOCK" };
     }
   }
 
@@ -179,10 +181,10 @@ function isAvailable(person, day, context, shift) {
       if (prevStart!=null&&prevEnd!=null&&prevEnd<=prevStart) prevEnd+=1440;
       if (prevEnd!=null&&currStart!=null) {
         const restHours=(new Date(`${dayKey}T00:00:00Z`).getTime()+currStart*60000-new Date(`${prev.date}T00:00:00Z`).getTime()-prevEnd*60000)/3600000;
-        if (restHours<minRest) { if(logBlock)logBlock("MIN_REST_HOURS"); return false; }
+        if (restHours<minRest) return { allowed: false, reason: "MIN_REST_HOURS" };
       } else {
         const diff=daysBetween(prev.date,dayKey);
-        if ((diff===0&&minRest>0)||(diff===1&&minRest>24)) { if(logBlock)logBlock("MIN_REST_HOURS"); return false; }
+        if ((diff===0&&minRest>0)||(diff===1&&minRest>24)) return { allowed: false, reason: "MIN_REST_HOURS" };
       }
     }
   }
@@ -191,7 +193,7 @@ function isAvailable(person, day, context, shift) {
     const max=Number(rules.MAX_SHIFTS_PER_WEEK);
     if (Number.isFinite(max)&&max>0) {
       const wk=getISOWeekKey(dayKey);
-      if (wk&&Number(person.weeklyCounts?.[wk]||0)>=max) { if(logBlock)logBlock("MAX_SHIFTS_PER_WEEK"); return false; }
+      if (wk&&Number(person.weeklyCounts?.[wk]||0)>=max) return { allowed: false, reason: "MAX_SHIFTS_PER_WEEK" };
     }
   }
 
@@ -199,11 +201,20 @@ function isAvailable(person, day, context, shift) {
     const max=Number(rules.MAX_TASK_PER_PERSON);
     if (Number.isFinite(max)&&max>0) {
       const key=getShiftKey(shift);
-      if (key&&Number(person.taskCounts?.[key]||0)>=max) { if(logBlock)logBlock("MAX_TASK_PER_PERSON"); return false; }
+      if (key&&Number(person.taskCounts?.[key]||0)>=max) return { allowed: false, reason: "MAX_TASK_PER_PERSON" };
     }
   }
 
-  return true;
+  return { allowed: true, reason: null };
 }
 
-module.exports = { isAvailable, areaMatches, normalizeArea, splitAreaTokens };
+function isAvailable(person, day, context, shift) {
+  const result = explainAvailability(person, day, context, shift);
+  if (!result.allowed) {
+    const logBlock = buildBlockLogger(context, person, day, shift);
+    if (logBlock) logBlock(result.reason || "UNAVAILABLE");
+  }
+  return result.allowed;
+}
+
+module.exports = { isAvailable, explainAvailability, areaMatches, normalizeArea, splitAreaTokens };

@@ -136,6 +136,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     holidayKindByDate,
     shiftMetaByCode,
     defs: effectiveDefs,
+    staff,
   });
   const data = {
     assignments: validated.assignments,
@@ -149,6 +150,10 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
       requiredSlots,
       engine: useDraft ? "draft" : "optimized",
       hardFiltered: validated?.debug?.hardFiltered || 0,
+      invalidAssignmentCount: validated?.debug?.invalidAssignmentCount || 0,
+      invalidAssignments: Array.isArray(validated?.debug?.invalidAssignments)
+        ? validated.debug.invalidAssignments
+        : [],
     },
   };
 

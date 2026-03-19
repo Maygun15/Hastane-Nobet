@@ -13,6 +13,7 @@ const normalizeText = (s = '') =>
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
+const PLACEHOLDER_PATTERNS = [/^deneme$/i, /^nobet kurallari$/i, /^nöbet kuralları$/i];
 const isServiceSupervisorLabel = (label = '') => normalizeText(label).includes('servis sorumlu');
 const prevDateStr = (dateStr) => {
   const d = new Date(`${dateStr}T00:00:00Z`);
@@ -120,21 +121,102 @@ function sanitizeSupervisorAssignments(assignments = [], holidayKindByDate = {},
     .filter(Boolean);
 }
 
+function buildStaffMaps(staff = []) {
+  const idSet = new Set();
+  const nameToId = new Map();
+  for (const person of staff || []) {
+    const pid = String(person?.id || person?._id || person?.personId || '').trim();
+    const name = String(person?.name || person?.fullName || person?.displayName || '').trim();
+    const canon = normalizeText(name);
+    if (pid) idSet.add(pid);
+    if (pid && canon && !nameToId.has(canon)) nameToId.set(canon, pid);
+  }
+  return { idSet, nameToId };
+}
+
+function classifyInvalidAssignee(name = '') {
+  const raw = String(name || '').trim();
+  if (!raw) return 'INVALID_ASSIGNEE';
+  if (PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(raw))) return 'PLACEHOLDER_ASSIGNMENT';
+  return 'UNKNOWN_PERSON_LABEL';
+}
+
+function sanitizeAssignees(assignments = [], staff = []) {
+  const { idSet, nameToId } = buildStaffMaps(staff);
+  if (!idSet.size && !nameToId.size) {
+    return {
+      assignments: Array.isArray(assignments) ? assignments.slice() : [],
+      issues: [],
+      debug: { invalidAssignmentCount: 0, invalidAssignments: [] },
+    };
+  }
+
+  const issues = [];
+  const invalidAssignments = [];
+  const filtered = [];
+
+  for (const item of assignments || []) {
+    const pidRaw = String(item?.personId || '').trim();
+    const nameRaw = String(item?.personName || item?.name || '').trim();
+    const resolvedPid = pidRaw && idSet.has(pidRaw)
+      ? pidRaw
+      : (nameRaw ? nameToId.get(normalizeText(nameRaw)) || '' : '');
+
+    if (!resolvedPid) {
+      const detail = classifyInvalidAssignee(nameRaw);
+      invalidAssignments.push({
+        date: String(item?.date || item?.day || '').slice(0, 10) || null,
+        shiftId: String(item?.shiftId || item?.shiftCode || item?.rowId || '').trim() || null,
+        personName: nameRaw || null,
+        invalidAssigneeReason: detail,
+      });
+      issues.push({
+        date: String(item?.date || item?.day || '').slice(0, 10) || null,
+        shiftId: item?.shiftId || item?.shiftCode || item?.rowId || '',
+        reason: 'INVALID_ASSIGNEE',
+        detail,
+        personName: nameRaw || undefined,
+      });
+      continue;
+    }
+
+    filtered.push({
+      ...item,
+      personId: resolvedPid,
+    });
+  }
+
+  return {
+    assignments: filtered,
+    issues,
+    debug: {
+      invalidAssignmentCount: invalidAssignments.length,
+      invalidAssignments,
+    },
+  };
+}
+
 function validateAssignments({
   assignments = [],
   leavesByPerson = {},
   holidayKindByDate = {},
   shiftMetaByCode = {},
   defs = [],
+  staff = [],
 } = {}) {
   const sanitizedAssignments = sanitizeSupervisorAssignments(assignments, holidayKindByDate, shiftMetaByCode, defs);
-  const hard = applyHardConstraints(sanitizedAssignments, leavesByPerson);
-  const issues = [...(hard.issues || [])];
+  const assigneeGuard = sanitizeAssignees(sanitizedAssignments, staff);
+  const hard = applyHardConstraints(assigneeGuard.assignments, leavesByPerson);
+  const issues = [...(assigneeGuard.issues || []), ...(hard.issues || [])];
   return {
     assignments: hard.assignments || [],
     issues,
     debug: {
-      hardFiltered: (sanitizedAssignments.length || 0) - ((hard.assignments || []).length || 0),
+      hardFiltered: (assigneeGuard.assignments.length || 0) - ((hard.assignments || []).length || 0),
+      invalidAssignmentCount: Number(assigneeGuard?.debug?.invalidAssignmentCount || 0),
+      invalidAssignments: Array.isArray(assigneeGuard?.debug?.invalidAssignments)
+        ? assigneeGuard.debug.invalidAssignments
+        : [],
     },
   };
 }

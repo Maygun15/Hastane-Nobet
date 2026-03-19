@@ -823,6 +823,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
     const flatAssignments = [];
     const monthKey = `${year}-${String(month0 + 1).padStart(2, "0")}`;
+    const invalidPreviewAssignments = [];
     if (rosterRes?.namedAssignments) {
       for (const [dayKey, byRow] of Object.entries(rosterRes.namedAssignments)) {
         const dayNum = Number(dayKey);
@@ -832,10 +833,21 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           const row = rowMeta.get(String(rowId));
           const roleLabel = row?.label || String(rowId);
           const shiftCode = row?.shiftCode || "";
+          const validNames = [];
           for (const nm of names || []) {
             if (!nm || isGroupLabel(nm)) continue;
             const canon = canonName(nm);
             const ids = canon ? canonToId.get(canon) : null;
+            if (!ids?.[0]) {
+              invalidPreviewAssignments.push({
+                day: dayNum,
+                label: roleLabel,
+                reason: "INVALID_ASSIGNEE",
+                detail: nm,
+              });
+              continue;
+            }
+            validNames.push(nm);
             flatAssignments.push({
               date: dateStr,
               day: dayNum,
@@ -845,12 +857,17 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
               roleLabel,
               shiftCode,
               personName: nm,
-              personId: ids?.[0] || null,
+              personId: ids[0],
               source: "rosterPreview",
             });
           }
+          rosterRes.namedAssignments[dayKey][rowId] = validNames;
         }
       }
+    }
+
+    if (rosterRes && invalidPreviewAssignments.length) {
+      rosterRes.issues = [...(Array.isArray(rosterRes.issues) ? rosterRes.issues : []), ...invalidPreviewAssignments];
     }
 
     // izindekileri çıkar + issue yaz
