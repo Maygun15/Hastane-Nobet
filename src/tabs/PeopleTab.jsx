@@ -430,9 +430,24 @@ export default function PeopleTab({
           const mail = (r["MAİL ADRESİ"] || r["MAIL"] || "").toString().trim();
           const areasRaw = (r["ÇALIŞMA ALANLARI"] || r["ALANLAR"] || "").toString();
           const areaNames = areasRaw.split(/,|;/).map((s) => s.trim()).filter(Boolean);
-          const workAreaIds = areaNames
-            .map((nm) => WA.find((w) => w.name === nm)?.id)
+          const workAreaIdsRaw = (
+            r["ÇALIŞMA ALANI IDLERİ"] ||
+            r["ÇALIŞMA ALANI IDLERI"] ||
+            r["ALAN IDLERİ"] ||
+            r["ALAN IDLERI"] ||
+            r["WORK AREA IDS"] ||
+            r["WORKAREAIDS"] ||
+            ""
+          ).toString();
+          const explicitWorkAreaIds = workAreaIdsRaw
+            .split(/,|;/)
+            .map((s) => s.trim())
             .filter(Boolean);
+          const workAreaIds = explicitWorkAreaIds.length
+            ? explicitWorkAreaIds
+            : areaNames
+                .map((nm) => WA.find((w) => w.name === nm)?.id)
+                .filter(Boolean);
           const shiftsRaw = (r["VARDİYE KODLARI"] || r["VARDIYE KODLARI"] || "").toString();
           const shiftCodes = shiftsRaw.split(/,|;/).map((s) => s.trim()).filter(Boolean);
           if (!name) return null;
@@ -480,6 +495,7 @@ export default function PeopleTab({
           role: p.role || "",
           title: p.title || "",
           areas: Array.isArray(p.areas) ? p.areas : [],
+          workAreaIds: Array.isArray(p.workAreaIds) ? p.workAreaIds : [],
           shiftCodes: Array.isArray(p.shiftCodes) ? p.shiftCodes : [],
         },
         tc: p.tc || "",
