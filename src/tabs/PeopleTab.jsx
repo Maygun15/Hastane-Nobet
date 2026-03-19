@@ -2,7 +2,7 @@
 import React, { useRef, useState, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
 import IDCard from "../components/IDCard.jsx";
-import { maskTC } from "../utils/format.js";
+import { maskPhone, maskTC } from "../utils/format.js";
 import { API, getToken, REQUIRE_BACKEND } from "../lib/api.js";
 import { useServices } from "../hooks/useServicesModel.js";
 import useServiceScope from "../hooks/useServiceScope.js";
@@ -62,6 +62,32 @@ const resolveServiceId = (value, options, fallback) => {
   const byCode = options.find((s) => String(s.code || "").toLocaleLowerCase("tr-TR") === q);
   return byCode ? byCode.id : raw;
 };
+
+function formatPhoneDisplay(value) {
+  const digits = String(value || "").replace(/\D/g, "").slice(0, 10);
+  const parts = [
+    digits.slice(0, 3),
+    digits.slice(3, 6),
+    digits.slice(6, 8),
+    digits.slice(8, 10),
+  ].filter(Boolean);
+  return parts.join(" ");
+}
+
+function isValidTC(tc) {
+  if (!/^\d{11}$/.test(tc)) return false;
+
+  const digits = tc.split("").map(Number);
+  if (digits[0] === 0) return false;
+
+  const odd = digits[0] + digits[2] + digits[4] + digits[6] + digits[8];
+  const even = digits[1] + digits[3] + digits[5] + digits[7];
+  const digit10 = ((odd * 7 - even) % 10);
+  if (digit10 !== digits[9]) return false;
+
+  const digit11 = (digits.slice(0, 10).reduce((a, b) => a + b, 0) % 10);
+  return digit11 === digits[10];
+}
 
 // workAreas -> {id,name}[] (string veya obje kabul)
 function normalizeWorkAreas(input) {
@@ -136,6 +162,8 @@ export default function PeopleTab({
   const [editingId, setEditingId] = useState(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editQuery, setEditQuery] = useState("");
+  const [showRawTC, setShowRawTC] = useState(false);
+  const [tcError, setTcError] = useState("");
   const [resetting, setResetting] = useState(false);
   const importRef = useRef(null);
 
@@ -170,6 +198,8 @@ export default function PeopleTab({
   const reset = () => {
     setForm(empty);
     setEditingId(null);
+    setShowRawTC(false);
+    setTcError("");
   };
   const resetUi = () => {
     reset();
@@ -643,16 +673,32 @@ export default function PeopleTab({
         <div>
           <label className="text-xs text-slate-500">T.C. Kimlik No</label>
           <input
-            value={form.tc}
+            value={showRawTC ? form.tc : (form.tc ? maskTC(form.tc) : "")}
+            onFocus={() => {
+              setShowRawTC(true);
+              setTcError("");
+            }}
+            onBlur={() => {
+              setShowRawTC(false);
+              setTcError(isValidTC(form.tc) ? "" : "Geçersiz TC Kimlik No");
+            }}
             onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                tc: e.target.value.replace(/\D/g, "").slice(0, 11),
-              }))
+              {
+                const raw = e.target.value.replace(/\D/g, "").slice(0, 11);
+                setForm((f) => ({
+                  ...f,
+                  tc: raw,
+                }));
+                if (tcError) setTcError("");
+              }
             }
+            maxLength={11}
             className="w-full border rounded p-2"
             placeholder="11 hane"
           />
+          {tcError && (
+            <div className="mt-1 text-xs text-rose-600">{tcError}</div>
+          )}
         </div>
 
         <div>
@@ -668,8 +714,14 @@ export default function PeopleTab({
         <div>
           <label className="text-xs text-slate-500">Telefon</label>
           <input
-            value={form.phone}
-            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            type="tel"
+            value={formatPhoneDisplay(form.phone || "")}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                phone: e.target.value.replace(/\D/g, "").slice(0, 10),
+              }))
+            }
             className="w-full border rounded p-2"
             placeholder="Telefon"
           />
@@ -848,7 +900,7 @@ export default function PeopleTab({
                       >
                         <div className="text-sm font-medium">{p.name}</div>
                         <div className="text-xs text-slate-500">
-                          {maskTC(p.tc)} · {p.phone || "-"} · {p.mail || "-"}
+                          {maskTC(p.tc)} · {maskPhone(p.phone)} · {p.mail || p.email || "-"}
                         </div>
                       </li>
                     ))}

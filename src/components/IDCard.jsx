@@ -1,6 +1,6 @@
 // src/components/IDCard.jsx
 import React, { useState } from "react";
-import { maskTC } from "../utils/format.js";
+import { maskPhone, maskTC } from "../utils/format.js";
 
 const clean = (s) => (s ?? "").toString().trim();
 const uniq = (arr) => {
@@ -51,6 +51,8 @@ function Row({ label, value, mono }) {
 
 export default function IDCard({ person, serviceNames }) {
   const [expanded, setExpanded] = useState(false);
+  console.log("MASK RENDER TC", person?.tc || person?.tckn, maskTC(person?.tc || person?.tckn));
+  console.log("MASK RENDER PHONE", person?.phone, maskPhone(person?.phone));
 
   const servicesDisplay = (
     Array.isArray(serviceNames) && serviceNames.length
@@ -110,8 +112,8 @@ export default function IDCard({ person, serviceNames }) {
 
       <div className="px-4 py-2.5 space-y-1.5 border-b border-slate-100">
         <Row label="TC" value={maskTC(person?.tc || person?.tckn)} mono />
-        <Row label="Telefon" value={person?.phone} />
-        <Row label="Mail" value={person?.mail || person?.email} />
+        <Row label="Telefon" value={maskPhone(person?.phone)} />
+        <Row label="Mail" value={person?.mail || person?.email || "-"} />
       </div>
 
       {hasExtra && (
