@@ -107,6 +107,16 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
       }))),
     [masterWorkAreas]
   );
+  const displayAreas = useMemo(
+    () =>
+      areaDefs
+        .map((area) => ({
+          ...area,
+          rawIndex: (areas || []).findIndex((name) => norm(name) === norm(area.name)),
+        }))
+        .filter((area) => area.rawIndex >= 0),
+    [areaDefs, areas]
+  );
   const peopleByArea = useMemo(() => {
     const map = new Map();
     areaDefs.forEach((a) => map.set(a.key, []));
@@ -237,10 +247,10 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
         <div>
           <div className="text-sm mb-2 text-gray-500">Mevcut Alanlar</div>
           <ol className="space-y-1">
-            {areas.map((a, i) => (
-              <li key={a + i} className="flex items-center justify-between px-3 py-2 rounded border bg-white">
+            {displayAreas.map((area, i) => (
+              <li key={area.key} className="flex items-center justify-between px-3 py-2 rounded border bg-white">
                 <div className="flex-1 min-w-0">
-                  {editingIndex === i ? (
+                  {editingIndex === area.rawIndex ? (
                     <input
                       className="w-full px-2 py-1 border rounded"
                       value={editingValue}
@@ -249,12 +259,12 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
                     />
                   ) : (
                     <span className="truncate">
-                      <b>{i + 1}.</b> {a}
+                      <b>{i + 1}.</b> {area.name}
                     </span>
                   )}
                 </div>
                 <div className="flex items-center gap-2 ml-3">
-                  {editingIndex === i ? (
+                  {editingIndex === area.rawIndex ? (
                     <>
                       <button type="button" className="text-sm px-2 py-1 border rounded" onClick={saveEdit}>
                         Kaydet
@@ -265,10 +275,10 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
                     </>
                   ) : (
                     <>
-                      <button type="button" className="text-sm px-2 py-1 border rounded" onClick={() => startEdit(i)}>
+                      <button type="button" className="text-sm px-2 py-1 border rounded" onClick={() => startEdit(area.rawIndex)}>
                         Düzenle
                       </button>
-                      <button type="button" className="text-sm px-2 py-1 border rounded" onClick={() => removeArea(i)}>
+                      <button type="button" className="text-sm px-2 py-1 border rounded" onClick={() => removeArea(area.rawIndex)}>
                         Sil
                       </button>
                     </>
@@ -276,7 +286,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
                 </div>
               </li>
             ))}
-            {areas.length === 0 && <li className="text-sm text-gray-500">Henüz alan yok.</li>}
+            {displayAreas.length === 0 && <li className="text-sm text-gray-500">Henüz alan yok.</li>}
           </ol>
         </div>
 
