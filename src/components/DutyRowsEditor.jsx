@@ -422,6 +422,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     setMonth: setMonthProp,
     sectionId = "calisma-cizelgesi",
     serviceId = "",
+    workAreas: workAreasProp,
   },
   ref
 ) {
@@ -462,7 +463,10 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   /* Rol & Seçenekler */
   const role = LS.get("activeRole", "Nurse");
   const roleLabel = role === "Doctor" ? "Doktorlar" : "Hemşireler";
-  const workAreas = getAreas();
+  const workAreas = useMemo(
+    () => (Array.isArray(workAreasProp) ? workAreasProp : getAreas()),
+    [workAreasProp]
+  );
   const workingHours = getShifts();
   const areaOptions = useMemo(
     () => (workAreas || []).map((a) => a.name).filter(Boolean),
