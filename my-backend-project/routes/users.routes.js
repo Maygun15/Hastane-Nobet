@@ -756,7 +756,10 @@ router.post('/import.xlsx', requireAuth, uploadSpreadsheet, async (req, res) => 
       if (serviceId) {
         const meta = {};
         if (title) meta.title = title;
-        if (areaNames.length) meta.workAreas = areaNames;
+        if (areaNames.length) {
+          meta.areas = areaNames;
+          meta.workAreas = areaNames;
+        }
         if (shiftCodes.length) meta.shiftCodes = shiftCodes;
         if (roleIn) meta.roleLabel = roleIn;
 
