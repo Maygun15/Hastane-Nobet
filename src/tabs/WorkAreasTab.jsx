@@ -135,7 +135,13 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
   const [name, setName] = useState("");
   const [editingIndex, setEditingIndex] = useState(null);
   const [editingValue, setEditingValue] = useState("");
+  const [selectedAreaKey, setSelectedAreaKey] = useState(null);
   const fileRef = useRef(null);
+  const selectedArea =
+    displayAreas.find((area) => area.key === selectedAreaKey) ||
+    displayAreas[0] ||
+    null;
+  const selectedPeople = selectedArea ? (peopleByArea.get(selectedArea.key) || []) : [];
 
   /* -------- CRUD -------- */
   const addArea = () => {
@@ -143,18 +149,23 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
     if (!v) return alert("Alan adı boş olamaz.");
     if (areas.some((a) => norm(a) === norm(v))) return alert("Bu alan zaten var.");
     setAreas((prev) => sortAreaNames([...prev, v]));
+    setSelectedAreaKey(slugTR(v));
     setName("");
   };
 
   const removeArea = (idx) => {
     // Düzenlenen satırı silerken düzenleme modunu kapat
     if (editingIndex === idx) cancelEdit();
+    if (selectedArea && idx === selectedArea.rawIndex) {
+      setSelectedAreaKey(null);
+    }
     setAreas((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const startEdit = (idx) => {
     setEditingIndex(idx);
     setEditingValue(areas[idx]);
+    setSelectedAreaKey(slugTR(areas[idx]));
   };
 
   const saveEdit = () => {
@@ -165,6 +176,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
       return alert("Bu ad zaten mevcut.");
     }
     setAreas((prev) => sortAreaNames(prev.map((a, i) => (i === editingIndex ? v : a))));
+    setSelectedAreaKey(slugTR(v));
     cancelEdit();
   };
 
@@ -176,6 +188,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
   const resetAreas = () => {
     if (!confirm("Tüm alanları sıfırlamak istiyor musunuz?")) return;
     cancelEdit();
+    setSelectedAreaKey(null);
     setAreas([]);
   };
 
@@ -242,103 +255,156 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
 
       <h3 className="font-medium">Çalışma Alanları</h3>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Sol: liste */}
-        <div>
-          <div className="text-sm mb-2 text-gray-500">Mevcut Alanlar</div>
-          <ol className="space-y-1">
-            {displayAreas.map((area, i) => (
-              <li key={area.key} className="flex items-center justify-between px-3 py-2 rounded border bg-white">
-                <div className="flex-1 min-w-0">
-                  {editingIndex === area.rawIndex ? (
-                    <input
-                      className="w-full px-2 py-1 border rounded"
-                      value={editingValue}
-                      onChange={(e) => setEditingValue(e.target.value)}
-                      autoFocus
-                    />
-                  ) : (
-                    <span className="truncate">
-                      <b>{i + 1}.</b> {area.name}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 ml-3">
-                  {editingIndex === area.rawIndex ? (
-                    <>
-                      <button type="button" className="text-sm px-2 py-1 border rounded" onClick={saveEdit}>
-                        Kaydet
+      <div className="grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] gap-6">
+        <div className="space-y-4">
+          <div className="rounded-xl border bg-white overflow-hidden">
+            <div className="px-4 py-3 border-b bg-slate-50">
+              <div className="text-sm font-medium text-slate-700">Mevcut Alanlar</div>
+              <div className="text-xs text-slate-500 mt-1">Bir alan seçerek detayını sağ panelde yönetin.</div>
+            </div>
+            <div className="p-3">
+              <ol className="space-y-2">
+                {displayAreas.map((area, i) => {
+                  const isSelected = selectedArea?.key === area.key;
+                  const listCount = peopleByArea.get(area.key)?.length || 0;
+                  return (
+                    <li key={area.key}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAreaKey(area.key)}
+                        className={`w-full text-left rounded-lg border px-3 py-3 transition ${
+                          isSelected
+                            ? "border-slate-900 bg-slate-900 text-white"
+                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="min-w-0 truncate font-medium">
+                            {i + 1}. {area.name}
+                          </span>
+                          <span className={`shrink-0 text-xs ${isSelected ? "text-slate-200" : "text-slate-500"}`}>
+                            {listCount} kişi
+                          </span>
+                        </div>
                       </button>
-                      <button type="button" className="text-sm px-2 py-1 border rounded" onClick={cancelEdit}>
-                        İptal
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button type="button" className="text-sm px-2 py-1 border rounded" onClick={() => startEdit(area.rawIndex)}>
-                        Düzenle
-                      </button>
-                      <button type="button" className="text-sm px-2 py-1 border rounded" onClick={() => removeArea(area.rawIndex)}>
-                        Sil
-                      </button>
-                    </>
-                  )}
-                </div>
-              </li>
-            ))}
-            {displayAreas.length === 0 && <li className="text-sm text-gray-500">Henüz alan yok.</li>}
-          </ol>
-        </div>
-
-        {/* Sağ: ekle */}
-        <div>
-          <div className="text-sm mb-2 text-gray-500">Ekle</div>
-          <div className="flex items-center gap-2">
-            <input
-              className="px-3 py-2 border rounded w-full"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="" /* örnek yok */
-            />
-            <button type="button" className="px-3 py-2 text-sm border rounded" onClick={addArea}>
-              Ekle
-            </button>
+                    </li>
+                  );
+                })}
+                {displayAreas.length === 0 && <li className="text-sm text-gray-500">Henüz alan yok.</li>}
+              </ol>
+            </div>
           </div>
-          <div className="text-xs text-gray-500 mt-2">
-            Not: Excel içe/dışa aktarma için başlık <b>ALAN</b> kullanılır. İlk sütun değerleri alan adı olarak okunur.
+
+          <div className="rounded-xl border bg-white p-4">
+            <div className="text-sm font-medium text-slate-700 mb-2">Yeni Alan Ekle</div>
+            <div className="flex items-center gap-2">
+              <input
+                className="px-3 py-2 border rounded w-full"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder=""
+              />
+              <button type="button" className="px-3 py-2 text-sm border rounded" onClick={addArea}>
+                Ekle
+              </button>
+            </div>
+            <div className="text-xs text-gray-500 mt-2">
+              Not: Excel içe/dışa aktarma için başlık <b>ALAN</b> kullanılır. İlk sütun değerleri alan adı olarak okunur.
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Alan bazlı personel kartları */}
-      <div className="pt-2 space-y-3">
-        <h3 className="font-medium">Alanlarda Çalışanlar</h3>
-        <div className="space-y-3">
-          {areaDefs.map((area) => {
-            const list = peopleByArea.get(area.key) || [];
-            return (
-              <details key={area.key} className="rounded-lg border bg-white">
-                <summary className="cursor-pointer select-none px-3 py-2 flex items-center justify-between">
-                  <span className="font-medium">{area.name}</span>
-                  <span className="text-xs text-slate-500">{list.length} kişi</span>
-                </summary>
-                <div className="p-3 border-t">
-                  {list.length ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                      {list.map((p, idx) => (
-                        <IDCard key={getPersonKey(p, idx)} person={p} />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-sm text-gray-500">Bu alanda kayıtlı kişi yok.</div>
-                  )}
+        <div className="space-y-4">
+          <div className="rounded-xl border bg-white overflow-hidden">
+            <div className="px-4 py-3 border-b bg-slate-50 flex items-start justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium text-slate-700">Seçili Alan</div>
+                <div className="text-xs text-slate-500 mt-1">
+                  {selectedArea ? "Alan adını düzenleyebilir veya silebilirsiniz." : "Detayları görmek için soldan bir alan seçin."}
                 </div>
-              </details>
-            );
-          })}
-          {areaDefs.length === 0 && (
-            <div className="text-sm text-gray-500">Alan ekledikçe burada personel kartları görünür.</div>
-          )}
+              </div>
+              {selectedArea && (
+                <span className="shrink-0 text-xs text-slate-500">
+                  {selectedPeople.length} kişi
+                </span>
+              )}
+            </div>
+            <div className="p-4">
+              {selectedArea ? (
+                <div className="space-y-4">
+                  <div className="rounded-lg border bg-slate-50 p-4">
+                    {editingIndex === selectedArea.rawIndex ? (
+                      <div className="space-y-3">
+                        <input
+                          className="w-full px-3 py-2 border rounded bg-white"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          autoFocus
+                        />
+                        <div className="flex items-center gap-2">
+                          <button type="button" className="text-sm px-3 py-2 border rounded bg-white" onClick={saveEdit}>
+                            Kaydet
+                          </button>
+                          <button type="button" className="text-sm px-3 py-2 border rounded bg-white" onClick={cancelEdit}>
+                            İptal
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="text-xs uppercase tracking-wide text-slate-400">Alan Adı</div>
+                          <div className="text-lg font-semibold text-slate-800 mt-1 break-words">{selectedArea.name}</div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            className="text-sm px-3 py-2 border rounded bg-white"
+                            onClick={() => startEdit(selectedArea.rawIndex)}
+                          >
+                            Düzenle
+                          </button>
+                          <button
+                            type="button"
+                            className="text-sm px-3 py-2 border rounded bg-white text-red-600"
+                            onClick={() => removeArea(selectedArea.rawIndex)}
+                          >
+                            Sil
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-slate-500">Alan ekledikçe veya soldan seçim yaptıkça detaylar burada görünür.</div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border bg-white overflow-hidden">
+            <div className="px-4 py-3 border-b bg-slate-50">
+              <div className="text-sm font-medium text-slate-700">Seçilen Alanda Çalışanlar</div>
+              <div className="text-xs text-slate-500 mt-1">
+                {selectedArea ? `${selectedArea.name} alanındaki personel listesi` : "Personel listesini görmek için soldan bir alan seçin."}
+              </div>
+            </div>
+            <div className="p-4">
+              {selectedArea ? (
+                selectedPeople.length ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
+                    {selectedPeople.map((p, idx) => (
+                      <IDCard key={getPersonKey(p, idx)} person={p} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500">Bu alanda kayıtlı kişi yok.</div>
+                )
+              ) : (
+                <div className="text-sm text-gray-500">Henüz seçili alan yok.</div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
