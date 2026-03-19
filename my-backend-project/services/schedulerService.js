@@ -154,6 +154,11 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
       invalidAssignments: Array.isArray(validated?.debug?.invalidAssignments)
         ? validated.debug.invalidAssignments
         : [],
+      invalidAssignmentByReason:
+        validated?.debug?.invalidAssignmentByReason &&
+        typeof validated.debug.invalidAssignmentByReason === 'object'
+          ? validated.debug.invalidAssignmentByReason
+          : {},
     },
   };
 

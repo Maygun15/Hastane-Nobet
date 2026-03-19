@@ -13,7 +13,6 @@ const normalizeText = (s = '') =>
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
-const PLACEHOLDER_PATTERNS = [/^deneme$/i, /^nobet kurallari$/i, /^nöbet kuralları$/i];
 const isServiceSupervisorLabel = (label = '') => normalizeText(label).includes('servis sorumlu');
 const prevDateStr = (dateStr) => {
   const d = new Date(`${dateStr}T00:00:00Z`);
@@ -134,20 +133,50 @@ function buildStaffMaps(staff = []) {
   return { idSet, nameToId };
 }
 
-function classifyInvalidAssignee(name = '') {
-  const raw = String(name || '').trim();
-  if (!raw) return 'INVALID_ASSIGNEE';
-  if (PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(raw))) return 'PLACEHOLDER_ASSIGNMENT';
-  return 'UNKNOWN_PERSON_LABEL';
+function validateAssignee(assignee = {}, staffMaps = {}) {
+  const pidRaw = String(assignee?.personId || '').trim();
+  const nameRaw = String(assignee?.personName || assignee?.name || '').trim();
+  const canonName = normalizeText(nameRaw);
+  const idSet = staffMaps?.idSet || new Set();
+  const nameToId = staffMaps?.nameToId || new Map();
+
+  if (pidRaw && idSet.has(pidRaw)) {
+    return { valid: true, personId: pidRaw, type: null };
+  }
+
+  if (canonName && nameToId.has(canonName)) {
+    return { valid: true, personId: nameToId.get(canonName), type: null };
+  }
+
+  if (pidRaw && !idSet.has(pidRaw)) {
+    return { valid: false, personId: null, type: 'UNKNOWN_PERSON' };
+  }
+
+  if (!nameRaw) {
+    return { valid: false, personId: null, type: 'PLACEHOLDER' };
+  }
+
+  return { valid: false, personId: null, type: 'RAW_LABEL' };
+}
+
+function summarizeInvalidAssignments(items = []) {
+  const counts = {};
+  for (const item of items || []) {
+    const key = String(item?.invalidAssigneeReason || '').trim();
+    if (!key) continue;
+    counts[key] = Number(counts[key] || 0) + 1;
+  }
+  return counts;
 }
 
 function sanitizeAssignees(assignments = [], staff = []) {
-  const { idSet, nameToId } = buildStaffMaps(staff);
+  const staffMaps = buildStaffMaps(staff);
+  const { idSet, nameToId } = staffMaps;
   if (!idSet.size && !nameToId.size) {
     return {
       assignments: Array.isArray(assignments) ? assignments.slice() : [],
       issues: [],
-      debug: { invalidAssignmentCount: 0, invalidAssignments: [] },
+      debug: { invalidAssignmentCount: 0, invalidAssignments: [], invalidAssignmentByReason: {} },
     };
   }
 
@@ -156,19 +185,17 @@ function sanitizeAssignees(assignments = [], staff = []) {
   const filtered = [];
 
   for (const item of assignments || []) {
-    const pidRaw = String(item?.personId || '').trim();
     const nameRaw = String(item?.personName || item?.name || '').trim();
-    const resolvedPid = pidRaw && idSet.has(pidRaw)
-      ? pidRaw
-      : (nameRaw ? nameToId.get(normalizeText(nameRaw)) || '' : '');
+    const validation = validateAssignee(item, staffMaps);
 
-    if (!resolvedPid) {
-      const detail = classifyInvalidAssignee(nameRaw);
+    if (!validation.valid) {
+      const detail = validation.type || 'INVALID_ASSIGNEE';
       invalidAssignments.push({
         date: String(item?.date || item?.day || '').slice(0, 10) || null,
         shiftId: String(item?.shiftId || item?.shiftCode || item?.rowId || '').trim() || null,
         personName: nameRaw || null,
         invalidAssigneeReason: detail,
+        invalidAssigneeDetected: true,
       });
       issues.push({
         date: String(item?.date || item?.day || '').slice(0, 10) || null,
@@ -182,7 +209,7 @@ function sanitizeAssignees(assignments = [], staff = []) {
 
     filtered.push({
       ...item,
-      personId: resolvedPid,
+      personId: validation.personId,
     });
   }
 
@@ -192,6 +219,7 @@ function sanitizeAssignees(assignments = [], staff = []) {
     debug: {
       invalidAssignmentCount: invalidAssignments.length,
       invalidAssignments,
+      invalidAssignmentByReason: summarizeInvalidAssignments(invalidAssignments),
     },
   };
 }
@@ -217,6 +245,11 @@ function validateAssignments({
       invalidAssignments: Array.isArray(assigneeGuard?.debug?.invalidAssignments)
         ? assigneeGuard.debug.invalidAssignments
         : [],
+      invalidAssignmentByReason:
+        assigneeGuard?.debug?.invalidAssignmentByReason &&
+        typeof assigneeGuard.debug.invalidAssignmentByReason === 'object'
+          ? assigneeGuard.debug.invalidAssignmentByReason
+          : {},
     },
   };
 }

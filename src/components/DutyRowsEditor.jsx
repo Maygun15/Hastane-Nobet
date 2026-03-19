@@ -843,7 +843,9 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                 day: dayNum,
                 label: roleLabel,
                 reason: "INVALID_ASSIGNEE",
-                detail: nm,
+                detail: "RAW_LABEL",
+                invalidAssigneeDetected: true,
+                personName: nm,
               });
               continue;
             }
