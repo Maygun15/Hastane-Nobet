@@ -1,5 +1,6 @@
 // src/tabs/PeopleTab.jsx
 import React, { useRef, useState, useMemo, useEffect } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import * as XLSX from "xlsx";
 import IDCard from "../components/IDCard.jsx";
 import { maskPhone, maskTC } from "../utils/format.js";
@@ -163,6 +164,7 @@ export default function PeopleTab({
   const [editOpen, setEditOpen] = useState(false);
   const [editQuery, setEditQuery] = useState("");
   const [showRawTC, setShowRawTC] = useState(false);
+  const [showRawPhone, setShowRawPhone] = useState(false);
   const [tcError, setTcError] = useState("");
   const [resetting, setResetting] = useState(false);
   const importRef = useRef(null);
@@ -199,6 +201,7 @@ export default function PeopleTab({
     setForm(empty);
     setEditingId(null);
     setShowRawTC(false);
+    setShowRawPhone(false);
     setTcError("");
   };
   const resetUi = () => {
@@ -316,6 +319,8 @@ export default function PeopleTab({
       [];
 
     setEditingId(p.id);
+    setShowRawTC(false);
+    setShowRawPhone(false);
     setForm({
       ...empty,
       ...p,
@@ -672,30 +677,40 @@ export default function PeopleTab({
 
         <div>
           <label className="text-xs text-slate-500">T.C. Kimlik No</label>
-          <input
-            value={showRawTC ? form.tc : (form.tc ? maskTC(form.tc) : "")}
-            onFocus={() => {
-              setShowRawTC(true);
-              setTcError("");
-            }}
-            onBlur={() => {
-              setShowRawTC(false);
-              setTcError(isValidTC(form.tc) ? "" : "Geçersiz TC Kimlik No");
-            }}
-            onChange={(e) =>
-              {
+          <div className="relative">
+            <input
+              value={showRawTC ? form.tc : (form.tc ? maskTC(form.tc) : "")}
+              readOnly={!showRawTC}
+              onBlur={() => {
+                setTcError(form.tc ? (isValidTC(form.tc) ? "" : "Geçersiz TC Kimlik No") : "");
+              }}
+              onChange={(e) => {
                 const raw = e.target.value.replace(/\D/g, "").slice(0, 11);
                 setForm((f) => ({
                   ...f,
                   tc: raw,
                 }));
                 if (tcError) setTcError("");
-              }
-            }
-            maxLength={11}
-            className="w-full border rounded p-2"
-            placeholder="11 hane"
-          />
+              }}
+              maxLength={11}
+              className="w-full border rounded p-2 pr-10"
+              placeholder="11 hane"
+            />
+            {!!form.tc && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRawTC((v) => !v);
+                  setTcError("");
+                }}
+                aria-label={showRawTC ? "TC gizle" : "TC goster"}
+                title={showRawTC ? "TC gizle" : "TC goster"}
+                className="absolute inset-y-0 right-2 flex items-center text-slate-500 hover:text-slate-700"
+              >
+                {showRawTC ? <EyeOff size={16} strokeWidth={1.8} /> : <Eye size={16} strokeWidth={1.8} />}
+              </button>
+            )}
+          </div>
           {tcError && (
             <div className="mt-1 text-xs text-rose-600">{tcError}</div>
           )}
@@ -713,18 +728,32 @@ export default function PeopleTab({
 
         <div>
           <label className="text-xs text-slate-500">Telefon</label>
-          <input
-            type="tel"
-            value={formatPhoneDisplay(form.phone || "")}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                phone: e.target.value.replace(/\D/g, "").slice(0, 10),
-              }))
-            }
-            className="w-full border rounded p-2"
-            placeholder="Telefon"
-          />
+          <div className="relative">
+            <input
+              type="tel"
+              value={showRawPhone ? formatPhoneDisplay(form.phone || "") : (form.phone ? maskPhone(form.phone) : "")}
+              readOnly={!showRawPhone}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  phone: e.target.value.replace(/\D/g, "").slice(0, 10),
+                }))
+              }
+              className="w-full border rounded p-2 pr-10"
+              placeholder="Telefon"
+            />
+            {!!form.phone && (
+              <button
+                type="button"
+                onClick={() => setShowRawPhone((v) => !v)}
+                aria-label={showRawPhone ? "Telefonu gizle" : "Telefonu goster"}
+                title={showRawPhone ? "Telefonu gizle" : "Telefonu goster"}
+                className="absolute inset-y-0 right-2 flex items-center text-slate-500 hover:text-slate-700"
+              >
+                {showRawPhone ? <EyeOff size={16} strokeWidth={1.8} /> : <Eye size={16} strokeWidth={1.8} />}
+              </button>
+            )}
+          </div>
         </div>
 
         <div>
