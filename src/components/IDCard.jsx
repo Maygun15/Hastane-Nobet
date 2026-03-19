@@ -55,7 +55,7 @@ export default function IDCard({ person, serviceNames }) {
     ? serviceNames
     : [person?.serviceName || person?.service || ""].filter(Boolean);
 
-  const rawAreas = person?.areas ?? person?.workAreas ?? person?.workAreaIds ?? [];
+  const rawAreas = person?.areas ?? person?.workAreas ?? [];
   const displayAreas = sortTR(uniq(
     (Array.isArray(rawAreas) ? rawAreas : [])
       .map((a) => (typeof a === "string" ? clean(a) : clean(a?.name || a?.label || "")))
