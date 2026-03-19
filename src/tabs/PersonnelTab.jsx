@@ -7,6 +7,11 @@ import { LS } from "../utils/storage.js";
 import useServicesModel from "../hooks/useServicesModel.js";
 import useServiceScope from "../hooks/useServiceScope.js";
 import { useAppData } from "../context/AppDataContext.jsx";
+import {
+  normalizeWorkAreaMasterList,
+  resolvePersonWorkAreaIds,
+  resolvePersonWorkAreaNames,
+} from "../lib/workAreasModel.js";
 
 /** LS anahtarları */
 const LS_KEY = "personnelSections";
@@ -51,22 +56,6 @@ function uniqueId(base, exists) {
 ========================= */
 const clean = (s) => (s ?? "").toString().trim();
 
-function normalizeAreas(raw) {
-  const arr = Array.isArray(raw) ? raw : [];
-  const names = arr
-    .map((a) =>
-      typeof a === "string" ? clean(a) : clean(a?.name || a?.label || a?.title || a?.id)
-    )
-    .filter(Boolean);
-  // case-insensitive uniq (TR)
-  const seen = new Set();
-  const out = [];
-  for (const x of names) {
-    const k = x.toLocaleLowerCase("tr-TR");
-    if (!seen.has(k)) { seen.add(k); out.push(x); }
-  }
-  return out;
-}
 function normalizeShiftCodes(raw) {
   const arr = Array.isArray(raw) ? raw : [];
   const codes = arr
@@ -80,23 +69,24 @@ function normalizeShiftCodes(raw) {
   }
   return out;
 }
-function normalizePerson(p = {}) {
+function normalizePerson(p = {}, masterAreas = []) {
   return {
     ...p,
-    areas: normalizeAreas(p.areas ?? p.workAreas ?? p.services ?? p.workAreaIds ?? []),
+    areas: resolvePersonWorkAreaNames(p, masterAreas),
+    workAreaIds: resolvePersonWorkAreaIds(p, masterAreas),
     shiftCodes: normalizeShiftCodes(p.shiftCodes ?? p.codes ?? p.shifts ?? []),
   };
 }
-function normalizePeople(next) {
-  return Array.isArray(next) ? next.map(normalizePerson) : [];
+function normalizePeople(next, masterAreas = []) {
+  return Array.isArray(next) ? next.map((item) => normalizePerson(item, masterAreas)) : [];
 }
 // setState proxy: hem fonksiyon hem dizi kabul eder, sonuçları normalize eder
-function makeNormalizedSetter(originalSet) {
+function makeNormalizedSetter(originalSet, masterAreas = []) {
   return (updater) => {
     if (typeof updater === "function") {
-      originalSet((prev) => normalizePeople(updater(prev)));
+      originalSet((prev) => normalizePeople(updater(prev), masterAreas));
     } else {
-      originalSet(normalizePeople(updater));
+      originalSet(normalizePeople(updater, masterAreas));
     }
   };
 }
@@ -200,21 +190,15 @@ export default function PersonnelTab({
   const tabs = sections.map(s => ({ id: s.id, title: s.name }));
   const getHref = (t) => `/personel?sec=${encodeURIComponent(t.id)}`;
 
-  // WorkAreas opsiyonlarını PeopleTab'e temiz isim listesi olarak geç (nesne/karışık olabilir)
-  const workAreaOptions = useMemo(() => {
-    const raw = Array.isArray(effectiveWorkAreas) ? effectiveWorkAreas : [];
-    const names = raw
-      .map((a) => (typeof a === "string" ? clean(a) : clean(a?.name || a?.label || a?.title || a?.id)))
-      .filter(Boolean);
-    // uniq
-    const seen = new Set();
-    const out = [];
-    for (const n of names) {
-      const k = n.toLocaleLowerCase("tr-TR");
-      if (!seen.has(k)) { seen.add(k); out.push(n); }
-    }
-    return out;
-  }, [effectiveWorkAreas]);
+  const masterWorkAreas = useMemo(
+    () => normalizeWorkAreaMasterList(effectiveWorkAreas),
+    [effectiveWorkAreas]
+  );
+  // WorkAreas opsiyonlarını PeopleTab'e temiz isim listesi olarak geç
+  const workAreaOptions = useMemo(
+    () => masterWorkAreas.map((item) => item.name),
+    [masterWorkAreas]
+  );
 
   const services = useMemo(() => {
     const list = servicesModel.list?.() || [];
@@ -224,8 +208,14 @@ export default function PersonnelTab({
   }, [servicesModel, scope.isAdmin, scope.allowedIds]);
 
   // setPeople proxy'leri (normalize ederek kaydeder)
-  const setNursesNormalized  = useMemo(() => makeNormalizedSetter(effectiveSetNurses), [effectiveSetNurses]);
-  const setDoctorsNormalized = useMemo(() => makeNormalizedSetter(effectiveSetDoctors), [effectiveSetDoctors]);
+  const setNursesNormalized = useMemo(
+    () => makeNormalizedSetter(effectiveSetNurses, masterWorkAreas),
+    [effectiveSetNurses, masterWorkAreas]
+  );
+  const setDoctorsNormalized = useMemo(
+    () => makeNormalizedSetter(effectiveSetDoctors, masterWorkAreas),
+    [effectiveSetDoctors, masterWorkAreas]
+  );
 
   return (
     <div className="space-y-4">
@@ -257,9 +247,9 @@ export default function PersonnelTab({
           workAreas={workAreaOptions}
           workingHours={effectiveWorkingHours}
           services={services}
-          nurses={normalizePeople(effectiveNurses)}
+          nurses={normalizePeople(effectiveNurses, masterWorkAreas)}
           setNurses={setNursesNormalized}
-          doctors={normalizePeople(effectiveDoctors)}
+          doctors={normalizePeople(effectiveDoctors, masterWorkAreas)}
           setDoctors={setDoctorsNormalized}
         />
       </div>

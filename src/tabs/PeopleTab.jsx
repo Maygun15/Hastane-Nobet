@@ -1,8 +1,9 @@
 // src/tabs/PeopleTab.jsx
 import React, { useRef, useState, useMemo, useEffect } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import * as XLSX from "xlsx";
 import IDCard from "../components/IDCard.jsx";
-import { maskTC } from "../utils/format.js";
+import { maskPhone, maskTC } from "../utils/format.js";
 import { API, getToken, REQUIRE_BACKEND } from "../lib/api.js";
 import { useServices } from "../hooks/useServicesModel.js";
 import useServiceScope from "../hooks/useServiceScope.js";
@@ -62,6 +63,32 @@ const resolveServiceId = (value, options, fallback) => {
   const byCode = options.find((s) => String(s.code || "").toLocaleLowerCase("tr-TR") === q);
   return byCode ? byCode.id : raw;
 };
+
+function formatPhoneDisplay(value) {
+  const digits = String(value || "").replace(/\D/g, "").slice(0, 10);
+  const parts = [
+    digits.slice(0, 3),
+    digits.slice(3, 6),
+    digits.slice(6, 8),
+    digits.slice(8, 10),
+  ].filter(Boolean);
+  return parts.join(" ");
+}
+
+function isValidTC(tc) {
+  if (!/^\d{11}$/.test(tc)) return false;
+
+  const digits = tc.split("").map(Number);
+  if (digits[0] === 0) return false;
+
+  const odd = digits[0] + digits[2] + digits[4] + digits[6] + digits[8];
+  const even = digits[1] + digits[3] + digits[5] + digits[7];
+  const digit10 = ((odd * 7 - even) % 10);
+  if (digit10 !== digits[9]) return false;
+
+  const digit11 = (digits.slice(0, 10).reduce((a, b) => a + b, 0) % 10);
+  return digit11 === digits[10];
+}
 
 // workAreas -> {id,name}[] (string veya obje kabul)
 function normalizeWorkAreas(input) {
@@ -136,6 +163,9 @@ export default function PeopleTab({
   const [editingId, setEditingId] = useState(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editQuery, setEditQuery] = useState("");
+  const [showRawTC, setShowRawTC] = useState(false);
+  const [showRawPhone, setShowRawPhone] = useState(false);
+  const [tcError, setTcError] = useState("");
   const [resetting, setResetting] = useState(false);
   const importRef = useRef(null);
 
@@ -170,6 +200,9 @@ export default function PeopleTab({
   const reset = () => {
     setForm(empty);
     setEditingId(null);
+    setShowRawTC(false);
+    setShowRawPhone(false);
+    setTcError("");
   };
   const resetUi = () => {
     reset();
@@ -189,25 +222,29 @@ export default function PeopleTab({
           role: row.role || "",
           title: row.title || "",
           areas: Array.isArray(row.areas) ? row.areas : [],
+          workAreaIds: Array.isArray(row.workAreaIds) ? row.workAreaIds : [],
           shiftCodes: Array.isArray(row.shiftCodes) ? row.shiftCodes : [],
         },
         tc: row.tc || "",
         phone: row.phone || "",
         email: row.mail || "",
       };
+      console.log("ABOUT TO CALL PERSONNEL API", payload);
       if (editingId && isMongoId(editingId)) {
         const res = await API.http.put(`/api/personnel/${editingId}`, payload);
         return { person: res?.person || null, error: null };
       }
       const res = await API.http.post(`/api/personnel`, payload);
       return { person: res?.person || null, error: null };
-    } catch (e) {
-      console.warn("Backend sync error:", e?.message || e);
-      return { person: null, error: e?.message || "Backend senkron hatası" };
+    } catch (err) {
+      console.error("PERSONNEL SAVE ERROR", err);
+      console.warn("Backend sync error:", err?.message || err);
+      return { person: null, error: err?.message || "Backend senkron hatası" };
     }
   };
 
   const upsert = async (e) => {
+    console.log("SAVE HANDLER ENTERED");
     e.preventDefault();
     if (!form.name.trim()) return;
     if (REQUIRE_BACKEND && !getToken()) {
@@ -236,22 +273,33 @@ export default function PeopleTab({
       return;
     }
     const nextId = saved?.id || id;
+    const persistedId = saved?.id || row.personId || id;
+    const savedMeta = saved?.meta || {};
     const nextRow = {
       ...row,
-      id: saved?._id || saved?.id || id,
-      personId: saved?._id || saved?.id || String(nextId),
+      id: persistedId,
+      personId: String(persistedId),
       name: saved?.name || row.name,
       service: saved?.serviceId || row.service,
       tc: saved?.tc || row.tc,
-      meta: saved?.meta || row.meta,
+      phone: saved?.phone || row.phone,
+      mail: saved?.email || row.mail,
+      title: savedMeta.title || row.title,
+      areas: Array.isArray(savedMeta.areas) ? savedMeta.areas : row.areas,
+      workAreaIds: Array.isArray(savedMeta.workAreaIds) ? savedMeta.workAreaIds : row.workAreaIds,
+      shiftCodes: Array.isArray(savedMeta.shiftCodes) ? savedMeta.shiftCodes : row.shiftCodes,
+      meta: savedMeta,
     };
 
-    setPeople((prev) =>
-      sortByKeyTR(
-        [...(prev.filter((p) => normId(p.id) !== normId(id))), nextRow],
+    setPeople((prev) => {
+      const replaceId = editingId ?? id;
+      const updatedPeople = sortByKeyTR(
+        [...(prev.filter((p) => normId(p.id) !== normId(replaceId))), nextRow],
         "name"
-      )
-    );
+      );
+      console.log("UI STATE UPDATED", updatedPeople);
+      return updatedPeople;
+    });
     reset();
     try { window.dispatchEvent(new Event("personnel:changed")); } catch {}
   };
@@ -271,6 +319,8 @@ export default function PeopleTab({
       [];
 
     setEditingId(p.id);
+    setShowRawTC(false);
+    setShowRawPhone(false);
     setForm({
       ...empty,
       ...p,
@@ -415,9 +465,24 @@ export default function PeopleTab({
           const mail = (r["MAİL ADRESİ"] || r["MAIL"] || "").toString().trim();
           const areasRaw = (r["ÇALIŞMA ALANLARI"] || r["ALANLAR"] || "").toString();
           const areaNames = areasRaw.split(/,|;/).map((s) => s.trim()).filter(Boolean);
-          const workAreaIds = areaNames
-            .map((nm) => WA.find((w) => w.name === nm)?.id)
+          const workAreaIdsRaw = (
+            r["ÇALIŞMA ALANI IDLERİ"] ||
+            r["ÇALIŞMA ALANI IDLERI"] ||
+            r["ALAN IDLERİ"] ||
+            r["ALAN IDLERI"] ||
+            r["WORK AREA IDS"] ||
+            r["WORKAREAIDS"] ||
+            ""
+          ).toString();
+          const explicitWorkAreaIds = workAreaIdsRaw
+            .split(/,|;/)
+            .map((s) => s.trim())
             .filter(Boolean);
+          const workAreaIds = explicitWorkAreaIds.length
+            ? explicitWorkAreaIds
+            : areaNames
+                .map((nm) => WA.find((w) => w.name === nm)?.id)
+                .filter(Boolean);
           const shiftsRaw = (r["VARDİYE KODLARI"] || r["VARDIYE KODLARI"] || "").toString();
           const shiftCodes = shiftsRaw.split(/,|;/).map((s) => s.trim()).filter(Boolean);
           if (!name) return null;
@@ -465,6 +530,7 @@ export default function PeopleTab({
           role: p.role || "",
           title: p.title || "",
           areas: Array.isArray(p.areas) ? p.areas : [],
+          workAreaIds: Array.isArray(p.workAreaIds) ? p.workAreaIds : [],
           shiftCodes: Array.isArray(p.shiftCodes) ? p.shiftCodes : [],
         },
         tc: p.tc || "",
@@ -576,7 +642,10 @@ export default function PeopleTab({
 
       {/* Form */}
       <form
-        onSubmit={upsert}
+        onSubmit={(e) => {
+          console.log("FORM SUBMIT TRIGGERED");
+          upsert(e);
+        }}
         className="bg-white rounded-2xl shadow-sm p-4 grid md:grid-cols-3 gap-3 items-end"
       >
         <div>
@@ -608,17 +677,43 @@ export default function PeopleTab({
 
         <div>
           <label className="text-xs text-slate-500">T.C. Kimlik No</label>
-          <input
-            value={form.tc}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                tc: e.target.value.replace(/\D/g, "").slice(0, 11),
-              }))
-            }
-            className="w-full border rounded p-2"
-            placeholder="11 hane"
-          />
+          <div className="relative">
+            <input
+              value={showRawTC ? form.tc : (form.tc ? maskTC(form.tc) : "")}
+              readOnly={!showRawTC}
+              onBlur={() => {
+                setTcError(form.tc ? (isValidTC(form.tc) ? "" : "Geçersiz TC Kimlik No") : "");
+              }}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/\D/g, "").slice(0, 11);
+                setForm((f) => ({
+                  ...f,
+                  tc: raw,
+                }));
+                if (tcError) setTcError("");
+              }}
+              maxLength={11}
+              className="w-full border rounded p-2 pr-10"
+              placeholder="11 hane"
+            />
+            {!!form.tc && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRawTC((v) => !v);
+                  setTcError("");
+                }}
+                aria-label={showRawTC ? "TC gizle" : "TC goster"}
+                title={showRawTC ? "TC gizle" : "TC goster"}
+                className="absolute inset-y-0 right-2 flex items-center text-slate-500 hover:text-slate-700"
+              >
+                {showRawTC ? <EyeOff size={16} strokeWidth={1.8} /> : <Eye size={16} strokeWidth={1.8} />}
+              </button>
+            )}
+          </div>
+          {tcError && (
+            <div className="mt-1 text-xs text-rose-600">{tcError}</div>
+          )}
         </div>
 
         <div>
@@ -633,12 +728,32 @@ export default function PeopleTab({
 
         <div>
           <label className="text-xs text-slate-500">Telefon</label>
-          <input
-            value={form.phone}
-            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-            className="w-full border rounded p-2"
-            placeholder="Telefon"
-          />
+          <div className="relative">
+            <input
+              type="tel"
+              value={showRawPhone ? formatPhoneDisplay(form.phone || "") : (form.phone ? maskPhone(form.phone) : "")}
+              readOnly={!showRawPhone}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  phone: e.target.value.replace(/\D/g, "").slice(0, 10),
+                }))
+              }
+              className="w-full border rounded p-2 pr-10"
+              placeholder="Telefon"
+            />
+            {!!form.phone && (
+              <button
+                type="button"
+                onClick={() => setShowRawPhone((v) => !v)}
+                aria-label={showRawPhone ? "Telefonu gizle" : "Telefonu goster"}
+                title={showRawPhone ? "Telefonu gizle" : "Telefonu goster"}
+                className="absolute inset-y-0 right-2 flex items-center text-slate-500 hover:text-slate-700"
+              >
+                {showRawPhone ? <EyeOff size={16} strokeWidth={1.8} /> : <Eye size={16} strokeWidth={1.8} />}
+              </button>
+            )}
+          </div>
         </div>
 
         <div>
@@ -710,6 +825,7 @@ export default function PeopleTab({
         <div className="md:col-span-3 flex gap-2">
           <button
             type="submit"
+            onClick={() => console.log("UPDATE BUTTON CLICKED")}
             className="px-3 py-2 rounded-lg text-white bg-emerald-600"
           >
             {editingId ? "Güncelle" : "Ekle"}
@@ -813,7 +929,7 @@ export default function PeopleTab({
                       >
                         <div className="text-sm font-medium">{p.name}</div>
                         <div className="text-xs text-slate-500">
-                          {maskTC(p.tc)} · {p.phone || "-"} · {p.mail || "-"}
+                          {maskTC(p.tc)} · {maskPhone(p.phone)} · {p.mail || p.email || "-"}
                         </div>
                       </li>
                     ))}

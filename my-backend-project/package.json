@@ -5,17 +5,19 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "start:dev": "nodemon --watch src --watch index.js index.js",
+    "start:dev": "nodemon --watch src --watch routes --watch services --watch models --watch middleware --watch index.js index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
+    "test:policy-layer": "node scripts/test-policy-layer.js",
     "test:candidate-builder": "node scripts/test-candidate-builder-integration.js",
     "test:candidate-builder-v22": "node scripts/test-candidate-builder-v22-rules.js",
     "test:shadow-audit": "node scripts/test-shadow-audit-collector.js",
     "audit:shadow-rules": "node scripts/audit-shadow-rules.js",
     "audit:section-mapping": "node scripts/audit-section-mapping.js",
     "export:audit-input": "node scripts/export-audit-input.js",
-    "dev": "nodemon --watch src --watch index.js index.js",
-    "dev:localdb": "MONGODB_URI=mongodb://127.0.0.1:27017/hastane nodemon --watch src --watch index.js index.js",
-    "dev:proddb": "nodemon --watch src --watch index.js index.js"
+    "repair:invalid-roster-names": "node scripts/repairInvalidRosterNames.js",
+    "dev": "MONGODB_URI=mongodb://127.0.0.1:27017/hastane nodemon --watch src --watch routes --watch services --watch models --watch middleware --watch index.js index.js",
+    "dev:localdb": "MONGODB_URI=mongodb://127.0.0.1:27017/hastane nodemon --watch src --watch routes --watch services --watch models --watch middleware --watch index.js index.js",
+    "dev:proddb": "nodemon --watch src --watch routes --watch services --watch models --watch middleware --watch index.js index.js"
   },
   "keywords": [],
   "author": "",

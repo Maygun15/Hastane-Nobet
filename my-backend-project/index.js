@@ -43,6 +43,10 @@ const API_RATE_MAX = Number(process.env.API_RATE_MAX || 300);
 const ENABLED_VALUES = new Set(['1', 'true', 'yes', 'on']);
 const NOTIFICATIONS_ENABLED = ENABLED_VALUES.has(String(process.env.NOTIFICATIONS_ENABLED || '').toLowerCase());
 
+function redactMongoUri(uri) {
+  return String(uri || '').replace(/\/\/([^:\/?#]+):([^@]+)@/, '//***:***@');
+}
+
 if (!JWT_SECRET) {
   console.error('HATA: JWT_SECRET tanımlı değil');
   process.exit(1);
@@ -64,6 +68,15 @@ if (!SKIP_DB) {
     mongoose.connect(MONGODB_URI, { dbName: 'hastane', serverSelectionTimeoutMS: 10000 })
       .then(async () => {
         console.log('✅ MongoDB bağlı');
+        const conn = mongoose.connection;
+        console.log('[DB] connected', {
+          dbName: conn.name,
+          host: conn.host,
+          port: conn.port,
+          readyState: conn.readyState,
+          uri: redactMongoUri(MONGODB_URI),
+          npmScript: process.env.npm_lifecycle_event || null,
+        });
         await createAdmin();
       })
       .catch((err) => {

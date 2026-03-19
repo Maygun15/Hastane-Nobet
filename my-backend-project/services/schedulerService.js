@@ -124,6 +124,15 @@ function buildGeneratedScheduleData({
       requiredSlots: Number(requiredSlots || 0),
       engine: useDraft ? 'draft' : 'optimized',
       hardFiltered: validated?.debug?.hardFiltered || 0,
+      invalidAssignmentCount: validated?.debug?.invalidAssignmentCount || 0,
+      invalidAssignments: Array.isArray(validated?.debug?.invalidAssignments)
+        ? validated.debug.invalidAssignments
+        : [],
+      invalidAssignmentByReason:
+        validated?.debug?.invalidAssignmentByReason &&
+        typeof validated.debug.invalidAssignmentByReason === 'object'
+          ? validated.debug.invalidAssignmentByReason
+          : {},
     },
   };
 }
@@ -489,6 +498,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     holidayKindByDate,
     shiftMetaByCode,
     defs: effectiveDefs,
+    staff,
   });
   const data = buildGeneratedScheduleData({
     useDraft,

@@ -125,11 +125,7 @@ export default function HospitalRosterApp() {
   }, [isBasicUser, activeTab]);
 
   /* ---- Mongo-first state’ler (LS sadece cache) ---- */
-  const [workAreas, setWorkAreas] = useState(() => {
-    const v2 = LS.get("workAreasV2", null);
-    const v1 = LS.get("workAreas", null);
-    return Array.isArray(v2) ? v2 : Array.isArray(v1) ? v1 : [];
-  });
+  const [workAreas, setWorkAreas] = useState([]);
   const [nurses, setNurses] = useState([]);
   const [doctors, setDoctors] = useState([]);
   const [workingHours, setWorkingHours] = useState(() => {
@@ -221,7 +217,10 @@ export default function HospitalRosterApp() {
   const settingsLoadedRef = useRef(false);
   const personnelLoadedRef = useRef(false);
   const saveTimersRef = useRef({ wa: null, wh: null, lt: null, rq: null });
-  const skipNextWorkAreasSaveRef = useRef(null);
+  const lastSavedWorkAreasRef = useRef(null);
+  const lastSavedWorkingHoursRef = useRef(null);
+  const lastSavedLeaveTypesRef = useRef(null);
+  const lastSavedRequestBoxRef = useRef(null);
 
   useEffect(() => {
     let alive = true;
@@ -237,10 +236,23 @@ export default function HospitalRosterApp() {
         const lt = await API.http.get(`/api/settings/leaveTypes?serviceId=`);
         const rq = await API.http.get(`/api/settings/requestBoxV1?serviceId=`);
         if (!alive) return;
-        if (Array.isArray(wa?.value)) setWorkAreas(wa.value);
-        if (Array.isArray(wh?.value)) setWorkingHours(wh.value);
-        if (Array.isArray(lt?.value)) setLeaveTypes(lt.value);
-        if (Array.isArray(rq?.value)) setRequestBox(rq.value);
+        if (Array.isArray(wa?.value)) {
+          const serialized = JSON.stringify(wa.value);
+          lastSavedWorkAreasRef.current = serialized;
+          setWorkAreas(wa.value);
+        }
+        if (Array.isArray(wh?.value)) {
+          lastSavedWorkingHoursRef.current = JSON.stringify(wh.value);
+          setWorkingHours(wh.value);
+        }
+        if (Array.isArray(lt?.value)) {
+          lastSavedLeaveTypesRef.current = JSON.stringify(lt.value);
+          setLeaveTypes(lt.value);
+        }
+        if (Array.isArray(rq?.value)) {
+          lastSavedRequestBoxRef.current = JSON.stringify(rq.value);
+          setRequestBox(rq.value);
+        }
       } catch (err) {
         console.warn("Settings fetch failed:", err?.message || err);
       } finally {
@@ -254,36 +266,46 @@ export default function HospitalRosterApp() {
     await API.http.req(`/api/settings/${key}`, {
       method: "PUT",
       body: { value, serviceId: "" },
+      retries: 0,
     });
   }, []);
-
-  const persistWorkAreas = useCallback(async (value) => {
-    if (!isAdmin) return;
-    skipNextWorkAreasSaveRef.current = JSON.stringify(value ?? []);
-    await saveSetting("workAreas", value);
-  }, [isAdmin, saveSetting]);
 
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
     if (!isAdmin) return;
     const serialized = JSON.stringify(workAreas ?? []);
-    if (skipNextWorkAreasSaveRef.current === serialized) {
-      skipNextWorkAreasSaveRef.current = null;
+    if (lastSavedWorkAreasRef.current === serialized) {
       return;
     }
-    saveSetting("workAreas", workAreas).catch((err) =>
-      console.warn("workAreas save failed:", err?.message || err)
-    );
+    if (saveTimersRef.current.wa) clearTimeout(saveTimersRef.current.wa);
+    saveTimersRef.current.wa = setTimeout(() => {
+      saveSetting("workAreas", workAreas)
+        .then(() => {
+          lastSavedWorkAreasRef.current = serialized;
+        })
+        .catch((err) =>
+          console.warn("workAreas save failed:", err?.message || err)
+        );
+    }, 600);
+    return () => {
+      if (saveTimersRef.current.wa) clearTimeout(saveTimersRef.current.wa);
+    };
   }, [workAreas, isAdmin, saveSetting]);
 
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
     if (!isAdmin) return;
+    const serialized = JSON.stringify(workingHours ?? []);
+    if (lastSavedWorkingHoursRef.current === serialized) return;
     if (saveTimersRef.current.wh) clearTimeout(saveTimersRef.current.wh);
     saveTimersRef.current.wh = setTimeout(() => {
-      saveSetting("workingHours", workingHours).catch((err) =>
-        console.warn("workingHours save failed:", err?.message || err)
-      );
+      saveSetting("workingHours", workingHours)
+        .then(() => {
+          lastSavedWorkingHoursRef.current = serialized;
+        })
+        .catch((err) =>
+          console.warn("workingHours save failed:", err?.message || err)
+        );
     }, 600);
     return () => {
       if (saveTimersRef.current.wh) clearTimeout(saveTimersRef.current.wh);
@@ -293,11 +315,17 @@ export default function HospitalRosterApp() {
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
     if (!isAdmin) return;
+    const serialized = JSON.stringify(leaveTypes ?? []);
+    if (lastSavedLeaveTypesRef.current === serialized) return;
     if (saveTimersRef.current.lt) clearTimeout(saveTimersRef.current.lt);
     saveTimersRef.current.lt = setTimeout(() => {
-      saveSetting("leaveTypes", leaveTypes).catch((err) =>
-        console.warn("leaveTypes save failed:", err?.message || err)
-      );
+      saveSetting("leaveTypes", leaveTypes)
+        .then(() => {
+          lastSavedLeaveTypesRef.current = serialized;
+        })
+        .catch((err) =>
+          console.warn("leaveTypes save failed:", err?.message || err)
+        );
     }, 600);
     return () => {
       if (saveTimersRef.current.lt) clearTimeout(saveTimersRef.current.lt);
@@ -307,11 +335,17 @@ export default function HospitalRosterApp() {
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
     if (!isAdmin) return;
+    const serialized = JSON.stringify(requestBox ?? []);
+    if (lastSavedRequestBoxRef.current === serialized) return;
     if (saveTimersRef.current.rq) clearTimeout(saveTimersRef.current.rq);
     saveTimersRef.current.rq = setTimeout(() => {
-      saveSetting("requestBoxV1", requestBox).catch((err) =>
-        console.warn("requestBox save failed:", err?.message || err)
-      );
+      saveSetting("requestBoxV1", requestBox)
+        .then(() => {
+          lastSavedRequestBoxRef.current = serialized;
+        })
+        .catch((err) =>
+          console.warn("requestBox save failed:", err?.message || err)
+        );
     }, 600);
     return () => {
       if (saveTimersRef.current.rq) clearTimeout(saveTimersRef.current.rq);
@@ -393,6 +427,11 @@ export default function HospitalRosterApp() {
           phone: p.phone || "",
           mail: p.email || "",
           areas: Array.isArray(p.areas) ? p.areas : Array.isArray(meta.areas) ? meta.areas : [],
+          workAreaIds: Array.isArray(p.workAreaIds)
+            ? p.workAreaIds
+            : Array.isArray(meta.workAreaIds)
+              ? meta.workAreaIds
+              : [],
           shiftCodes: Array.isArray(meta.shiftCodes) ? meta.shiftCodes : [],
         };
       });
@@ -809,7 +848,6 @@ export default function HospitalRosterApp() {
               <ParametersTab
                 workAreas={workAreas}
                 setWorkAreas={setWorkAreas}
-                persistWorkAreas={persistWorkAreas}
                 workingHours={workingHours}
                 setWorkingHours={setWorkingHours}
                 leaveTypes={leaveTypes}

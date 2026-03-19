@@ -10,15 +10,53 @@ const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
 const devError = (err) => (isProd ? {} : { error: err?.message || 'Sunucu hatası' });
 
+const normalizeScopeValue = (value) => String(value == null ? '' : value).trim();
+
+function normalizeRuleScope(input = {}) {
+  return {
+    sectionId: normalizeScopeValue(input.sectionId),
+    serviceId: normalizeScopeValue(input.serviceId || input.unitId),
+    role: normalizeScopeValue(input.role),
+  };
+}
+
+function buildRuleScopeFilter(req, scope) {
+  const filter = {
+    sectionId: scope.sectionId,
+    serviceId: scope.serviceId,
+    role: scope.role,
+  };
+  if (!req.hospitalId) return filter;
+  return {
+    ...filter,
+    $or: [
+      { hospitalId: req.hospitalId },
+      { hospitalId: null },
+      { hospitalId: { $exists: false } },
+    ],
+  };
+}
+
+function buildScopedRuleFilter(req, scope) {
+  return withHospitalFilter(req, {
+    sectionId: scope.sectionId,
+    serviceId: scope.serviceId,
+    role: scope.role,
+  });
+}
+
 // GET /api/duty-rules?serviceId=&sectionId=&role=
 router.get('/', async (req, res) => {
   try {
-    const serviceId = String(req.query.serviceId || req.query.sectionId || req.query.unitId || '').trim();
-    const role = String(req.query.role || '').trim();
-    const doc = await DutyRule.findOne(withHospitalFilter(req, { serviceId, role })).lean();
+    const scope = normalizeRuleScope(req.query || {});
+    const { sectionId, serviceId, role } = scope;
+    if (!sectionId) {
+      return res.status(400).json({ ok: false, message: 'sectionId gerekli' });
+    }
+    const doc = await DutyRule.findOne(buildRuleScopeFilter(req, scope)).lean();
     return res.json({
       ok: true,
-      rule: doc ?? { serviceId, sectionId: serviceId, role, rules: [], weights: {} },
+      rule: doc ?? { sectionId, serviceId, role, rules: [], weights: {} },
     });
   } catch (err) {
     return res.status(500).json({ message: safeMessage(err) });
@@ -29,9 +67,6 @@ router.get('/', async (req, res) => {
 router.put('/', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     const {
-      serviceId,
-      sectionId,
-      role,
       rules,
       weights,
       basicRules,
@@ -43,17 +78,20 @@ router.put('/', requireRole('admin', 'yetkili'), async (req, res) => {
       departman,
       description,
     } = req.body || {};
-    const sid = String(serviceId || sectionId || '').trim();
-    const roleKey = String(role || '').trim();
-    const doc = await DutyRule.findOneAndUpdate(
-      withHospitalFilter(req, { serviceId: sid, role: roleKey }),
+    const scope = normalizeRuleScope(req.body || {});
+    const { sectionId, serviceId, role } = scope;
+    if (!sectionId) {
+      return res.status(400).json({ ok: false, message: 'sectionId gerekli' });
+    }
+    let doc = await DutyRule.findOneAndUpdate(
+      buildRuleScopeFilter(req, scope),
       {
         $set: {
-          serviceId: sid,
-          sectionId: String(sectionId || sid || '').trim(),
-          role: roleKey,
-          rules: rules ?? [],
-          weights: weights ?? {},
+          sectionId,
+          serviceId,
+          role,
+          rules: Array.isArray(rules) ? rules : [],
+          weights: weights && typeof weights === 'object' && !Array.isArray(weights) ? weights : {},
           departman: departman || 'Acil Servis',
           ...(description !== undefined ? { description } : {}),
           ...(basicRules !== undefined ? { basicRules } : {}),
@@ -65,12 +103,38 @@ router.put('/', requireRole('admin', 'yetkili'), async (req, res) => {
           updatedBy: req.user?.uid || null,
           updatedAt: new Date(),
         },
-        $setOnInsert: {
-          createdBy: req.user?.uid || null,
-        },
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { new: true }
     ).lean();
+    if (!doc) {
+      doc = await DutyRule.findOneAndUpdate(
+        buildScopedRuleFilter(req, scope),
+        {
+          $set: {
+            sectionId,
+            serviceId,
+            role,
+            rules: Array.isArray(rules) ? rules : [],
+            weights: weights && typeof weights === 'object' && !Array.isArray(weights) ? weights : {},
+            departman: departman || 'Acil Servis',
+            ...(description !== undefined ? { description } : {}),
+            ...(basicRules !== undefined ? { basicRules } : {}),
+            ...(leaveRules !== undefined ? { leaveRules } : {}),
+            ...(shiftRules !== undefined ? { shiftRules } : {}),
+            ...(taskRequirements !== undefined ? { taskRequirements } : {}),
+            ...(personnelRules !== undefined ? { personnelRules } : {}),
+            ...(metadata !== undefined ? { metadata } : {}),
+            updatedBy: req.user?.uid || null,
+            updatedAt: new Date(),
+          },
+          $setOnInsert: {
+            ...(req.hospitalId ? { hospitalId: req.hospitalId } : {}),
+            createdBy: req.user?.uid || null,
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      ).lean();
+    }
     return res.json({ ok: true, rule: doc });
   } catch (err) {
     return res.status(500).json({ message: safeMessage(err) });

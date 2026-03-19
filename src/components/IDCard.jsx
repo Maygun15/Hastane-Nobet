@@ -1,6 +1,7 @@
 // src/components/IDCard.jsx
 import React, { useState } from "react";
-import { maskTC } from "../utils/format.js";
+import { Eye, EyeOff } from "lucide-react";
+import { maskPhone, maskTC } from "../utils/format.js";
 
 const clean = (s) => (s ?? "").toString().trim();
 const uniq = (arr) => {
@@ -12,6 +13,7 @@ const uniq = (arr) => {
 };
 const sortTR = (arr) =>
   [...arr].sort((a, b) => a.localeCompare(b, "tr-TR", { sensitivity: "base" }));
+const isMongoLikeId = (value) => /^[a-f0-9]{24}$/i.test(String(value || "").trim());
 
 const ROLE_COLOR = {
   doctor: "bg-blue-50 text-blue-700 border-blue-200",
@@ -50,12 +52,20 @@ function Row({ label, value, mono }) {
 
 export default function IDCard({ person, serviceNames }) {
   const [expanded, setExpanded] = useState(false);
+  const [revealTC, setRevealTC] = useState(false);
+  const [revealPhone, setRevealPhone] = useState(false);
+  console.log("MASK RENDER TC", person?.tc || person?.tckn, maskTC(person?.tc || person?.tckn));
+  console.log("MASK RENDER PHONE", person?.phone, maskPhone(person?.phone));
 
-  const servicesDisplay = Array.isArray(serviceNames) && serviceNames.length
-    ? serviceNames
-    : [person?.serviceName || person?.service || ""].filter(Boolean);
+  const servicesDisplay = (
+    Array.isArray(serviceNames) && serviceNames.length
+      ? serviceNames
+      : [person?.serviceName || person?.service || ""]
+  )
+    .map((s) => clean(s))
+    .filter((s) => s && !isMongoLikeId(s));
 
-  const rawAreas = person?.areas ?? person?.workAreas ?? person?.workAreaIds ?? [];
+  const rawAreas = person?.areas ?? person?.workAreas ?? [];
   const displayAreas = sortTR(uniq(
     (Array.isArray(rawAreas) ? rawAreas : [])
       .map((a) => (typeof a === "string" ? clean(a) : clean(a?.name || a?.label || "")))
@@ -104,9 +114,45 @@ export default function IDCard({ person, serviceNames }) {
       </div>
 
       <div className="px-4 py-2.5 space-y-1.5 border-b border-slate-100">
-        <Row label="TC" value={maskTC(person?.tc || person?.tckn)} mono />
-        <Row label="Telefon" value={person?.phone} />
-        <Row label="Mail" value={person?.mail || person?.email} />
+        <div className="flex items-baseline gap-2 min-w-0">
+          <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-400 w-24">
+            TC
+          </span>
+          <span className="text-[12px] text-slate-700 truncate font-mono">
+            {revealTC ? (person?.tc || person?.tckn || "-") : maskTC(person?.tc || person?.tckn)}
+          </span>
+          {!!(person?.tc || person?.tckn) && (
+            <button
+              type="button"
+              onClick={() => setRevealTC((v) => !v)}
+              aria-label={revealTC ? "TC gizle" : "TC goster"}
+              title={revealTC ? "TC gizle" : "TC goster"}
+              className="shrink-0 text-slate-500 hover:text-slate-700"
+            >
+              {revealTC ? <EyeOff size={14} strokeWidth={1.8} /> : <Eye size={14} strokeWidth={1.8} />}
+            </button>
+          )}
+        </div>
+        <div className="flex items-baseline gap-2 min-w-0">
+          <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-400 w-24">
+            Telefon
+          </span>
+          <span className="text-[12px] text-slate-700 truncate font-medium">
+            {revealPhone ? (person?.phone || "-") : maskPhone(person?.phone)}
+          </span>
+          {!!person?.phone && (
+            <button
+              type="button"
+              onClick={() => setRevealPhone((v) => !v)}
+              aria-label={revealPhone ? "Telefonu gizle" : "Telefonu goster"}
+              title={revealPhone ? "Telefonu gizle" : "Telefonu goster"}
+              className="shrink-0 text-slate-500 hover:text-slate-700"
+            >
+              {revealPhone ? <EyeOff size={14} strokeWidth={1.8} /> : <Eye size={14} strokeWidth={1.8} />}
+            </button>
+          )}
+        </div>
+        <Row label="Mail" value={person?.mail || person?.email || "-"} />
       </div>
 
       {hasExtra && (

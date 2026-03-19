@@ -1,7 +1,31 @@
 // services/scheduler/index.js
 const { runScheduler } = require("./engine");
+const { resolveSchedulerAreas } = require("./personAreaProjection");
 const RuleEngine = require("../ruleEngine");
 const { buildRuntimeContext } = require("./contracts");
+
+function projectSchedulerStaff(staff = []) {
+  return (Array.isArray(staff) ? staff : []).map((person) => {
+    const metaRaw = person?.meta && typeof person.meta === "object" ? person.meta : {};
+    const {
+      schedulerAreas,
+      excludedLabels: schedulerExcludedAreas,
+      hadAreaSource,
+    } = resolveSchedulerAreas(person, metaRaw);
+
+    const areas = hadAreaSource ? schedulerAreas : (person?.areas ?? metaRaw.areas);
+    const meta = { ...metaRaw };
+
+    if (hadAreaSource) meta.areas = areas;
+    if (schedulerExcludedAreas.length > 0) meta.schedulerExcludedAreas = schedulerExcludedAreas;
+
+    return {
+      ...person,
+      areas,
+      meta,
+    };
+  });
+}
 
 function buildContext({
   staff,
@@ -16,7 +40,7 @@ function buildContext({
   auditOptions = {},
 } = {}) {
   return buildRuntimeContext({
-    staff,
+    staff: projectSchedulerStaff(staff),
     days,
     leavesByPerson,
     requestsByPerson,
@@ -49,7 +73,7 @@ async function generateMonthlyPlan({
   }
 
   const staff = await getActiveStaff({ year, month });
-  const days = await getMonthlyShifts({ year, month }); // [{date, weekday, shifts:[{id, hours, requiredCount}]}]
+  const days = await getMonthlyShifts({ year, month });
   const leavesByPerson = (await (getLeaves?.({ year, month }) || {})) || {};
   const requestsByPerson = (await (getRequests?.({ year, month }) || {})) || {};
 

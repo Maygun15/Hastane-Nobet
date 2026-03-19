@@ -12,6 +12,7 @@ import * as XLSX from "xlsx";
 import { LS } from "../utils/storage.js";
 import { fetchPersonnel, getMonthlySchedule } from "../api/apiAdapter.js";
 import { fetchHolidayCalendar } from "../api/apiAdapter.js";
+import { isGroupLabel } from "../lib/dataResolver.js";
 import { maskTC } from "../utils/format.js";
 
 /* ========= Şablon başlıkları ========= */
@@ -718,6 +719,13 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
           })
           .filter(([canon, meta]) => canon && (meta?.name || meta?.title || meta?.tckn))
       );
+      const hasKnownPeople = remoteByCanon.size > 0 || metaIndex.byCanon.size > 0;
+      const isKnownPersonName = (name) => {
+        const canon = canonName(name);
+        if (!canon) return false;
+        if (!hasKnownPeople) return true;
+        return remoteByCanon.has(canon) || metaIndex.byCanon.has(canon);
+      };
       const roles = ["Nurse", "Doctor"];
       const assignments = [];
       for (const role of roles) {
@@ -752,7 +760,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
             const rowId = String(a.shiftCode || a.shiftId || a.rowId || "");
             if (!rowId) return;
             const nm = a.personName || a.name || "";
-            if (!nm || isGroupLabel(nm)) return;
+            if (!nm || isGroupLabel(nm) || !isKnownPersonName(nm)) return;
             if (!named[day]) named[day] = {};
             if (!named[day][rowId]) named[day][rowId] = [];
             if (!named[day][rowId].includes(nm)) named[day][rowId].push(nm);
@@ -804,7 +812,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
             if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return;
             if (!ymd.startsWith(`${year}-${String(month1).padStart(2, "0")}-`)) return;
             const nm = a.personName || a.name || "";
-            if (!nm || isGroupLabel(nm)) return;
+            if (!nm || isGroupLabel(nm) || !isKnownPersonName(nm)) return;
             const explicitHours = Number(a?.hours);
             if (!Number.isFinite(explicitHours) || explicitHours <= 0) return;
             assignments.push({

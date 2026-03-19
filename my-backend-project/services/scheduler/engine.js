@@ -134,6 +134,10 @@ function appendAssignedPersonToShift({ person, shift } = {}) {
 function runScheduler(context) {
   if (!context || !Array.isArray(context.days) || !Array.isArray(context.staff)) return context;
   if (!Array.isArray(context.candidateAudit)) context.candidateAudit = [];
+  if (!context.audit || typeof context.audit !== "object" || Array.isArray(context.audit)) {
+    context.audit = {};
+  }
+  if (!Array.isArray(context.audit.observations)) context.audit.observations = [];
   const shadowAuditEnabled = context?.auditOptions?.enableShadowCollection === true;
   if (shadowAuditEnabled && !context.shadowAudit) {
     context.shadowAudit = createShadowAuditCollector({
@@ -175,12 +179,58 @@ function runScheduler(context) {
           context,
         });
 
+        const constraintRejected = buildConstraintRejectedEntries(
+          selectionStage.postConstraintResult?.blockedCandidates
+        );
+        const slotAudit = {
+          ...selectionStage.audit,
+          constraintRejectedCount: constraintRejected.length,
+          constraintRejectedByReason: summarizeConstraintRejections(constraintRejected),
+          observationSummary: buildSlotObservationSummary({
+            date: day?.date || null,
+            shift,
+            slotIndex: i,
+            inputStaffCount: candidateBuild.audit?.inputStaffCount || rawStaffPool.length,
+            candidateAudit: selectionStage.audit,
+            postConstraintCount: selectionStage.postConstraintPool.length,
+            constraintRejected,
+          }),
+        };
+
         if (!selectionStage.postConstraintPool.length) {
-          context.candidateAudit.push(selectionStage.audit);
+          context.candidateAudit.push(slotAudit);
+          context.audit.observations.push({
+            ...slotAudit.observationSummary,
+            selectedCandidateId: null,
+            selectedCandidateName: null,
+            selectionReason: null,
+            topCandidates: [],
+            noCandidateReasonSummary: buildNoCandidateReasonSummary(slotAudit),
+          });
           break;
         }
 
-        context.candidateAudit.push(selectionStage.audit);
+        const selectedAudit = {
+          ...slotAudit,
+          selectedCandidate: selectionStage.selectedCandidate?.person
+            ? {
+                id: normalizePersonId(selectionStage.selectedCandidate.person.id),
+                name: selectionStage.selectedCandidate.person.name || "",
+              }
+            : null,
+        };
+
+        context.candidateAudit.push(selectedAudit);
+        context.audit.observations.push({
+          ...slotAudit.observationSummary,
+          selectedCandidateId: normalizePersonId(selectionStage.selectedCandidate?.id),
+          selectedCandidateName: selectionStage.selectedCandidate?.person?.name || "",
+          selectionReason: selectionStage.audit?.selectionReason || null,
+          topCandidates: Array.isArray(selectionStage.audit?.topCandidates)
+            ? selectionStage.audit.topCandidates
+            : [],
+          noCandidateReasonSummary: null,
+        });
         assign(selectionStage.selectedCandidate?.person, day, shift, context);
         if (selectionStage.selectedCandidate?.id) {
           usedOnDay.add(selectionStage.selectedCandidate.id);
@@ -201,6 +251,7 @@ function runScheduler(context) {
   if (shadowAuditEnabled && context?.shadowAudit) {
     context.shadowAudit.summary = aggregateShadowObservations(context.shadowAudit.observations);
   }
+  context.audit.summary = buildObservationSummary(context.audit.observations);
 
   return context;
 }
@@ -338,6 +389,7 @@ function buildSelectionStage({ candidateBuild = null, day = null, shift = null, 
   return {
     rawPoolCount: Number(candidateBuild?.audit?.inputStaffCount || 0),
     candidateBuilderEligiblePool,
+    postConstraintResult,
     postConstraintPool,
     scoredCandidates,
     selectedCandidate,
@@ -737,7 +789,7 @@ function determineSelectionReason(scoredCandidates = []) {
   const firstSchedulerScore = Number(first?.schedulerScore || 0);
   const secondSchedulerScore = Number(second?.schedulerScore || 0);
   if (firstSchedulerScore !== secondSchedulerScore) {
-    return "SCHEDULER_SCORE_BEST";
+    return "SCHEDULER_PRIMARY";
   }
 
   const firstPolicyScore = Number(first?.policyScore || 0);
@@ -746,7 +798,7 @@ function determineSelectionReason(scoredCandidates = []) {
     return "POLICY_TIE_BREAK";
   }
 
-  return "SCHEDULER_SCORE_BEST";
+  return "ID_TIE_BREAK";
 }
 
 function buildTopCandidateSummary(scoredCandidates = [], selectedId = null) {
@@ -756,13 +808,134 @@ function buildTopCandidateSummary(scoredCandidates = [], selectedId = null) {
       personId: normalizePersonId(candidate?.id),
       schedulerScore: Number(candidate?.schedulerScore || 0),
       policyScore: Number(candidate?.policyScore || 0),
+      totalScore: Number(candidate?.policyScore || 0),
       selected: normalizePersonId(candidate?.id) === normalizePersonId(selectedId),
     }));
 }
 
+function summarizeConstraintRejections(constraintRejected = []) {
+  const counts = {};
+  for (const item of constraintRejected || []) {
+    const reason = String(item?.reason || "").trim();
+    if (!reason) continue;
+    counts[reason] = Number(counts[reason] || 0) + 1;
+  }
+  return counts;
+}
+
+function buildConstraintRejectedEntries(blockedCandidates = []) {
+  const entries = [];
+  for (const item of blockedCandidates || []) {
+    const personId = normalizePersonId(item?.personId);
+    const rules = Array.isArray(item?.blockingRules) ? item.blockingRules : [];
+    if (!rules.length) {
+      entries.push({
+        personId,
+        personName: "",
+        reason: "UNAVAILABLE",
+      });
+      continue;
+    }
+    for (const rule of rules) {
+      entries.push({
+        personId,
+        personName: "",
+        reason: normalizeRuleCode(rule) || "UNAVAILABLE",
+      });
+    }
+  }
+  return entries;
+}
+
+function summarizeCandidateBuilderRejections(rejected = []) {
+  const counts = {};
+  for (const item of rejected || []) {
+    const reasons = []
+      .concat(Array.isArray(item?.blockingRules) ? item.blockingRules : [])
+      .concat(Array.isArray(item?.reasonCodes) ? item.reasonCodes : [])
+      .concat(Array.isArray(item?.failedRuleCodes) ? item.failedRuleCodes : []);
+    for (const reason of reasons) {
+      const key = String(reason || "").trim();
+      if (!key) continue;
+      counts[key] = Number(counts[key] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
+function buildSlotObservationSummary({
+  date = null,
+  shift = null,
+  slotIndex = 0,
+  inputStaffCount = 0,
+  candidateAudit = {},
+  postConstraintCount = 0,
+  constraintRejected = [],
+} = {}) {
+  return {
+    date,
+    shiftId: shift?.id || shift?.code || "",
+    shiftLabel: shift?.label || shift?.name || shift?.code || shift?.id || "",
+    slotIndex,
+    totalCandidates: Number(inputStaffCount || 0),
+    candidateBuilderEligibleCount: Number(candidateAudit?.eligibleCount || 0),
+    eligibleCandidates: Number(postConstraintCount || 0),
+    candidateBuilderRejectedByReason: summarizeCandidateBuilderRejections(candidateAudit?.rejected),
+    constraintRejectedByReason: summarizeConstraintRejections(constraintRejected),
+    fallbackUsed: candidateAudit?.fallbackUsed === true,
+    fallbackReason: candidateAudit?.fallbackReason || null,
+  };
+}
+
+function buildNoCandidateReasonSummary(slotAudit = {}) {
+  const builderReasons = summarizeCandidateBuilderRejections(slotAudit?.rejected);
+  const constraintReasons = slotAudit?.constraintRejectedByReason || {};
+  return {
+    candidateBuilder: builderReasons,
+    constraints: constraintReasons,
+    fallbackUsed: slotAudit?.fallbackUsed === true,
+    fallbackReason: slotAudit?.fallbackReason || null,
+  };
+}
+
+function buildObservationSummary(observations = []) {
+  const safe = Array.isArray(observations) ? observations : [];
+  const selectionReasons = {};
+  const rejectedByReason = {};
+  let noCandidateCount = 0;
+
+  for (const item of safe) {
+    if (!item?.selectedCandidateId) noCandidateCount += 1;
+    const selectionReason = String(item?.selectionReason || "").trim();
+    if (selectionReason) {
+      selectionReasons[selectionReason] = Number(selectionReasons[selectionReason] || 0) + 1;
+    }
+
+    const sources = [
+      item?.candidateBuilderRejectedByReason,
+      item?.constraintRejectedByReason,
+    ];
+    for (const source of sources) {
+      for (const [reason, count] of Object.entries(source || {})) {
+        if (!reason) continue;
+        rejectedByReason[reason] = Number(rejectedByReason[reason] || 0) + Number(count || 0);
+      }
+    }
+  }
+
+  return {
+    slotCount: safe.length,
+    noCandidateCount,
+    selectedCount: safe.length - noCandidateCount,
+    selectionReasons,
+    rejectedByReason,
+  };
+}
+
 function clonePolicyResult(policyResult) {
   return {
-    policy: policyResult?.policy || "UNKNOWN_POLICY",
+    name: policyResult?.name || policyResult?.policy || "UNKNOWN_POLICY",
+    policy: policyResult?.policy || policyResult?.name || "UNKNOWN_POLICY",
     score: Number(policyResult?.score || 0),
     reason: policyResult?.reason ?? null,
     meta:

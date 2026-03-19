@@ -26,6 +26,7 @@ function fatiguePolicy(candidate = {}, _context = {}) {
   }
 
   return {
+    name: "FATIGUE",
     policy: "FATIGUE",
     score,
     reason,

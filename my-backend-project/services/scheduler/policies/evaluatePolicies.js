@@ -5,27 +5,29 @@ const fatiguePolicy = require("./fatigue.policy");
 const workloadBalancePolicy = require("./workloadBalance.policy");
 
 function evaluatePolicies(candidate, context) {
-  const policies = [
+  const breakdown = [
     fairnessPolicy(candidate, context),
     fatiguePolicy(candidate, context),
     workloadBalancePolicy(candidate, context),
   ].map(normalizePolicyResult);
 
-  const totalScore = policies.reduce((sum, policy) => sum + policy.score, 0);
+  const totalScore = breakdown.reduce((sum, policy) => sum + policy.score, 0);
 
   return {
     totalScore,
-    policies,
+    breakdown,
+    policies: breakdown,
   };
 }
 
 function normalizePolicyResult(policyResult) {
   const raw = policyResult && typeof policyResult === "object" ? policyResult : {};
-  const policy = normalizePolicyName(raw.policy);
+  const name = normalizePolicyName(raw.name || raw.policy);
   const numericScore = Number(raw.score);
 
   return {
-    policy,
+    name,
+    policy: name,
     score: Number.isFinite(numericScore) ? numericScore : 0,
     reason: normalizeOptionalString(raw.reason),
     meta: normalizeMeta(raw.meta),

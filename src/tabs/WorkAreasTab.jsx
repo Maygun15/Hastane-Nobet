@@ -1,10 +1,21 @@
 // src/tabs/WorkAreasTab.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import IDCard from "../components/IDCard.jsx";
-
-const LS_KEY = "workAreas";
+import {
+  normalizeWorkAreaMasterList,
+  resolvePersonWorkAreaIds,
+  resolvePersonWorkAreaNames,
+} from "../lib/workAreasModel.js";
 const norm = (s) => (s || "").toString().trim().toLocaleUpperCase("tr-TR");
+const sortAreaNames = (list) =>
+  [...(Array.isArray(list) ? list : [])].sort((a, b) =>
+    String(a || "").localeCompare(String(b || ""), "tr", { sensitivity: "base" })
+  );
+const sortAreaDefs = (list) =>
+  [...(Array.isArray(list) ? list : [])].sort((a, b) =>
+    String(a?.name || "").localeCompare(String(b?.name || ""), "tr", { sensitivity: "base" })
+  );
 const slugTR = (s = "") =>
   s
     .toString()
@@ -32,76 +43,30 @@ const splitNames = (s) =>
     .map((x) => x.trim())
     .filter(Boolean);
 const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
+const badgeToneByCount = (count) => {
+  if (count <= 0) return "bg-red-50 text-red-700 border-red-200";
+  if (count < 5) return "bg-amber-50 text-amber-700 border-amber-200";
+  return "bg-emerald-50 text-emerald-700 border-emerald-200";
+};
 
-function useHybridAreas(external, setExternal) {
-  const controlled = typeof setExternal === "function";
-
-  const [inner, setInner] = useState(() => {
-    if (controlled) return [];
-    try {
-      const s = localStorage.getItem(LS_KEY);
-      return s
-        ? JSON.parse(s)
-        : [
-            "AŞI","CERRAHİ MÜDAHELE","ÇOCUK","ECZANE","EKİP SORUMLUSU","KIRMIZI",
-            "KIRMIZI VE SARI ALAN GÖREVLENDİRME","RESÜSİTASYON","SARI",
-            "SERVİS SORUMLUSU","SÜPERVİZÖR","TRİAJ","YEŞİL",
-          ];
-    } catch { return []; }
-  });
-
+function useAreas(external, setExternal) {
+  const list = Array.isArray(external) ? external : [];
   const setAreas = (updater) => {
-    if (controlled) {
-      setExternal((prev) => (typeof updater === "function" ? updater(prev ?? []) : updater));
-    } else {
-      setInner((prev0) => {
-        const next = typeof updater === "function" ? updater(prev0 ?? []) : updater;
-        try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch {}
-        return next;
-      });
-    }
+    if (typeof setExternal !== "function") return;
+    setExternal((prev) => (typeof updater === "function" ? updater(prev ?? []) : updater));
   };
-
-  const list = controlled ? (Array.isArray(external) ? external : []) : (inner ?? []);
-
-  useEffect(() => {
-    if (!controlled) {
-      try { localStorage.setItem(LS_KEY, JSON.stringify(list ?? [])); } catch {}
-    }
-  }, [controlled, list]);
-
-  return [list, setAreas, controlled];
+  return [list, setAreas];
 }
 
-function extractAreaNamesFromPerson(person) {
-  const out = [];
-  const raw =
-    person?.areas ??
-    person?.meta?.areas ??
-    person?.workAreas ??
-    person?.workareas ??
-    [];
-  const arr = Array.isArray(raw) ? raw : raw ? [raw] : [];
-  for (const it of arr) {
-    if (typeof it === "string") {
-      out.push(...splitNames(it));
-    } else if (it && typeof it === "object") {
-      const name = it?.name || it?.label || it?.title || it?.id;
-      if (name) out.push(...splitNames(name));
-    }
-  }
-  return uniq(out);
+function extractAreaNamesFromPerson(person, masterAreas) {
+  return uniq(
+    resolvePersonWorkAreaNames(person, masterAreas).flatMap((name) => splitNames(name))
+  );
 }
 
-function extractAreaKeysFromPerson(person) {
-  const names = extractAreaNamesFromPerson(person);
-  const idsRaw =
-    person?.workAreaIds ??
-    person?.areaIds ??
-    person?.meta?.workAreaIds ??
-    person?.meta?.areaIds ??
-    [];
-  const ids = Array.isArray(idsRaw) ? idsRaw.map((x) => String(x || "")) : [];
+function extractAreaKeysFromPerson(person, masterAreas) {
+  const names = extractAreaNamesFromPerson(person, masterAreas);
+  const ids = resolvePersonWorkAreaIds(person, masterAreas);
   const keys = [
     ...names.map(slugTR),
     ...ids.map(slugTR),
@@ -109,12 +74,12 @@ function extractAreaKeysFromPerson(person) {
   return new Set(keys);
 }
 
-function personMatchesArea(person, area) {
+function personMatchesArea(person, area, masterAreas) {
   const key = area.key;
-  const keys = extractAreaKeysFromPerson(person);
+  const keys = extractAreaKeysFromPerson(person, masterAreas);
   if (keys.has(key)) return true;
   const areaText = area.norm;
-  const personNames = extractAreaNamesFromPerson(person).map(normText);
+  const personNames = extractAreaNamesFromPerson(person, masterAreas).map(normText);
   return personNames.some((p) => p === areaText || p.includes(areaText) || areaText.includes(p));
 }
 
@@ -131,23 +96,37 @@ function getPersonKey(p, i) {
   );
 }
 
-export default function WorkAreasTab({ workAreas, setWorkAreas, people = [], persistAreas }) {
-  const [areas, setAreas] = useHybridAreas(workAreas, setWorkAreas);
+export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
+  const [areas, setAreas] = useAreas(workAreas, setWorkAreas);
   const peopleList = Array.isArray(people) ? people : [];
+  const masterWorkAreas = useMemo(
+    () => normalizeWorkAreaMasterList(areas),
+    [areas]
+  );
   const areaDefs = useMemo(
     () =>
-      (areas || []).map((name) => ({
-        name,
-        key: slugTR(name),
-        norm: normText(name),
-      })),
-    [areas]
+      sortAreaDefs(masterWorkAreas.map((item) => ({
+        name: item.name,
+        key: item.key,
+        norm: normText(item.name),
+      }))),
+    [masterWorkAreas]
+  );
+  const displayAreas = useMemo(
+    () =>
+      areaDefs
+        .map((area) => ({
+          ...area,
+          rawIndex: (areas || []).findIndex((name) => norm(name) === norm(area.name)),
+        }))
+        .filter((area) => area.rawIndex >= 0),
+    [areaDefs, areas]
   );
   const peopleByArea = useMemo(() => {
     const map = new Map();
     areaDefs.forEach((a) => map.set(a.key, []));
     areaDefs.forEach((area) => {
-      const list = peopleList.filter((p) => personMatchesArea(p, area));
+      const list = peopleList.filter((p) => personMatchesArea(p, area, masterWorkAreas));
       list.sort((a, b) =>
         (a?.name || a?.fullName || "")
           .toString()
@@ -156,31 +135,50 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [], per
       map.set(area.key, list);
     });
     return map;
-  }, [areaDefs, peopleList]);
+  }, [areaDefs, peopleList, masterWorkAreas]);
 
   const [name, setName] = useState("");
+  const [query, setQuery] = useState("");
   const [editingIndex, setEditingIndex] = useState(null);
   const [editingValue, setEditingValue] = useState("");
+  const [selectedAreaKey, setSelectedAreaKey] = useState(null);
   const fileRef = useRef(null);
+  const filteredDisplayAreas = useMemo(() => {
+    const q = normText(query);
+    if (!q) return displayAreas;
+    return displayAreas.filter((area) => area.norm.includes(q));
+  }, [displayAreas, query]);
+  const selectedArea =
+    filteredDisplayAreas.find((area) => area.key === selectedAreaKey) ||
+    displayAreas.find((area) => area.key === selectedAreaKey) ||
+    filteredDisplayAreas[0] ||
+    displayAreas[0] ||
+    null;
+  const selectedPeople = selectedArea ? (peopleByArea.get(selectedArea.key) || []) : [];
 
   /* -------- CRUD -------- */
   const addArea = () => {
     const v = name.trim();
     if (!v) return alert("Alan adı boş olamaz.");
     if (areas.some((a) => norm(a) === norm(v))) return alert("Bu alan zaten var.");
-    setAreas((prev) => [...prev, v]);
+    setAreas((prev) => sortAreaNames([...prev, v]));
+    setSelectedAreaKey(slugTR(v));
     setName("");
   };
 
   const removeArea = (idx) => {
     // Düzenlenen satırı silerken düzenleme modunu kapat
     if (editingIndex === idx) cancelEdit();
+    if (selectedArea && idx === selectedArea.rawIndex) {
+      setSelectedAreaKey(null);
+    }
     setAreas((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const startEdit = (idx) => {
     setEditingIndex(idx);
     setEditingValue(areas[idx]);
+    setSelectedAreaKey(slugTR(areas[idx]));
   };
 
   const saveEdit = () => {
@@ -190,7 +188,8 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [], per
     if (areas.some((a, i) => i !== editingIndex && norm(a) === norm(v))) {
       return alert("Bu ad zaten mevcut.");
     }
-    setAreas((prev) => prev.map((a, i) => (i === editingIndex ? v : a)));
+    setAreas((prev) => sortAreaNames(prev.map((a, i) => (i === editingIndex ? v : a))));
+    setSelectedAreaKey(slugTR(v));
     cancelEdit();
   };
 
@@ -202,6 +201,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [], per
   const resetAreas = () => {
     if (!confirm("Tüm alanları sıfırlamak istiyor musunuz?")) return;
     cancelEdit();
+    setSelectedAreaKey(null);
     setAreas([]);
   };
 
@@ -238,17 +238,8 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [], per
         }
 
         cancelEdit();
-        setAreas(cleaned);
-
-        try {
-          if (typeof persistAreas === "function") {
-            await persistAreas(cleaned);
-          }
-          alert("Excel'den yükleme tamam.");
-        } catch (saveErr) {
-          console.error(saveErr);
-          alert(`Excel yüklendi ama kaydedilemedi: ${saveErr?.message || saveErr}`);
-        }
+        setAreas(sortAreaNames(cleaned));
+        alert("Excel'den yükleme tamam.");
       } catch (err) {
         console.error(err);
         alert(`Excel yüklenemedi: ${err?.message || "Beklenen sayfa: CalismaAlanlari, başlık: ALAN"}`);
@@ -277,103 +268,170 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [], per
 
       <h3 className="font-medium">Çalışma Alanları</h3>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Sol: liste */}
-        <div>
-          <div className="text-sm mb-2 text-gray-500">Mevcut Alanlar</div>
-          <ol className="space-y-1">
-            {areas.map((a, i) => (
-              <li key={a + i} className="flex items-center justify-between px-3 py-2 rounded border bg-white">
-                <div className="flex-1 min-w-0">
-                  {editingIndex === i ? (
-                    <input
-                      className="w-full px-2 py-1 border rounded"
-                      value={editingValue}
-                      onChange={(e) => setEditingValue(e.target.value)}
-                      autoFocus
-                    />
-                  ) : (
-                    <span className="truncate">
-                      <b>{i + 1}.</b> {a}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 ml-3">
-                  {editingIndex === i ? (
-                    <>
-                      <button type="button" className="text-sm px-2 py-1 border rounded" onClick={saveEdit}>
-                        Kaydet
+      <div className="grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] gap-6">
+        <div className="space-y-4">
+          <div className="rounded-xl border bg-white overflow-hidden">
+            <div className="px-4 py-3 border-b bg-slate-50">
+              <div className="text-sm font-medium text-slate-700">Mevcut Alanlar</div>
+              <div className="text-xs text-slate-500 mt-1">Bir alan seçerek detayını sağ panelde yönetin.</div>
+            </div>
+            <div className="p-3">
+              <div className="mb-3">
+                <input
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Alan ara..."
+                />
+              </div>
+              <ol className="space-y-2">
+                {filteredDisplayAreas.map((area, i) => {
+                  const isSelected = selectedArea?.key === area.key;
+                  const listCount = peopleByArea.get(area.key)?.length || 0;
+                  const badgeTone = badgeToneByCount(listCount);
+                  return (
+                    <li key={area.key}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAreaKey(area.key)}
+                        className={`w-full text-left rounded-lg border px-3 py-3 transition ${
+                          isSelected
+                            ? "border-sky-500 bg-sky-50 ring-2 ring-sky-100 text-slate-900 shadow-sm"
+                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="min-w-0 truncate font-medium">
+                            {i + 1}. {area.name}
+                          </span>
+                          <span className={`shrink-0 text-xs px-2 py-1 rounded-full border ${badgeTone}`}>
+                            {listCount} kişi
+                          </span>
+                        </div>
                       </button>
-                      <button type="button" className="text-sm px-2 py-1 border rounded" onClick={cancelEdit}>
-                        İptal
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button type="button" className="text-sm px-2 py-1 border rounded" onClick={() => startEdit(i)}>
-                        Düzenle
-                      </button>
-                      <button type="button" className="text-sm px-2 py-1 border rounded" onClick={() => removeArea(i)}>
-                        Sil
-                      </button>
-                    </>
-                  )}
-                </div>
-              </li>
-            ))}
-            {areas.length === 0 && <li className="text-sm text-gray-500">Henüz alan yok.</li>}
-          </ol>
+                    </li>
+                  );
+                })}
+                {displayAreas.length === 0 && <li className="text-sm text-gray-500">Henüz alan yok.</li>}
+                {displayAreas.length > 0 && filteredDisplayAreas.length === 0 && (
+                  <li className="text-sm text-gray-500">Arama ile eşleşen alan bulunamadı.</li>
+                )}
+              </ol>
+            </div>
+          </div>
+
+          <div className="rounded-xl border bg-white p-4">
+            <div className="text-sm font-medium text-slate-700 mb-2">Yeni Alan Ekle</div>
+            <div className="flex items-center gap-2">
+              <input
+                className="px-3 py-2 border rounded w-full"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder=""
+              />
+              <button type="button" className="px-3 py-2 text-sm border rounded" onClick={addArea}>
+                Ekle
+              </button>
+            </div>
+            <div className="text-xs text-gray-500 mt-2">
+              Not: Excel içe/dışa aktarma için başlık <b>ALAN</b> kullanılır. İlk sütun değerleri alan adı olarak okunur.
+            </div>
+          </div>
         </div>
 
-        {/* Sağ: ekle */}
-        <div>
-          <div className="text-sm mb-2 text-gray-500">Ekle</div>
-          <div className="flex items-center gap-2">
-            <input
-              className="px-3 py-2 border rounded w-full"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="" /* örnek yok */
-            />
-            <button type="button" className="px-3 py-2 text-sm border rounded" onClick={addArea}>
-              Ekle
-            </button>
-          </div>
-          <div className="text-xs text-gray-500 mt-2">
-            Not: Excel içe/dışa aktarma için başlık <b>ALAN</b> kullanılır. İlk sütun değerleri alan adı olarak okunur.
-          </div>
-        </div>
-      </div>
-
-      {/* Alan bazlı personel kartları */}
-      <div className="pt-2 space-y-3">
-        <h3 className="font-medium">Alanlarda Çalışanlar</h3>
-        <div className="space-y-3">
-          {areaDefs.map((area) => {
-            const list = peopleByArea.get(area.key) || [];
-            return (
-              <details key={area.key} className="rounded-lg border bg-white">
-                <summary className="cursor-pointer select-none px-3 py-2 flex items-center justify-between">
-                  <span className="font-medium">{area.name}</span>
-                  <span className="text-xs text-slate-500">{list.length} kişi</span>
-                </summary>
-                <div className="p-3 border-t">
-                  {list.length ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                      {list.map((p, idx) => (
-                        <IDCard key={getPersonKey(p, idx)} person={p} />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-sm text-gray-500">Bu alanda kayıtlı kişi yok.</div>
-                  )}
+        <div className="space-y-4">
+          <div className="rounded-xl border bg-white overflow-hidden">
+            <div className="px-4 py-3 border-b bg-slate-50 flex items-start justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium text-slate-700">Seçili Alan</div>
+                <div className="text-xs text-slate-500 mt-1">
+                  {selectedArea ? "Alan adını düzenleyebilir veya silebilirsiniz." : "Detayları görmek için soldan bir alan seçin."}
                 </div>
-              </details>
-            );
-          })}
-          {areaDefs.length === 0 && (
-            <div className="text-sm text-gray-500">Alan ekledikçe burada personel kartları görünür.</div>
-          )}
+              </div>
+              {selectedArea && (
+                <span className={`shrink-0 text-sm font-semibold px-3 py-1 rounded-full border ${badgeToneByCount(selectedPeople.length)}`}>
+                  {selectedPeople.length} kişi
+                </span>
+              )}
+            </div>
+            <div className="p-4">
+              {selectedArea ? (
+                <div className="space-y-4">
+                  <div className="rounded-lg border bg-slate-50 p-4">
+                    {editingIndex === selectedArea.rawIndex ? (
+                      <div className="space-y-3">
+                        <input
+                          className="w-full px-3 py-2 border rounded bg-white"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          autoFocus
+                        />
+                        <div className="flex items-center gap-2">
+                          <button type="button" className="text-sm px-3 py-2 border rounded bg-white" onClick={saveEdit}>
+                            Kaydet
+                          </button>
+                          <button type="button" className="text-sm px-3 py-2 border rounded bg-white" onClick={cancelEdit}>
+                            İptal
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="text-xs uppercase tracking-wide text-slate-400">Alan Adı</div>
+                          <div className="text-lg font-semibold text-slate-800 mt-1 break-words">{selectedArea.name}</div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            className="text-sm px-3 py-2 border rounded bg-white"
+                            onClick={() => startEdit(selectedArea.rawIndex)}
+                          >
+                            Düzenle
+                          </button>
+                          <button
+                            type="button"
+                            className="text-sm px-3 py-2 border rounded bg-white text-red-600"
+                            onClick={() => removeArea(selectedArea.rawIndex)}
+                          >
+                            Sil
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-slate-500">Alan ekledikçe veya soldan seçim yaptıkça detaylar burada görünür.</div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border bg-white overflow-hidden">
+            <div className="px-4 py-3 border-b bg-slate-50">
+              <div className="text-sm font-medium text-slate-700">Seçilen Alanda Çalışanlar</div>
+              <div className="text-xs text-slate-500 mt-1">
+                {selectedArea ? `${selectedArea.name} alanındaki personel listesi` : "Personel listesini görmek için soldan bir alan seçin."}
+              </div>
+            </div>
+            <div className="p-4">
+              {selectedArea ? (
+                selectedPeople.length ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
+                    {selectedPeople.map((p, idx) => (
+                      <IDCard key={getPersonKey(p, idx)} person={p} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    Bu alanda kayıtlı kişi yok. Personel kartlarında bu alana ait isim veya ilişki bilgisi bulunmuyor olabilir.
+                  </div>
+                )
+              ) : (
+                <div className="text-sm text-gray-500">Henüz seçili alan yok.</div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

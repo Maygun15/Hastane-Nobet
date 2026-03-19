@@ -124,23 +124,138 @@ function sanitizeSupervisorAssignments(assignments = [], holidayKindByDate = {},
     .filter(Boolean);
 }
 
+function buildStaffMaps(staff = []) {
+  const idSet = new Set();
+  const nameToId = new Map();
+  for (const person of staff || []) {
+    const pid = String(person?.id || person?._id || person?.personId || '').trim();
+    const name = String(person?.name || person?.fullName || person?.displayName || '').trim();
+    const canon = normalizeText(name);
+    if (pid) idSet.add(pid);
+    if (pid && canon && !nameToId.has(canon)) nameToId.set(canon, pid);
+  }
+  return { idSet, nameToId };
+}
+
+function validateAssignee(assignee = {}, staffMaps = {}) {
+  const pidRaw = String(assignee?.personId || '').trim();
+  const nameRaw = String(assignee?.personName || assignee?.name || '').trim();
+  const canonName = normalizeText(nameRaw);
+  const idSet = staffMaps?.idSet || new Set();
+  const nameToId = staffMaps?.nameToId || new Map();
+
+  if (pidRaw && idSet.has(pidRaw)) {
+    return { valid: true, personId: pidRaw, type: null };
+  }
+
+  if (canonName && nameToId.has(canonName)) {
+    return { valid: true, personId: nameToId.get(canonName), type: null };
+  }
+
+  if (pidRaw && !idSet.has(pidRaw)) {
+    return { valid: false, personId: null, type: 'UNKNOWN_PERSON' };
+  }
+
+  if (!nameRaw) {
+    return { valid: false, personId: null, type: 'PLACEHOLDER' };
+  }
+
+  return { valid: false, personId: null, type: 'RAW_LABEL' };
+}
+
+function summarizeInvalidAssignments(items = []) {
+  const counts = {};
+  for (const item of items || []) {
+    const key = String(item?.invalidAssigneeReason || '').trim();
+    if (!key) continue;
+    counts[key] = Number(counts[key] || 0) + 1;
+  }
+  return counts;
+}
+
+function sanitizeAssignees(assignments = [], staff = []) {
+  const staffMaps = buildStaffMaps(staff);
+  const { idSet, nameToId } = staffMaps;
+  if (!idSet.size && !nameToId.size) {
+    return {
+      assignments: Array.isArray(assignments) ? assignments.slice() : [],
+      issues: [],
+      debug: { invalidAssignmentCount: 0, invalidAssignments: [], invalidAssignmentByReason: {} },
+    };
+  }
+
+  const issues = [];
+  const invalidAssignments = [];
+  const filtered = [];
+
+  for (const item of assignments || []) {
+    const nameRaw = String(item?.personName || item?.name || '').trim();
+    const validation = validateAssignee(item, staffMaps);
+
+    if (!validation.valid) {
+      const detail = validation.type || 'INVALID_ASSIGNEE';
+      invalidAssignments.push({
+        date: String(item?.date || item?.day || '').slice(0, 10) || null,
+        shiftId: String(item?.shiftId || item?.shiftCode || item?.rowId || '').trim() || null,
+        personName: nameRaw || null,
+        invalidAssigneeReason: detail,
+        invalidAssigneeDetected: true,
+      });
+      issues.push({
+        date: String(item?.date || item?.day || '').slice(0, 10) || null,
+        shiftId: item?.shiftId || item?.shiftCode || item?.rowId || '',
+        reason: 'INVALID_ASSIGNEE',
+        detail,
+        personName: nameRaw || undefined,
+      });
+      continue;
+    }
+
+    filtered.push({
+      ...item,
+      personId: validation.personId,
+    });
+  }
+
+  return {
+    assignments: filtered,
+    issues,
+    debug: {
+      invalidAssignmentCount: invalidAssignments.length,
+      invalidAssignments,
+      invalidAssignmentByReason: summarizeInvalidAssignments(invalidAssignments),
+    },
+  };
+}
+
 function validateAssignments({
   assignments = [],
   leavesByPerson = {},
   holidayKindByDate = {},
   shiftMetaByCode = {},
   defs = [],
+  staff = [],
 } = {}) {
   // Post-run cleanup only: assignment-time authority remains in candidateBuilder
   // and constraints/runtime guard layers.
   const sanitizedAssignments = sanitizeSupervisorAssignments(assignments, holidayKindByDate, shiftMetaByCode, defs);
-  const hard = applyHardConstraints(sanitizedAssignments, leavesByPerson);
-  const issues = [...(hard.issues || [])];
+  const assigneeGuard = sanitizeAssignees(sanitizedAssignments, staff);
+  const hard = applyHardConstraints(assigneeGuard.assignments, leavesByPerson);
+  const issues = [...(assigneeGuard.issues || []), ...(hard.issues || [])];
   return {
     assignments: hard.assignments || [],
     issues,
     debug: {
-      hardFiltered: (sanitizedAssignments.length || 0) - ((hard.assignments || []).length || 0),
+      hardFiltered: (assigneeGuard.assignments.length || 0) - ((hard.assignments || []).length || 0),
+      invalidAssignmentCount: Number(assigneeGuard?.debug?.invalidAssignmentCount || 0),
+      invalidAssignments: Array.isArray(assigneeGuard?.debug?.invalidAssignments)
+        ? assigneeGuard.debug.invalidAssignments
+        : [],
+      invalidAssignmentByReason:
+        assigneeGuard?.debug?.invalidAssignmentByReason &&
+        typeof assigneeGuard.debug.invalidAssignmentByReason === 'object'
+          ? assigneeGuard.debug.invalidAssignmentByReason
+          : {},
     },
   };
 }

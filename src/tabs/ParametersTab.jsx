@@ -104,6 +104,14 @@ function applyBackendRulesToList(list, backendRules) {
   return rules.map((r) => byId.get(r.id) || r);
 }
 
+function stableRulesPayload(scope, list) {
+  return JSON.stringify({
+    ...scope,
+    rules: mapRulesToBackend(list),
+    weights: {},
+  });
+}
+
 const SUBTABS = [
   { id: "calisma-alanlari", label: "Çalışma Alanları" },
   { id: "calisma-saatleri", label: "Çalışma Saatleri" },
@@ -187,7 +195,6 @@ function lsClear() {
 export default function ParametersTab({
   workAreas,
   setWorkAreas,
-  persistWorkAreas,
   workingHours,
   setWorkingHours,
   leaveTypes,
@@ -227,6 +234,7 @@ export default function ParametersTab({
   // Backend sync (online-only yapıda tek kaynak)
   const syncTimer = useRef(null);
   const loadedRef = useRef(false);
+  const lastSyncedRulesRef = useRef("");
   const RULE_SCOPE = { sectionId: "calisma-cizelgesi", serviceId: "", role: "" };
 
   useEffect(() => {
@@ -240,7 +248,13 @@ export default function ParametersTab({
         const backendRules = res?.rule?.rules || null;
         if (!alive) return;
         if (backendRules) {
-          setDutyRules((prev) => applyBackendRulesToList(prev, backendRules));
+          setDutyRules((prev) => {
+            const next = applyBackendRulesToList(prev, backendRules);
+            lastSyncedRulesRef.current = stableRulesPayload(RULE_SCOPE, next);
+            return next;
+          });
+        } else {
+          lastSyncedRulesRef.current = stableRulesPayload(RULE_SCOPE, dutyRules);
         }
         loadedRef.current = true;
       } catch (err) {
@@ -254,11 +268,14 @@ export default function ParametersTab({
     const token = getToken();
     if (!token) return;
     if (!loadedRef.current) return;
+    const payload = { ...RULE_SCOPE, rules: mapRulesToBackend(dutyRules), weights: {} };
+    const serialized = JSON.stringify(payload);
+    if (lastSyncedRulesRef.current === serialized) return;
     if (syncTimer.current) clearTimeout(syncTimer.current);
     syncTimer.current = setTimeout(async () => {
       try {
-        const rules = mapRulesToBackend(dutyRules);
-        await API.http.req(`/api/duty-rules`, { method: "PUT", body: { ...RULE_SCOPE, rules, weights: {} } });
+        await API.http.req(`/api/duty-rules`, { method: "PUT", body: payload, retries: 0 });
+        lastSyncedRulesRef.current = serialized;
       } catch (err) {
         console.warn("DutyRules sync failed:", err?.message || err);
       }
@@ -365,7 +382,6 @@ export default function ParametersTab({
           <WorkAreasTab
             workAreas={workAreas}
             setWorkAreas={setWorkAreas}
-            persistAreas={persistWorkAreas}
             people={people}
           />
         )}

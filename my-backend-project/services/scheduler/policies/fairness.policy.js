@@ -11,6 +11,7 @@ function fairnessPolicy(candidate = {}, _context = {}) {
   const statsMissing = assignmentsThisMonthRaw == null;
 
   return {
+    name: "FAIRNESS",
     policy: "FAIRNESS",
     score,
     reason: statsMissing ? "ASSIGNMENTS_THIS_MONTH_MISSING" : null,
