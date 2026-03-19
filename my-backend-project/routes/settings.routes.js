@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const Setting = require('../models/Setting');
 const { requireAuth, requireRole } = require('../middleware/authz');
@@ -41,8 +42,12 @@ async function findLegacySetting(req, key, serviceId) {
 }
 
 async function ensureScopedSetting(req, key, serviceId) {
+  if (!req.hospitalId) {
+    return Setting.findOne(withHospitalFilter(req, { key, serviceId }));
+  }
+
   const scoped = await Setting.findOne(withHospitalFilter(req, { key, serviceId }));
-  if (scoped || !req.hospitalId) return scoped;
+  if (scoped) return scoped;
 
   const legacy = await findLegacySetting(req, key, serviceId);
   if (!legacy) return null;
@@ -57,8 +62,29 @@ router.get('/:key', requireAuth, async (req, res) => {
   try {
     const key = normalizeKey(req.params.key);
     if (!key) return res.status(400).json({ ok: false, message: 'key gerekli' });
+
     const serviceId = normalizeServiceId(req.query?.serviceId || '');
+
+    console.log('[SETTINGS GET HIT]', {
+      key,
+      queryServiceId: req.query?.serviceId,
+      normalizedServiceId: serviceId,
+      hospitalId: req.hospitalId || null,
+      userRole: req.user?.role || null,
+      dbName: mongoose.connection?.name,
+      host: mongoose.connection?.host,
+    });
+
     const doc = await ensureScopedSetting(req, key, serviceId);
+
+    console.log('[SETTINGS GET RESULT]', {
+      key,
+      serviceId,
+      found: !!doc,
+      docId: doc?._id || null,
+      docHospitalId: doc?.hospitalId || null,
+    });
+
     return res.json({
       ok: true,
       key,
@@ -68,6 +94,13 @@ router.get('/:key', requireAuth, async (req, res) => {
       createdAt: doc?.createdAt || null,
     });
   } catch (err) {
+    console.error('[SETTINGS GET ERROR]', {
+      message: err?.message,
+      code: err?.code,
+      keyPattern: err?.keyPattern,
+      keyValue: err?.keyValue,
+      stack: err?.stack,
+    });
     return res.status(500).json({ ok: false, message: safeMessage(err) });
   }
 });
@@ -77,11 +110,34 @@ router.put('/:key', requireAuth, requireRole('admin', 'authorized'), async (req,
   try {
     const key = normalizeKey(req.params.key);
     if (!key) return res.status(400).json({ ok: false, message: 'key gerekli' });
+
     const serviceId = normalizeServiceId(req.body?.serviceId ?? req.query?.serviceId);
     const value = req.body?.value ?? null;
-    // First update an existing scoped/legacy record; if none exists, create the scoped record.
+
+    console.log('[SETTINGS PUT HIT]', {
+      key,
+      bodyServiceId: req.body?.serviceId,
+      queryServiceId: req.query?.serviceId,
+      normalizedServiceId: serviceId,
+      hospitalId: req.hospitalId || null,
+      userRole: req.user?.role || null,
+      dbName: mongoose.connection?.name,
+      host: mongoose.connection?.host,
+      bodyKeys: Object.keys(req.body || {}),
+      valueType: Array.isArray(value) ? 'array' : typeof value,
+      valueLength: Array.isArray(value) ? value.length : null,
+    });
+
+    const legacyFilter = buildSettingScopeFilter(req, key, serviceId);
+    const scopedFilter = buildScopedSettingFilter(req, key, serviceId);
+
+    console.log('[SETTINGS PUT FILTERS]', {
+      legacyFilter,
+      scopedFilter,
+    });
+
     let doc = await Setting.findOneAndUpdate(
-      buildSettingScopeFilter(req, key, serviceId),
+      legacyFilter,
       {
         $set: {
           key,
@@ -92,9 +148,16 @@ router.put('/:key', requireAuth, requireRole('admin', 'authorized'), async (req,
       },
       { new: true }
     ).lean();
+
+    console.log('[SETTINGS PUT FIRST UPDATE RESULT]', {
+      matched: !!doc,
+      docId: doc?._id || null,
+      docHospitalId: doc?.hospitalId || null,
+    });
+
     if (!doc) {
       doc = await Setting.findOneAndUpdate(
-        buildScopedSettingFilter(req, key, serviceId),
+        scopedFilter,
         {
           $set: {
             key,
@@ -109,7 +172,13 @@ router.put('/:key', requireAuth, requireRole('admin', 'authorized'), async (req,
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       ).lean();
+
+      console.log('[SETTINGS PUT UPSERT RESULT]', {
+        docId: doc?._id || null,
+        docHospitalId: doc?.hospitalId || null,
+      });
     }
+
     return res.json({
       ok: true,
       key,
@@ -119,6 +188,13 @@ router.put('/:key', requireAuth, requireRole('admin', 'authorized'), async (req,
       createdAt: doc?.createdAt || null,
     });
   } catch (err) {
+    console.error('[SETTINGS PUT ERROR]', {
+      message: err?.message,
+      code: err?.code,
+      keyPattern: err?.keyPattern,
+      keyValue: err?.keyValue,
+      stack: err?.stack,
+    });
     return res.status(500).json({ ok: false, message: safeMessage(err) });
   }
 });

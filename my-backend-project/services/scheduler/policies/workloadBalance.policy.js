@@ -15,6 +15,7 @@ function workloadBalancePolicy(candidate = {}, context = {}) {
   const hasShiftTarget = targetShifts > 0;
   if (!hasHourTarget && !hasShiftTarget) {
     return {
+      name: "WORKLOAD_BALANCE",
       policy: "WORKLOAD_BALANCE",
       score: 0,
       reason: "WORKLOAD_TARGETS_MISSING",
@@ -42,6 +43,7 @@ function workloadBalancePolicy(candidate = {}, context = {}) {
     : 0;
 
   return {
+    name: "WORKLOAD_BALANCE",
     policy: "WORKLOAD_BALANCE",
     score,
     reason: score === 0 ? "WORKLOAD_ALREADY_BALANCED" : null,

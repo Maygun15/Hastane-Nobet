@@ -159,24 +159,39 @@ function runScheduler(context) {
           break;
         }
         const scoredCandidates = candidates.map((candidate) => {
-          const policyResult = evaluatePolicies({ person: candidate }, context);
-          return {
+          const schedulerScore = calculateScore(candidate, day, shift, context);
+          const baseCandidate = {
             id: candidate?.id,
             person: candidate,
+            schedulerScore,
+            policyScore: 0,
+            policyBreakdown: [],
+          };
+
+          if (candidates.length <= 1) return baseCandidate;
+
+          const policyResult = evaluatePolicies({ person: candidate }, context);
+          return {
+            ...baseCandidate,
             policyScore: Number(policyResult?.totalScore || 0),
-            policyBreakdown: Array.isArray(policyResult?.policies) ? policyResult.policies : [],
-            schedulerScore: calculateScore(candidate, day, shift, context),
+            policyBreakdown: Array.isArray(policyResult?.breakdown)
+              ? policyResult.breakdown
+              : Array.isArray(policyResult?.policies)
+              ? policyResult.policies
+              : [],
           };
         });
-        scoredCandidates.sort((a, b) => {
-          const schedulerDiff = Number(a.schedulerScore || 0) - Number(b.schedulerScore || 0);
-          if (schedulerDiff !== 0) return schedulerDiff;
-          return Number(b.policyScore || 0) - Number(a.policyScore || 0);
-        });
+        scoredCandidates.sort(compareCandidates);
         const selected = scoredCandidates[0];
         context.candidateAudit.push({
           ...slotAudit,
           selectedCandidateId: normalizePersonId(selected?.id),
+          selectedCandidate: selected?.person
+            ? {
+                id: normalizePersonId(selected.person.id),
+                name: selected.person.name || "",
+              }
+            : null,
           selectedSchedulerScore: Number(selected?.schedulerScore || 0),
           selectedPolicyScore: Number(selected?.policyScore || 0),
           selectedPolicyBreakdown: Array.isArray(selected?.policyBreakdown)
@@ -483,19 +498,19 @@ function determineSelectionReason(scoredCandidates = []) {
   }
 
   const [first, second] = scoredCandidates;
-  const firstSchedulerScore = Number(first?.schedulerScore || 0);
-  const secondSchedulerScore = Number(second?.schedulerScore || 0);
-  if (firstSchedulerScore !== secondSchedulerScore) {
-    return "SCHEDULER_SCORE_BEST";
-  }
-
   const firstPolicyScore = Number(first?.policyScore || 0);
   const secondPolicyScore = Number(second?.policyScore || 0);
   if (firstPolicyScore !== secondPolicyScore) {
-    return "POLICY_TIE_BREAK";
+    return "POLICY_BEST";
   }
 
-  return "SCHEDULER_SCORE_BEST";
+  const firstSchedulerScore = Number(first?.schedulerScore || 0);
+  const secondSchedulerScore = Number(second?.schedulerScore || 0);
+  if (firstSchedulerScore !== secondSchedulerScore) {
+    return "SCHEDULER_SCORE_TIE_BREAK";
+  }
+
+  return "POLICY_TIE_BREAK";
 }
 
 function buildTopCandidateSummary(scoredCandidates = [], selectedId = null) {
@@ -505,13 +520,15 @@ function buildTopCandidateSummary(scoredCandidates = [], selectedId = null) {
       personId: normalizePersonId(candidate?.id),
       schedulerScore: Number(candidate?.schedulerScore || 0),
       policyScore: Number(candidate?.policyScore || 0),
+      totalScore: Number(candidate?.policyScore || 0),
       selected: normalizePersonId(candidate?.id) === normalizePersonId(selectedId),
     }));
 }
 
 function clonePolicyResult(policyResult) {
   return {
-    policy: policyResult?.policy || "UNKNOWN_POLICY",
+    name: policyResult?.name || policyResult?.policy || "UNKNOWN_POLICY",
+    policy: policyResult?.policy || policyResult?.name || "UNKNOWN_POLICY",
     score: Number(policyResult?.score || 0),
     reason: policyResult?.reason ?? null,
     meta:
@@ -519,6 +536,16 @@ function clonePolicyResult(policyResult) {
         ? { ...policyResult.meta }
         : {},
   };
+}
+
+function compareCandidates(a, b) {
+  const policyDiff = Number(b?.policyScore || 0) - Number(a?.policyScore || 0);
+  if (policyDiff !== 0) return policyDiff;
+
+  const schedulerDiff = Number(a?.schedulerScore || 0) - Number(b?.schedulerScore || 0);
+  if (schedulerDiff !== 0) return schedulerDiff;
+
+  return String(a?.id || "").localeCompare(String(b?.id || ""));
 }
 
 module.exports = { runScheduler, assign };

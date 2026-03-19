@@ -189,25 +189,29 @@ export default function PeopleTab({
           role: row.role || "",
           title: row.title || "",
           areas: Array.isArray(row.areas) ? row.areas : [],
+          workAreaIds: Array.isArray(row.workAreaIds) ? row.workAreaIds : [],
           shiftCodes: Array.isArray(row.shiftCodes) ? row.shiftCodes : [],
         },
         tc: row.tc || "",
         phone: row.phone || "",
         email: row.mail || "",
       };
+      console.log("ABOUT TO CALL PERSONNEL API", payload);
       if (editingId && isMongoId(editingId)) {
         const res = await API.http.put(`/api/personnel/${editingId}`, payload);
         return { person: res?.person || null, error: null };
       }
       const res = await API.http.post(`/api/personnel`, payload);
       return { person: res?.person || null, error: null };
-    } catch (e) {
-      console.warn("Backend sync error:", e?.message || e);
-      return { person: null, error: e?.message || "Backend senkron hatası" };
+    } catch (err) {
+      console.error("PERSONNEL SAVE ERROR", err);
+      console.warn("Backend sync error:", err?.message || err);
+      return { person: null, error: err?.message || "Backend senkron hatası" };
     }
   };
 
   const upsert = async (e) => {
+    console.log("SAVE HANDLER ENTERED");
     e.preventDefault();
     if (!form.name.trim()) return;
     if (REQUIRE_BACKEND && !getToken()) {
@@ -236,22 +240,33 @@ export default function PeopleTab({
       return;
     }
     const nextId = saved?.id || id;
+    const persistedId = saved?.id || row.personId || id;
+    const savedMeta = saved?.meta || {};
     const nextRow = {
       ...row,
-      id: saved?._id || saved?.id || id,
-      personId: saved?._id || saved?.id || String(nextId),
+      id: persistedId,
+      personId: String(persistedId),
       name: saved?.name || row.name,
       service: saved?.serviceId || row.service,
       tc: saved?.tc || row.tc,
-      meta: saved?.meta || row.meta,
+      phone: saved?.phone || row.phone,
+      mail: saved?.email || row.mail,
+      title: savedMeta.title || row.title,
+      areas: Array.isArray(savedMeta.areas) ? savedMeta.areas : row.areas,
+      workAreaIds: Array.isArray(savedMeta.workAreaIds) ? savedMeta.workAreaIds : row.workAreaIds,
+      shiftCodes: Array.isArray(savedMeta.shiftCodes) ? savedMeta.shiftCodes : row.shiftCodes,
+      meta: savedMeta,
     };
 
-    setPeople((prev) =>
-      sortByKeyTR(
-        [...(prev.filter((p) => normId(p.id) !== normId(id))), nextRow],
+    setPeople((prev) => {
+      const replaceId = editingId ?? id;
+      const updatedPeople = sortByKeyTR(
+        [...(prev.filter((p) => normId(p.id) !== normId(replaceId))), nextRow],
         "name"
-      )
-    );
+      );
+      console.log("UI STATE UPDATED", updatedPeople);
+      return updatedPeople;
+    });
     reset();
     try { window.dispatchEvent(new Event("personnel:changed")); } catch {}
   };
@@ -576,7 +591,10 @@ export default function PeopleTab({
 
       {/* Form */}
       <form
-        onSubmit={upsert}
+        onSubmit={(e) => {
+          console.log("FORM SUBMIT TRIGGERED");
+          upsert(e);
+        }}
         className="bg-white rounded-2xl shadow-sm p-4 grid md:grid-cols-3 gap-3 items-end"
       >
         <div>
@@ -710,6 +728,7 @@ export default function PeopleTab({
         <div className="md:col-span-3 flex gap-2">
           <button
             type="submit"
+            onClick={() => console.log("UPDATE BUTTON CLICKED")}
             className="px-3 py-2 rounded-lg text-white bg-emerald-600"
           >
             {editingId ? "Güncelle" : "Ekle"}

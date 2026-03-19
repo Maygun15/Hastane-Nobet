@@ -12,6 +12,14 @@ const candidateBuilderPath = path.join(
   "index.js"
 );
 const enginePath = path.join(__dirname, "..", "services", "scheduler", "engine.js");
+const policyLayerPath = path.join(
+  __dirname,
+  "..",
+  "services",
+  "scheduler",
+  "policies",
+  "evaluatePolicies.js"
+);
 
 function createRuntimePerson(id, overrides = {}) {
   return {
@@ -68,11 +76,23 @@ function createBaseContext(overrides = {}) {
   };
 }
 
-function withScheduler(mockBuildCandidates, fn) {
+function withScheduler(mockBuildCandidates, fn, mockEvaluatePolicies = null) {
   const candidateBuilder = require(candidateBuilderPath);
   const originalBuildCandidates = candidateBuilder.buildCandidates;
+  const evaluatePolicies = require(policyLayerPath);
+  const originalEvaluatePolicies = evaluatePolicies;
   if (typeof mockBuildCandidates === "function") {
     candidateBuilder.buildCandidates = mockBuildCandidates;
+  }
+
+  if (typeof mockEvaluatePolicies === "function") {
+    delete require.cache[require.resolve(policyLayerPath)];
+    require.cache[require.resolve(policyLayerPath)] = {
+      id: require.resolve(policyLayerPath),
+      filename: require.resolve(policyLayerPath),
+      loaded: true,
+      exports: mockEvaluatePolicies,
+    };
   }
 
   delete require.cache[require.resolve(enginePath)];
@@ -82,6 +102,13 @@ function withScheduler(mockBuildCandidates, fn) {
     fn(runScheduler);
   } finally {
     candidateBuilder.buildCandidates = originalBuildCandidates;
+    delete require.cache[require.resolve(policyLayerPath)];
+    require.cache[require.resolve(policyLayerPath)] = {
+      id: require.resolve(policyLayerPath),
+      filename: require.resolve(policyLayerPath),
+      loaded: true,
+      exports: originalEvaluatePolicies,
+    };
     delete require.cache[require.resolve(enginePath)];
   }
 }
@@ -453,7 +480,7 @@ function testFairnessPolicyInfluencesOrderingOnTie() {
 
     const audit = getSingleAudit(result);
     assert.strictEqual(audit.selectedCandidateId, "p2");
-    assert.strictEqual(audit.selectionReason, "POLICY_TIE_BREAK");
+    assert.strictEqual(audit.selectionReason, "POLICY_BEST");
     assert.ok(Number.isFinite(audit.selectedPolicyScore), "selectedPolicyScore must be numeric");
     assert.ok(Array.isArray(audit.selectedPolicyBreakdown), "selectedPolicyBreakdown must be an array");
     assert.ok(Array.isArray(audit.topCandidates), "topCandidates must be an array");
@@ -461,6 +488,7 @@ function testFairnessPolicyInfluencesOrderingOnTie() {
 
     const fairnessEntry = audit.selectedPolicyBreakdown.find((item) => item?.policy === "FAIRNESS");
     assert.ok(fairnessEntry, "selected breakdown must include FAIRNESS");
+    assert.strictEqual(fairnessEntry.name, "FAIRNESS");
     assert.strictEqual(fairnessEntry.reason, null);
     assert.strictEqual(fairnessEntry.meta.statsMissing, false);
   });
@@ -508,12 +536,98 @@ function testPolicyAuditFieldsVisible() {
     assert.ok(Array.isArray(audit.selectedPolicyBreakdown), "selectedPolicyBreakdown must be visible");
     assert.ok(Array.isArray(audit.topCandidates), "topCandidates must be visible");
     assert.ok(audit.topCandidates.length >= 2, "topCandidates must include compact shortlist");
-    assert.strictEqual(audit.selectionReason, "POLICY_TIE_BREAK");
+    assert.strictEqual(audit.selectionReason, "POLICY_BEST");
 
     const fatigueEntry = audit.selectedPolicyBreakdown.find((item) => item?.policy === "FATIGUE");
     const workloadEntry = audit.selectedPolicyBreakdown.find((item) => item?.policy === "WORKLOAD_BALANCE");
     assert.ok(fatigueEntry, "selected breakdown must include FATIGUE");
     assert.ok(workloadEntry, "selected breakdown must include WORKLOAD_BALANCE");
+    assert.strictEqual(fatigueEntry.name, "FATIGUE");
+    assert.strictEqual(workloadEntry.name, "WORKLOAD_BALANCE");
+  });
+}
+
+function testSingleEligibleCandidateSkipsPolicyBreakdown() {
+  withScheduler(null, (runScheduler) => {
+    const context = createBaseContext({
+      staff: [
+        createRuntimePerson("p1", { active: true, serviceId: "svc-1" }),
+      ],
+      randomize: false,
+    });
+
+    const result = runScheduler(context);
+    assert.strictEqual(result.assignments.length, 1, "single eligible candidate should be assigned");
+
+    const audit = getSingleAudit(result);
+    assert.strictEqual(audit.selectedCandidateId, "p1");
+    assert.strictEqual(audit.selectionReason, "ONLY_ELIGIBLE_CANDIDATE");
+    assert.strictEqual(audit.selectedPolicyScore, 0);
+    assert.deepStrictEqual(audit.selectedPolicyBreakdown, []);
+  });
+}
+
+function testHardRejectedCandidateNeverReachesPolicyLayer() {
+  const mockBuildCandidates = ({ staff }) => ({
+    eligible: [
+      {
+        personId: "p1",
+        person: staff.find((item) => item.id === "p1") || null,
+        failedRules: [],
+        status: "eligible",
+      },
+    ],
+    rejected: [
+      {
+        personId: "p2",
+        person: staff.find((item) => item.id === "p2") || null,
+        failedRules: [{ code: "ACTIVE_REQUIRED", severity: "hard" }],
+        hardRejected: true,
+        blockingRules: ["ACTIVE_REQUIRED"],
+        status: "rejected",
+      },
+    ],
+    candidates: [staff.find((item) => item.id === "p1") || null],
+    evaluations: [],
+  });
+
+  const seen = [];
+  const mockEvaluatePolicies = ({ person }) => {
+    seen.push(person?.id || null);
+    return { totalScore: 0, breakdown: [], policies: [] };
+  };
+
+  withScheduler(
+    mockBuildCandidates,
+    (runScheduler) => {
+      const context = createBaseContext({
+        staff: [
+          createRuntimePerson("p1", { active: true, serviceId: "svc-1" }),
+          createRuntimePerson("p2", { active: false, serviceId: "svc-1" }),
+        ],
+        randomize: false,
+      });
+
+      const result = runScheduler(context);
+      assert.strictEqual(result.assignments.length, 1, "eligible candidate should still be assigned");
+      assert.deepStrictEqual(seen, [], "single remaining candidate should be assigned without policy evaluation");
+    },
+    mockEvaluatePolicies
+  );
+}
+
+function testNoCandidateBehaviorRemainsUnchanged() {
+  withScheduler(null, (runScheduler) => {
+    const context = createBaseContext({
+      staff: [],
+      randomize: false,
+    });
+
+    const result = runScheduler(context);
+    assert.strictEqual(result.assignments.length, 0, "no staff means no assignments");
+    assert.ok(Array.isArray(result.issues), "issues array must exist");
+    assert.strictEqual(result.issues.length, 1, "no-candidate path should still emit one issue");
+    assert.strictEqual(result.issues[0].reason, "NO_CANDIDATE");
   });
 }
 
@@ -624,6 +738,9 @@ function run() {
     { name: "fallback excludes SECTION_ELIGIBILITY hard-blocked candidates", fn: testFallbackExcludesSectionEligibilityHardBlockedCandidates },
     { name: "fairness policy influences ordering on tie", fn: testFairnessPolicyInfluencesOrderingOnTie },
     { name: "policy audit fields visible", fn: testPolicyAuditFieldsVisible },
+    { name: "single eligible candidate skips policy breakdown", fn: testSingleEligibleCandidateSkipsPolicyBreakdown },
+    { name: "hard-rejected candidate never reaches policy layer", fn: testHardRejectedCandidateNeverReachesPolicyLayer },
+    { name: "no-candidate behavior remains unchanged", fn: testNoCandidateBehaviorRemainsUnchanged },
     { name: "fallback on error", fn: testFallbackOnError },
     { name: "audit population", fn: testAuditPopulation },
     { name: "hard reject filtering", fn: testHardRejectFiltering },

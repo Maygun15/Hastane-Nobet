@@ -427,6 +427,11 @@ export default function HospitalRosterApp() {
           phone: p.phone || "",
           mail: p.email || "",
           areas: Array.isArray(p.areas) ? p.areas : Array.isArray(meta.areas) ? meta.areas : [],
+          workAreaIds: Array.isArray(p.workAreaIds)
+            ? p.workAreaIds
+            : Array.isArray(meta.workAreaIds)
+              ? meta.workAreaIds
+              : [],
           shiftCodes: Array.isArray(meta.shiftCodes) ? meta.shiftCodes : [],
         };
       });

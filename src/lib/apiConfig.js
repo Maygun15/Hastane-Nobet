@@ -61,7 +61,24 @@ export function getApiBase() {
     : ENV_PROD_BASE;
 }
 
+function isLocalApiBase(base) {
+  const raw = String(base || "").trim();
+  if (!raw) return true;
+  try {
+    const origin =
+      typeof window !== "undefined" && window.location?.origin
+        ? window.location.origin
+        : "http://localhost";
+    const url = new URL(raw, origin);
+    return /^(localhost|127\.0\.0\.1)$/i.test(String(url.hostname || ""));
+  } catch {
+    return false;
+  }
+}
+
 export function isProdApi() {
+  const base = getApiBase();
+  if (isLocalApiBase(base)) return false;
   return getApiEnv() === "prod";
 }
 
