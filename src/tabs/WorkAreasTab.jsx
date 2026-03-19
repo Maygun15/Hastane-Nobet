@@ -2,10 +2,19 @@
 import React, { useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import IDCard from "../components/IDCard.jsx";
+import {
+  normalizeWorkAreaMasterList,
+  resolvePersonWorkAreaIds,
+  resolvePersonWorkAreaNames,
+} from "../lib/workAreasModel.js";
 const norm = (s) => (s || "").toString().trim().toLocaleUpperCase("tr-TR");
 const sortAreaNames = (list) =>
   [...(Array.isArray(list) ? list : [])].sort((a, b) =>
     String(a || "").localeCompare(String(b || ""), "tr", { sensitivity: "base" })
+  );
+const sortAreaDefs = (list) =>
+  [...(Array.isArray(list) ? list : [])].sort((a, b) =>
+    String(a?.name || "").localeCompare(String(b?.name || ""), "tr", { sensitivity: "base" })
   );
 const slugTR = (s = "") =>
   s
@@ -44,35 +53,15 @@ function useAreas(external, setExternal) {
   return [list, setAreas];
 }
 
-function extractAreaNamesFromPerson(person) {
-  const out = [];
-  const raw =
-    person?.areas ??
-    person?.meta?.areas ??
-    person?.workAreas ??
-    person?.workareas ??
-    [];
-  const arr = Array.isArray(raw) ? raw : raw ? [raw] : [];
-  for (const it of arr) {
-    if (typeof it === "string") {
-      out.push(...splitNames(it));
-    } else if (it && typeof it === "object") {
-      const name = it?.name || it?.label || it?.title || it?.id;
-      if (name) out.push(...splitNames(name));
-    }
-  }
-  return uniq(out);
+function extractAreaNamesFromPerson(person, masterAreas) {
+  return uniq(
+    resolvePersonWorkAreaNames(person, masterAreas).flatMap((name) => splitNames(name))
+  );
 }
 
-function extractAreaKeysFromPerson(person) {
-  const names = extractAreaNamesFromPerson(person);
-  const idsRaw =
-    person?.workAreaIds ??
-    person?.areaIds ??
-    person?.meta?.workAreaIds ??
-    person?.meta?.areaIds ??
-    [];
-  const ids = Array.isArray(idsRaw) ? idsRaw.map((x) => String(x || "")) : [];
+function extractAreaKeysFromPerson(person, masterAreas) {
+  const names = extractAreaNamesFromPerson(person, masterAreas);
+  const ids = resolvePersonWorkAreaIds(person, masterAreas);
   const keys = [
     ...names.map(slugTR),
     ...ids.map(slugTR),
@@ -80,12 +69,12 @@ function extractAreaKeysFromPerson(person) {
   return new Set(keys);
 }
 
-function personMatchesArea(person, area) {
+function personMatchesArea(person, area, masterAreas) {
   const key = area.key;
-  const keys = extractAreaKeysFromPerson(person);
+  const keys = extractAreaKeysFromPerson(person, masterAreas);
   if (keys.has(key)) return true;
   const areaText = area.norm;
-  const personNames = extractAreaNamesFromPerson(person).map(normText);
+  const personNames = extractAreaNamesFromPerson(person, masterAreas).map(normText);
   return personNames.some((p) => p === areaText || p.includes(areaText) || areaText.includes(p));
 }
 
@@ -105,20 +94,24 @@ function getPersonKey(p, i) {
 export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
   const [areas, setAreas] = useAreas(workAreas, setWorkAreas);
   const peopleList = Array.isArray(people) ? people : [];
+  const masterWorkAreas = useMemo(
+    () => normalizeWorkAreaMasterList(areas),
+    [areas]
+  );
   const areaDefs = useMemo(
     () =>
-      (areas || []).map((name) => ({
-        name,
-        key: slugTR(name),
-        norm: normText(name),
-      })),
-    [areas]
+      sortAreaDefs(masterWorkAreas.map((item) => ({
+        name: item.name,
+        key: item.key,
+        norm: normText(item.name),
+      }))),
+    [masterWorkAreas]
   );
   const peopleByArea = useMemo(() => {
     const map = new Map();
     areaDefs.forEach((a) => map.set(a.key, []));
     areaDefs.forEach((area) => {
-      const list = peopleList.filter((p) => personMatchesArea(p, area));
+      const list = peopleList.filter((p) => personMatchesArea(p, area, masterWorkAreas));
       list.sort((a, b) =>
         (a?.name || a?.fullName || "")
           .toString()
@@ -127,7 +120,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
       map.set(area.key, list);
     });
     return map;
-  }, [areaDefs, peopleList]);
+  }, [areaDefs, peopleList, masterWorkAreas]);
 
   const [name, setName] = useState("");
   const [editingIndex, setEditingIndex] = useState(null);
