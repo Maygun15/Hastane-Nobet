@@ -1,10 +1,12 @@
 // src/tabs/WorkAreasTab.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import IDCard from "../components/IDCard.jsx";
-
-const LS_KEY = "workAreas";
 const norm = (s) => (s || "").toString().trim().toLocaleUpperCase("tr-TR");
+const sortAreaNames = (list) =>
+  [...(Array.isArray(list) ? list : [])].sort((a, b) =>
+    String(a || "").localeCompare(String(b || ""), "tr", { sensitivity: "base" })
+  );
 const slugTR = (s = "") =>
   s
     .toString()
@@ -33,44 +35,13 @@ const splitNames = (s) =>
     .filter(Boolean);
 const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
 
-function useHybridAreas(external, setExternal) {
-  const controlled = typeof setExternal === "function";
-
-  const [inner, setInner] = useState(() => {
-    if (controlled) return [];
-    try {
-      const s = localStorage.getItem(LS_KEY);
-      return s
-        ? JSON.parse(s)
-        : [
-            "AŞI","CERRAHİ MÜDAHELE","ÇOCUK","ECZANE","EKİP SORUMLUSU","KIRMIZI",
-            "KIRMIZI VE SARI ALAN GÖREVLENDİRME","RESÜSİTASYON","SARI",
-            "SERVİS SORUMLUSU","SÜPERVİZÖR","TRİAJ","YEŞİL",
-          ];
-    } catch { return []; }
-  });
-
+function useAreas(external, setExternal) {
+  const list = Array.isArray(external) ? external : [];
   const setAreas = (updater) => {
-    if (controlled) {
-      setExternal((prev) => (typeof updater === "function" ? updater(prev ?? []) : updater));
-    } else {
-      setInner((prev0) => {
-        const next = typeof updater === "function" ? updater(prev0 ?? []) : updater;
-        try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch {}
-        return next;
-      });
-    }
+    if (typeof setExternal !== "function") return;
+    setExternal((prev) => (typeof updater === "function" ? updater(prev ?? []) : updater));
   };
-
-  const list = controlled ? (Array.isArray(external) ? external : []) : (inner ?? []);
-
-  useEffect(() => {
-    if (!controlled) {
-      try { localStorage.setItem(LS_KEY, JSON.stringify(list ?? [])); } catch {}
-    }
-  }, [controlled, list]);
-
-  return [list, setAreas, controlled];
+  return [list, setAreas];
 }
 
 function extractAreaNamesFromPerson(person) {
@@ -132,7 +103,7 @@ function getPersonKey(p, i) {
 }
 
 export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
-  const [areas, setAreas] = useHybridAreas(workAreas, setWorkAreas);
+  const [areas, setAreas] = useAreas(workAreas, setWorkAreas);
   const peopleList = Array.isArray(people) ? people : [];
   const areaDefs = useMemo(
     () =>
@@ -168,7 +139,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
     const v = name.trim();
     if (!v) return alert("Alan adı boş olamaz.");
     if (areas.some((a) => norm(a) === norm(v))) return alert("Bu alan zaten var.");
-    setAreas((prev) => [...prev, v]);
+    setAreas((prev) => sortAreaNames([...prev, v]));
     setName("");
   };
 
@@ -190,7 +161,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
     if (areas.some((a, i) => i !== editingIndex && norm(a) === norm(v))) {
       return alert("Bu ad zaten mevcut.");
     }
-    setAreas((prev) => prev.map((a, i) => (i === editingIndex ? v : a)));
+    setAreas((prev) => sortAreaNames(prev.map((a, i) => (i === editingIndex ? v : a))));
     cancelEdit();
   };
 
@@ -238,7 +209,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
         }
 
         cancelEdit();
-        setAreas(cleaned);
+        setAreas(sortAreaNames(cleaned));
         alert("Excel'den yükleme tamam.");
       } catch (err) {
         console.error(err);

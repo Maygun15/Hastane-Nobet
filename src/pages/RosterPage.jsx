@@ -19,22 +19,8 @@ export default function RosterPage() {
   const [taskLines, setTaskLines] = useState([]);
   const [scheduleData, setScheduleData] = useState(null);
   const [scheduleMeta, setScheduleMeta] = useState(null);
-  const [workAreas, setWorkAreas] = useState(() => {
-    const v2 = LS.get("workAreasV2", null);
-    const v1 = LS.get("workAreas", null);
-    const pick = (raw) => (Array.isArray(raw) ? raw : Array.isArray(raw?.value) ? raw.value : Array.isArray(raw?.items) ? raw.items : []);
-    const a2 = pick(v2);
-    const a1 = pick(v1);
-    return [...a2, ...a1];
-  });
-  const [workingHours, setWorkingHours] = useState(() => {
-    const v2 = LS.get("workingHoursV2", null);
-    const v1 = LS.get("workingHours", null);
-    const pick = (raw) => (Array.isArray(raw) ? raw : Array.isArray(raw?.value) ? raw.value : Array.isArray(raw?.items) ? raw.items : []);
-    const a2 = pick(v2);
-    const a1 = pick(v1);
-    return [...a2, ...a1];
-  });
+  const [workAreas, setWorkAreas] = useState([]);
+  const [workingHours, setWorkingHours] = useState([]);
   const [people, setPeople] = useState([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const tableRef = useRef(null);
