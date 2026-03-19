@@ -1,5 +1,6 @@
 // services/scheduler/index.js
 const { runScheduler } = require("./engine");
+const { resolveSchedulerAreas } = require("./personAreaProjection");
 const RuleEngine = require("../ruleEngine");
 
 function resolvePersonField(person, meta, fieldName, metaFieldNames = []) {
@@ -26,6 +27,11 @@ function buildContext({
 } = {}) {
   const staffRuntime = (staff || []).map((p) => {
     const metaRaw = p?.meta && typeof p.meta === "object" ? p.meta : {};
+    const {
+      schedulerAreas,
+      excludedLabels: schedulerExcludedAreas,
+      hadAreaSource,
+    } = resolveSchedulerAreas(p, metaRaw);
     const active = resolvePersonField(p, metaRaw, "active", ["active"]);
     const isActive = resolvePersonField(p, metaRaw, "isActive", ["isActive"]);
     const status = resolvePersonField(p, metaRaw, "status", ["status"]);
@@ -39,10 +45,11 @@ function buildContext({
     const experience = resolvePersonField(p, metaRaw, "experience", ["experience"]);
     const experienceYears = resolvePersonField(p, metaRaw, "experienceYears", ["experienceYears"]);
     const seniority = resolvePersonField(p, metaRaw, "seniority", ["seniority"]);
-    const areas = p?.areas ?? metaRaw.areas;
+    const areas = hadAreaSource ? schedulerAreas : (p?.areas ?? metaRaw.areas);
     const shiftCodes = p?.shiftCodes ?? metaRaw.shiftCodes;
     const meta = { ...metaRaw };
-    if (areas != null && meta.areas == null) meta.areas = areas;
+    if (hadAreaSource) meta.areas = areas;
+    if (schedulerExcludedAreas.length > 0) meta.schedulerExcludedAreas = schedulerExcludedAreas;
     if (shiftCodes != null && meta.shiftCodes == null) meta.shiftCodes = shiftCodes;
     if (active != null && meta.active == null) meta.active = active;
     if (isActive != null && meta.isActive == null) meta.isActive = isActive;
