@@ -43,6 +43,11 @@ const splitNames = (s) =>
     .map((x) => x.trim())
     .filter(Boolean);
 const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
+const badgeToneByCount = (count) => {
+  if (count <= 0) return "bg-red-50 text-red-700 border-red-200";
+  if (count < 5) return "bg-amber-50 text-amber-700 border-amber-200";
+  return "bg-emerald-50 text-emerald-700 border-emerald-200";
+};
 
 function useAreas(external, setExternal) {
   const list = Array.isArray(external) ? external : [];
@@ -133,12 +138,20 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
   }, [areaDefs, peopleList, masterWorkAreas]);
 
   const [name, setName] = useState("");
+  const [query, setQuery] = useState("");
   const [editingIndex, setEditingIndex] = useState(null);
   const [editingValue, setEditingValue] = useState("");
   const [selectedAreaKey, setSelectedAreaKey] = useState(null);
   const fileRef = useRef(null);
+  const filteredDisplayAreas = useMemo(() => {
+    const q = normText(query);
+    if (!q) return displayAreas;
+    return displayAreas.filter((area) => area.norm.includes(q));
+  }, [displayAreas, query]);
   const selectedArea =
+    filteredDisplayAreas.find((area) => area.key === selectedAreaKey) ||
     displayAreas.find((area) => area.key === selectedAreaKey) ||
+    filteredDisplayAreas[0] ||
     displayAreas[0] ||
     null;
   const selectedPeople = selectedArea ? (peopleByArea.get(selectedArea.key) || []) : [];
@@ -263,10 +276,19 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
               <div className="text-xs text-slate-500 mt-1">Bir alan seçerek detayını sağ panelde yönetin.</div>
             </div>
             <div className="p-3">
+              <div className="mb-3">
+                <input
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Alan ara..."
+                />
+              </div>
               <ol className="space-y-2">
-                {displayAreas.map((area, i) => {
+                {filteredDisplayAreas.map((area, i) => {
                   const isSelected = selectedArea?.key === area.key;
                   const listCount = peopleByArea.get(area.key)?.length || 0;
+                  const badgeTone = badgeToneByCount(listCount);
                   return (
                     <li key={area.key}>
                       <button
@@ -274,7 +296,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
                         onClick={() => setSelectedAreaKey(area.key)}
                         className={`w-full text-left rounded-lg border px-3 py-3 transition ${
                           isSelected
-                            ? "border-slate-900 bg-slate-900 text-white"
+                            ? "border-sky-500 bg-sky-50 ring-2 ring-sky-100 text-slate-900 shadow-sm"
                             : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                         }`}
                       >
@@ -282,7 +304,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
                           <span className="min-w-0 truncate font-medium">
                             {i + 1}. {area.name}
                           </span>
-                          <span className={`shrink-0 text-xs ${isSelected ? "text-slate-200" : "text-slate-500"}`}>
+                          <span className={`shrink-0 text-xs px-2 py-1 rounded-full border ${badgeTone}`}>
                             {listCount} kişi
                           </span>
                         </div>
@@ -291,6 +313,9 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
                   );
                 })}
                 {displayAreas.length === 0 && <li className="text-sm text-gray-500">Henüz alan yok.</li>}
+                {displayAreas.length > 0 && filteredDisplayAreas.length === 0 && (
+                  <li className="text-sm text-gray-500">Arama ile eşleşen alan bulunamadı.</li>
+                )}
               </ol>
             </div>
           </div>
@@ -324,7 +349,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
                 </div>
               </div>
               {selectedArea && (
-                <span className="shrink-0 text-xs text-slate-500">
+                <span className={`shrink-0 text-sm font-semibold px-3 py-1 rounded-full border ${badgeToneByCount(selectedPeople.length)}`}>
                   {selectedPeople.length} kişi
                 </span>
               )}
@@ -398,7 +423,9 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-sm text-gray-500">Bu alanda kayıtlı kişi yok.</div>
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    Bu alanda kayıtlı kişi yok. Personel kartlarında bu alana ait isim veya ilişki bilgisi bulunmuyor olabilir.
+                  </div>
                 )
               ) : (
                 <div className="text-sm text-gray-500">Henüz seçili alan yok.</div>

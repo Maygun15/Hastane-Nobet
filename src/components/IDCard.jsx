@@ -12,6 +12,7 @@ const uniq = (arr) => {
 };
 const sortTR = (arr) =>
   [...arr].sort((a, b) => a.localeCompare(b, "tr-TR", { sensitivity: "base" }));
+const isMongoLikeId = (value) => /^[a-f0-9]{24}$/i.test(String(value || "").trim());
 
 const ROLE_COLOR = {
   doctor: "bg-blue-50 text-blue-700 border-blue-200",
@@ -51,9 +52,13 @@ function Row({ label, value, mono }) {
 export default function IDCard({ person, serviceNames }) {
   const [expanded, setExpanded] = useState(false);
 
-  const servicesDisplay = Array.isArray(serviceNames) && serviceNames.length
-    ? serviceNames
-    : [person?.serviceName || person?.service || ""].filter(Boolean);
+  const servicesDisplay = (
+    Array.isArray(serviceNames) && serviceNames.length
+      ? serviceNames
+      : [person?.serviceName || person?.service || ""]
+  )
+    .map((s) => clean(s))
+    .filter((s) => s && !isMongoLikeId(s));
 
   const rawAreas = person?.areas ?? person?.workAreas ?? [];
   const displayAreas = sortTR(uniq(
