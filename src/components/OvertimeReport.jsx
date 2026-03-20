@@ -12,6 +12,12 @@ import {
   fetchLeaves,
 } from "../api/apiAdapter";
 import useActiveYM from "../hooks/useActiveYM.js";
+import {
+  buildPersonIdentityIndex,
+  canonName,
+  choosePreferredName,
+  resolvePersonRef,
+} from "../utils/personIdentity.js";
 
 /* ================ Helpers ================ */
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -23,41 +29,14 @@ const isWeekend = (y, m, d) => {
   const dow = new Date(y, m - 1, d).getDay(); // 0=Pa,6=Cts
   return dow === 0 || dow === 6;
 };
-function stripDiacritics(str) {
-  return (str || "")
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .replace(/Ğ/g, "G").replace(/Ü/g, "U").replace(/Ş/g, "S").replace(/İ/g, "I")
-    .replace(/Ö/g, "O").replace(/Ç/g, "C")
-    .replace(/ğ/g, "g").replace(/ü/g, "u").replace(/ş/g, "s").replace(/ı/g, "i")
-    .replace(/ö/g, "o").replace(/ç/g, "c");
-}
-const canonName = (s) => stripDiacritics((s || "").toString().trim().toLocaleUpperCase("tr-TR")).replace(/\s+/g, " ").trim();
-const choosePreferredName = (current, candidate) => {
-  if (!current) return candidate;
-  if (!candidate) return current;
-  const currentCanon = canonName(current);
-  const candidateCanon = canonName(candidate);
-  if (currentCanon && candidateCanon && currentCanon === candidateCanon) {
-    return candidate === candidate.toLowerCase() && current !== current.toLowerCase() ? current : candidate;
-  }
-  return current;
-};
 function remapOvertimeRowsWithPeople(rows = [], people = []) {
-  const peopleById = new Map();
-  const peopleByCanon = new Map();
-  for (const p of Array.isArray(people) ? people : []) {
-    const pid = String(p?.id || "").trim();
-    const canon = canonName(p?.fullName || p?.name || "");
-    if (pid) peopleById.set(pid, p);
-    if (canon && !peopleByCanon.has(canon)) peopleByCanon.set(canon, p);
-  }
+  const peopleIndex = buildPersonIdentityIndex(people);
 
   const merged = new Map();
   for (const row of Array.isArray(rows) ? rows : []) {
     const rowPid = String(row?.personId || "").trim();
     const rowCanon = canonName(row?.person || "");
-    const person = (rowPid && peopleById.get(rowPid)) || (rowCanon && peopleByCanon.get(rowCanon)) || null;
+    const person = resolvePersonRef({ personId: rowPid, name: row?.person || rowCanon }, peopleIndex);
     const resolvedPid = person ? String(person.id || "").trim() : rowPid;
     const displayName = person?.fullName || person?.name || row?.person || "";
     const key = resolvedPid ? `id:${resolvedPid}` : `name:${rowCanon || String(row?.id || "")}`;
@@ -104,6 +83,15 @@ const TXT =
 const LS_DATA_PREFIX = "overtimeMatrixV3::";
 const LS_CFG = "overtimeMatrixCfgV1";
 const DEFAULT_CFG = { department: "ACİL SERVİS", unitId: "" };
+
+function loadOvertimeRowsFromCache(year, month, people = []) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_DATA_PREFIX + ymKey(year, month)) || "[]");
+    return remapOvertimeRowsWithPeople(Array.isArray(raw) ? raw : [], people);
+  } catch {
+    return [];
+  }
+}
 
 const makeBlankRow = (y, m) => ({
   id: crypto.randomUUID(),
@@ -172,12 +160,7 @@ export default function OvertimeTab() {
   const { year, month } = ym;
 
   const [cfg, setCfg] = useState(() => ({ ...DEFAULT_CFG, ...(JSON.parse(localStorage.getItem(LS_CFG) || "null") || {}) }));
-  const [rows, setRows] = useState(() =>
-    remapOvertimeRowsWithPeople(
-      JSON.parse(localStorage.getItem(LS_DATA_PREFIX + ymKey(year, month)) || "[]"),
-      []
-    )
-  );
+  const [rows, setRows] = useState(() => loadOvertimeRowsFromCache(year, month));
 
   const [people, setPeople] = useState([]);
   const [holidays, setHolidays] = useState([]);
@@ -195,10 +178,9 @@ export default function OvertimeTab() {
   /* ay/yıl değişince, bu aya ait kayıtları yükle (varsa) */
   useEffect(() => {
     try {
-      const next = JSON.parse(localStorage.getItem(LS_DATA_PREFIX + ymKey(year, month)) || "[]");
-      if (Array.isArray(next)) setRows(remapOvertimeRowsWithPeople(next, people));
+      setRows(loadOvertimeRowsFromCache(year, month, people));
     } catch {}
-  }, [year, month, people]);
+  }, [year, month]);
 
   /* gün sayısı değişince normalize */
   useEffect(() => {

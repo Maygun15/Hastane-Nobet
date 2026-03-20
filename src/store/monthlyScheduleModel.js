@@ -1,12 +1,13 @@
 import { getMonthlySchedule } from "../api/apiAdapter.js";
+import {
+  buildPersonIdentityIndex,
+  canonName,
+  resolvePersonRef,
+} from "../utils/personIdentity.js";
 import { LS } from "../utils/storage.js";
 
 const pad2 = (n) => String(n).padStart(2, "0");
-const canon = (s) =>
-  (s || "")
-    .trim()
-    .toLocaleLowerCase("tr-TR")
-    .replace(/\s+/g, " ");
+const canon = (s) => canonName(s || "");
 
 function shiftHoursFromCode(code = "") {
   const c = String(code || "").toUpperCase();
@@ -21,14 +22,6 @@ function shiftHoursFromCode(code = "") {
     return 24;
   }
   return 8;
-}
-
-function personIdOf(person) {
-  return String(person?.id || person?._id || "").trim();
-}
-
-function personNameOf(person) {
-  return person?.fullName || person?.name || "";
 }
 
 function addModelEntry(target, { personId = "", nameKey = "", day, entry }) {
@@ -50,12 +43,7 @@ function fromRowsV2(people = []) {
   const rows = LS.get("scheduleRowsV2", null);
   if (!Array.isArray(rows)) return null;
 
-  const nameToId = new Map();
-  for (const person of people || []) {
-    const key = canon(personNameOf(person));
-    const pid = personIdOf(person);
-    if (key && pid) nameToId.set(key, pid);
-  }
+  const peopleIndex = buildPersonIdentityIndex(people);
 
   const assignments = {};
   const byName = {};
@@ -68,7 +56,7 @@ function fromRowsV2(people = []) {
       const day = Number.parseInt(m[1], 10);
       const nameKey = canon(String(val));
       if (!nameKey || !day) continue;
-      const personId = nameToId.get(nameKey) || "";
+      const personId = String(resolvePersonRef({ name: nameKey }, peopleIndex)?.id || "").trim();
       const shiftCode = row.vardiya || row.shiftCode || "";
       const entry = {
         shiftCode,
@@ -83,38 +71,6 @@ function fromRowsV2(people = []) {
   return { assignments, byName };
 }
 
-function fromRosterFlat(year, month) {
-  const ym = `${year}-${pad2(month)}`;
-  const payload = LS.get("generatedRosterFlat", null);
-  if (!payload || typeof payload !== "object") return null;
-
-  const assignments = {};
-  const byName = {};
-
-  for (const bucket of Object.values(payload)) {
-    if (!bucket || typeof bucket !== "object") continue;
-    const items = bucket?.[ym];
-    if (!Array.isArray(items)) continue;
-
-    for (const item of items) {
-      const day = Number(item?.day);
-      if (!day) continue;
-      const pid = String(item?.personId || "").trim();
-      const nameKey = canon(item?.personName || item?.name || "");
-      const shiftCode = item?.shiftCode || item?.roleLabel || "";
-      const entry = {
-        shiftCode,
-        rowLabel: item?.roleLabel || item?.rowId || "",
-        hours: shiftHoursFromCode(shiftCode),
-        source: "generatedRosterFlat",
-      };
-      addModelEntry({ assignments, byName }, { personId: pid, nameKey, day, entry });
-    }
-  }
-
-  return { assignments, byName };
-}
-
 function fromNamedAssignments(data, people = []) {
   const named =
     data?.roster?.namedAssignments ||
@@ -123,12 +79,7 @@ function fromNamedAssignments(data, people = []) {
     null;
   if (!named) return null;
 
-  const nameToId = new Map();
-  for (const person of people || []) {
-    const key = canon(personNameOf(person));
-    const pid = personIdOf(person);
-    if (key && pid) nameToId.set(key, pid);
-  }
+  const peopleIndex = buildPersonIdentityIndex(people);
 
   const defs = data?.defs || data?.rows || data?.data?.defs || [];
   const shiftByRow = new Map();
@@ -151,7 +102,7 @@ function fromNamedAssignments(data, people = []) {
       for (const name of names) {
         if (!name) continue;
         const nameKey = canon(name);
-        const pid = nameToId.get(nameKey) || "";
+        const pid = String(resolvePersonRef({ name: nameKey }, peopleIndex)?.id || "").trim();
         const shiftCode = shiftByRow.get(rowId) || "";
         const entry = {
           shiftCode,
@@ -175,12 +126,7 @@ function fromExplicitAssignments(data, people = []) {
     [];
   if (!Array.isArray(list)) return null;
 
-  const nameToId = new Map();
-  for (const person of people || []) {
-    const key = canon(personNameOf(person));
-    const pid = personIdOf(person);
-    if (key && pid) nameToId.set(key, pid);
-  }
+  const peopleIndex = buildPersonIdentityIndex(people);
 
   const assignments = {};
   const byName = {};
@@ -197,7 +143,9 @@ function fromExplicitAssignments(data, people = []) {
     const pid = String(item.personId || item.pid || item.staffId || "").trim();
     const nameRaw = item.personName || item.fullName || item.name || "";
     const nameKey = canon(nameRaw);
-    const resolvedPid = pid || (nameKey ? nameToId.get(nameKey) || "" : "");
+    const resolvedPid = String(
+      resolvePersonRef({ personId: pid, name: nameKey }, peopleIndex)?.id || pid || ""
+    ).trim();
     const shiftCode = item.shiftCode || item.shift || item.code || "";
     const rowLabel = item.roleLabel || item.rowLabel || item.area || item.label || "";
     const explicitHours = Number(item.hours);
@@ -254,9 +202,8 @@ export function getScheduleModelSync({ year, month, people = [] }) {
     return fromBackendSchedule(backendCache, people);
   }
 
-  // Backend read model yoksa legacy/local cache adapter'larına düş.
-  let model = fromRowsV2(people);
-  model = merge(model, fromRosterFlat(year, month));
+  // Backend read model yoksa yalnız draft/local scheduleRowsV2 fallback'ine düş.
+  const model = fromRowsV2(people);
   return model || { assignments: {}, byName: {} };
 }
 
@@ -280,9 +227,8 @@ export async function getScheduleModel({ sectionId, serviceId, role = "", year, 
     return fromBackendSchedule(backendData, people);
   }
 
-  // Backend veri yoksa local adapter kaynaklarını fallback olarak kullan.
-  let model = fromRowsV2(people);
-  model = merge(model, fromRosterFlat(year, month));
+  // Backend veri yoksa yalnız draft/local scheduleRowsV2 fallback'ini kullan.
+  const model = fromRowsV2(people);
   return model || { assignments: {}, byName: {} };
 }
 

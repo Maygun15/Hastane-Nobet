@@ -11,6 +11,12 @@ import useActiveYM from "../hooks/useActiveYM.js";
 import ToolbarYM from "../components/common/ToolbarYM.jsx";
 import { LEAVE_RULES as DEFAULT_LEAVE_RULES } from "../constants/rules.js";
 import { buildLeaveCreditRules } from "../utils/leaveTypeRules.js";
+import {
+  buildPersonIdentityIndex,
+  canonName,
+  choosePreferredName,
+  resolvePersonRef,
+} from "../utils/personIdentity.js";
 import { LS } from "../utils/storage.js";
 import { getAllLeaves } from "../lib/leaves.js";
 import {
@@ -35,28 +41,7 @@ const isGroupLabel = (nm) =>
   /^(hemşire(ler)?|hemsire(ler)?|doktor(lar)?|personel|nurses?|doctors?)$/i.test(
     String(nm).trim()
   );
-
-function stripDiacritics(str) {
-  return (str || "")
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .replace(/Ğ/g, "G").replace(/Ü/g, "U").replace(/Ş/g, "S").replace(/İ/g, "I")
-    .replace(/Ö/g, "O").replace(/Ç/g, "C")
-    .replace(/ğ/g, "g").replace(/ü/g, "u").replace(/ş/g, "s").replace(/ı/g, "i")
-    .replace(/ö/g, "o").replace(/ç/g, "c");
-}
-const canonName = (s) => stripDiacritics((s || "").toString().trim().toLocaleUpperCase("tr-TR")).replace(/\s+/g, " ").trim();
 const alignScheduleModelNameKey = (s) => canonName(s || "");
-const choosePreferredName = (current, candidate) => {
-  if (!current) return candidate;
-  if (!candidate) return current;
-  const currentCanon = canonName(current);
-  const candidateCanon = canonName(candidate);
-  if (currentCanon && candidateCanon && currentCanon === candidateCanon) {
-    return candidate === candidate.toLowerCase() && current !== current.toLowerCase() ? current : candidate;
-  }
-  return current;
-};
 
 function dedupeImportedPersonRows(rows = []) {
   const byCanon = new Map();
@@ -78,20 +63,13 @@ function dedupeImportedPersonRows(rows = []) {
 }
 
 function remapOvertimeRowsWithPeople(rows = [], people = []) {
-  const peopleById = new Map();
-  const peopleByCanon = new Map();
-  for (const p of Array.isArray(people) ? people : []) {
-    const pid = String(p?.id || "").trim();
-    const canon = canonName(p?.fullName || p?.name || "");
-    if (pid) peopleById.set(pid, p);
-    if (canon && !peopleByCanon.has(canon)) peopleByCanon.set(canon, p);
-  }
+  const peopleIndex = buildPersonIdentityIndex(people);
 
   const merged = new Map();
   for (const row of dedupeImportedPersonRows(rows)) {
     const rowPid = String(row?.personId || "").trim();
     const rowCanon = canonName(row?.person || "");
-    const person = (rowPid && peopleById.get(rowPid)) || (rowCanon && peopleByCanon.get(rowCanon)) || null;
+    const person = resolvePersonRef({ personId: rowPid, name: row?.person || rowCanon }, peopleIndex);
     const resolvedPid = person ? String(person.id || "").trim() : rowPid;
     const displayName = person?.fullName || person?.name || row?.person || "";
     const key = resolvedPid ? `id:${resolvedPid}` : `name:${rowCanon || String(row?.id || crypto.randomUUID())}`;
@@ -467,15 +445,14 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
     const stdMonthly = computeMonthlyStdHours(year, month, holidays);
     const ym = ymKey(year, month);
     const allLocalLeaves = getAllLeaves();
-    const personIdByCanon = new Map(
-      (people || [])
-        .map((p) => [canonName(p?.fullName || p?.name || ""), String(p?.id || "").trim()])
-        .filter(([canon, pid]) => canon && pid)
-    );
+    const peopleIndex = buildPersonIdentityIndex(people);
     const perRowLeave = rows.map((r) => {
       const rowPid = String(r.personId || "").trim();
-      const canon = canonName(r.person || r.fullName || r.name || r.adsoyad || "");
-      const effectivePid = rowPid || personIdByCanon.get(canon) || "";
+      const person = resolvePersonRef(
+        { personId: rowPid, name: r.person || r.fullName || r.name || r.adsoyad || "" },
+        peopleIndex
+      );
+      const effectivePid = rowPid || String(person?.id || "").trim();
       const localCodes = effectivePid ? (allLocalLeaves?.[effectivePid]?.[ym] || {}) : {};
       const leaveDays = collectLeaveDaysForMonth({ year, month, codesByDay: localCodes });
       const credited = creditedLeaveHoursForMonth({ year, month, holidays, codesByDay: localCodes, leaveRules, leaveCountsWeekend: true });
@@ -560,12 +537,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
       }
 
       const metaIndex = buildPersonMetaIndex(people);
-      const peopleById = new Map((people || []).map((p) => [String(p.id), p]));
-      const peopleByCanon = new Map(
-        (people || [])
-          .map((p) => [canonName(p.fullName || p.name || ""), p])
-          .filter(([k]) => !!k)
-      );
+      const peopleIndex = buildPersonIdentityIndex(people);
       const personRows = new Map();
       const ensureRow = (key, sourceName, personObj, metaInfo) => {
         if (personRows.has(key)) return personRows.get(key);
@@ -583,7 +555,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
       };
 
       for (const [pid, dayMap] of Object.entries(model.assignments || {})) {
-        const personObj = peopleById.get(String(pid)) || null;
+        const personObj = resolvePersonRef({ personId: String(pid) }, peopleIndex);
         const sourceName = personObj?.fullName || personObj?.name || "";
         const cn = canonName(sourceName);
         const meta = personObj?.id
@@ -603,7 +575,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
 
       for (const [nameKey, dayMap] of Object.entries(model.byName || {})) {
         const normalizedNameKey = alignScheduleModelNameKey(nameKey);
-        const personObj = peopleByCanon.get(normalizedNameKey) || null;
+        const personObj = resolvePersonRef({ name: normalizedNameKey }, peopleIndex);
         const sourceName = personObj?.fullName || personObj?.name || nameKey;
         const meta = personObj?.id
           ? metaIndex.byId.get(String(personObj.id))
