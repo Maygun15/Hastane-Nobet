@@ -45,6 +45,9 @@ async function httpRequest(pathAndQuery, { method = "GET", body, token, headers 
     const err = new Error((data && (data.message || data.error)) || `HTTP ${res.status}`);
     err.status = res.status;
     err.body = data;
+    err.details = Array.isArray(data?.details)
+      ? data.details.map((item) => item?.message).filter(Boolean)
+      : [];
     throw err;
   }
 

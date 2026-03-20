@@ -197,6 +197,16 @@ function runScheduler(context) {
           }),
         };
 
+        logSlotDebug({
+          day,
+          shift,
+          slotIndex: i,
+          rawStaffPool,
+          candidateBuild,
+          selectionStage,
+          slotAudit,
+        });
+
         if (!selectionStage.postConstraintPool.length) {
           context.candidateAudit.push(slotAudit);
           context.audit.observations.push({
@@ -254,6 +264,48 @@ function runScheduler(context) {
   context.audit.summary = buildObservationSummary(context.audit.observations);
 
   return context;
+}
+
+function logSlotDebug({
+  day = null,
+  shift = null,
+  slotIndex = 0,
+  rawStaffPool = [],
+  candidateBuild = null,
+  selectionStage = null,
+  slotAudit = null,
+} = {}) {
+  const totalStaff = Array.isArray(rawStaffPool) ? rawStaffPool.length : 0;
+  const eligibleAfterBuilder = Array.isArray(selectionStage?.candidateBuilderEligiblePool)
+    ? selectionStage.candidateBuilderEligiblePool.length
+    : 0;
+  const afterConstraints = Array.isArray(selectionStage?.postConstraintPool)
+    ? selectionStage.postConstraintPool.length
+    : 0;
+  const rejectedByReason =
+    slotAudit?.constraintRejectedByReason && typeof slotAudit.constraintRejectedByReason === "object"
+      ? slotAudit.constraintRejectedByReason
+      : {};
+  const payload = {
+    date: day?.date || null,
+    shift: shift?.code || shift?.id || shift?.label || shift?.name || null,
+    slotIndex,
+    totalStaff,
+    eligibleAfterBuilder,
+    afterConstraints,
+    fallbackUsed: candidateBuild?.audit?.fallbackUsed === true,
+    fallbackReason: candidateBuild?.audit?.fallbackReason || null,
+  };
+
+  if (payload.fallbackUsed) {
+    payload.fallbackAfterBuilder = Array.isArray(candidateBuild?.pool) ? candidateBuild.pool.length : 0;
+  }
+
+  if (afterConstraints === 0 || Object.keys(rejectedByReason).length) {
+    payload.rejectedByReason = rejectedByReason;
+  }
+
+  console.log("[SLOT DEBUG]", payload);
 }
 
 function buildRawStaffPoolForSlot(staff = [], usedOnDay = new Set()) {

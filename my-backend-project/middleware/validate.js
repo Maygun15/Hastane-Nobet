@@ -3,7 +3,7 @@ const Joi = require('joi');
 const scheduleGenerateSchema = Joi.object({
   year: Joi.number().integer().min(2000).required(),
   month: Joi.number().integer().min(1).max(12).required(),
-  serviceId: Joi.string().trim().required(),
+  serviceId: Joi.string().trim().allow('').optional(),
   sectionId: Joi.string().trim().required(),
   role: Joi.string().trim().allow('').optional(),
   dryRun: Joi.boolean().optional(),

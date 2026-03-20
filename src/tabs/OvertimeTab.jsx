@@ -46,6 +46,26 @@ function stripDiacritics(str) {
     .replace(/ö/g, "o").replace(/ç/g, "c");
 }
 const canonName = (s) => stripDiacritics((s || "").toString().trim().toLocaleUpperCase("tr-TR")).replace(/\s+/g, " ").trim();
+const alignScheduleModelNameKey = (s) => canonName(s || "");
+
+function dedupeImportedPersonRows(rows = []) {
+  const byCanon = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const canon = canonName(row?.person || "");
+    if (!canon) continue;
+    const existing = byCanon.get(canon);
+    if (!existing) {
+      byCanon.set(canon, row);
+      continue;
+    }
+    const existingHasPersonId = !!String(existing?.personId || "").trim();
+    const nextHasPersonId = !!String(row?.personId || "").trim();
+    if (!existingHasPersonId && nextHasPersonId) {
+      byCanon.set(canon, row);
+    }
+  }
+  return Array.from(byCanon.values());
+}
 
 function buildPersonMetaIndex(source = []) {
   const combined = Array.isArray(source) ? source : [];
@@ -140,6 +160,15 @@ const TXT =
 const LS_DATA_PREFIX = "overtimeMatrixV3::";
 const LS_CFG = "overtimeMatrixCfgV1";
 const DEFAULT_CFG = { department: "ACİL SERVİS", unitId: "" };
+
+function loadOvertimeRowsFromCache(year, month) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_DATA_PREFIX + ymKey(year, month)) || "[]");
+    return dedupeImportedPersonRows(Array.isArray(raw) ? raw : []);
+  } catch {
+    return [];
+  }
+}
 
 const makeBlankRow = (y, m) => ({
   id: crypto.randomUUID(),
@@ -293,9 +322,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
   const { year, month } = ym;
 
   const [cfg, setCfg] = useState(() => ({ ...DEFAULT_CFG, ...(JSON.parse(localStorage.getItem(LS_CFG) || "null") || {}) }));
-  const [rows, setRows] = useState(() =>
-    JSON.parse(localStorage.getItem(LS_DATA_PREFIX + ymKey(year, month)) || "[]")
-  );
+  const [rows, setRows] = useState(() => loadOvertimeRowsFromCache(year, month));
   const [holidays, setHolidays] = useState([]);
   const [search, setSearch] = useState("");
   const fileRef = useRef(null);
@@ -329,8 +356,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
 
   useEffect(() => {
     try {
-      const next = JSON.parse(localStorage.getItem(LS_DATA_PREFIX + ymKey(year, month)) || "[]");
-      if (Array.isArray(next)) setRows(next);
+      setRows(loadOvertimeRowsFromCache(year, month));
     } catch {}
   }, [year, month]);
 
@@ -512,12 +538,13 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
       }
 
       for (const [nameKey, dayMap] of Object.entries(model.byName || {})) {
-        const personObj = peopleByCanon.get(nameKey) || null;
+        const normalizedNameKey = alignScheduleModelNameKey(nameKey);
+        const personObj = peopleByCanon.get(normalizedNameKey) || null;
         const sourceName = personObj?.fullName || personObj?.name || nameKey;
         const meta = personObj?.id
           ? metaIndex.byId.get(String(personObj.id))
-          : metaIndex.byCanon.get(nameKey);
-        const rowKey = personObj?.id ? `id:${personObj.id}` : `name:${nameKey}`;
+          : metaIndex.byCanon.get(normalizedNameKey);
+        const rowKey = personObj?.id ? `id:${personObj.id}` : `name:${normalizedNameKey}`;
         const row = ensureRow(rowKey, sourceName, personObj, meta);
         for (const [dayKey, entry] of Object.entries(dayMap || {})) {
           const day = Number(dayKey);
@@ -530,7 +557,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
         }
       }
 
-      const newRows = Array.from(personRows.values()).sort((a, b) =>
+      const newRows = dedupeImportedPersonRows(Array.from(personRows.values())).sort((a, b) =>
         String(a.person || "").localeCompare(String(b.person || ""), "tr", { sensitivity: "base" })
       );
       if (!newRows.length) {

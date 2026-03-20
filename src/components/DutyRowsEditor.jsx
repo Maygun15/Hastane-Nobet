@@ -56,6 +56,51 @@ const stripDiacritics = (str) =>
     .replace(/ğ/g, "g").replace(/ü/g, "u").replace(/ş/g, "s").replace(/ı/g, "i")
     .replace(/ö/g, "o").replace(/ç/g, "c");
 const canonName = (s) => stripDiacritics(norm(s)).replace(/\s+/g, " ").trim();
+const isPlainLowercaseName = (s = "") => {
+  const raw = String(s || "").trim();
+  if (!raw) return false;
+  const letters = stripDiacritics(raw).replace(/[^A-Za-z]/g, "");
+  if (!letters) return false;
+  return letters === letters.toLowerCase() && letters !== letters.toUpperCase();
+};
+const choosePreferredDisplayName = (current, candidate) => {
+  if (!current) return candidate;
+  if (!candidate) return current;
+  if (isPlainLowercaseName(current) && !isPlainLowercaseName(candidate)) return candidate;
+  return current;
+};
+const mergeDisplayNameLists = (base = [], addon = []) => {
+  const merged = new Map();
+  const pushName = (nm) => {
+    if (!nm || isGroupLabel(nm)) return;
+    const canon = canonName(nm);
+    if (!canon) return;
+    const chosen = choosePreferredDisplayName(merged.get(canon), String(nm).trim());
+    merged.set(canon, chosen);
+  };
+  (Array.isArray(base) ? base : []).forEach(pushName);
+  (Array.isArray(addon) ? addon : []).forEach(pushName);
+  return Array.from(merged.values());
+};
+const normalizeRosterNamedAssignments = (namedAssignments) => {
+  const source = namedAssignments && typeof namedAssignments === "object" ? namedAssignments : {};
+  const normalized = {};
+  Object.entries(source).forEach(([dayKey, byRow]) => {
+    if (!byRow || typeof byRow !== "object") return;
+    normalized[dayKey] = {};
+    Object.entries(byRow).forEach(([rowId, list]) => {
+      normalized[dayKey][rowId] = mergeDisplayNameLists([], list);
+    });
+  });
+  return normalized;
+};
+const normalizeRosterData = (roster) => {
+  if (!roster || typeof roster !== "object") return roster || null;
+  return {
+    ...roster,
+    namedAssignments: normalizeRosterNamedAssignments(roster.namedAssignments),
+  };
+};
 const monIndex = (wdSun0) => (wdSun0 + 6) % 7;
 const pad2 = (n) => String(n).padStart(2, "0");
 function normalizeMonthAnyBase(value, { preferOneBased } = { preferOneBased: true }) {
@@ -464,6 +509,28 @@ function applyExplainabilityGuard({
 }
 
 /* ===== personel normalize ===== */
+function normalizeRoleHint(rawRole, fallbackRole = null) {
+  const value = String(rawRole || "").trim().toLocaleLowerCase("tr-TR");
+  if (!value) return fallbackRole;
+  if (
+    value === "doctor" ||
+    value === "doktor" ||
+    value.includes("doktor")
+  ) {
+    return "Doctor";
+  }
+  if (
+    value === "nurse" ||
+    value === "hemşire" ||
+    value === "hemsire" ||
+    value.includes("hemşire") ||
+    value.includes("hemsire")
+  ) {
+    return "Nurse";
+  }
+  return fallbackRole;
+}
+
 function normalizeFromParamTable(x, role) {
   const name = x?.fullName || x?.name || x?.["AD SOYAD"];
   if (!name || isGroupLabel(name)) return null;
@@ -508,7 +575,10 @@ function normalizeFromParamTable(x, role) {
   return {
     id: String(id),
     name: String(name),
-    role: role === "Doctor" ? "Doctor" : "Nurse",
+    role: normalizeRoleHint(
+      x?.role || x?.title || x?.departmentRole || x?.meta?.role || x?.meta?.title || x?.meta?.unvan,
+      role === "Doctor" ? "Doctor" : "Nurse"
+    ),
     serviceId: String(serviceIdRaw || ""),
     areas,
     shiftCodes,
@@ -522,20 +592,47 @@ function normalizeFromParamTable(x, role) {
 }
 
 function ensureStaffInEngineStore(activeRole) {
-  // 1. Kaynakları birleştir: LS'deki rol bazlı liste + genel havuz (getPeople)
   const roleKey = activeRole === "Doctor" ? "doctors" : "nurses";
   const specific = LS.get(roleKey, []) || [];
-  const general = getPeople() || [];
-  
-  // Hepsini birleştir ve normalize et
-  const combined = [...specific, ...general];
-  let staff = combined.map((x) => normalizeFromParamTable(x, activeRole)).filter(Boolean);
+  const canonicalV2 = LS.get("peopleV2", []) || [];
+
+  let sourceUsed = "role-specific-backend-sync";
+  let fallbackUsed = false;
+  let raw = Array.isArray(specific) ? specific : [];
+
+  if (!raw.length && Array.isArray(canonicalV2) && canonicalV2.length) {
+    raw = canonicalV2.filter(
+      (item) =>
+        normalizeRoleHint(
+          item?.role || item?.title || item?.departmentRole || item?.meta?.role || item?.meta?.title || item?.meta?.unvan,
+          null
+        ) === activeRole
+    );
+    if (raw.length) sourceUsed = "peopleV2-role-filter";
+  }
+
+  if (!raw.length) {
+    raw = getPeople(activeRole) || [];
+    sourceUsed = "general-fallback";
+    fallbackUsed = true;
+  }
+
+  let staff = raw.map((x) => normalizeFromParamTable(x, activeRole)).filter(Boolean);
 
   // Eğer hala boşsa diğer kaynaklara bak (kartlar, izinler)
   if (!staff.length) {
     const cards = LS.get(STAFF_KEY, []) || [];
     staff = cards.filter((c) => c?.name && !isGroupLabel(c.name));
-    if (!staff.length) staff = buildPeopleFromLeaves(activeRole);
+    if (staff.length) {
+      sourceUsed = "engine-store-fallback";
+      fallbackUsed = true;
+    } else {
+      staff = buildPeopleFromLeaves(activeRole);
+      if (staff.length) {
+        sourceUsed = "leaves-fallback";
+        fallbackUsed = true;
+      }
+    }
   }
   
   // Dedupe (ID bazlı mükerrer kayıtları temizle)
@@ -550,11 +647,20 @@ function ensureStaffInEngineStore(activeRole) {
   // Alfabetik sıralama
   staff.sort((a, b) => (a.name || "").localeCompare(b.name || "", "tr"));
   LS.set(STAFF_KEY, staff);
-  return staff;
+  return { staff, sourceUsed, fallbackUsed };
 }
 
-function buildIdToNameMap() {
+function buildIdToNameMap(preferredPeople = null) {
   const mp = new Map();
+  if (Array.isArray(preferredPeople) && preferredPeople.length) {
+    for (const p of preferredPeople) {
+      const id = p?.id ?? p?.pid ?? p?.tc ?? p?.tcNo ?? p?.code ?? (p?.["AD SOYAD"] || p?.fullName || p?.name);
+      const name = p?.fullName || p?.name || p?.displayName || p?.["AD SOYAD"];
+      if (!id || !name || isGroupLabel(name)) continue;
+      mp.set(String(id), String(name));
+    }
+    return mp;
+  }
   const nurses = LS.get("nurses", []) || [];
   const doctors = LS.get("doctors", []) || [];
   for (const p of [...nurses, ...doctors]) {
@@ -1459,7 +1565,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             setOverrides(nextOverrides);
           }
           if ("preview" in data) setPreview(data.preview || null);
-          const rosterFromData = "roster" in data ? (data.roster || null) : null;
+          const rosterFromData = "roster" in data ? normalizeRosterData(data.roster || null) : null;
           const rosterFromAssignments = remoteAssignments.length
             ? buildRosterFromBackend(remoteAssignments, data.issues, defsForUI, data.candidateAudit, data.issueDiagnostics)
             : null;
@@ -1617,14 +1723,19 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     };
   }, []);
 
-  const staffAll = useMemo(
-    () => (staffLoading ? [] : ensureStaffInEngineStore(role)),
+  const canonicalStaffState = useMemo(
+    () =>
+      staffLoading
+        ? { staff: [], sourceUsed: "loading", fallbackUsed: false }
+        : ensureStaffInEngineStore(role),
     [role, staffLoading, staffRevision]
   );
+  const staffAll = canonicalStaffState.staff;
   const staffForRole = useMemo(
     () => (staffAll || []).filter((s) => !s.role || s.role === role),
     [staffAll, role]
   );
+  const canonicalIdNameMap = useMemo(() => buildIdToNameMap(staffForRole), [staffForRole]);
 
   const doSave = useCallback(async ({ silent = false, payloadOverride = null } = {}) => {
     if (!sectionId) {
@@ -1793,7 +1904,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const buildRosterFromBackend = useCallback((assignments, issues, defsSource = rows, candidateAudit = [], issueDiagnostics = []) => {
     const named = {};
     const defsList = Array.isArray(defsSource) ? defsSource : [];
-    const knownPeople = getPeople(role);
+    const knownPeople = staffForRole;
     const knownNameSet = new Set(
       (Array.isArray(knownPeople) ? knownPeople : [])
         .map((p) => canonName(p?.fullName || p?.name || ""))
@@ -1832,10 +1943,9 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         nm &&
         !isGroupLabel(nm) &&
         canon &&
-        (!knownNameSet.size || knownNameSet.has(canon)) &&
-        !named[day][rowId].includes(nm)
+        (!knownNameSet.size || knownNameSet.has(canon))
       ) {
-        named[day][rowId].push(nm);
+        named[day][rowId] = mergeDisplayNameLists(named[day][rowId], [nm]);
       }
     });
 
@@ -1865,10 +1975,11 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     });
 
     return { namedAssignments: named, issues: issueList };
-  }, [rows, daysInMonth, role]);
+  }, [rows, daysInMonth, role, staffForRole]);
 
   const mergeRosterNamedAssignments = useCallback((baseRoster, addonRoster) => {
-    const base = baseRoster && typeof baseRoster === "object" ? { ...baseRoster } : {};
+    const normalizedBase = normalizeRosterData(baseRoster);
+    const base = normalizedBase && typeof normalizedBase === "object" ? { ...normalizedBase } : {};
     const namedBase = base?.namedAssignments && typeof base.namedAssignments === "object"
       ? { ...base.namedAssignments }
       : {};
@@ -1880,12 +1991,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       if (!namedBase[dayKey] || typeof namedBase[dayKey] !== "object") namedBase[dayKey] = {};
       Object.entries(byRow || {}).forEach(([rowId, list]) => {
         const prev = Array.isArray(namedBase[dayKey][rowId]) ? namedBase[dayKey][rowId] : [];
-        const next = [...prev];
-        (Array.isArray(list) ? list : []).forEach((nm) => {
-          if (!nm || isGroupLabel(nm)) return;
-          if (!next.includes(nm)) next.push(nm);
-        });
-        namedBase[dayKey][rowId] = next;
+        namedBase[dayKey][rowId] = mergeDisplayNameLists(prev, list);
       });
     });
 
@@ -1967,6 +2073,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       serviceId: serviceKey || "(all)",
       staff: staffPayload.length,
       staffWithMeta: staffWithMetaCount,
+      sourceUsed: canonicalStaffState.sourceUsed,
+      fallbackUsed: canonicalStaffState.fallbackUsed,
       rows: rows.length,
       leaves: Object.keys(leavesByPerson || {}).length,
       rules: Object.keys(dutyRules || {}).length,
@@ -1995,9 +2103,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     const supervisorPool = LS.get("supervisorPool", null);
 
     try {
-      const res = await generateSchedulerPlan({
+      const schedulerPayload = {
         sectionId,
-        serviceId: serviceKey,
         role,
         year,
         month: month1,
@@ -2011,7 +2118,10 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         ...(staffPayload.length ? { staff: staffPayload } : {}),
         ...(Object.keys(dutyRules || {}).length ? { rules: dutyRules } : {}),
         ...(Object.keys(leavesByPerson || {}).length ? { leavesByPerson } : {}),
-      });
+      };
+      if (serviceKey) schedulerPayload.serviceId = serviceKey;
+
+      const res = await generateSchedulerPlan(schedulerPayload);
       const data = res?.data || res;
       if (data?.assignments?.length) {
         savedAssignmentsRef.current = Array.isArray(data.assignments) ? data.assignments : [];
@@ -2057,7 +2167,13 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       note("Sunucu planı boş döndü. Yerel önizleme korunuyor.", "warning");
     } catch (err) {
       console.error(err);
-      note("Sunucu planlama hatası: " + (err?.message || err), "error");
+      const validationDetails = Array.isArray(err?.details) && err.details.length
+        ? err.details.join("\n")
+        : Array.isArray(err?.body?.details) && err.body.details.length
+          ? err.body.details.map((item) => item?.message).filter(Boolean).join("\n")
+          : "";
+      const errorMessage = validationDetails || err?.message || err;
+      note("Sunucu planlama hatası: " + errorMessage, "error");
     }
 
     if (!hasStaff)
