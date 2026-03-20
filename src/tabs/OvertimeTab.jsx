@@ -47,6 +47,16 @@ function stripDiacritics(str) {
 }
 const canonName = (s) => stripDiacritics((s || "").toString().trim().toLocaleUpperCase("tr-TR")).replace(/\s+/g, " ").trim();
 const alignScheduleModelNameKey = (s) => canonName(s || "");
+const choosePreferredName = (current, candidate) => {
+  if (!current) return candidate;
+  if (!candidate) return current;
+  const currentCanon = canonName(current);
+  const candidateCanon = canonName(candidate);
+  if (currentCanon && candidateCanon && currentCanon === candidateCanon) {
+    return candidate === candidate.toLowerCase() && current !== current.toLowerCase() ? current : candidate;
+  }
+  return current;
+};
 
 function dedupeImportedPersonRows(rows = []) {
   const byCanon = new Map();
@@ -65,6 +75,56 @@ function dedupeImportedPersonRows(rows = []) {
     }
   }
   return Array.from(byCanon.values());
+}
+
+function remapOvertimeRowsWithPeople(rows = [], people = []) {
+  const peopleById = new Map();
+  const peopleByCanon = new Map();
+  for (const p of Array.isArray(people) ? people : []) {
+    const pid = String(p?.id || "").trim();
+    const canon = canonName(p?.fullName || p?.name || "");
+    if (pid) peopleById.set(pid, p);
+    if (canon && !peopleByCanon.has(canon)) peopleByCanon.set(canon, p);
+  }
+
+  const merged = new Map();
+  for (const row of dedupeImportedPersonRows(rows)) {
+    const rowPid = String(row?.personId || "").trim();
+    const rowCanon = canonName(row?.person || "");
+    const person = (rowPid && peopleById.get(rowPid)) || (rowCanon && peopleByCanon.get(rowCanon)) || null;
+    const resolvedPid = person ? String(person.id || "").trim() : rowPid;
+    const displayName = person?.fullName || person?.name || row?.person || "";
+    const key = resolvedPid ? `id:${resolvedPid}` : `name:${rowCanon || String(row?.id || crypto.randomUUID())}`;
+    const current = merged.get(key);
+    const next = {
+      ...row,
+      personId: resolvedPid,
+      person: choosePreferredName(current?.person || "", displayName),
+      title: person?.title || row?.title || "",
+      service: person?.service || row?.service || "",
+    };
+    if (!current) {
+      merged.set(key, next);
+      continue;
+    }
+    const currentDays = Array.isArray(current.days) ? current.days : [];
+    const nextDays = Array.isArray(next.days) ? next.days : [];
+    const mergedDays = Array.from({ length: Math.max(currentDays.length, nextDays.length) }, (_, idx) => {
+      const left = currentDays[idx];
+      const right = nextDays[idx];
+      return left !== "" && left != null ? left : (right ?? "");
+    });
+    merged.set(key, {
+      ...current,
+      ...next,
+      person: choosePreferredName(current.person, next.person),
+      title: next.title || current.title || "",
+      service: next.service || current.service || "",
+      days: mergedDays,
+    });
+  }
+
+  return Array.from(merged.values());
 }
 
 function buildPersonMetaIndex(source = []) {
@@ -361,6 +421,10 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
   }, [year, month]);
 
   useEffect(() => {
+    setRows((prev) => remapOvertimeRowsWithPeople(prev, people));
+  }, [people]);
+
+  useEffect(() => {
     setRows((prev) =>
       (prev || []).map((r) => {
         const a = [...(r.days || [])];
@@ -557,7 +621,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
         }
       }
 
-      const newRows = dedupeImportedPersonRows(Array.from(personRows.values())).sort((a, b) =>
+      const newRows = remapOvertimeRowsWithPeople(Array.from(personRows.values()), people).sort((a, b) =>
         String(a.person || "").localeCompare(String(b.person || ""), "tr", { sensitivity: "base" })
       );
       if (!newRows.length) {

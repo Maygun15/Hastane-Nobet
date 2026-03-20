@@ -23,6 +23,74 @@ const isWeekend = (y, m, d) => {
   const dow = new Date(y, m - 1, d).getDay(); // 0=Pa,6=Cts
   return dow === 0 || dow === 6;
 };
+function stripDiacritics(str) {
+  return (str || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/Ğ/g, "G").replace(/Ü/g, "U").replace(/Ş/g, "S").replace(/İ/g, "I")
+    .replace(/Ö/g, "O").replace(/Ç/g, "C")
+    .replace(/ğ/g, "g").replace(/ü/g, "u").replace(/ş/g, "s").replace(/ı/g, "i")
+    .replace(/ö/g, "o").replace(/ç/g, "c");
+}
+const canonName = (s) => stripDiacritics((s || "").toString().trim().toLocaleUpperCase("tr-TR")).replace(/\s+/g, " ").trim();
+const choosePreferredName = (current, candidate) => {
+  if (!current) return candidate;
+  if (!candidate) return current;
+  const currentCanon = canonName(current);
+  const candidateCanon = canonName(candidate);
+  if (currentCanon && candidateCanon && currentCanon === candidateCanon) {
+    return candidate === candidate.toLowerCase() && current !== current.toLowerCase() ? current : candidate;
+  }
+  return current;
+};
+function remapOvertimeRowsWithPeople(rows = [], people = []) {
+  const peopleById = new Map();
+  const peopleByCanon = new Map();
+  for (const p of Array.isArray(people) ? people : []) {
+    const pid = String(p?.id || "").trim();
+    const canon = canonName(p?.fullName || p?.name || "");
+    if (pid) peopleById.set(pid, p);
+    if (canon && !peopleByCanon.has(canon)) peopleByCanon.set(canon, p);
+  }
+
+  const merged = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const rowPid = String(row?.personId || "").trim();
+    const rowCanon = canonName(row?.person || "");
+    const person = (rowPid && peopleById.get(rowPid)) || (rowCanon && peopleByCanon.get(rowCanon)) || null;
+    const resolvedPid = person ? String(person.id || "").trim() : rowPid;
+    const displayName = person?.fullName || person?.name || row?.person || "";
+    const key = resolvedPid ? `id:${resolvedPid}` : `name:${rowCanon || String(row?.id || "")}`;
+    const current = merged.get(key);
+    const next = {
+      ...row,
+      personId: resolvedPid,
+      person: choosePreferredName(current?.person || "", displayName),
+      title: person?.title || row?.title || "",
+      service: person?.service || row?.service || "",
+    };
+    if (!current) {
+      merged.set(key, next);
+      continue;
+    }
+    const currentDays = Array.isArray(current.days) ? current.days : [];
+    const nextDays = Array.isArray(next.days) ? next.days : [];
+    const mergedDays = Array.from({ length: Math.max(currentDays.length, nextDays.length) }, (_, idx) => {
+      const left = currentDays[idx];
+      const right = nextDays[idx];
+      return left !== "" && left != null ? left : (right ?? "");
+    });
+    merged.set(key, {
+      ...current,
+      ...next,
+      person: choosePreferredName(current.person, next.person),
+      title: next.title || current.title || "",
+      service: next.service || current.service || "",
+      days: mergedDays,
+    });
+  }
+  return Array.from(merged.values());
+}
 
 const INPUT =
   "w-full outline-none text-center px-1.5 py-1 rounded-md border border-gray-300 bg-white " +
@@ -105,7 +173,10 @@ export default function OvertimeTab() {
 
   const [cfg, setCfg] = useState(() => ({ ...DEFAULT_CFG, ...(JSON.parse(localStorage.getItem(LS_CFG) || "null") || {}) }));
   const [rows, setRows] = useState(() =>
-    JSON.parse(localStorage.getItem(LS_DATA_PREFIX + ymKey(year, month)) || "[]")
+    remapOvertimeRowsWithPeople(
+      JSON.parse(localStorage.getItem(LS_DATA_PREFIX + ymKey(year, month)) || "[]"),
+      []
+    )
   );
 
   const [people, setPeople] = useState([]);
@@ -125,9 +196,9 @@ export default function OvertimeTab() {
   useEffect(() => {
     try {
       const next = JSON.parse(localStorage.getItem(LS_DATA_PREFIX + ymKey(year, month)) || "[]");
-      if (Array.isArray(next)) setRows(next);
+      if (Array.isArray(next)) setRows(remapOvertimeRowsWithPeople(next, people));
     } catch {}
-  }, [year, month]);
+  }, [year, month, people]);
 
   /* gün sayısı değişince normalize */
   useEffect(() => {
@@ -148,6 +219,10 @@ export default function OvertimeTab() {
       setPeople(list || []);
     })();
   }, [cfg.unitId]);
+
+  useEffect(() => {
+    setRows((prev) => remapOvertimeRowsWithPeople(prev, people));
+  }, [people]);
 
   /* holidays */
   useEffect(() => {

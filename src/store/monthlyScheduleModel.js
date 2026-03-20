@@ -31,6 +31,21 @@ function personNameOf(person) {
   return person?.fullName || person?.name || "";
 }
 
+function addModelEntry(target, { personId = "", nameKey = "", day, entry }) {
+  if (!Number.isFinite(day) || day < 1 || day > 31 || !entry) return;
+  const pid = String(personId || "").trim();
+  const canonNameKey = canon(nameKey || "");
+
+  if (pid) {
+    target.assignments[pid] = { ...(target.assignments[pid] || {}), [day]: entry };
+    return;
+  }
+
+  if (canonNameKey) {
+    target.byName[canonNameKey] = { ...(target.byName[canonNameKey] || {}), [day]: entry };
+  }
+}
+
 function fromRowsV2(people = []) {
   const rows = LS.get("scheduleRowsV2", null);
   if (!Array.isArray(rows)) return null;
@@ -61,11 +76,7 @@ function fromRowsV2(people = []) {
         hours: shiftHoursFromCode(shiftCode),
         source: "scheduleRowsV2",
       };
-
-      byName[nameKey] = { ...(byName[nameKey] || {}), [day]: entry };
-      if (personId) {
-        assignments[personId] = { ...(assignments[personId] || {}), [day]: entry };
-      }
+      addModelEntry({ assignments, byName }, { personId, nameKey, day, entry });
     }
   }
 
@@ -97,9 +108,7 @@ function fromRosterFlat(year, month) {
         hours: shiftHoursFromCode(shiftCode),
         source: "generatedRosterFlat",
       };
-
-      if (nameKey) byName[nameKey] = { ...(byName[nameKey] || {}), [day]: entry };
-      if (pid) assignments[pid] = { ...(assignments[pid] || {}), [day]: entry };
+      addModelEntry({ assignments, byName }, { personId: pid, nameKey, day, entry });
     }
   }
 
@@ -150,9 +159,7 @@ function fromNamedAssignments(data, people = []) {
           hours: shiftHoursFromCode(shiftCode),
           source: "backend",
         };
-
-        if (nameKey) byName[nameKey] = { ...(byName[nameKey] || {}), [day]: entry };
-        if (pid) assignments[pid] = { ...(assignments[pid] || {}), [day]: entry };
+        addModelEntry({ assignments, byName }, { personId: pid, nameKey, day, entry });
       }
     }
   }
@@ -200,9 +207,7 @@ function fromExplicitAssignments(data, people = []) {
       hours: Number.isFinite(explicitHours) ? explicitHours : shiftHoursFromCode(shiftCode),
       source: "backend",
     };
-
-    if (nameKey) byName[nameKey] = { ...(byName[nameKey] || {}), [day]: entry };
-    if (resolvedPid) assignments[resolvedPid] = { ...(assignments[resolvedPid] || {}), [day]: entry };
+    addModelEntry({ assignments, byName }, { personId: resolvedPid, nameKey, day, entry });
   }
 
   return { assignments, byName };
@@ -249,6 +254,7 @@ export function getScheduleModelSync({ year, month, people = [] }) {
     return fromBackendSchedule(backendCache, people);
   }
 
+  // Backend read model yoksa legacy/local cache adapter'larına düş.
   let model = fromRowsV2(people);
   model = merge(model, fromRosterFlat(year, month));
   return model || { assignments: {}, byName: {} };
@@ -274,6 +280,7 @@ export async function getScheduleModel({ sectionId, serviceId, role = "", year, 
     return fromBackendSchedule(backendData, people);
   }
 
+  // Backend veri yoksa local adapter kaynaklarını fallback olarak kullan.
   let model = fromRowsV2(people);
   model = merge(model, fromRosterFlat(year, month));
   return model || { assignments: {}, byName: {} };
