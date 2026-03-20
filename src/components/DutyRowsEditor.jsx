@@ -687,6 +687,12 @@ function buildIdToNameMap(preferredPeople = null) {
   return mp;
 }
 
+function readAiPlanFallback(year, month0) {
+  const saved = LS.get("scheduleRowsV2");
+  if (saved && saved.year === year && saved.month === month0 + 1) return saved;
+  return null;
+}
+
 /* ======================= bileşen ======================= */
 const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   {
@@ -826,12 +832,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   );
   const [preview, setPreview] = useState(null);
   const [roster, setRoster] = useState(null);
-  /* AI Plan LS */
-  const [aiPlan, setAiPlan] = useState(() => {
-    const saved = LS.get("scheduleRowsV2");
-    if (saved && saved.year === year && saved.month === month0 + 1) return saved;
-    return null;
-  });
+  /* AI Plan: backend varsa backend, local sadece fallback */
+  const [aiPlan, setAiPlan] = useState(null);
 
   /* Pinler (Sabitlenenler) */
   const [pins, setPins] = useState([]);
@@ -1495,12 +1497,14 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     }
   }, []);
   const refreshAiPlan = useCallback(() => {
-    const saved = LS.get("scheduleRowsV2");
-    if (saved && saved.year === year && saved.month === month0 + 1) setAiPlan(saved);
-    else setAiPlan(null);
+    if (monthlyReadModelState.scheduleId) {
+      setAiPlan((prev) => prev || null);
+    } else {
+      setAiPlan(readAiPlanFallback(year, month0));
+    }
     setPeopleNameMap(buildIdToNameMap());
     emitPlannerChanged();
-  }, [year, month0, emitPlannerChanged]);
+  }, [year, month0, emitPlannerChanged, monthlyReadModelState.scheduleId]);
   useEffect(() => {
     refreshAiPlan();
   }, [year, month0, refreshAiPlan]);
@@ -1574,7 +1578,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             : (rosterFromData || rosterFromAssignments);
           if (rosterForUI) setRoster(rosterForUI);
           else if ("roster" in data) setRoster(null);
-          if ("aiPlan" in data) setAiPlan(data.aiPlan || null);
+          setAiPlan("aiPlan" in data ? (data.aiPlan || null) : null);
           if ("pins" in data) setPins(data.pins || []);
           if ("rules" in data) {
             const r = data.rules || [];
@@ -1609,6 +1613,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           savedAssignmentsRef.current = [];
           setLastSavedInfo(null);
           setMonthlyReadModelState({ scheduleId: null, updatedAt: null, generatedAt: null });
+          setAiPlan(readAiPlanFallback(year, month0));
           if (autoSaveTimerRef.current) {
             clearTimeout(autoSaveTimerRef.current);
             autoSaveTimerRef.current = null;
@@ -1623,6 +1628,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           savedAssignmentsRef.current = [];
           setLastSavedInfo(null);
           setMonthlyReadModelState({ scheduleId: null, updatedAt: null, generatedAt: null });
+          setAiPlan(readAiPlanFallback(year, month0));
           if (autoSaveTimerRef.current) {
             clearTimeout(autoSaveTimerRef.current);
             autoSaveTimerRef.current = null;
