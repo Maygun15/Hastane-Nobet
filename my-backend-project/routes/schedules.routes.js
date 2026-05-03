@@ -7,6 +7,7 @@ const ScheduleRules = require('../models/ScheduleRules');
 const { listHolidays } = require('../services/holidayService');
 const { sendShiftChanged } = require('../services/notificationService');
 const { validateAssignment } = require('../utils/rulesValidator');
+const { checkSameDayConflict, checkLeaveConflict } = require('../services/conflictService');
 const { requireAuth, sameServiceOrAdmin, requireRole } = require('../middleware/authz');
 const { assignShiftSchema, validate } = require('../middleware/validate');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
@@ -980,6 +981,39 @@ router.post('/assign',
           message: 'Nöbet yazma kuralı ihlali',
           errors: validation.errors,
         });
+      }
+
+      // Aynı gün çakışma — bu kişi başka bir vardiyaya zaten atanmış mı?
+      if (!req.body?.force && payload.personId) {
+        const dayConflicts = await checkSameDayConflict({
+          personId: payload.personId,
+          personName: payload.personName,
+          date: payload.date,
+          excludeShiftId: previousShiftId || null,
+        });
+        if (dayConflicts.length > 0) {
+          return res.status(409).json({
+            ok: false,
+            message: 'Bu kişi bu tarihte başka bir vardiyaya zaten atanmış',
+            conflictType: 'SHIFT_CONFLICT',
+            conflicts: dayConflicts,
+          });
+        }
+
+        // İzin çakışması — kişi bu gün izinli mi?
+        const leaveConflict = await checkLeaveConflict({
+          personId: payload.personId,
+          date: payload.date,
+          serviceId: req.assignQuery.serviceId || '',
+        });
+        if (leaveConflict) {
+          return res.status(409).json({
+            ok: false,
+            message: `Bu kişi ${leaveConflict.date} tarihinde izinli (${leaveConflict.code}). Zorla atamak için force:true gönderin.`,
+            conflictType: 'LEAVE_CONFLICT',
+            leave: leaveConflict,
+          });
+        }
       }
 
       const idx = nextAssignments.findIndex((a) => assignmentKey(a) === key);

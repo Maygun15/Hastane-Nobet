@@ -3,6 +3,8 @@ const express = require('express');
 const router = express.Router();
 const Request = require('../models/Request');
 const Person = require('../models/Person');
+const MonthlySchedule = require('../models/MonthlySchedule');
+const Setting = require('../models/Setting');
 const {
   sendLeaveApproved,
   sendLeaveRejected,
@@ -13,6 +15,129 @@ const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
 const REQUEST_STATUS = new Set(['pending', 'approved', 'rejected', 'deleted']);
 const SOFT_DELETE_KEEP_DAYS = 180;
+
+/* ── İzin onaylandığında leaves/Setting'e yaz ── */
+async function applyLeaveRange(request) {
+  const { fromPersonId, targetDate, targetDateEnd, serviceId, message, leaveTypeCode } = request;
+  if (!fromPersonId || !targetDate) return;
+
+  const leaveCode = String(leaveTypeCode || 'YILLIK').trim().toUpperCase();
+  const start = new Date(`${String(targetDate).slice(0, 10)}T00:00:00`);
+  const end   = new Date(`${String(targetDateEnd || targetDate).slice(0, 10)}T00:00:00`);
+  if (isNaN(start) || isNaN(end) || end < start) return;
+
+  // Günleri aya göre grupla
+  const byMonth = {};
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const y = d.getFullYear();
+    const m = d.getMonth() + 1;
+    const day = d.getDate();
+    const mk = `${y}-${String(m).padStart(2, '0')}`;
+    (byMonth[mk] ??= []).push(day);
+  }
+
+  const pid = String(fromPersonId);
+  const sid = String(serviceId || '');
+
+  for (const [monthKey, days] of Object.entries(byMonth)) {
+    // hospitalScope plugin otomatik hospitalId ekler
+    let doc = await Setting.findOne({ key: 'leavesV2', serviceId: sid });
+    if (!doc) {
+      doc = new Setting({ key: 'leavesV2', serviceId: sid, value: {} });
+    }
+    const value = doc.value && typeof doc.value === 'object' ? { ...doc.value } : {};
+    value[pid] ??= {};
+    value[pid][monthKey] ??= {};
+    const entry = message ? { code: leaveCode, note: String(message).slice(0, 200) } : { code: leaveCode };
+    for (const day of days) value[pid][monthKey][String(day)] = entry;
+    doc.value = value;
+    doc.markModified('value');
+    await doc.save();
+  }
+}
+
+/* ── Takas onaylandığında atamaları değiştir ── */
+async function executeSwap(request) {
+  const {
+    fromPersonId, fromName,
+    swapWithPersonId,
+    swapSectionId, swapMyDate, swapMyShiftId,
+    swapTargetDate, swapTargetShiftId,
+  } = request;
+
+  if (!fromPersonId || !swapWithPersonId || !swapMyDate || !swapTargetDate) return false;
+
+  function ym(dateStr) {
+    const m = String(dateStr).slice(0, 10).match(/^(\d{4})-(\d{2})/);
+    return m ? { year: Number(m[1]), month: Number(m[2]) } : null;
+  }
+
+  const myYm = ym(swapMyDate);
+  const tYm  = ym(swapTargetDate);
+  if (!myYm || !tYm) return false;
+
+  const sectionId = String(swapSectionId || '');
+  const fromPid   = String(fromPersonId);
+  const toPid     = String(swapWithPersonId);
+  const myShift   = String(swapMyShiftId || '').toUpperCase();
+  const tShift    = String(swapTargetShiftId || '').toUpperCase();
+  const myDate    = String(swapMyDate).slice(0, 10);
+  const tDate     = String(swapTargetDate).slice(0, 10);
+
+  const [fromPerson, toPerson] = await Promise.all([
+    Person.findById(fromPersonId).lean(),
+    Person.findById(swapWithPersonId).lean(),
+  ]);
+
+  const isSameDoc = myYm.year === tYm.year && myYm.month === tYm.month;
+
+  const findAndSwap = async (doc, findDate, findPid, findShift, newPid, newName) => {
+    const assignments = Array.isArray(doc?.data?.assignments) ? [...doc.data.assignments] : [];
+    const idx = assignments.findIndex((a) => {
+      const aDate  = String(a?.date || a?.day || '').slice(0, 10);
+      const aPid   = String(a?.personId || '').trim();
+      const aShift = String(a?.shiftId || a?.shiftCode || '').trim().toUpperCase();
+      return aDate === findDate && aPid === findPid && aShift === findShift;
+    });
+    if (idx === -1) return { doc, found: false, assignments };
+    assignments[idx] = { ...assignments[idx], personId: newPid, personName: newName };
+    return { doc, found: true, assignments };
+  };
+
+  if (isSameDoc) {
+    const doc = await MonthlySchedule.findOne({ sectionId, year: myYm.year, month: myYm.month });
+    if (!doc) return false;
+
+    const r1 = await findAndSwap(doc, myDate, fromPid, myShift, toPid, toPerson?.name || '');
+    if (!r1.found) return false;
+    doc.data = { ...doc.data, assignments: r1.assignments };
+
+    const r2 = await findAndSwap(doc, tDate, toPid, tShift, fromPid, fromPerson?.name || fromName || '');
+    if (!r2.found) return false;
+    doc.data = { ...doc.data, assignments: r2.assignments };
+    doc.markModified('data');
+    await doc.save();
+  } else {
+    const [fromDoc, toDoc] = await Promise.all([
+      MonthlySchedule.findOne({ sectionId, year: myYm.year, month: myYm.month }),
+      MonthlySchedule.findOne({ sectionId, year: tYm.year,  month: tYm.month  }),
+    ]);
+    if (!fromDoc || !toDoc) return false;
+
+    const r1 = await findAndSwap(fromDoc, myDate, fromPid, myShift, toPid, toPerson?.name || '');
+    if (!r1.found) return false;
+    fromDoc.data = { ...fromDoc.data, assignments: r1.assignments };
+    fromDoc.markModified('data');
+
+    const r2 = await findAndSwap(toDoc, tDate, toPid, tShift, fromPid, fromPerson?.name || fromName || '');
+    if (!r2.found) return false;
+    toDoc.data = { ...toDoc.data, assignments: r2.assignments };
+    toDoc.markModified('data');
+
+    await Promise.all([fromDoc.save(), toDoc.save()]);
+  }
+  return true;
+}
 
 // Auth middleware
 // Not: Bu router, index.js içinde zaten `secureTenant` (auth + extractHospital) ile mount edilir.
@@ -39,9 +164,18 @@ function parseStatusFilter(status) {
 // POST /api/requests — kullanıcı talep gönderir
 router.post('/', requireAuth, async (req, res) => {
   try {
-    const { type, targetDate, targetDateEnd, message, swapWithPersonId } = req.body;
+    const {
+      type, targetDate, targetDateEnd, message, swapWithPersonId,
+      leaveTypeCode,
+      swapSectionId, swapMyDate, swapMyShiftId, swapMyShiftLabel,
+      swapTargetDate, swapTargetShiftId, swapTargetShiftLabel,
+    } = req.body;
+
     if (!type || !message) {
       return res.status(400).json({ message: 'Tür ve mesaj zorunlu' });
+    }
+    if (type === 'takas' && (!swapWithPersonId || !swapMyDate || !swapMyShiftId || !swapTargetDate || !swapTargetShiftId)) {
+      return res.status(400).json({ message: 'Takas için swapWithPersonId, swapMyDate, swapMyShiftId, swapTargetDate, swapTargetShiftId zorunlu' });
     }
 
     const person = await Person.findOne(withHospitalFilter(req, { userId: req.user._id })).lean();
@@ -55,6 +189,14 @@ router.post('/', requireAuth, async (req, res) => {
       targetDate:   targetDate || '',
       targetDateEnd: targetDateEnd || '',
       swapWithPersonId: swapWithPersonId || null,
+      leaveTypeCode:    String(leaveTypeCode || '').trim().toUpperCase(),
+      swapSectionId:    String(swapSectionId || '').trim(),
+      swapMyDate:       String(swapMyDate || '').slice(0, 10),
+      swapMyShiftId:    String(swapMyShiftId || '').trim(),
+      swapMyShiftLabel: String(swapMyShiftLabel || '').trim(),
+      swapTargetDate:   String(swapTargetDate || '').slice(0, 10),
+      swapTargetShiftId: String(swapTargetShiftId || '').trim(),
+      swapTargetShiftLabel: String(swapTargetShiftLabel || '').trim(),
       message,
       status: 'pending',
     }));
@@ -136,16 +278,34 @@ router.put('/:id', requireAuth, async (req, res) => {
     request.resolvedAt = new Date();
     await request.save();
 
-    const isLeaveRequest = String(request.type || '').toLowerCase() === 'izin';
+    const requestType = String(request.type || '').toLowerCase();
+    const isLeaveRequest = requestType === 'izin';
+    const isSwapRequest  = requestType === 'takas';
     const hasStatusChange = previousStatus !== String(status);
     const actorName = req.user?.name || req.user?.email || 'Yetkili';
-    if (isLeaveRequest && hasStatusChange && status === 'approved') {
-      void sendLeaveApproved({ request, actorName }).catch((notifyErr) => {
-        console.error('[notify][leave-approved] ERR:', notifyErr?.message || notifyErr);
-      });
+
+    if (hasStatusChange && status === 'approved') {
+      if (isLeaveRequest) {
+        void applyLeaveRange(request).catch((e) => {
+          console.error('[leave-apply] ERR:', e?.message || e);
+        });
+        void sendLeaveApproved({ request, actorName }).catch((e) => {
+          console.error('[notify][leave-approved] ERR:', e?.message || e);
+        });
+      } else if (isSwapRequest && !request.swapExecuted) {
+        try {
+          const executed = await executeSwap(request);
+          if (executed) {
+            request.swapExecuted = true;
+            await request.save();
+          }
+        } catch (e) {
+          console.error('[swap-execute] ERR:', e?.message || e);
+        }
+      }
     } else if (isLeaveRequest && hasStatusChange && status === 'rejected') {
-      void sendLeaveRejected({ request, actorName }).catch((notifyErr) => {
-        console.error('[notify][leave-rejected] ERR:', notifyErr?.message || notifyErr);
+      void sendLeaveRejected({ request, actorName }).catch((e) => {
+        console.error('[notify][leave-rejected] ERR:', e?.message || e);
       });
     }
 

@@ -20,7 +20,21 @@ const RequestSchema = new mongoose.Schema({
   serviceId:    { type: String, default: '' },
   targetDate:   { type: String, default: '' },   // YYYY-MM-DD
   targetDateEnd:{ type: String, default: '' },   // izin aralığı için
-  swapWithPersonId: { type: mongoose.Schema.Types.ObjectId, ref: 'Person', default: null },
+  swapWithPersonId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Person', default: null },
+
+  // Takas talebi için hangi vardiyaların değiştirileceği
+  swapSectionId:      { type: String, default: '' },
+  swapMyDate:         { type: String, default: '' },   // YYYY-MM-DD
+  swapMyShiftId:      { type: String, default: '' },   // shift kodu
+  swapMyShiftLabel:   { type: String, default: '' },
+  swapTargetDate:     { type: String, default: '' },   // YYYY-MM-DD
+  swapTargetShiftId:  { type: String, default: '' },
+  swapTargetShiftLabel: { type: String, default: '' },
+  swapExecuted:       { type: Boolean, default: false },
+
+  // İzin talebi için izin türü kodu
+  leaveTypeCode:      { type: String, default: '' },   // 'YILLIK', 'HASTALIK' vb.
+
   message:      { type: String, default: '' },
   status: {
     type: String,

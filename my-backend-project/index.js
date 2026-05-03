@@ -211,6 +211,9 @@ app.get('/api/health', (_req, res) => res.json(buildHealthPayload()));
 /* ============ AUTH HELPERS (JWT) ============ */
 const User = require(path.join(__dirname, 'models', 'User.js'));
 const AuditLog = require(path.join(__dirname, 'models', 'AuditLog.js'));
+// Indeks ve TTL'lerin oluşması için startup'ta register et
+require(path.join(__dirname, 'models', 'AILog.js'));
+require(path.join(__dirname, 'models', 'AIPreference.js'));
 
 async function createAdmin() {
   try {
@@ -432,9 +435,17 @@ try {
 } catch { /* opsiyonel */ }
 
 /* ============== AUTH ROUTER ============== */
-// Gerçek auth router varsa; dev login önce match olur
 try {
   const authRoutes = require('./routes/auth.routes.js');
+  // /refresh için ayrı rate limit — brute-force refresh token saldırılarını engeller
+  const refreshRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: 'Çok fazla token yenileme isteği, lütfen sonra tekrar deneyin' },
+  });
+  app.use('/api/auth/refresh', refreshRateLimit);
   app.use('/api/auth', authRoutes);
 } catch {}
 

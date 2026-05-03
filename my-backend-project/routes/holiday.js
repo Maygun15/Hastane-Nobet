@@ -61,6 +61,18 @@ router.post('/', requireRole('admin', 'staff'), async (req, res) => {
   }
 });
 
+// PUT /api/holidays/:date — mevcut tatili güncelle (isim veya tür değiştir)
+router.put('/:date', requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const date = req.params.date;
+    const { kind, name } = req.body || {};
+    const row = await upsertHoliday({ date, kind, name, source: 'manual', hospitalId: req.hospitalId });
+    return res.json({ ok: true, item: row });
+  } catch (err) {
+    return res.status(400).json({ message: err.message });
+  }
+});
+
 // DELETE /api/holidays/:date
 router.delete('/:date', requireRole('admin', 'staff'), async (req, res) => {
   try {
