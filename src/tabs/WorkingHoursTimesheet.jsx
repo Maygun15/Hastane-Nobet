@@ -286,7 +286,7 @@ export default function WorkingHoursTimesheet({
               </tr>
             ) : (
               rows.map((r, idx) => (
-                <tr key={r.personId || idx} className="border-t">
+                <tr key={r.personId ? `pid-${r.personId}` : `idx-${idx}`} className="border-t">
                   <td className="px-2 py-1 text-center">{idx + 1}</td>
                   <td className="px-2 py-1">{r.role || ""}</td>
                   <td className="px-2 py-1">{maskTC(r.tckn)}</td>

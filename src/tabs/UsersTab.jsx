@@ -1,5 +1,14 @@
 // src/tabs/UsersTab.jsx
 import React, { useEffect, useMemo, useState, useRef } from "react";
+import {
+  Building2,
+  KeyRound,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  UserCog,
+  Users,
+} from "lucide-react";
 import { maskTC } from "../utils/format.js";
 import useServicesModel from "../hooks/useServicesModel.js";
 import { API, getToken, REQUIRE_BACKEND } from "../lib/api.js";
@@ -322,6 +331,10 @@ export default function UsersTab() {
       (personnel || []).filter((p) => !linkedPersonIds.has(String(p.id || p._id || ""))),
     [personnel, linkedPersonIds]
   );
+  const activeCount = useMemo(
+    () => (rows || []).filter((u) => (u.status || (u.active === false ? "pending" : "active")) === "active").length,
+    [rows]
+  );
 
   const refresh = async () => {
     if (REQUIRE_BACKEND && !getToken()) {
@@ -342,7 +355,6 @@ export default function UsersTab() {
     } catch (e) {
       console.error('Users fetch error:', e);
       setBackendError(e?.message || 'Backend kullanıcı listesi alınamadı');
-      setList([]);
       return;
     }
   };
@@ -573,50 +585,113 @@ export default function UsersTab() {
   };
 
   return (
-    <div className="space-y-4">
-      {/* arama */}
-      <div className="flex items-center gap-2">
-        <button
-          className="h-10 px-3 rounded-lg bg-sky-600 text-white text-sm"
-          onClick={() => setQuickAddOpen(true)}
-        >
-          + Kullanıcı Ekle
-        </button>
-        <button
-          className="h-10 px-3 rounded-lg border text-sm"
-          onClick={handleBulkFromPersonnel}
-        >
-          Personelden Oluştur ({unlinkedPersonnel.length})
-        </button>
-        <input
-          className="h-10 px-3 rounded-lg border w-80"
-          placeholder="Ara: ad / tc / tel / mail / rol / durum"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <button className="h-10 px-3 rounded-lg border" onClick={refresh}>
-          Yenile
-        </button>
-        <button className="h-10 px-3 rounded-lg border" onClick={downloadTemplate}>
-          Excel Şablon İndir
-        </button>
-        <button
-          className="h-10 px-3 rounded-lg border"
-          onClick={() => fileRef.current?.click()}
-          disabled={importing}
-        >
-          {importing ? "İçe aktarılıyor..." : "Excel İçe Aktar"}
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".xlsx"
-          className="hidden"
-          onChange={(e) => handleImport(e.target.files?.[0])}
-        />
-      </div>
+    <div className="space-y-5">
+      <section className="rounded-[30px] border border-slate-200 bg-white px-5 py-5 shadow-sm md:px-6">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_340px]">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
+                <UserCog className="h-3.5 w-3.5 text-sky-700" />
+                Kullanıcı Yönetimi
+              </span>
+              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Yetki ve Erişim
+              </span>
+            </div>
+            <div className="mt-4 flex items-start gap-4">
+              <div className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm md:flex">
+                <UserCog className="h-7 w-7" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-2xl font-semibold tracking-tight text-slate-950">Kullanıcılar</h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                  Sisteme giriş yapabilen hesapları, rollerini, servis erişimlerini ve personel bağlantılarını buradan yönetin.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+                    <Users className="h-4 w-4 text-sky-700" />
+                    {rows.length} kullanıcı
+                  </span>
+                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+                    <ShieldCheck className="h-4 w-4 text-emerald-700" />
+                    {activeCount} aktif hesap
+                  </span>
+                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+                    <Building2 className="h-4 w-4 text-violet-700" />
+                    {unlinkedPersonnel.length} personel bağ bekliyor
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Hızlı İşlem</div>
+              <div className="mt-2 text-sm font-medium text-slate-800">Yeni kullanıcı ekleyin veya personelden toplu hesap oluşturun.</div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Güvenlik Notu</div>
+              <div className="mt-2 text-sm font-medium text-slate-800">Rol, servis ve şifre işlemleri doğrudan erişim kapsamını etkiler.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              className="h-10 px-3 rounded-xl bg-slate-950 text-white text-sm hover:bg-slate-800"
+              onClick={() => setQuickAddOpen(true)}
+            >
+              + Kullanıcı Ekle
+            </button>
+            <button
+              className="h-10 px-3 rounded-xl border text-sm hover:bg-slate-50"
+              onClick={handleBulkFromPersonnel}
+            >
+              Personelden Oluştur ({unlinkedPersonnel.length})
+            </button>
+            <button className="h-10 px-3 rounded-xl border text-sm hover:bg-slate-50" onClick={downloadTemplate}>
+              Excel Şablon İndir
+            </button>
+            <button
+              className="h-10 px-3 rounded-xl border text-sm hover:bg-slate-50"
+              onClick={() => fileRef.current?.click()}
+              disabled={importing}
+            >
+              {importing ? "İçe aktarılıyor..." : "Excel İçe Aktar"}
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".xlsx"
+              className="hidden"
+              onChange={(e) => handleImport(e.target.files?.[0])}
+            />
+          </div>
+
+          <div className="flex flex-1 flex-col gap-3 sm:flex-row xl:max-w-[560px]">
+            <label className="flex h-10 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3">
+              <Search className="h-4 w-4 text-slate-400" />
+              <input
+                className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+                placeholder="Ara: ad / tc / tel / mail / rol / durum"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </label>
+            <button className="h-10 px-3 rounded-xl border text-sm hover:bg-slate-50" onClick={refresh}>
+              <span className="inline-flex items-center gap-2"><RefreshCw className="h-4 w-4" /> Yenile</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
       {importMsg && (
-        <div className="text-sm text-slate-600">{importMsg}</div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">{importMsg}</div>
       )}
 
       {backendError && (
@@ -638,15 +713,15 @@ export default function UsersTab() {
           const currentServiceIds = (Array.isArray(u.serviceIds) ? u.serviceIds : u.services) || [];
 
           return (
-            <div key={userId} className="rounded-xl border bg-white shadow-sm p-3">
+            <div key={userId} className="rounded-[24px] border border-slate-200 bg-white shadow-sm p-4">
               <div className="flex items-start justify-between">
-                <div className="font-semibold text-[14px]">{u.name || "-"}</div>
+                <div className="font-semibold text-[14px] text-slate-900">{u.name || "-"}</div>
                 <Badge tone={u.status === "active" ? "green" : u.status === "pending" ? "amber" : "slate"}>
                   {u.status || (u.active === false ? "pending" : "active")}
                 </Badge>
               </div>
 
-              <div className="mt-2 text-[12px] space-y-1">
+              <div className="mt-3 text-[12px] space-y-1.5 text-slate-600">
                 <div>TC: {maskTC(u.tc)}</div>
                 <div>Tel: {u.phone || "-"}</div>
                 <div>Mail: {u.email || "-"}</div>
@@ -673,7 +748,7 @@ export default function UsersTab() {
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-4 flex flex-wrap gap-2">
                 {u.status !== "active" ? (
                   <button
                     className="text-[12px] px-3 py-1 rounded bg-emerald-600 text-white"
@@ -734,7 +809,7 @@ export default function UsersTab() {
                     className="text-[12px] px-3 py-1 rounded border"
                     onClick={() => handleResetPassword(u)}
                   >
-                    Şifre sıfırla
+                    <span className="inline-flex items-center gap-1"><KeyRound className="h-3.5 w-3.5" /> Şifre sıfırla</span>
                   </button>
                 )}
 

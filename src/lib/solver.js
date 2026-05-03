@@ -158,21 +158,22 @@ const hoursOfShiftCode = (code, shiftIndex) => {
   if (!def) return 0;
   const s = timeToMin(def.start);
   const e = def.end === "00:00" ? 24 * 60 : timeToMin(def.end);
-  return Math.max(0, (e > s ? e - s : (e === s ? 24 * 60 : 24 * 60 - s))) / 60;
+  // e < s → gece taşıyor: (1440-s)+e; e===s → 24 saat; e>s → normal
+  return Math.max(0, (e > s ? e - s : (e === s ? 24 * 60 : (1440 - s + e)))) / 60;
 };
 
 // Vardiya “gece/uzun” mu? (ardışık gece kontrolü için)
 const isNightish = (code, shiftIndex) => {
   const def = getShiftDef(code, shiftIndex);
   if (!def) return false;
-  // Öncelik: kural dosyasında night:true işaretlenmişse
   if (def.night === true) return true;
-  // Aksi halde: bitiş < başlangıç (geceye taşma) veya süre ≥ 16 saat
   const s = timeToMin(def.start);
   const e = timeToMin(def.end);
+  // Gece yarısına taşıyor → kesinlikle gece
   if (e < s) return true;
+  // 16+ saatlik ama YALNIZCA geç başlıyorsa (20:00+) veya çok erken başlıyorsa (<06:00)
   const durH = hoursOfShiftCode(code, shiftIndex);
-  return durH >= 16;
+  return durH >= 16 && (s >= 1200 || s < 360);
 };
 
 // Kişinin bir önceki gün aldığı atama
@@ -189,7 +190,7 @@ const getPrevDayShiftForPerson = (assignments, personId, dayYmd) => {
 const countConsecutiveNightsBefore = (assignments, personId, dayYmd, shiftIndex) => {
   let cnt = 0;
   let cur = ymdToDate(dayYmd);
-  while (true) {
+  for (let i = 0; i < 31; i++) {
     cur = dateAddDays(cur, -1);
     const yyyy = cur.getFullYear();
     const mm = String(cur.getMonth() + 1).padStart(2, "0");
@@ -197,9 +198,8 @@ const countConsecutiveNightsBefore = (assignments, personId, dayYmd, shiftIndex)
     const ymd = `${yyyy}-${mm}-${dd}`;
     const a = assignments.find((x) => x.personId === personId && x.day === ymd);
     if (!a) break;
-    if (isNightish(a.shiftCode, shiftIndex)) {
-      cnt += 1;
-    } else break;
+    if (isNightish(a.shiftCode, shiftIndex)) cnt += 1;
+    else break;
   }
   return cnt;
 };

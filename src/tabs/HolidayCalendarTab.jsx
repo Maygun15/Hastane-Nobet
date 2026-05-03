@@ -111,6 +111,33 @@ export default function HolidayCalendarTab() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState("");
 
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    (async () => {
+      try {
+        const data = await http.get(`/api/holidays?y=${year}`);
+        if (!alive) return;
+        const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+        if (items.length > 0) {
+          setNotice("");
+          setList(sortByDate(items));
+        } else {
+          setNotice("Sunucudan tatil kaydı gelmedi; yerel tatil şablonu gösteriliyor.");
+          setList(sortByDate(buildFallbackHolidays(year)));
+        }
+      } catch (err) {
+        if (!alive) return;
+        setNotice(err?.message || "Tatil listesi alınamadı; yerel tatil şablonu gösteriliyor.");
+        setList(sortByDate(buildFallbackHolidays(year)));
+      } finally {
+        if (alive) setLoading(false);
+      }
+      try { window.dispatchEvent(new Event("holidays:changed")); } catch {}
+    })();
+    return () => { alive = false; };
+  }, [year]);
+
   const loadYear = async (y) => {
     try {
       const data = await http.get(`/api/holidays?y=${y}`);
@@ -128,13 +155,6 @@ export default function HolidayCalendarTab() {
     }
     try { window.dispatchEvent(new Event("holidays:changed")); } catch {}
   };
-
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    loadYear(year).finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, [year]);
 
   const upsert = async (e) => {
     e?.preventDefault?.();

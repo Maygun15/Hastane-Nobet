@@ -237,11 +237,12 @@ function useHybridLeaveTypes(external, setExternal) {
         setInner(readUncontrolled());
       }
     };
+    const onLeaveTypesChanged = () => setInner(readUncontrolled());
     window.addEventListener("storage", onStorage);
-    window.addEventListener("leaveTypes:changed", () => setInner(readUncontrolled()));
+    window.addEventListener("leaveTypes:changed", onLeaveTypesChanged);
     return () => {
       window.removeEventListener("storage", onStorage);
-      window.removeEventListener("leaveTypes:changed", () => setInner(readUncontrolled()));
+      window.removeEventListener("leaveTypes:changed", onLeaveTypesChanged);
     };
   }, [controlled]);
 

@@ -8,11 +8,23 @@ function formatHours(val) {
   return val % 1 === 0 ? String(val) : val.toFixed(1);
 }
 
+function shiftKeyCandidates(raw = "") {
+  const base = String(raw || "").trim().toUpperCase();
+  if (!base) return [];
+  const out = new Set([base]);
+  const compact = base.replace(/\s+/g, " ").trim();
+  if (compact) out.add(compact);
+  const firstToken = compact.split(/[()\s/-]+/).find(Boolean);
+  if (firstToken) out.add(firstToken);
+  return Array.from(out.values());
+}
+
 export default function MonthStats({
   year,
   month,
   cells = [],
   assignments = {},
+  planSummary = null,
   requiredPerDay = 1,
   onlyMissingDays = false,
   workingHours = [],
@@ -24,14 +36,19 @@ export default function MonthStats({
     const workingHoursMap = new Map();
     (Array.isArray(workingHours) ? workingHours : []).forEach((item) => {
       if (!item) return;
-      const codeRaw = item.code ?? item.id ?? item.shiftCode ?? "";
+      const codeRaw = item.code ?? item.id ?? item.shiftCode ?? item.vardiyaKodu ?? item.vardiya ?? item.name ?? "";
       const code = String(codeRaw).trim();
       if (!code) return;
-      const start = String(item.start ?? "").trim();
-      const end = String(item.end ?? "").trim();
-      const labelRaw = String(item.label ?? item.name ?? "").trim();
-      const hours = start && end ? shiftDurationHours(start, end) : null;
-      workingHoursMap.set(code.toUpperCase(), { code, label: labelRaw || code, hours });
+      const start = String(item.start ?? item.from ?? item.begin ?? item.startTime ?? "").trim();
+      const end = String(item.end ?? item.to ?? item.finish ?? item.endTime ?? "").trim();
+      const labelRaw = String(item.label ?? item.name ?? item.area ?? item.title ?? "").trim();
+      const explicitHours = Number(String(item.hours ?? item.duration ?? item.totalHours ?? "").replace(",", "."));
+      const hours = start && end
+        ? shiftDurationHours(start, end)
+        : (Number.isFinite(explicitHours) ? explicitHours : null);
+      shiftKeyCandidates(code).forEach((key) => {
+        workingHoursMap.set(key, { code, label: labelRaw || code, hours });
+      });
     });
 
     const daysWithDates = cells.filter((dt) => dt instanceof Date);
@@ -55,14 +72,15 @@ export default function MonthStats({
         const shiftCode = String(shiftRaw || "").trim();
         const shiftKey = shiftCode ? shiftCode.toUpperCase() : "__UNKNOWN__";
         const wh = shiftKey === "__UNKNOWN__" ? null : workingHoursMap.get(shiftKey);
-        const label = shiftKey === "__UNKNOWN__" ? "Bilinmiyor" : wh?.label || shiftCode || "Bilinmiyor";
+        const labelText = shiftKey === "__UNKNOWN__" ? "Bilinmiyor" : (assg?.rowLabel || assg?.roleLabel || wh?.label || shiftCode || "Bilinmiyor");
+        const label = String(labelText).trim().toLocaleUpperCase("tr-TR");
         const hours = Number.isFinite(wh?.hours) ? wh.hours : 0;
 
         totalHours += hours;
-        const existing = shiftStatsMap.get(shiftKey) || { key: shiftKey, label, count: 0, hours: 0 };
+        const existing = shiftStatsMap.get(label) || { key: label, label, count: 0, hours: 0 };
         existing.count += 1;
         existing.hours = Math.round((existing.hours + hours) * 100) / 100;
-        shiftStatsMap.set(shiftKey, existing);
+        shiftStatsMap.set(label, existing);
       }
 
       if (count >= requiredPerDay) filledDays++;
@@ -73,10 +91,33 @@ export default function MonthStats({
     });
 
     const fillPercentage = totalDays > 0 ? Math.round((filledDays / totalDays) * 100) : 0;
-    const shiftStats = Array.from(shiftStatsMap.values()).sort((a, b) => {
+    let shiftStats = Array.from(shiftStatsMap.values()).sort((a, b) => {
       if (b.count !== a.count) return b.count - a.count;
       return String(a.label).localeCompare(String(b.label), "tr", { sensitivity: "base" });
     });
+
+    if (planSummary && Array.isArray(planSummary.assignments)) {
+      totalShifts = planSummary.assignments.length;
+      totalHours = Number.isFinite(Number(planSummary.totalHours)) ? Number(planSummary.totalHours) : totalHours;
+
+      const truthShiftStatsMap = new Map();
+      for (const assg of planSummary.assignments) {
+        const shiftCode = String(assg?.shiftCode || "").trim();
+        const shiftKey = shiftCode ? shiftCode.toUpperCase() : "__UNKNOWN__";
+        const wh = shiftKey === "__UNKNOWN__" ? null : workingHoursMap.get(shiftKey);
+        const labelText = String(assg?.rowLabel || "").trim() || wh?.label || shiftCode || "Bilinmiyor";
+        const label = String(labelText).toLocaleUpperCase("tr-TR");
+        const hours = Number.isFinite(Number(assg?.hours)) ? Number(assg.hours) : 0;
+        const existing = truthShiftStatsMap.get(label) || { key: label, label, count: 0, hours: 0 };
+        existing.count += 1;
+        existing.hours = Math.round((existing.hours + hours) * 100) / 100;
+        truthShiftStatsMap.set(label, existing);
+      }
+      shiftStats = Array.from(truthShiftStatsMap.values()).sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        return String(a.label).localeCompare(String(b.label), "tr", { sensitivity: "base" });
+      });
+    }
 
     return {
       totalDays, filledDays, missingDays, criticalDays,
@@ -84,7 +125,7 @@ export default function MonthStats({
       totalHours: Math.round(totalHours * 100) / 100,
       shiftStats, fillPercentage,
     };
-  }, [cells, assignments, requiredPerDay, workingHours]);
+  }, [cells, assignments, planSummary, requiredPerDay, workingHours]);
 
   if (!stats) {
     return (
@@ -101,16 +142,16 @@ export default function MonthStats({
   const leaveCredit = overtimeStats?.leaveCredit ?? null;
   const requiredFinal = overtimeStats?.requiredFinal ?? null;
   const workedHours = Number.isFinite(overtimeStats?.worked) ? overtimeStats.worked : stats.totalHours;
-  const otColor = ot === null ? "text-slate-400" : ot > 0 ? "text-emerald-700" : ot < 0 ? "text-red-600" : "text-slate-600";
+  const otColor = ot === null ? "text-slate-400" : ot > 0 ? "text-emerald-700" : ot < 0 ? "text-amber-700" : "text-slate-600";
   const otSign = ot === null ? "" : ot > 0 ? "+" : "";
   const OtIcon = ot !== null && ot >= 0 ? TrendingUp : TrendingDown;
 
   return (
-    <div className={`rounded-xl border-2 p-4 ${isCritical ? "bg-red-50 border-red-200" : "bg-emerald-50 border-emerald-200"}`}>
+    <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/80 p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold text-slate-800 flex items-center gap-2">
           {isCritical ? (
-            <><AlertTriangle className="w-4 h-4 text-red-600" /><span className="text-red-700">Ayın Özeti - Uyarı</span></>
+            <><AlertTriangle className="w-4 h-4 text-amber-600" /><span className="text-amber-800">Ayın Özeti - Uyarı</span></>
           ) : (
             <><CheckCircle className="w-4 h-4 text-emerald-600" /><span className="text-emerald-700">Ayın Özeti</span></>
           )}
@@ -121,8 +162,15 @@ export default function MonthStats({
       </div>
 
       <div className="mb-4">
-        <div className="h-2 bg-white rounded-full overflow-hidden border border-slate-200">
-          <div className={`h-full transition-all ${isCritical ? "bg-red-500" : "bg-emerald-500"}`}
+        <div
+          className="h-2 bg-white rounded-full overflow-hidden border border-slate-200"
+          role="progressbar"
+          aria-valuenow={stats.fillPercentage}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`Doluluk: %${stats.fillPercentage}`}
+        >
+          <div className={`h-full transition-all ${isCritical ? "bg-amber-500" : "bg-emerald-500"}`}
             style={{ width: `${stats.fillPercentage}%` }} />
         </div>
       </div>
@@ -181,7 +229,7 @@ export default function MonthStats({
 
       {stats.shiftStats.length > 0 && (
         <div className="mt-4 pt-4 border-t border-slate-200">
-          <div className="text-xs font-semibold text-slate-600 mb-2">Vardiya Dağılımı</div>
+          <div className="text-xs font-semibold text-slate-600 mb-2">Görev/Alan Dağılımı</div>
           <div className="flex flex-wrap gap-2">
             {stats.shiftStats.map((item) => (
               <span key={item.key}

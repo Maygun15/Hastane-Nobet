@@ -16,6 +16,7 @@ import {
   Minimize,
   User,
   PieChart,
+  Scale,
 } from "lucide-react";
 
 export default function ScheduleToolbar({
@@ -26,6 +27,7 @@ export default function ScheduleToolbar({
   setMonth,
   onToday,
   onAi,
+  onAnalyze,
   onBuild,
   onExport,
   onImport,
@@ -72,19 +74,23 @@ export default function ScheduleToolbar({
   return (
     <div className="w-full mb-3 rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2 p-2 md:p-3">
-        <h2 className="text-base md:text-lg font-semibold text-slate-800 truncate max-w-[200px] md:max-w-none">{title}</h2>
+        <h2 className="text-base md:text-lg font-semibold text-slate-800 truncate max-w-[200px] md:max-w-none" title={title}>{title}</h2>
 
         <div className="flex items-center gap-1 md:gap-2">
           <button onClick={prevMonth} className="inline-flex items-center gap-1 rounded-xl border border-slate-200 px-2 py-1.5 md:px-3 md:py-2 text-xs md:text-sm hover:bg-slate-50" title="Önceki Ay" type="button">
             <ChevronLeft className="w-3 h-3 md:w-4 md:h-4" />
           </button>
 
-          {onToday && (
-            <button onClick={onToday} className="inline-flex items-center gap-1 rounded-xl border border-slate-200 px-2 py-1.5 md:px-3 md:py-2 text-xs md:text-sm hover:bg-slate-50" title="Bugüne Git" type="button">
-              <Calendar className="w-3 h-3 md:w-4 md:h-4" />
-              <span className="hidden sm:inline">Bugün</span>
-            </button>
-          )}
+          <button
+            onClick={onToday}
+            className={`inline-flex items-center gap-1 rounded-xl border border-slate-200 px-2 py-1.5 md:px-3 md:py-2 text-xs md:text-sm hover:bg-slate-50 ${!onToday ? "opacity-40 cursor-not-allowed" : ""}`}
+            title="Bugüne Git"
+            type="button"
+            disabled={!onToday}
+          >
+            <Calendar className="w-3 h-3 md:w-4 md:h-4" />
+            <span className="hidden sm:inline">Bugün</span>
+          </button>
 
           <div className="min-w-[120px] md:min-w-[180px] text-center font-medium text-sm md:text-base">
             {MONTHS_TR[monthIndex]} {safeYear}
@@ -174,6 +180,13 @@ export default function ScheduleToolbar({
             <button type="button" onClick={onStats} className="inline-flex items-center gap-1 md:gap-2 rounded-xl border border-slate-200 px-2 py-1.5 md:px-3 md:py-2 text-xs md:text-sm hover:bg-slate-50" title="İstatistikler">
               <PieChart className="w-3 h-3 md:w-4 md:h-4" />
               <span className="hidden sm:inline">Rapor</span>
+            </button>
+          )}
+
+          {onAnalyze && (
+            <button type="button" onClick={onAnalyze} className="inline-flex items-center gap-1 md:gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-2 py-1.5 md:px-3 md:py-2 text-xs md:text-sm font-medium text-indigo-700 hover:bg-indigo-100" title="Adalet Analizi">
+              <Scale className="w-3 h-3 md:w-4 md:h-4" />
+              <span className="hidden sm:inline">Adaleti Analiz Et</span>
             </button>
           )}
 

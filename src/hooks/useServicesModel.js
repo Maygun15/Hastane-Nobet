@@ -64,7 +64,7 @@ export default function useServicesModel() {
     return () => _listeners.delete(fn);
   }, []);
 
-  const list = useCallback(() => _cache, []);
+  const list = useCallback(() => Array.isArray(_cache) ? _cache : [], []);
 
   const refresh = useCallback(async () => {
     try {

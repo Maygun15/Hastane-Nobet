@@ -233,7 +233,6 @@ export default function DutyRulesTab({ rules, setRules }) {
       setR(next);
       alert(`Toplam ${next.length} kural içe aktarıldı.`);
     } catch (err) {
-      console.error(err);
       alert("Excel içe aktarma başarısız: " + (err?.message || String(err)));
     }
   };

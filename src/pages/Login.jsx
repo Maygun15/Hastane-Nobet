@@ -1,21 +1,28 @@
 // src/pages/auth/Login.jsx
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext.jsx";
 
 export default function LoginPage() {
-  const { signIn } = useAuth();
+  const { login } = useAuth();
+  const navigate = useNavigate();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
 
   async function onSubmit(e) {
-    e.preventDefault();              // ⬅️ 404'u önler (GET /login gitmez)
+    e.preventDefault();
+    if (loading) return;
     setErr("");
+    setLoading(true);
     try {
-      await signIn({ identifier, password }); // POST /api/auth/login
-      // İstersen burada navigate("/") yapacağız — sonraki adımda ekleriz.
+      await login({ identifier, password });
+      navigate("/", { replace: true });
     } catch (ex) {
       setErr(ex.message || "Giriş hatası");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -50,13 +57,18 @@ export default function LoginPage() {
           />
         </div>
 
-        {err && <div className="text-red-600 text-sm">{err}</div>}
+        {err && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {err}
+          </div>
+        )}
 
         <button
           type="submit"
-          className="w-full bg-blue-600 text-white rounded-lg py-2 font-medium"
+          disabled={loading}
+          className="w-full bg-blue-600 text-white rounded-lg py-2.5 font-medium disabled:opacity-60 disabled:cursor-not-allowed transition-opacity"
         >
-          Giriş Yap
+          {loading ? "Giriş yapılıyor…" : "Giriş Yap"}
         </button>
       </form>
     </div>

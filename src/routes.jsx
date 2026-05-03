@@ -1,13 +1,12 @@
-// src/routes.jsx
+// Legacy compatibility router. The active app shell still boots from src/main.jsx + src/App.jsx.
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import AuthProvider, { useAuth } from "./auth/AuthContext.jsx";
 import ErrorBoundary from "./app/ErrorBoundary.jsx";
+import HospitalRosterApp from "./app/HospitalRosterApp.jsx";
 
 // Sayfalar
-import LoginPage from "./pages/auth/Login.jsx";
-// Örnek ana sayfa (senin mevcut ana bileşenin neyse onu içe aktar)
-import AppHome from "./pages/Home.jsx"; // yoksa geçici bir component oluştur
+import LoginPage from "./pages/Login.jsx";
 import RosterPage from "./pages/RosterPage.jsx";
 import StatsPage from "./pages/StatsPage.jsx";
 import DutyRulesPage from "./pages/DutyRulesPage.jsx";
@@ -31,7 +30,7 @@ export default function AppRoutes() {
               path="/"
               element={
                 <Protected>
-                  <AppHome />
+                  <HospitalRosterApp />
                 </Protected>
               }
             />

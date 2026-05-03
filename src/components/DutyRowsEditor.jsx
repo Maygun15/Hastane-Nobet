@@ -15,6 +15,7 @@ import { generateRoster, STAFF_KEY } from "../engine/rosterEngine.js";
 import { generateAutoSchedule } from "../engine/autoPlanner.js";
 import SupervisorSetup from "./SupervisorSetup.jsx";
 import PinningModal from "./PinningModal.jsx";
+import JusticeAnalyzerModal from "./JusticeAnalyzerModal.jsx";
 
 import useCrudModel from "../hooks/useCrudModel.js";
 import { parseAssignmentsFile } from "../lib/importExcel.js";
@@ -32,15 +33,13 @@ import {
   generateSchedulerPlan,
   fetchPersonnel,
 } from "../api/apiAdapter.js";
+import { namedToAssignments, assignmentsToNamed } from "../utils/scheduleAdapter.js";
+import { createPlanWorkHourResolver } from "../utils/planWorkCalculator.js";
+import { runPlannerOnce } from "../lib/runPlannerOnce.js";
+import { toast } from "sonner";
 
 /* ===== Toaster (opsiyonel) ===== */
-let toastSafe = null;
-try {
-  const { toast } = require("./Toaster");
-  toastSafe = toast;
-} catch (_) {
-  toastSafe = null;
-}
+let toastSafe = toast;
 
 /* ======================= yardımcılar ======================= */
 const WD_TR = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
@@ -702,7 +701,11 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     setMonth: setMonthProp,
     sectionId = "calisma-cizelgesi",
     serviceId = "",
+    role: roleProp,
     workAreas: workAreasProp,
+    peopleAll = [],
+    workingHours: workingHoursProp,
+    personLeaves = {},
   },
   ref
 ) {
@@ -727,6 +730,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       ? (v) => setMonthProp(Number(v))
       : (v) => setMState(normalizeMonthAnyBase(v, { preferOneBased: false }));
 
+  const [isJusticeModalOpen, setIsJusticeModalOpen] = useState(false);
+
   useEffect(() => {
     try {
       localStorage.setItem("plannerYear", String(year));
@@ -741,13 +746,13 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const month1 = month0 + 1;
 
   /* Rol & Seçenekler */
-  const role = LS.get("activeRole", "Nurse");
+  const role = roleProp ?? LS.get("activeRole", "Nurse");
   const roleLabel = role === "Doctor" ? "Doktorlar" : "Hemşireler";
   const workAreas = useMemo(
     () => (Array.isArray(workAreasProp) ? workAreasProp : getAreas()),
     [workAreasProp]
   );
-  const workingHours = getShifts();
+  const workingHours = Array.isArray(workingHoursProp) && workingHoursProp.length > 0 ? workingHoursProp : getShifts();
   const areaOptions = useMemo(
     () => (workAreas || []).map((a) => a.name).filter(Boolean),
     [workAreas]
@@ -1029,7 +1034,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     return header;
   };
 
-  const buildCommitThisMonth = (opts = {}) => {
+  const buildCommitThisMonth = async (opts = {}) => {
     const { generateLocalRoster = true } = opts;
     const header = makeHeader();
     const aoa = [header];
@@ -1091,16 +1096,42 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       };
     }).filter(Boolean);
 
-    const rosterRes = generateRoster({
-      year,
-      month0,
-      role,
-      rows,
-      overrides: committed,
-      shiftOptions,
-      unavailable,
-      pins: pinnedAssignments, // Solver'a gönder
+    // runPlannerOnce için taskLines'ı oluştur.
+    const taskLines = rows.map(r => {
+      const counts = {};
+      for (let d = 1; d <= daysInMonth; d++) {
+        counts[d] = committed[r.id][d] || 0;
+      }
+      return { ...r, counts };
     });
+
+    toastSafe.loading("Gelişmiş kural motoru çalışıyor...", { id: "rosterEngine" });
+
+    // runPlannerOnce çağrısı
+    const plannerRes = await runPlannerOnce({
+      year,
+      month: month0,
+      activeServiceId: serviceId,
+      activeRole: role,
+      nurses: role === "Doctor" ? [] : staff,
+      doctors: role === "Doctor" ? staff : [],
+      workingHours: workingHours || [],
+      personLeaves: personLeaves || {},
+      taskLines,
+      dpRules: rules
+    });
+
+    toastSafe.success("Çizelge başarıyla oluşturuldu!", { id: "rosterEngine" });
+
+    const assignmentsArray = plannerRes?.dpResult?.assignments || [];
+    
+    // Flat assignments array'ini namedAssignments formatına çevir
+    const namedBase = assignmentsToNamed(assignmentsArray, rows);
+
+    const rosterRes = {
+      namedAssignments: namedBase,
+      issues: plannerRes?.dpResult?.issues || []
+    };
 
     const rowMeta = new Map((rows || []).map((r) => [String(r.id), r]));
     const idNameMap = buildIdToNameMap();
@@ -1299,7 +1330,6 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       const fileName = `nobet_cizelgesi_${roleLabel.toLowerCase()}_${year}-${String(month0 + 1).padStart(2, "0")}.xlsx`;
       XLSX.writeFile(wb, fileName);
     } catch (e) {
-      console.error(e);
       note(`Excel'e aktarma sırasında hata: ${e.message || e}`, "error");
     }
   };
@@ -1378,7 +1408,6 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     } catch (err) {
       const details = err && err.details ? err.details.join("\n") : err?.message || "Bilinmeyen hata";
       note(details, "error");
-      console.error(err);
     } finally {
       e.target.value = "";
     }
@@ -1446,7 +1475,6 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       setRoster(null);
       note(`Şablondan ${newDefs.length} satır içe aktarıldı.`, "success");
     } catch (e) {
-      console.error(e);
       note(`Şablondan yükleme başarısız: ${e.message || e}`, "error");
     }
   };
@@ -1465,7 +1493,6 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       a.click();
       a.remove();
     } catch (e) {
-      console.error(e);
       note(`JSON dışa aktarma hatası: ${e.message || e}`, "error");
     }
   }
@@ -1482,7 +1509,6 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       setOverrides(data.overrides);
       note("JSON içe aktarıldı ve uygulandı.", "success");
     } catch (e2) {
-      console.error(e2);
       note(`JSON içe aktarma hatası: ${e2.message || e2}`, "error");
     } finally {
       e.target.value = "";
@@ -1682,10 +1708,6 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       cancelled = true;
     };
   }, [sectionId, serviceKey, role, year, month1]);
-  useEffect(() => {
-    return () => setLoadingRemote(false);
-  }, []);
-
   // Backend personelini yerel motora (solver) tanıtmak için senkronizasyon
   useEffect(() => {
     let alive = true;
@@ -1755,11 +1777,29 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     }
     setSaving(true);
     try {
+      // --- namedAssignments → assignments[] çevirisi ---
+      // DutyRowsEditor namedAssignments üretiyor ama MonthlyHoursSheet ve
+      // OvertimeTab assignments[] dizisine ihtiyaç duyuyor.
+      // Kayıt sırasında her iki formatı da yazarak tüm alt sekmelerin
+      // aynı veriyi okumasını sağlıyoruz.
+      let mergedAssignments = Array.isArray(savedAssignmentsRef.current) ? [...savedAssignmentsRef.current] : [];
+      const currentNamed = roster?.namedAssignments;
+      if (currentNamed && typeof currentNamed === "object" && Object.keys(currentNamed).length > 0) {
+        const fromNamed = namedToAssignments(currentNamed, rows, year, month1, {
+          people: staffForRole,
+          hoursForShift: createPlanWorkHourResolver(workingHours),
+        });
+        if (fromNamed.length > 0) {
+          // namedAssignments'tan çevrilen veri daha güncel — onu kullan
+          mergedAssignments = fromNamed;
+        }
+      }
+
       const payload = payloadOverride || {
         version: 1,
         defs: rows,
         overrides,
-        assignments: Array.isArray(savedAssignmentsRef.current) ? savedAssignmentsRef.current : [],
+        assignments: mergedAssignments,
         roster,
         preview,
         aiPlan,
@@ -1903,7 +1943,6 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       note("Otomatik Çalışma Çizelgesi oluşturuldu.", "success");
       refreshAiPlan();
     } catch (err) {
-      console.error(err);
       note("Plan üretiminde hata: " + (err?.message || err), "error");
     }
   };
@@ -2021,7 +2060,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     // İzinler backend'den gelebiliyor → build öncesi senkronize et
     await loadLeavesFromBackend();
     const added = ensureRowsFromParameters();
-    buildCommitThisMonth({ generateLocalRoster: false });
+    await buildCommitThisMonth({ generateLocalRoster: false });
     await doSave({ silent: true });
     const staff = staffForRole;
     const hasStaff = staff.length > 0;
@@ -2075,17 +2114,6 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     const staffWithMetaCount = staffPayload.filter(
       (s) => (s.areas && s.areas.length) || (s.shiftCodes && s.shiftCodes.length)
     ).length;
-    console.info("[ScheduleBuild:preflight]", {
-      serviceId: serviceKey || "(all)",
-      staff: staffPayload.length,
-      staffWithMeta: staffWithMetaCount,
-      sourceUsed: canonicalStaffState.sourceUsed,
-      fallbackUsed: canonicalStaffState.fallbackUsed,
-      rows: rows.length,
-      leaves: Object.keys(leavesByPerson || {}).length,
-      rules: Object.keys(dutyRules || {}).length,
-      oneShiftPerDay: dutyRules?.ONE_SHIFT_PER_DAY,
-    });
     if (staffPayload.length && staffWithMetaCount === 0) {
       note("Personel kartlarında alan/vardiya kodu yok. Uygunluk kontrolü sınırlı çalışır.", "warning");
     }
@@ -2172,7 +2200,6 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
       note("Sunucu planı boş döndü. Yerel önizleme korunuyor.", "warning");
     } catch (err) {
-      console.error(err);
       const validationDetails = Array.isArray(err?.details) && err.details.length
         ? err.details.join("\n")
         : Array.isArray(err?.body?.details) && err.body.details.length
@@ -2203,6 +2230,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     importTemplate: doImport,
     reset: doReset,
     save: doSave,
+    analyze: () => setIsJusticeModalOpen(true),
     isSaving: () => saving,
     setYear,
     setMonth,
@@ -2223,6 +2251,98 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     hasLastSaved ||
     explainabilityReady ||
     generatedExplainability.isStale;
+
+  /* ===================== ŞABLON YÖNETİMİ ===================== */
+  const TEMPLATES_KEY = "dutyRowTemplates";
+  const [templateModal, setTemplateModal] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const templates = useMemo(() => LS.get(TEMPLATES_KEY, {}), [templateModal]);
+
+  const handleSaveTemplate = useCallback(() => {
+    const name = templateName.trim();
+    if (!name) return;
+    const all = LS.get(TEMPLATES_KEY, {});
+    all[name] = { defs: JSON.parse(JSON.stringify(defs || [])), role, savedAt: new Date().toISOString() };
+    LS.set(TEMPLATES_KEY, all);
+    setTemplateName("");
+    setTemplateModal(false);
+  }, [defs, role, templateName]);
+
+  const handleLoadTemplate = useCallback((name) => {
+    const all = LS.get(TEMPLATES_KEY, {});
+    const tpl = all[name];
+    if (!tpl) return;
+    if (!window.confirm(`"${name}" şablonu yüklensin mi? Mevcut satırlar değiştirilecek.`)) return;
+    replaceAllDefs(tpl.defs || []);
+    setTemplateModal(false);
+  }, [replaceAllDefs]);
+
+  const handleDeleteTemplate = useCallback((name) => {
+    const all = LS.get(TEMPLATES_KEY, {});
+    delete all[name];
+    LS.set(TEMPLATES_KEY, all);
+    setTemplateModal((v) => !v); // force re-render
+    setTimeout(() => setTemplateModal((v) => !v), 0);
+  }, []);
+
+  /* ===================== UNDO / REDO ===================== */
+  const historyRef = useRef([]); // [{defs, overrides}, ...]
+  const historyIdxRef = useRef(-1);
+  const skipHistoryRef = useRef(false);
+  const historyDebounceRef = useRef(null);
+
+  // defs veya overrides değiştiğinde 600ms debounce ile snapshot al
+  useEffect(() => {
+    if (skipHistoryRef.current) return;
+    clearTimeout(historyDebounceRef.current);
+    historyDebounceRef.current = setTimeout(() => {
+      const snapshot = {
+        defs: JSON.parse(JSON.stringify(defs || [])),
+        overrides: JSON.parse(JSON.stringify(overrides || {})),
+      };
+      // Mevcut pozisyondan sonrasını sil (redo branch'ini temizle)
+      historyRef.current = historyRef.current.slice(0, historyIdxRef.current + 1);
+      historyRef.current.push(snapshot);
+      if (historyRef.current.length > 30) historyRef.current.shift();
+      historyIdxRef.current = historyRef.current.length - 1;
+    }, 600);
+  }, [defs, overrides]);
+
+  const canUndo = historyIdxRef.current > 0;
+  const canRedo = historyIdxRef.current < historyRef.current.length - 1;
+
+  const handleUndo = useCallback(() => {
+    if (historyIdxRef.current <= 0) return;
+    historyIdxRef.current -= 1;
+    const snap = historyRef.current[historyIdxRef.current];
+    if (!snap) return;
+    skipHistoryRef.current = true;
+    replaceAllDefs(snap.defs || []);
+    setOverrides(snap.overrides || {});
+    setTimeout(() => { skipHistoryRef.current = false; }, 100);
+  }, [replaceAllDefs]);
+
+  const handleRedo = useCallback(() => {
+    if (historyIdxRef.current >= historyRef.current.length - 1) return;
+    historyIdxRef.current += 1;
+    const snap = historyRef.current[historyIdxRef.current];
+    if (!snap) return;
+    skipHistoryRef.current = true;
+    replaceAllDefs(snap.defs || []);
+    setOverrides(snap.overrides || {});
+    setTimeout(() => { skipHistoryRef.current = false; }, 100);
+  }, [replaceAllDefs]);
+
+  // Klavye kısayolları: Ctrl+Z undo, Ctrl+Y / Ctrl+Shift+Z redo
+  useEffect(() => {
+    const handler = (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      if (e.key === "z" && !e.shiftKey) { e.preventDefault(); handleUndo(); }
+      if (e.key === "y" || (e.key === "z" && e.shiftKey)) { e.preventDefault(); handleRedo(); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleUndo, handleRedo]);
 
   /* Render (toolbar yok) */
   return (
@@ -2277,7 +2397,29 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       )}
 
       {/* Hızlı aksiyonlar */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* Geri Al / Yinele */}
+        <button
+          onClick={handleUndo}
+          disabled={!canUndo}
+          title="Geri Al (Ctrl+Z)"
+          className="px-3 py-2 rounded border text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+        >
+          ↩ Geri Al
+        </button>
+        <button
+          onClick={handleRedo}
+          disabled={!canRedo}
+          title="Yinele (Ctrl+Y)"
+          className="px-3 py-2 rounded border text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+        >
+          ↪ Yinele
+        </button>
+
+        <button onClick={() => setTemplateModal(true)} className="px-3 py-2 rounded bg-emerald-600 text-white text-sm">
+          Şablon
+        </button>
+
         <button onClick={() => setSupOpen(true)} className="px-3 py-2 rounded bg-violet-600 text-white text-sm">
           Sorumlu Ayarları
         </button>
@@ -2585,7 +2727,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                 const ovr = overrides[r.id] || {};
                 const isOpen = r.id === editorRowId;
                 return (
-                  <tr key={r.id} className="border-t align-top relative">
+                  <React.Fragment key={r.id}>
+                    <tr className="border-t align-top relative hover:bg-slate-50/50 transition-colors">
                     <td className="p-2 font-medium">{r.label}</td>
                     <td className="p-2">{shiftText}</td>
                     <td className="p-2 text-center">
@@ -2672,15 +2815,18 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
-
-                      {isOpen && (
-                        <div className="absolute z-10 mt-2 right-2 top-full w-[520px] rounded-lg border bg-white shadow-lg p-3">
-                          <div className="text-xs text-slate-500 mb-2">Satırı Düzenle</div>
+                    </td>
+                  </tr>
+                  {isOpen && (
+                    <tr className="bg-slate-50 border-b">
+                      <td colSpan={11} className="p-3">
+                        <div className="rounded-lg border bg-white shadow-sm p-3">
+                          <div className="text-xs font-semibold text-slate-700 mb-2">Satırı Düzenle</div>
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <label className="text-xs text-slate-500">Görev</label>
                               <select
-                                className="w-full h-9 rounded border px-2"
+                                className="w-full h-9 rounded border px-2 mt-1"
                                 value={r.label}
                                 onChange={(e) => updateDef(r.id, { label: e.target.value })}
                               >
@@ -2695,7 +2841,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                             <div>
                               <label className="text-xs text-slate-500">Vardiya</label>
                               <select
-                                className="w-full h-9 rounded border px-2"
+                                className="w-full h-9 rounded border px-2 mt-1"
                                 value={r.shiftCode}
                                 onChange={(e) => updateDef(r.id, { shiftCode: e.target.value })}
                               >
@@ -2712,7 +2858,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                               <input
                                 type="number"
                                 min={0}
-                                className="w-full h-9 rounded border px-2"
+                                className="w-full h-9 rounded border px-2 mt-1"
                                 value={Number(r.defaultCount || 0)}
                                 onChange={(e) => {
                                   const n = Math.max(0, Number(e.target.value || 0));
@@ -2753,7 +2899,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                               </div>
                             </div>
                           </div>
-                          <div className="mt-3 flex items-center gap-2">
+                          <div className="mt-4 pt-3 border-t flex items-center gap-2">
                             <input
                               type="number"
                               min={0}
@@ -2774,14 +2920,15 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                               <option value="5">Cmt</option>
                               <option value="6">Paz</option>
                             </select>
-                            <button className="ml-auto text-sm text-slate-500 hover:text-slate-700" onClick={() => setEditorRowId(null)}>
+                            <button className="ml-auto text-sm font-medium text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded hover:bg-slate-100 transition-colors" onClick={() => setEditorRowId(null)}>
                               Kapat
                             </button>
                           </div>
                         </div>
-                      )}
-                    </td>
-                  </tr>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -2813,6 +2960,61 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         rows={rows}
         daysInMonth={daysInMonth}
       />
+
+      {/* Şablon Modal */}
+      {templateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setTemplateModal(false)}>
+          <div className="bg-white rounded-xl shadow-xl p-5 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold text-slate-800">Görev Satırı Şablonları</h3>
+
+            {/* Kaydet */}
+            <div className="space-y-2">
+              <label className="text-sm text-slate-600">Mevcut satırları şablon olarak kaydet:</label>
+              <div className="flex gap-2">
+                <input
+                  className="flex-1 h-9 rounded border px-3 text-sm"
+                  placeholder="Şablon adı…"
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSaveTemplate()}
+                />
+                <button
+                  onClick={handleSaveTemplate}
+                  disabled={!templateName.trim()}
+                  className="px-3 h-9 rounded bg-emerald-600 text-white text-sm disabled:opacity-40"
+                >
+                  Kaydet
+                </button>
+              </div>
+            </div>
+
+            {/* Yüklü şablonlar */}
+            <div className="space-y-1">
+              <label className="text-sm text-slate-600">Kayıtlı şablonlar:</label>
+              {Object.keys(templates).length === 0 ? (
+                <div className="text-xs text-slate-400 py-2">Henüz kaydedilmiş şablon yok.</div>
+              ) : (
+                <ul className="space-y-1 max-h-48 overflow-y-auto">
+                  {Object.entries(templates).map(([name, tpl]) => (
+                    <li key={name} className="flex items-center justify-between gap-2 rounded border px-3 py-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-slate-800 truncate">{name}</div>
+                        <div className="text-[10px] text-slate-400">{tpl.role || "?"} · {tpl.defs?.length || 0} satır · {tpl.savedAt ? new Date(tpl.savedAt).toLocaleDateString("tr-TR") : ""}</div>
+                      </div>
+                      <div className="flex gap-1 shrink-0">
+                        <button onClick={() => handleLoadTemplate(name)} className="px-2 py-1 rounded bg-sky-600 text-white text-xs">Yükle</button>
+                        <button onClick={() => handleDeleteTemplate(name)} className="px-2 py-1 rounded bg-rose-100 text-rose-700 text-xs">Sil</button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <button onClick={() => setTemplateModal(false)} className="w-full py-2 rounded border text-sm hover:bg-slate-50">Kapat</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

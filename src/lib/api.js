@@ -8,6 +8,7 @@ export const REQUIRE_BACKEND = (import.meta?.env?.VITE_REQUIRE_BACKEND || "true"
 const AUTH_PREFIX = ''; // admin/invite gibi kök yollar için
 
 let inMemoryToken = '';
+let inMemoryRefreshToken = '';
 
 /* ========= TOKEN ========= */
 export function getToken() {
@@ -34,38 +35,66 @@ export function setToken(token) {
     }
   } catch {}
 }
+export function getRefreshToken() {
+  try {
+    return inMemoryRefreshToken || localStorage.getItem('refreshToken') || '';
+  } catch {
+    return inMemoryRefreshToken || '';
+  }
+}
+export function setRefreshToken(token) {
+  inMemoryRefreshToken = token || '';
+  try {
+    if (token) localStorage.setItem('refreshToken', token);
+    else localStorage.removeItem('refreshToken');
+  } catch {}
+}
 
 /* ========= FETCH HELPERS ========= */
 async function safeJson(resp) {
   const text = await resp.text();
-  console.log("RAW RESPONSE TEXT", text);
   if (!text) return null;
   try {
     return JSON.parse(text);
   } catch (e) {
-    console.error("JSON PARSE ERROR", e);
     throw e;
   }
 }
 async function okOrThrow(resp) {
-  console.log("FETCH RESPONSE RECEIVED", {
-    status: resp.status,
-    ok: resp.ok,
-  });
   const data = await safeJson(resp);
   if (!resp.ok) {
-    console.error("API RESPONSE NOT OK", {
-      status: resp.status,
-      data,
-    });
-    const msg = (data && (data.message || data.error)) || `HTTP ${resp.status}`;
-    const err = new Error("API ERROR");
+    const msg = resp.status === 429
+      ? "Çok fazla istek, lütfen daha sonra tekrar deneyin"
+      : (data && (data.message || data.error)) || `HTTP ${resp.status}`;
+    const err = new Error(msg);
     err.status = resp.status;
     err.data = data;
     err.originalMessage = msg;
     throw err;
   }
   return data;
+}
+
+async function attemptTokenRefresh() {
+  const rt = getRefreshToken();
+  if (!rt) return false;
+  try {
+    const base = getApiBase().replace(/\/+$/, "");
+    const resp = await fetch(`${base}/api/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: rt }),
+    });
+    if (!resp.ok) return false;
+    const data = await resp.json();
+    if (data?.accessToken) {
+      setToken(data.accessToken);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }
 function authHeaders() {
   const t = getToken();
@@ -85,42 +114,63 @@ function withTimeout(promise, ms = 20000) {
 async function req(path, { method = 'GET', body, headers, timeoutMs, retries } = {}) {
   const effectiveRetries = retries ?? (method === 'GET' ? 2 : 0);
   const base = getApiBase().replace(/\/+$/, "");
-  const isWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(String(method || 'GET').toUpperCase());
-  if (isWrite) {
-    console.log("API WRITE ENTRY", { path, method, body });
-    console.log("ABOUT TO RUN PROD WRITE GUARD", { path, method, apiBase: base });
-  }
   assertProdWriteAllowed(path, method);
-  if (isWrite) {
-    console.log("PROD WRITE GUARD PASSED", { path, method });
-  }
   const url = `${base}${path}`;
-  const opts = {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
-      ...(headers || {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  };
+  const isAuthPath = path.includes('/auth/refresh') || path.includes('/auth/login');
+
+  function buildOpts() {
+    return {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(),
+        ...(headers || {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    };
+  }
 
   let lastErr;
   for (let i = 0; i <= effectiveRetries; i++) {
     try {
-      if (isWrite) {
-        console.log("FETCH ABOUT TO FIRE", { url, method, body });
-      }
-      const f = fetch(url, opts);
-      return await withTimeout(f, timeoutMs).then(okOrThrow);
+      return await withTimeout(fetch(url, buildOpts()), timeoutMs).then(okOrThrow);
     } catch (err) {
-      if (isWrite) {
-        console.error("API WRITE FAILED BEFORE/DURING FETCH", err);
+      if (err?.status === 401 && !isAuthPath) {
+        const refreshed = await attemptTokenRefresh();
+        if (refreshed) {
+          try {
+            return await withTimeout(fetch(url, buildOpts()), timeoutMs).then(okOrThrow);
+          } catch (retryErr) {
+            if (retryErr?.status === 401) {
+              try { window.dispatchEvent(new Event("auth:logout")); } catch {}
+            }
+            throw retryErr;
+          }
+        }
+        try { window.dispatchEvent(new Event("auth:logout")); } catch {}
+        throw err;
       }
-      console.error("FINAL API ERROR", err);
-      lastErr = err;
-      // 4xx hatalarında (429 ve 408 hariç) tekrar deneme yapma
-      if (err.status && err.status >= 400 && err.status < 500 && err.status !== 429 && err.status !== 408) {
+
+      if (!err?.status) {
+        const raw = String(err?.message || "").trim();
+        const networkLike =
+          err?.name === "TypeError" ||
+          /fetch/i.test(raw) ||
+          /network/i.test(raw) ||
+          /load failed/i.test(raw) ||
+          /failed to fetch/i.test(raw);
+        if (networkLike) {
+          const wrapped = new Error("Sunucuya bağlanılamadı");
+          wrapped.cause = err;
+          lastErr = wrapped;
+        } else {
+          lastErr = err;
+        }
+      } else {
+        lastErr = err;
+      }
+      // 4xx hatalarında tekrar deneme yapma; 429'u tekrar etmek rate limit'i daha da kötüleştirir
+      if (err.status && err.status >= 400 && err.status < 500 && err.status !== 408) {
         throw err;
       }
       if (i === effectiveRetries) break;
@@ -164,7 +214,12 @@ export async function apiRegister({ email, phone, tc, name, password }) {
     method: 'POST',
     body: { email, phone, tc, name, password }
   });
-  if (data?.token) setToken(data.token);
+  if (data?.accessToken) {
+    setToken(data.accessToken);
+    setRefreshToken(data.refreshToken || '');
+  } else if (data?.token) {
+    setToken(data.token);
+  }
   return data;
 }
 
@@ -174,13 +229,19 @@ export async function apiLogin({ identifier, password }) {
     method: 'POST',
     body: { identifier, password }
   });
-  if (data?.token) setToken(data.token);
+  if (data?.accessToken) {
+    setToken(data.accessToken);
+    setRefreshToken(data.refreshToken || '');
+  } else if (data?.token) {
+    setToken(data.token);
+  }
   return data;
 }
 
 // /me → backend doğrudan user döndürüyor (wrapper yok)
 export const apiMe     = () => req(`/api/auth/me`);
-export const apiLogout = () => { setToken(''); return Promise.resolve({ ok: true }); };
+export const apiLogout = () => { setToken(''); setRefreshToken(''); return Promise.resolve({ ok: true }); };
+export const apiRefreshToken = () => req('/api/auth/refresh', { method: 'POST', body: { refreshToken: getRefreshToken() } });
 
 /* ========= PASSWORD RESET ========= */
 export const apiRequestReset  = (email) =>

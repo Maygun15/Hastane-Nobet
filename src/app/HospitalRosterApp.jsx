@@ -1,6 +1,17 @@
 // src/app/HospitalRosterApp.jsx
 import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { Calendar as CalendarIcon, LogOut } from "lucide-react";
+import { Toaster } from "sonner";
+import {
+  Calendar as CalendarIcon,
+  ChevronDown,
+  ClipboardList,
+  LayoutDashboard,
+  LogOut,
+  Settings2,
+  ShieldCheck,
+  UserRound,
+  Users2,
+} from "lucide-react";
 
 import ErrorBoundary from "../ErrorBoundary.jsx";
 import Modal from "../components/common/Modal.jsx";
@@ -21,7 +32,6 @@ import { can } from "../utils/acl.js";
 import { PERMISSIONS } from "../constants/roles.js";
 
 // Sayfalar
-import ServicesTab from "../tabs/ServicesTab.jsx";
 import UsersTab from "../tabs/UsersTab.jsx";
 import MyRequestsTab from "../tabs/MyRequestsTab.jsx";
 import RequestsManagementTab from "../tabs/RequestsManagementTab.jsx";
@@ -71,9 +81,9 @@ const DEFAULT_PERSONNEL_SECTIONS = [
 
 const NAV_H = "h-9"; // 36px
 const navBase =
-  `list-none inline-flex items-center ${NAV_H} rounded-lg px-3 text-[14px] font-medium cursor-pointer border select-none transition-colors`;
-const navActive = "bg-sky-600 text-white border-sky-600";
-const navIdle   = "bg-slate-100 hover:bg-slate-200 text-slate-800";
+  `list-none inline-flex items-center gap-2 ${NAV_H} rounded-xl px-3.5 text-[14px] font-medium cursor-pointer border select-none transition-all duration-150`;
+const navActive = "bg-slate-900 text-white border-slate-900 shadow-[0_10px_24px_-16px_rgba(15,23,42,0.85)]";
+const navIdle   = "bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300";
 
 // Leave types artık yalnızca backend üzerinden gelir.
 
@@ -113,10 +123,35 @@ export default function HospitalRosterApp() {
   const canSeePersonnel   = isAdmin || isAuthorized;   // Personel
   const canSeeSchedules   = isAdmin || isAuthorized;   // Çizelgeler
   const canSeeParameters  = isAdmin;                   // Parametreler (yalnız Admin)
-  const canSeeServicesTab = isAdmin || isAuthorized;   // Servisler: Admin + Yetkili
   const canSeeUsersTab    = isAdmin;                   // Kullanıcılar: yalnız Admin
 
   const [activeTab, setActiveTab] = useState("plan");
+  const [navOrder, setNavOrder] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("navOrder")) || ["plan", "personnel", "schedules", "parameters", "users"]; }
+    catch { return ["plan", "personnel", "schedules", "parameters", "users"]; }
+  });
+
+  const handleDragStart = (e, id) => {
+    e.dataTransfer.setData("text/plain", id);
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const handleDragOver = (e) => e.preventDefault();
+  const handleDrop = (e, targetId) => {
+    e.preventDefault();
+    const draggedId = e.dataTransfer.getData("text/plain");
+    if (draggedId === targetId) return;
+    setNavOrder(prev => {
+      const copy = [...prev];
+      const fromIdx = copy.indexOf(draggedId);
+      const toIdx = copy.indexOf(targetId);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      copy.splice(fromIdx, 1);
+      copy.splice(toIdx, 0, draggedId);
+      localStorage.setItem("navOrder", JSON.stringify(copy));
+      return copy;
+    });
+  };
+
   useEffect(() => {
     if (isBasicUser && activeTab !== "plan" && activeTab !== "myRequests" && activeTab !== "profile") {
       setActiveTab("plan");
@@ -188,10 +223,13 @@ export default function HospitalRosterApp() {
       .map((p) => {
         const pid = String(p?.personId || p?.id || "").trim();
         if (!pid) return null;
+        const serviceId = String(p?.serviceId ?? p?.service ?? p?.department ?? "").trim();
         return {
           ...p,
           id: pid,
           personId: pid,
+          serviceId,
+          service: serviceId,
           fullName: p?.fullName || p?.name || "",
           name: p?.name || p?.fullName || "",
         };
@@ -223,19 +261,22 @@ export default function HospitalRosterApp() {
   const lastSavedRequestBoxRef = useRef(null);
 
   useEffect(() => {
-    let alive = true;
+    const controller = new AbortController();
     const token = getToken();
     if (!token) {
       settingsLoadedRef.current = true;
       return undefined;
     }
+    const fetchOpts = { signal: controller.signal };
     (async () => {
       try {
-        const wa = await API.http.get(`/api/settings/workAreas?serviceId=`);
-        const wh = await API.http.get(`/api/settings/workingHours?serviceId=`);
-        const lt = await API.http.get(`/api/settings/leaveTypes?serviceId=`);
-        const rq = await API.http.get(`/api/settings/requestBoxV1?serviceId=`);
-        if (!alive) return;
+        const [wa, wh, lt, rq] = await Promise.all([
+          API.http.get(`/api/settings/workAreas?serviceId=`, fetchOpts),
+          API.http.get(`/api/settings/workingHours?serviceId=`, fetchOpts),
+          API.http.get(`/api/settings/leaveTypes?serviceId=`, fetchOpts),
+          API.http.get(`/api/settings/requestBoxV1?serviceId=`, fetchOpts),
+        ]);
+        if (controller.signal.aborted) return;
         if (Array.isArray(wa?.value)) {
           const serialized = JSON.stringify(wa.value);
           lastSavedWorkAreasRef.current = serialized;
@@ -254,12 +295,15 @@ export default function HospitalRosterApp() {
           setRequestBox(rq.value);
         }
       } catch (err) {
+        if (err?.name === 'AbortError') return;
         console.warn("Settings fetch failed:", err?.message || err);
       } finally {
-        settingsLoadedRef.current = true;
+        if (!controller.signal.aborted) {
+          settingsLoadedRef.current = true;
+        }
       }
     })();
-    return () => { alive = false; };
+    return () => { controller.abort(); };
   }, [user?.id]);
 
   const saveSetting = useCallback(async (key, value) => {
@@ -283,9 +327,14 @@ export default function HospitalRosterApp() {
         .then(() => {
           lastSavedWorkAreasRef.current = serialized;
         })
-        .catch((err) =>
-          console.warn("workAreas save failed:", err?.message || err)
-        );
+        .catch((err) => {
+          console.warn("workAreas save failed, retrying in 5s:", err?.message || err);
+          saveTimersRef.current.wa = setTimeout(() => {
+            saveSetting("workAreas", workAreas)
+              .then(() => { lastSavedWorkAreasRef.current = serialized; })
+              .catch((e) => console.warn("workAreas retry failed:", e?.message || e));
+          }, 5000);
+        });
     }, 600);
     return () => {
       if (saveTimersRef.current.wa) clearTimeout(saveTimersRef.current.wa);
@@ -303,9 +352,14 @@ export default function HospitalRosterApp() {
         .then(() => {
           lastSavedWorkingHoursRef.current = serialized;
         })
-        .catch((err) =>
-          console.warn("workingHours save failed:", err?.message || err)
-        );
+        .catch((err) => {
+          console.warn("workingHours save failed, retrying in 5s:", err?.message || err);
+          saveTimersRef.current.wh = setTimeout(() => {
+            saveSetting("workingHours", workingHours)
+              .then(() => { lastSavedWorkingHoursRef.current = serialized; })
+              .catch((e) => console.warn("workingHours retry failed:", e?.message || e));
+          }, 5000);
+        });
     }, 600);
     return () => {
       if (saveTimersRef.current.wh) clearTimeout(saveTimersRef.current.wh);
@@ -323,9 +377,14 @@ export default function HospitalRosterApp() {
         .then(() => {
           lastSavedLeaveTypesRef.current = serialized;
         })
-        .catch((err) =>
-          console.warn("leaveTypes save failed:", err?.message || err)
-        );
+        .catch((err) => {
+          console.warn("leaveTypes save failed, retrying in 5s:", err?.message || err);
+          saveTimersRef.current.lt = setTimeout(() => {
+            saveSetting("leaveTypes", leaveTypes)
+              .then(() => { lastSavedLeaveTypesRef.current = serialized; })
+              .catch((e) => console.warn("leaveTypes retry failed:", e?.message || e));
+          }, 5000);
+        });
     }, 600);
     return () => {
       if (saveTimersRef.current.lt) clearTimeout(saveTimersRef.current.lt);
@@ -343,9 +402,14 @@ export default function HospitalRosterApp() {
         .then(() => {
           lastSavedRequestBoxRef.current = serialized;
         })
-        .catch((err) =>
-          console.warn("requestBox save failed:", err?.message || err)
-        );
+        .catch((err) => {
+          console.warn("requestBox save failed, retrying in 5s:", err?.message || err);
+          saveTimersRef.current.rq = setTimeout(() => {
+            saveSetting("requestBoxV1", requestBox)
+              .then(() => { lastSavedRequestBoxRef.current = serialized; })
+              .catch((e) => console.warn("requestBox retry failed:", e?.message || e));
+          }, 5000);
+        });
     }, 600);
     return () => {
       if (saveTimersRef.current.rq) clearTimeout(saveTimersRef.current.rq);
@@ -520,8 +584,13 @@ export default function HospitalRosterApp() {
         return;
       }
       if (pathname.startsWith("/servisler") || hash.startsWith("#/servisler")) {
-        if (!canSeeServicesTab) return setActiveTab("plan");
-        if (activeTab !== "services") setActiveTab("services");
+        if (!canSeeParameters) return setActiveTab("plan");
+        if (activeTab !== "parameters") setActiveTab("parameters");
+        try {
+          if (!hash.startsWith("#/parametreler/servisler")) {
+            window.location.hash = "/parametreler/servisler";
+          }
+        } catch {}
         return;
       }
       if (pathname.startsWith("/isteklerim")) {
@@ -551,7 +620,7 @@ export default function HospitalRosterApp() {
       window.removeEventListener("popstate", syncFromLocation);
       window.removeEventListener("hashchange", syncFromLocation);
     };
-  }, [activeTab, canSeePersonnel, canSeeSchedules, canSeeParameters, canSeeServicesTab, canSeeUsersTab, isAdmin, isStaff]);
+  }, [activeTab, canSeePersonnel, canSeeSchedules, canSeeParameters, canSeeUsersTab, isAdmin, isStaff]);
 
   /* ---- Nav helpers ---- */
   const goSchedules = useCallback((secId) => {
@@ -577,8 +646,10 @@ export default function HospitalRosterApp() {
   }, [closeParamsDd]);
 
   const goServices = useCallback(() => {
-    setActiveTab("services");
-    pushUrl("/servisler");
+    setActiveTab("parameters");
+    if (typeof location !== "undefined") {
+      location.hash = "/parametreler/servisler";
+    }
     closePersonnelDd();
     closeSchedulesDd();
     closeParamsDd();
@@ -587,35 +658,61 @@ export default function HospitalRosterApp() {
   /* ======================= RENDER ======================= */
   return (
     <ErrorBoundary>
+      <Toaster richColors position="bottom-right" />
       <AppDataProvider value={appDataValue}>
-      <div className="w-screen h-screen bg-slate-50 text-slate-800 flex flex-col">
-        <header className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b shadow-sm">
-          {/* Satır 1: Logo + (sağda) yedek & kullanıcı */}
-          <div className="max-w-[1400px] mx-auto w-full px-4 py-2 flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <CalendarIcon className="w-5 h-5 text-sky-600" />
-              <div className="font-semibold text-[14px] leading-none">Hastane Nöbet Sistemi v1.0.1</div>
-            </div>
+      <div className="w-screen h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_16%,#f8fafc_100%)] text-slate-800 flex flex-col">
+        <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
+          <div className="w-full px-4 py-3 md:px-6 md:py-4">
+            <div className="rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_42px_-34px_rgba(15,23,42,0.28)]">
+              <div className="flex flex-col gap-4 px-4 py-4 md:px-5">
+                <div className="grid gap-3 lg:grid-cols-[minmax(320px,1fr)_auto] lg:items-start">
+                  <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 px-4 py-3">
+                    <div className="flex min-w-0 items-center gap-4">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-[0_12px_28px_-18px_rgba(15,23,42,0.8)]">
+                        <CalendarIcon className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <div className="truncate text-[19px] font-semibold tracking-tight text-slate-900">
+                            Hastane Nöbet Sistemi
+                          </div>
+                          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+                            v1.0.1
+                          </span>
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                            {isAdmin ? "Yönetim" : isStaff ? "Yetkili" : "Kullanıcı"}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1">
+                            <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                            {isAdmin ? "Yönetim oturumu" : isStaff ? "Yetkili görünümü" : "Kişisel görünüm"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
-            <div className="ml-auto flex items-center gap-2">
-              {/* Yedekleme butonları (basic kullanıcıda gizle) */}
-              {!isBasicUser && <BackupButtons />}
+                  <div className="grid gap-3 lg:min-w-[460px]">
+                    {!isBasicUser && (
+                      <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 px-3 py-2.5">
+                        <BackupButtons compact />
+                      </div>
+                    )}
 
-              <UserBadge
-                user={user}
-                onLogout={async () => {
-                  try { await logout?.(); } catch {}
-                }}
-                onChanged={refresh}
-              />
-            </div>
-          </div>
+                    <UserBadge
+                      user={user}
+                      onLogout={async () => {
+                        try { await logout?.(); } catch {}
+                      }}
+                      onChanged={refresh}
+                    />
+                  </div>
+                </div>
 
-          {/* Satır 2: Sekmeler */}
-          <div className="max-w-[1400px] mx-auto w-full px-4 pb-3">
-            <nav className="flex flex-wrap gap-2">
-              <NavBtn
-                active={activeTab === "plan"}
+                <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-2">
+                  <nav className="flex flex-wrap gap-2">
+              <div style={{ order: navOrder.indexOf("plan") !== -1 ? navOrder.indexOf("plan") : 1 }} draggable onDragStart={(e) => handleDragStart(e, "plan")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "plan")}><NavBtn active={activeTab === "plan"}
                 onClick={() => {
                   setActiveTab("plan");
                   if (typeof location !== "undefined") location.hash = "";
@@ -624,46 +721,15 @@ export default function HospitalRosterApp() {
                   closeSchedulesDd();
                   closeParamsDd();
                 }}
+                icon={LayoutDashboard}
               >
-                {isBasicUser ? "Takvimim" : "Planlama"}
-              </NavBtn>
-
-              {/* TALEPLER — tüm kullanıcılar */}
-              <NavBtn
-                active={activeTab === (isAdmin || isStaff ? "requests" : "myRequests")}
-                onClick={() => {
-                  const target = (isAdmin || isStaff) ? "requests" : "myRequests";
-                  setActiveTab(target);
-                  pushUrl("/talepler");
-                  closePersonnelDd();
-                  closeSchedulesDd();
-                  closeParamsDd();
-                }}
-              >
-                Talepler
-              </NavBtn>
-
-              <NavBtn
-                active={activeTab === "profile"}
-                onClick={() => {
-                  setActiveTab("profile");
-                  pushUrl("/profilim");
-                  closePersonnelDd();
-                  closeSchedulesDd();
-                  closeParamsDd();
-                }}
-              >
-                Profilim
-              </NavBtn>
+                {isBasicUser ? "Takvimim" : "Planlama"}</NavBtn></div>
 
               {!isBasicUser && (
                 <>
               {/* PERSONEL — admin & yetkili */}
               {canSeePersonnel && (
-                <div
-                  className="relative z-20"
-                  onMouseEnter={() => {
-                    clearTimeout(hoverTimers.current.personnel);
+                <div style={{ order: navOrder.indexOf("personnel") !== -1 ? navOrder.indexOf("personnel") : 2 }} draggable onDragStart={(e) => handleDragStart(e, "personnel")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "personnel")} className="relative z-20" onMouseEnter={() => { clearTimeout(hoverTimers.current.personnel);
                     openDetails(personnelDdRef);
                     closeSchedulesDd();
                     closeParamsDd();
@@ -687,13 +753,12 @@ export default function HospitalRosterApp() {
                         e.currentTarget.setAttribute("aria-expanded", String(!open));
                       }}
                     >
+                      <Users2 className="h-4 w-4" />
                       Personel
-                      <svg className="ml-1 h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
-                        <path d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.06l3.71-3.83a.75.75 0 1 1 1.08 1.04l-4.25 4.4a.75.75 0 0 1-1.08 0l-4.25-4.4a.75.75 0 0 1 .02-1.06z" />
-                      </svg>
+                      <ChevronDown className="h-4 w-4 text-current/70" />
                     </summary>
 
-                    <div role="menu" className="absolute top-full left-0 mt-2 w-72 rounded-xl border bg-white shadow-lg overflow-hidden z-20">
+                    <div role="menu" className="absolute top-full left-0 mt-3 w-72 rounded-2xl border border-slate-200 bg-white shadow-[0_24px_60px_-30px_rgba(15,23,42,0.45)] overflow-hidden z-20">
                       {personnelSections.map((s) => (
                         <DropdownItem key={s.id} onSelect={() => goPersonnel(s.id)}>
                           {s.name}
@@ -713,10 +778,7 @@ export default function HospitalRosterApp() {
 
               {/* ÇİZELGELER — admin & yetkili */}
               {canSeeSchedules && (
-                <div
-                  className="relative z-20"
-                  onMouseEnter={() => {
-                    clearTimeout(hoverTimers.current.schedules);
+                <div style={{ order: navOrder.indexOf("schedules") !== -1 ? navOrder.indexOf("schedules") : 3 }} draggable onDragStart={(e) => handleDragStart(e, "schedules")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "schedules")} className="relative z-20" onMouseEnter={() => { clearTimeout(hoverTimers.current.schedules);
                     openDetails(schedulesDdRef);
                     closePersonnelDd();
                     closeParamsDd();
@@ -731,12 +793,11 @@ export default function HospitalRosterApp() {
                       aria-haspopup="menu"
                       aria-expanded={activeTab === "schedules" ? "true" : "false"}
                     >
+                      <CalendarIcon className="h-4 w-4" />
                       Çizelgeler
-                      <svg className="ml-1 h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
-                        <path d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.06l3.71-3.83a.75.75 0 1 1 1.08 1.04l-4.25 4.4a.75.75 0 0 1-1.08 0l-4.25-4.4a.75.75 0 0 1 .02-1.06z" />
-                      </svg>
+                      <ChevronDown className="h-4 w-4 text-current/70" />
                     </summary>
-                    <div role="menu" className="absolute top-full left-0 mt-2 w-96 rounded-xl border bg-white shadow-lg overflow-hidden z-20">
+                    <div role="menu" className="absolute top-full left-0 mt-3 w-96 rounded-2xl border border-slate-200 bg-white shadow-[0_24px_60px_-30px_rgba(15,23,42,0.45)] overflow-hidden z-20">
                       <DropdownItem onSelect={() => goSchedules("calisma-cizelgesi")}>Çalışma Çizelgesi</DropdownItem>
                       <DropdownItem onSelect={() => goSchedules("aylik-calisma-ve-mesai-saatleri-cizelgesi")}>Aylık Çalışma ve Mesai Saatleri Çizelgesi</DropdownItem>
                       <DropdownItem onSelect={() => goSchedules("fazla-mesai-takip")}>Fazla Mesai Takip Formu</DropdownItem>
@@ -752,10 +813,7 @@ export default function HospitalRosterApp() {
 
               {/* PARAMETRELER — yalnız admin */}
               {canSeeParameters && (
-                <div
-                  className="relative z-30"
-                  onMouseEnter={() => {
-                    clearTimeout(hoverTimers.current.params);
+                <div style={{ order: navOrder.indexOf("parameters") !== -1 ? navOrder.indexOf("parameters") : 4 }} draggable onDragStart={(e) => handleDragStart(e, "parameters")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "parameters")} className="relative z-30" onMouseEnter={() => { clearTimeout(hoverTimers.current.params);
                     openDetails(paramsDdRef);
                     closePersonnelDd();
                     closeSchedulesDd();
@@ -770,15 +828,15 @@ export default function HospitalRosterApp() {
                       aria-haspopup="menu"
                       aria-expanded={activeTab === "parameters" ? "true" : "false"}
                     >
+                      <Settings2 className="h-4 w-4" />
                       Parametreler
-                      <svg className="ml-1 h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
-                        <path d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.06l3.71-3.83a.75.75 0 1 1 1.08 1.04l-4.25 4.4a.75.75 0 0 1-1.08 0l-4.25-4.4a.75.75 0 0 1 .02-1.06z" />
-                      </svg>
+                      <ChevronDown className="h-4 w-4 text-current/70" />
                     </summary>
-                    <div role="menu" className="absolute top-full left-0 mt-2 w-80 rounded-xl border bg-white shadow-lg overflow-hidden z-30">
+                    <div role="menu" className="absolute top-full left-0 mt-3 w-80 rounded-2xl border border-slate-200 bg-white shadow-[0_24px_60px_-30px_rgba(15,23,42,0.45)] overflow-hidden z-30">
                       <DropdownItem onSelect={() => goParams("calisma-alanlari")}>Çalışma Alanları</DropdownItem>
                       <DropdownItem onSelect={() => goParams("calisma-saatleri")}>Çalışma Saatleri</DropdownItem>
                       <DropdownItem onSelect={() => goParams("izin-turleri")}>İzin Türleri</DropdownItem>
+                      <DropdownItem onSelect={() => goParams("servisler")}>Servisler</DropdownItem>
                       <DropdownItem onSelect={() => goParams("tatil-takvimi")}>Tatil Takvimi</DropdownItem>
                       <DropdownItem onSelect={() => goParams("nobet-kurallari")}>Nöbet Kuralları</DropdownItem>
                       <DropdownItem onSelect={() => goParams("istek")}>İstek</DropdownItem>
@@ -789,25 +847,55 @@ export default function HospitalRosterApp() {
                 </div>
               )}
 
-              {/* SERVİSLER — Admin + Yetkili  |  KULLANICILAR — yalnız Admin */}
-              {canSeeServicesTab && (
-                <NavBtn active={activeTab === "services"} onClick={goServices}>Servisler</NavBtn>
-              )}
+              {/* KULLANICILAR — yalnız Admin */}
               {canSeeUsersTab && (
-                <NavBtn
-                  active={activeTab === "users"}
+                <div style={{ order: navOrder.indexOf("users") !== -1 ? navOrder.indexOf("users") : 5 }} draggable onDragStart={(e) => handleDragStart(e, "users")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "users")}><NavBtn active={activeTab === "users"}
                   onClick={() => { setActiveTab("users"); pushUrl("/kullanicilar"); }}
+                  icon={UserRound}
                 >
-                  Kullanıcılar
-                </NavBtn>
+                  Kullanıcılar</NavBtn></div>
               )}
                 </>
               )}
+            
+              {/* TALEPLER VE PROFİLİM — flex'in en sağına */}
+              <div className="ml-auto flex gap-2" style={{ order: 999 }}>
+                <NavBtn
+                  active={activeTab === (isAdmin || isStaff ? "requests" : "myRequests")}
+                  onClick={() => {
+                    const target = (isAdmin || isStaff) ? "requests" : "myRequests";
+                    setActiveTab(target);
+                    pushUrl("/talepler");
+                    closePersonnelDd();
+                    closeSchedulesDd();
+                    closeParamsDd();
+                  }}
+                  icon={ClipboardList}
+                >
+                  Talepler
+                </NavBtn>
+                <NavBtn
+                  active={activeTab === "profile"}
+                  onClick={() => {
+                    setActiveTab("profile");
+                    pushUrl("/profilim");
+                    closePersonnelDd();
+                    closeSchedulesDd();
+                    closeParamsDd();
+                  }}
+                  icon={UserRound}
+                >
+                  Profilim
+                </NavBtn>
+              </div>
             </nav>
+                </div>
+              </div>
+            </div>
           </div>
         </header>
 
-        <main className="flex-1 w-full px-6 py-6 space-y-6 overflow-auto max-w-[1400px] mx-auto">
+        <main className="flex-1 w-full px-4 py-6 md:px-6 space-y-6 overflow-auto">
           {activeTab === "plan" && (
             isBasicUser ? (
               <MyCalendarBox
@@ -839,7 +927,13 @@ export default function HospitalRosterApp() {
 
           {activeTab === "schedules" && (
             canSeeSchedules ? (
-              <SchedulesTab />
+              <SchedulesTab
+                  workAreas={workAreas}
+                  workingHours={workingHours}
+                  peopleAll={peopleAll}
+                  leaveTypes={leaveTypes}
+                  personLeaves={personLeaves}
+                />
             ) : <NeedAuth />
           )}
 
@@ -857,10 +951,6 @@ export default function HospitalRosterApp() {
                 people={peopleAll}
               />
             ) : <NeedAdmin />
-          )}
-
-          {activeTab === "services" && (
-            canSeeServicesTab ? <ServicesTab /> : <NeedAdminOrAuthorized />
           )}
 
           {activeTab === "users" && (
@@ -896,43 +986,54 @@ function UserBadge({ user, onLogout, onChanged }) {
     role === "authorized" || role === "manager" || role === "staff" ? "yetkili" : "user";
 
   return (
-    <div className="flex items-center gap-2 pl-2 ml-2 border-l">
-      <div className="text-[13px] text-slate-600 truncate max-w-[220px]">
-        <span className="font-medium text-slate-800 truncate inline-block max-w-full">{email}</span>{" "}
-        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] ml-1
-          ${roleLabel === "admin" ? "bg-rose-100 text-rose-700"
-            : roleLabel === "yetkili" ? "bg-amber-100 text-amber-700"
-            : "bg-slate-100 text-slate-700"}`}>
-          {roleLabel}
-        </span>
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[22px] border border-slate-200 bg-white px-3 py-2.5">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
+          <UserRound className="h-4 w-4" />
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-[13px] font-semibold text-slate-800 max-w-[240px]">{email}</div>
+          <div className="mt-1">
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium
+              ${roleLabel === "admin" ? "bg-rose-100 text-rose-700"
+                : roleLabel === "yetkili" ? "bg-amber-100 text-amber-700"
+                : "bg-slate-100 text-slate-700"}`}>
+              {roleLabel}
+            </span>
+          </div>
+        </div>
       </div>
 
-      <button
-        className="inline-flex items-center gap-1.5 text-[13px] px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200"
-        onClick={() => setChangeOpen(true)}
-        title="Şifre değiştir"
-      >
-        Şifre Değiştir
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+          onClick={() => setChangeOpen(true)}
+          title="Şifre değiştir"
+        >
+          <Settings2 className="h-4 w-4" />
+          Şifre Değiştir
+        </button>
 
-      <button
-        className="inline-flex items-center gap-1.5 text-[13px] px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-60"
-        onClick={async () => {
-          if (busy) return;
-          setBusy(true);
-          try {
-            await onLogout?.();
-          } finally {
-            setBusy(false);
-            try { window.history.pushState({}, "", "/"); window.dispatchEvent(new Event("urlchange")); } catch {}
-          }
-        }}
-        disabled={busy}
-        title="Çıkış yap"
-      >
-        <LogOut className="w-4 h-4" />
-        {busy ? "Çıkış yapılıyor…" : "Logout"}
-      </button>
+        <button
+          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-60"
+          onClick={async () => {
+            if (busy) return;
+            if (!window.confirm("Çıkış yapmak istediğinize emin misiniz?")) return;
+            setBusy(true);
+            try {
+              await onLogout?.();
+            } finally {
+              setBusy(false);
+              try { window.history.pushState({}, "", "/"); window.dispatchEvent(new Event("urlchange")); } catch {}
+            }
+          }}
+          disabled={busy}
+          title="Çıkış yap"
+        >
+          <LogOut className="w-4 h-4" />
+          {busy ? "Çıkış yapılıyor…" : "Çıkış"}
+        </button>
+      </div>
 
       <ChangePasswordModal open={changeOpen} onClose={() => setChangeOpen(false)} force={forceChange} onChanged={onChanged} />
     </div>
@@ -1130,9 +1231,10 @@ function NeedAdminOrAuthorized() {
 }
 
 /* ---------------- Küçük yardımcılar ---------------- */
-function NavBtn({ active, onClick, children }) {
+function NavBtn({ active, onClick, children, icon: Icon }) {
   return (
     <button onClick={onClick} className={`${navBase} ${active ? navActive : navIdle}`}>
+      {Icon ? <Icon className="h-4 w-4" /> : null}
       {children}
     </button>
   );
@@ -1145,7 +1247,7 @@ function DropdownItem({ onSelect, children }) {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(); }
       }}
       onClick={onSelect}
-      className="w-full text-left px-4 py-2.5 text-[14px] hover:bg-gray-50 focus:bg-gray-50 focus:outline-none"
+      className="w-full text-left px-4 py-3 text-[14px] text-slate-700 hover:bg-slate-50 focus:bg-slate-50 focus:outline-none transition-colors"
     >
       {children}
     </button>

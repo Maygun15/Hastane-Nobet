@@ -14,6 +14,7 @@ const Person = require(path.join(__dirname, '..', 'models', 'Person.js'));
 const Hospital = require(path.join(__dirname, '..', 'models', 'Hospital.js'));
 
 const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || JWT_SECRET + '_refresh';
 const NODE_ENV = String(process.env.NODE_ENV || '').toLowerCase();
 const IS_PROD = NODE_ENV === 'production';
 const ALLOW_DEV = !IS_PROD && ['1','true','yes'].includes(String(process.env.ALLOW_DEV_ENDPOINTS || '').toLowerCase());
@@ -95,16 +96,20 @@ const normalize = (s) => (s ?? '').toString().trim();
 const lc = (s) => normalize(s).toLowerCase();
 const ADMIN_INVITE_CODE = normalize(process.env.ADMIN_INVITE_CODE);
 const STAFF_INVITE_CODE = normalize(process.env.STAFF_INVITE_CODE);
-const makeToken = (userOrId, extra = {}) => {
-  if (typeof userOrId === 'string') {
-    return jwt.sign({ uid: userOrId, ...extra }, JWT_SECRET, { expiresIn: '7d' });
-  }
-  const uid = String(userOrId?._id || userOrId?.id || '');
+const makeAccessToken = (userOrId) => {
+  const uid = typeof userOrId === 'string' ? userOrId : String(userOrId?._id || userOrId?.id || '');
   const payload = { uid };
-  if (userOrId?.role) payload.role = userOrId.role;
-  if (userOrId?.personId) payload.personId = String(userOrId.personId);
-  if (userOrId?.hospitalId) payload.hospitalId = String(userOrId.hospitalId);
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+  if (typeof userOrId === 'object' && userOrId !== null) {
+    if (userOrId.role)      payload.role      = userOrId.role;
+    if (userOrId.personId)  payload.personId  = String(userOrId.personId);
+    if (userOrId.hospitalId) payload.hospitalId = String(userOrId.hospitalId);
+  }
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
+};
+
+const makeRefreshToken = (userOrId) => {
+  const uid = typeof userOrId === 'string' ? userOrId : String(userOrId?._id || userOrId?.id || '');
+  return jwt.sign({ uid, type: 'refresh' }, JWT_REFRESH_SECRET, { expiresIn: '7d' });
 };
 
 // Frontend bazen "identifier", bazen "kimlik", bazen "tc" gönderiyor olabilir
@@ -275,9 +280,13 @@ router.post('/login', ...loginValidation, async (req, res) => {
       const idLc = String(identifier || '').toLowerCase();
       if (idLc === DEV_EMAIL && password === DEV_PASSWORD) {
         clearRateState(rateKey);
-        const token = makeToken({ _id: 'dev1', role: 'admin', personId: null });
+        const devUser = { _id: 'dev1', role: 'admin', personId: null };
+        const accessToken  = makeAccessToken(devUser);
+        const refreshToken = makeRefreshToken(devUser);
         return res.json({
-          token,
+          accessToken,
+          refreshToken,
+          token: accessToken,
           user: {
             id: 'dev1',
             name: 'Dev Kullanıcı',
@@ -312,9 +321,12 @@ router.post('/login', ...loginValidation, async (req, res) => {
     }
 
     clearRateState(rateKey);
-    const token = makeToken(user);
+    const accessToken  = makeAccessToken(user);
+    const refreshToken = makeRefreshToken(user);
     return res.json({
-      token,
+      accessToken,
+      refreshToken,
+      token: accessToken,
       user: {
         id: String(user._id),
         name: user.name,
@@ -334,6 +346,35 @@ router.post('/login', ...loginValidation, async (req, res) => {
   }
 });
 
+
+/* ============= REFRESH TOKEN ============= */
+router.post('/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.body || {};
+    if (!refreshToken) return res.status(401).json({ message: 'Refresh token gerekli' });
+
+    let decoded;
+    try {
+      decoded = jwt.verify(String(refreshToken), JWT_REFRESH_SECRET, { algorithms: ['HS256'] });
+    } catch {
+      return res.status(401).json({ message: 'Geçersiz refresh token' });
+    }
+
+    if (decoded?.type !== 'refresh' || !decoded?.uid) {
+      return res.status(401).json({ message: 'Geçersiz refresh token' });
+    }
+
+    const user = await User.findById(decoded.uid).lean();
+    if (!user || user.active === false) {
+      return res.status(401).json({ message: 'Kullanıcı bulunamadı veya pasif' });
+    }
+
+    return res.json({ accessToken: makeAccessToken(user) });
+  } catch (err) {
+    console.error('REFRESH ERR:', err);
+    return res.status(500).json({ message: 'Token yenilenemedi' });
+  }
+});
 
 /* ============= PASSWORD RESET (token ile) ============= */
 router.post('/password/request-reset', resetRequestRateLimit, ...requestResetValidation, async (req, res) => {

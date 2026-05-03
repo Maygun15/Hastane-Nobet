@@ -1,6 +1,20 @@
 // src/tabs/PeopleTab.jsx
 import React, { useRef, useState, useMemo, useEffect } from "react";
-import { Eye, EyeOff } from "lucide-react";
+import {
+  ClipboardList,
+  Download,
+  Eye,
+  EyeOff,
+  FileSpreadsheet,
+  Mail,
+  PencilLine,
+  Phone,
+  RefreshCcw,
+  ShieldCheck,
+  Upload,
+  UserPlus2,
+  Users,
+} from "lucide-react";
 import * as XLSX from "xlsx";
 import IDCard from "../components/IDCard.jsx";
 import { maskPhone, maskTC } from "../utils/format.js";
@@ -229,7 +243,6 @@ export default function PeopleTab({
         phone: row.phone || "",
         email: row.mail || "",
       };
-      console.log("ABOUT TO CALL PERSONNEL API", payload);
       if (editingId && isMongoId(editingId)) {
         const res = await API.http.put(`/api/personnel/${editingId}`, payload);
         return { person: res?.person || null, error: null };
@@ -237,14 +250,12 @@ export default function PeopleTab({
       const res = await API.http.post(`/api/personnel`, payload);
       return { person: res?.person || null, error: null };
     } catch (err) {
-      console.error("PERSONNEL SAVE ERROR", err);
-      console.warn("Backend sync error:", err?.message || err);
+      console.error("Backend sync error:", err?.message || err);
       return { person: null, error: err?.message || "Backend senkron hatası" };
     }
   };
 
   const upsert = async (e) => {
-    console.log("SAVE HANDLER ENTERED");
     e.preventDefault();
     if (!form.name.trim()) return;
     if (REQUIRE_BACKEND && !getToken()) {
@@ -297,7 +308,6 @@ export default function PeopleTab({
         [...(prev.filter((p) => normId(p.id) !== normId(replaceId))), nextRow],
         "name"
       );
-      console.log("UI STATE UPDATED", updatedPeople);
       return updatedPeople;
     });
     reset();
@@ -589,308 +599,315 @@ export default function PeopleTab({
   const visiblePeople = editingId
     ? people.filter((p) => p.id === editingId)
     : sortByKeyTR(people, 'name');
+  const selectedAreaCount = form.workAreaIds.length;
+  const selectedShiftCount = Array.isArray(form.shiftCodes) ? form.shiftCodes.length : 0;
+  const activeServiceName =
+    serviceOptions.find((s) => String(s.id) === String(form.service))?.name || "Servis seçilmedi";
+  const roleLabel = role === ROLE.Doctor ? "Doktor" : "Hemşire";
+  const fieldClass =
+    "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100";
+  const sectionCardClass = "flex h-full flex-col rounded-2xl border border-slate-200 bg-slate-50/70 p-4";
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl shadow-sm p-4 flex items-center justify-between">
-        <div className="font-semibold">{label}</div>
-        <div className="flex items-center gap-2 text-sm">
-          <button
-            onClick={downloadTemplate}
-            className="px-3 py-2 rounded-xl bg-slate-100"
-          >
-            Şablon
-          </button>
-          <button
-            onClick={exportXLSX}
-            className="px-3 py-2 rounded-xl bg-slate-100"
-          >
-            Dışa Aktar
-          </button>
-          <button
-            onClick={() => setEditOpen(true)}
-            className="px-3 py-2 rounded-xl bg-slate-100"
-          >
-            Düzenle
-          </button>
-          <button
-            onClick={handleResetAll}
-            disabled={resetting}
-            className={`px-3 py-2 rounded-xl border ${
-              resetting
-                ? "bg-rose-100 text-rose-400 border-rose-200 cursor-wait"
-                : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
-            }`}
-          >
-            {resetting ? "Sıfırlanıyor..." : "Sıfırla"}
-          </button>
-          <button
-            onClick={triggerImport}
-            className="px-3 py-2 rounded-xl bg-sky-600 text-white"
-          >
-            Excel'den Yükle
-          </button>
-          <input
-            ref={importRef}
-            type="file"
-            accept=".xls,.xlsx"
-            className="hidden"
-            onChange={importExcel}
-          />
-        </div>
-      </div>
+      <section className="rounded-[26px] border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
+                <ClipboardList className="h-3.5 w-3.5 text-sky-700" />
+                Personel Kayıt Akışı
+              </span>
+              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                <Users className="h-3.5 w-3.5" />
+                {people.length} kayıt
+              </span>
+            </div>
+            <h3 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{label}</h3>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              Personel kimliğini, iletişim bilgisini, çalışma alanı yetkinliklerini ve uygun vardiya kodlarını tek form üzerinden yönetin.
+            </p>
+          </div>
 
-      {/* Form */}
+          <div className="flex flex-wrap gap-2 text-sm">
+            <button onClick={downloadTemplate} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 transition hover:bg-slate-100">
+              <FileSpreadsheet className="h-4 w-4" />
+              Şablon
+            </button>
+            <button onClick={exportXLSX} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 transition hover:bg-slate-100">
+              <Download className="h-4 w-4" />
+              Dışa Aktar
+            </button>
+            <button onClick={() => setEditOpen(true)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 transition hover:bg-slate-100">
+              <PencilLine className="h-4 w-4" />
+              Kayıt Seç
+            </button>
+            <button
+              onClick={handleResetAll}
+              disabled={resetting}
+              className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 transition ${
+                resetting
+                  ? "cursor-wait border-rose-200 bg-rose-100 text-rose-400"
+                  : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+              }`}
+            >
+              <RefreshCcw className="h-4 w-4" />
+              {resetting ? "Sıfırlanıyor..." : "Sıfırla"}
+            </button>
+            <button onClick={triggerImport} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-2 font-medium text-white transition hover:bg-sky-700">
+              <Upload className="h-4 w-4" />
+              Excel'den Yükle
+            </button>
+            <input ref={importRef} type="file" accept=".xls,.xlsx" className="hidden" onChange={importExcel} />
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Aktif Kayıt Türü</div>
+            <div className="mt-2 text-lg font-semibold text-slate-900">{roleLabel}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Formdaki Servis</div>
+            <div className="mt-2 text-lg font-semibold text-slate-900">{activeServiceName}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Çalışma Alanı Seçimi</div>
+            <div className="mt-2 text-lg font-semibold text-slate-900">{selectedAreaCount}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Uygun Vardiya Kodu</div>
+            <div className="mt-2 text-lg font-semibold text-slate-900">{selectedShiftCount}</div>
+          </div>
+        </div>
+      </section>
+
       <form
-        onSubmit={(e) => {
-          console.log("FORM SUBMIT TRIGGERED");
-          upsert(e);
-        }}
-        className="bg-white rounded-2xl shadow-sm p-4 grid md:grid-cols-3 gap-3 items-end"
+        onSubmit={upsert}
+        className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"
       >
-        <div>
-          <label className="text-xs text-slate-500">Servis</label>
-          <select
-            value={form.service}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, service: e.target.value }))
-            }
-            className="w-full border rounded p-2"
-          >
-            {serviceOptions.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="text-xs text-slate-500">Unvan</label>
-          <input
-            value={form.title}
-            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            className="w-full border rounded p-2"
-            placeholder="Unvan"
-          />
-        </div>
-
-        <div>
-          <label className="text-xs text-slate-500">T.C. Kimlik No</label>
-          <div className="relative">
-            <input
-              value={showRawTC ? form.tc : (form.tc ? maskTC(form.tc) : "")}
-              readOnly={!showRawTC}
-              onBlur={() => {
-                setTcError(form.tc ? (isValidTC(form.tc) ? "" : "Geçersiz TC Kimlik No") : "");
-              }}
-              onChange={(e) => {
-                const raw = e.target.value.replace(/\D/g, "").slice(0, 11);
-                setForm((f) => ({
-                  ...f,
-                  tc: raw,
-                }));
-                if (tcError) setTcError("");
-              }}
-              maxLength={11}
-              className="w-full border rounded p-2 pr-10"
-              placeholder="11 hane"
-            />
-            {!!form.tc && (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowRawTC((v) => !v);
-                  setTcError("");
-                }}
-                aria-label={showRawTC ? "TC gizle" : "TC goster"}
-                title={showRawTC ? "TC gizle" : "TC goster"}
-                className="absolute inset-y-0 right-2 flex items-center text-slate-500 hover:text-slate-700"
-              >
-                {showRawTC ? <EyeOff size={16} strokeWidth={1.8} /> : <Eye size={16} strokeWidth={1.8} />}
-              </button>
-            )}
+        <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-700" />
+              Kayıt Formu
+            </div>
+            <h4 className="mt-3 text-xl font-semibold text-slate-950">{editingId ? "Personel kaydını güncelle" : "Yeni personel kaydı oluştur"}</h4>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              Önce temel kimlik alanlarını doldurun, ardından çalışma alanı ve vardiya uygunluklarını işaretleyin.
+            </p>
           </div>
-          {tcError && (
-            <div className="mt-1 text-xs text-rose-600">{tcError}</div>
-          )}
-        </div>
-
-        <div>
-          <label className="text-xs text-slate-500">Ad Soyad</label>
-          <input
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            className="w-full border rounded p-2"
-            placeholder="Ad Soyad"
-          />
-        </div>
-
-        <div>
-          <label className="text-xs text-slate-500">Telefon</label>
-          <div className="relative">
-            <input
-              type="tel"
-              value={showRawPhone ? formatPhoneDisplay(form.phone || "") : (form.phone ? maskPhone(form.phone) : "")}
-              readOnly={!showRawPhone}
-              onChange={(e) =>
-                setForm((f) => ({
-                  ...f,
-                  phone: e.target.value.replace(/\D/g, "").slice(0, 10),
-                }))
-              }
-              className="w-full border rounded p-2 pr-10"
-              placeholder="Telefon"
-            />
-            {!!form.phone && (
-              <button
-                type="button"
-                onClick={() => setShowRawPhone((v) => !v)}
-                aria-label={showRawPhone ? "Telefonu gizle" : "Telefonu goster"}
-                title={showRawPhone ? "Telefonu gizle" : "Telefonu goster"}
-                className="absolute inset-y-0 right-2 flex items-center text-slate-500 hover:text-slate-700"
-              >
-                {showRawPhone ? <EyeOff size={16} strokeWidth={1.8} /> : <Eye size={16} strokeWidth={1.8} />}
-              </button>
-            )}
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <div className="font-medium text-slate-900">{editingId ? "Düzenleme modu açık" : "Yeni kayıt modu"}</div>
+            <div className="mt-1">Kaydettiğiniz bilgi planlama, çizelgeler ve kullanıcı eşleşmeleri tarafından kullanılır.</div>
           </div>
         </div>
 
-        <div>
-          <label className="text-xs text-slate-500">Mail</label>
-          <input
-            value={form.mail}
-            onChange={(e) => setForm((f) => ({ ...f, mail: e.target.value }))}
-            className="w-full border rounded p-2"
-            placeholder="Mail"
-          />
-        </div>
+        <div className="mt-5 grid gap-5 xl:grid-cols-2">
+          <section className={`${sectionCardClass} min-h-[220px]`}>
+              <div className="text-sm font-semibold text-slate-900">Kimlik ve görev bilgisi</div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-500">Servis</label>
+                  <select value={form.service} onChange={(e) => setForm((f) => ({ ...f, service: e.target.value }))} className={fieldClass}>
+                    {serviceOptions.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500">Unvan</label>
+                  <input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} className={fieldClass} placeholder="Unvan" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500">T.C. Kimlik No</label>
+                  <div className="relative">
+                    <input
+                      value={showRawTC ? form.tc : (form.tc ? maskTC(form.tc) : "")}
+                      readOnly={!showRawTC}
+                      onBlur={() => setTcError(form.tc ? (isValidTC(form.tc) ? "" : "Geçersiz TC Kimlik No") : "")}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/\D/g, "").slice(0, 11);
+                        setForm((f) => ({ ...f, tc: raw }));
+                        if (tcError) setTcError("");
+                      }}
+                      maxLength={11}
+                      className={`${fieldClass} pr-10`}
+                      placeholder="11 hane"
+                    />
+                    {!!form.tc && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowRawTC((v) => !v);
+                          setTcError("");
+                        }}
+                        aria-label={showRawTC ? "TC gizle" : "TC goster"}
+                        title={showRawTC ? "TC gizle" : "TC goster"}
+                        className="absolute inset-y-0 right-2 flex items-center text-slate-500 hover:text-slate-700"
+                      >
+                        {showRawTC ? <EyeOff size={16} strokeWidth={1.8} /> : <Eye size={16} strokeWidth={1.8} />}
+                      </button>
+                    )}
+                  </div>
+                  {tcError ? <div className="mt-1 text-xs text-rose-600">{tcError}</div> : null}
+                </div>
+                <div className="md:col-span-2 xl:col-span-3">
+                  <label className="text-xs font-medium text-slate-500">Ad Soyad</label>
+                  <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className={fieldClass} placeholder="Ad Soyad" />
+                </div>
+              </div>
+          </section>
 
-        <div className="md:col-span-3 border rounded p-2">
-          <div className="text-xs text-slate-500 mb-1">Çalışma Alanları</div>
-          <div className="flex flex-wrap gap-2">
-            {WA.length === 0 && (
-              <span className="text-xs text-slate-400">
-                Önce çalışma alanı ekleyin.
-              </span>
-            )}
-            {WA.map((a) => (
-              <button
-                type="button"
-                key={a.id}
-                onClick={() => toggleArea(a.id)}
-                className={cn(
-                  "px-2 py-1 rounded-full text-xs border",
-                  form.workAreaIds.includes(a.id)
-                    ? "bg-slate-900 text-white border-slate-900"
-                    : "bg-white border-slate-200"
+          <section className={`${sectionCardClass} min-h-[220px]`}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Çalışma alanları</div>
+                <p className="mt-1 text-xs leading-5 text-slate-500">Personelin görev alabileceği alanları seçin.</p>
+              </div>
+              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600">{selectedAreaCount} seçili</span>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2 content-start">
+              {WA.length === 0 && <span className="text-xs text-slate-400">Önce çalışma alanı ekleyin.</span>}
+              {WA.map((a) => (
+                <button
+                  type="button"
+                  key={a.id}
+                  onClick={() => toggleArea(a.id)}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                    form.workAreaIds.includes(a.id)
+                      ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-100"
+                  )}
+                  title={a.name}
+                >
+                  {a.name}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className={`${sectionCardClass} min-h-[180px]`}>
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <Phone className="h-4 w-4 text-sky-700" />
+                İletişim bilgileri
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="text-xs font-medium text-slate-500">Telefon</label>
+                  <div className="relative">
+                    <input
+                      type="tel"
+                      value={showRawPhone ? formatPhoneDisplay(form.phone || "") : (form.phone ? maskPhone(form.phone) : "")}
+                      readOnly={!showRawPhone}
+                      onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
+                      className={`${fieldClass} pr-10`}
+                      placeholder="Telefon"
+                    />
+                    {!!form.phone && (
+                      <button
+                        type="button"
+                        onClick={() => setShowRawPhone((v) => !v)}
+                        aria-label={showRawPhone ? "Telefonu gizle" : "Telefonu goster"}
+                        title={showRawPhone ? "Telefonu gizle" : "Telefonu goster"}
+                        className="absolute inset-y-0 right-2 flex items-center text-slate-500 hover:text-slate-700"
+                      >
+                        {showRawPhone ? <EyeOff size={16} strokeWidth={1.8} /> : <Eye size={16} strokeWidth={1.8} />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500">Mail</label>
+                  <div className="relative">
+                    <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input value={form.mail} onChange={(e) => setForm((f) => ({ ...f, mail: e.target.value }))} className={`${fieldClass} pl-10`} placeholder="Mail" />
+                  </div>
+                </div>
+              </div>
+          </section>
+
+          <section className={`${sectionCardClass} min-h-[180px]`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Vardiya uygunluğu</div>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">Bu personelin atanabileceği vardiya kodlarını işaretleyin.</p>
+                </div>
+                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600">{selectedShiftCount} seçili</span>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2 content-start">
+                {(!Array.isArray(workingHours) || workingHours.length === 0) && (
+                  <span className="text-xs text-slate-400">Önce “Çalışma Saatleri” sekmesinden kod tanımlayın.</span>
                 )}
-                title={a.name}
-              >
-                {a.name}
-              </button>
-            ))}
-          </div>
+                {workingHours?.map((vh) => (
+                  <button
+                    type="button"
+                    key={vh.id}
+                    onClick={() => toggleShiftCode(vh.code)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                      form.shiftCodes?.includes(vh.code)
+                        ? "border-amber-600 bg-amber-500 text-white shadow-sm"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-100"
+                    )}
+                    title={`${vh.code}${vh.start && vh.end ? ` (${vh.start}–${vh.end})` : ""}`}
+                  >
+                    {vh.code}
+                  </button>
+                ))}
+              </div>
+          </section>
         </div>
 
-        <div className="md:col-span-3 border rounded p-2">
-          <div className="text-xs text-slate-500 mb-1">Vardiya Kodları</div>
-          <div className="flex flex-wrap gap-2">
-            {(!Array.isArray(workingHours) || workingHours.length === 0) && (
-              <span className="text-xs text-slate-400">
-                Önce “Çalışma Saatleri” sekmesinden kod tanımlayın.
-              </span>
-            )}
-            {workingHours?.map((vh) => (
-              <button
-                type="button"
-                key={vh.id}
-                onClick={() => toggleShiftCode(vh.code)}
-                className={cn(
-                  "px-2 py-1 rounded-full text-xs border",
-                  form.shiftCodes?.includes(vh.code)
-                    ? "bg-amber-600 text-white border-amber-600"
-                    : "bg-white border-slate-200"
-                )}
-                title={`${vh.code}${
-                  vh.start && vh.end ? ` (${vh.start}–${vh.end})` : ""
-                }`}
-              >
-                {vh.code}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="md:col-span-3 flex gap-2">
-          <button
-            type="submit"
-            onClick={() => console.log("UPDATE BUTTON CLICKED")}
-            className="px-3 py-2 rounded-lg text-white bg-emerald-600"
-          >
-            {editingId ? "Güncelle" : "Ekle"}
+        <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+          <button type="submit" className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-700">
+            <UserPlus2 className="h-4 w-4" />
+            {editingId ? "Kaydı Güncelle" : "Kaydı Ekle"}
           </button>
           {editingId && (
-            <button
-              type="button"
-              onClick={reset}
-              className="px-3 py-2 rounded-lg bg-slate-100"
-            >
+            <button type="button" onClick={reset} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100">
               İptal
             </button>
           )}
         </div>
       </form>
 
-      {/* Liste */}
       {editingId && (
-        <div className="text-xs text-slate-500">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
           Düzenleme modunda yalnızca seçili kart gösteriliyor. İptal edince tüm liste geri gelir.
         </div>
       )}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {visiblePeople.map((p) => (
-          <div
-            key={p.id}
-            className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className="font-semibold uppercase tracking-wide text-slate-800">
-                {p.name}
-              </div>
-              <div className="flex gap-1">
-                <button
-                  onClick={() => edit(p)}
-                  className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded"
-                >
-                  Düzenle
-                </button>
-                <button
-                  onClick={() => del(p.id)}
-                  className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded"
-                >
-                  Sil
-                </button>
-              </div>
-            </div>
-            {(() => {
-              const svcName =
-                serviceOptions.find((s) => s.id === p.service)?.name ||
-                p.service ||
-                "";
-              return (
-                <IDCard
-                  person={p}
-                  serviceNames={svcName ? [svcName] : []}
-                />
-              );
-            })()}
+      <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex flex-col gap-3 border-b border-slate-100 pb-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h4 className="text-lg font-semibold text-slate-950">Kayıtlı personel kartları</h4>
+            <p className="mt-1 text-sm text-slate-600">Seçili gruptaki personeli kart görünümünde inceleyin ve doğrudan düzenleyin.</p>
           </div>
-        ))}
-        {people.length === 0 && (
-          <div className="text-sm text-slate-500">Henüz kayıt yok.</div>
-        )}
-      </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+            <Users className="h-4 w-4 text-sky-700" />
+            Görünen kayıt: {visiblePeople.length}
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {visiblePeople.map((p) => (
+            <PersonCard
+              key={p.id}
+              person={p}
+              serviceOptions={serviceOptions}
+              onEdit={() => edit(p)}
+              onDelete={() => del(p.id)}
+            />
+          ))}
+          {people.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm text-slate-500">
+              Henüz kayıt yok.
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* Düzenle modal */}
       {editOpen && (
@@ -954,6 +971,63 @@ export default function PeopleTab({
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function PersonCard({ person: p, serviceOptions, onEdit, onDelete }) {
+  const [creating, setCreating] = useState(false);
+  const hasToken = !!getToken();
+
+  const handleCreateUser = async () => {
+    if (!hasToken) {
+      alert("Kullanıcı oluşturmak için giriş gerekli.");
+      return;
+    }
+    if (!window.confirm(`"${p.name}" için kullanıcı hesabı oluşturulsun mu?\nGeçici şifre: TC numarası (TC yoksa Hastane2026!)`)) return;
+    setCreating(true);
+    try {
+      await API.http.post("/api/users/quick-create", {
+        name: p.name,
+        tc: p.tc || p.nationalId || "",
+        phone: p.phone || "",
+        email: p.mail || p.email || "",
+        role: "user",
+        personId: String(p.id || ""),
+      });
+      alert(`✅ "${p.name}" için kullanıcı oluşturuldu.`);
+    } catch (e) {
+      alert(e?.message || "Kullanıcı oluşturulamadı.");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const svcName = serviceOptions.find((s) => s.id === p.service)?.name || p.service || "";
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-3 shadow-sm transition hover:border-slate-300 hover:bg-white">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="font-semibold uppercase tracking-wide text-slate-800">{p.name}</div>
+        <div className="flex gap-1">
+          <button onClick={onEdit} className="rounded-lg bg-slate-100 px-2 py-1 text-xs hover:bg-slate-200">
+            Düzenle
+          </button>
+          <button onClick={onDelete} className="rounded-lg bg-slate-100 px-2 py-1 text-xs hover:bg-slate-200">
+            Sil
+          </button>
+        </div>
+      </div>
+      <IDCard person={p} serviceNames={svcName ? [svcName] : []} />
+      {hasToken && (
+        <button
+          onClick={handleCreateUser}
+          disabled={creating}
+          className={`mt-2 w-full rounded-lg border border-sky-200 bg-sky-50 px-2 py-1.5 text-xs font-medium text-sky-700 transition hover:bg-sky-100 disabled:cursor-wait disabled:opacity-60`}
+        >
+          {creating ? "Oluşturuluyor…" : "Kullanıcı Oluştur"}
+        </button>
       )}
     </div>
   );

@@ -109,7 +109,19 @@ function isEligible(person, row, year, month0, day, requireEligibility = true) {
   if (person.weekendOff && (wd === 0 || wd === 6)) return false;
   if (!requireEligibility) return true;
   const keys = areaKeywords(row.label);
-  if (person.areas?.size && !keys.some((k) => person.areas.has(U(k)))) return false;
+  const isSupervisorRow = isServiceSupervisorLabel(U(row.label || ""));
+  if (isSupervisorRow) {
+    // Supervisor satırları için alan kontrolü kesindir.
+    // Kişinin alanı boş olsa bile supervisor olarak kabul edilmez.
+    const supAreaKeywords = ["SORUMLU", "SERVİS SORUMLUSU", "SÜPERVİZÖR", "SUPERVISOR"];
+    const hasSupervisorArea = supAreaKeywords.some((kw) => person.areas?.has(kw));
+    const hasSupervisorRole = !!(person.role && /sorumlu|supervis/i.test(person.role));
+    if (!hasSupervisorArea && !hasSupervisorRole) return false;
+  } else {
+    // Normal satırlar: alanı olan kişilerde alan uyumu aranır,
+    // alanı hiç tanımlanmamış kişiler herkese açık göreve atanabilir.
+    if (person.areas?.size && !keys.some((k) => person.areas.has(U(k)))) return false;
+  }
   if (row.shiftCode && person.shiftCodes?.size && !person.shiftCodes.has(U(row.shiftCode))) return false;
   return true;
 }
@@ -140,11 +152,15 @@ function loadSupervisorPoolIDs(name2id) {
   return ids;
 }
 function deriveSupervisorCandidates(staff) {
-  const keyWords = ["SORUMLU", "SERVİS SORUMLUSU", "SÜPERVİZÖR", "SUPERVISOR", "SV"];
+  // "SV" burada YOK çünkü "SV" aynı zamanda bir gece vardiyası kodudur.
+  // shiftCodes üzerinden "SV" kontrolü, gece vardiyalı herkesi yanlışlıkla
+  // supervisor havuzuna dahil eder. Supervisor tespiti yalnızca areas/role/skills/tags
+  // üzerinden yapılır; shift kodu temelli tespit tamamen kaldırıldı.
+  const areaKeyWords = ["SORUMLU", "SERVİS SORUMLUSU", "SÜPERVİZÖR", "SUPERVISOR"];
   return staff.filter((p) => {
     if (p.role && /sorumlu|supervis/i.test(p.role)) return true;
-    for (const kw of keyWords) {
-      if (p.areas?.has(kw) || p.shiftCodes?.has(kw)) return true;
+    for (const kw of areaKeyWords) {
+      if (p.areas?.has(kw)) return true;
       if (arrFromAny(p.meta?.skills).some((t) => U(t) === kw)) return true;
       if (arrFromAny(p.meta?.tags).some((t) => U(t) === kw)) return true;
     }
@@ -235,9 +251,6 @@ function buildLeaveIndexFromStore({ year, month0, staff }) {
     }
   }
 
-  try {
-    console.info("[leaves] merged", { ym, byId: Object.keys(byId).length, byCanon: Object.keys(byCanon).length });
-  } catch {}
   return { byId, byCanon };
 }
 

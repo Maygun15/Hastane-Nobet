@@ -14,6 +14,7 @@ import {
   apiRegister,
   setToken,
   getToken,
+  setRefreshToken,
 } from "../lib/api.js";
 
 /*
@@ -81,6 +82,8 @@ export function AuthProvider({ children }) {
 
     // api.js 401 durumunda yaydığı event'i de dinle
     const onForcedLogout = () => {
+      try { setToken(""); } catch {}
+      try { setRefreshToken(""); } catch {}
       setUser(null);
       setStatus("unauthenticated");
     };
@@ -115,6 +118,7 @@ export function AuthProvider({ children }) {
   const logout = useCallback(async () => {
     try { await apiLogout(); } catch {}
     setToken("");
+    setRefreshToken("");
     setUser(null);
     setStatus("unauthenticated");
   }, []);
@@ -133,6 +137,7 @@ export function AuthProvider({ children }) {
     () => ({
       user,
       status,            // 'idle' | 'loading' | 'authenticated' | 'unauthenticated'
+      loading: status === "idle" || status === "loading",
       isAuthenticated,   // boolean
       login,
       register,

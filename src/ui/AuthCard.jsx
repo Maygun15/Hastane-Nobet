@@ -9,7 +9,6 @@ const DEFAULT_SERVICES = [
 ];
 
 export default function AuthCard() {
-  console.log("[AuthCard/ui] v2 loaded");
 
   const [tab, setTab] = useState("register"); // 'login' | 'register'
   const [loading, setLoading] = useState(false);

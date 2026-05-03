@@ -1,11 +1,21 @@
 // src/tabs/ParametersTab.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import "../styles/parameters-ui-v2.css";
+import {
+  Building2,
+  CalendarClock,
+  Clock3,
+  ClipboardList,
+  FileSpreadsheet,
+  Settings2,
+  ShieldCheck,
+} from "lucide-react";
 
 import WorkAreasTab from "./WorkAreasTab.jsx";
 import WorkingHoursTab from "./WorkingHoursTab.jsx";
 import LeaveTypesTab from "./LeaveTypesTab.jsx";
 import HolidayCalendarTab from "./HolidayCalendarTab.jsx";
+import ServicesTab from "./ServicesTab.jsx";
 import DutyRulesTabExplained from "./DutyRulesTab.Explained.jsx"; // ✅ açıklamalı yeni bileşen
 import ScheduleRulesManager from "../components/ScheduleRulesManager.jsx";
 import RequestBoxTab from "./RequestBoxTab.jsx";
@@ -13,7 +23,6 @@ import { API, getToken } from "../lib/api.js";
 
 const LS_ACTIVE_SUBTAB = "paramsActiveSubtabV1";
 const LS_KEY_RULES = "dutyRulesV2"; // ✅ nöbet kuralları LS anahtarı
-const LS_UI_V2 = "paramsUiV2Enabled";
 const cn = (...c) => c.filter(Boolean).join(" ");
 
 // Backend kural anahtarlarını UI listesinden türet
@@ -113,13 +122,62 @@ function stableRulesPayload(scope, list) {
 }
 
 const SUBTABS = [
-  { id: "calisma-alanlari", label: "Çalışma Alanları" },
-  { id: "calisma-saatleri", label: "Çalışma Saatleri" },
-  { id: "izin-turleri",     label: "İzin Türleri" },
-  { id: "tatil-takvimi",    label: "Tatil Takvimi" },
-  { id: "nobet-kurallari",  label: "Nöbet Kuralları" },
-  { id: "nobet-yazma-kurallari",  label: "Nöbet Yazma Kuralları" },
-  { id: "istek",            label: "İstek" },
+  {
+    id: "calisma-alanlari",
+    label: "Çalışma Alanları",
+    eyebrow: "Yerleşim",
+    description: "Personel görev alanları ve çalışma kapsamı tanımlarını yönetin.",
+    icon: Building2,
+  },
+  {
+    id: "calisma-saatleri",
+    label: "Çalışma Saatleri",
+    eyebrow: "Saat Tanımı",
+    description: "Vardiya kodlarının başlangıç, bitiş ve saat karşılıklarını belirleyin.",
+    icon: Clock3,
+  },
+  {
+    id: "izin-turleri",
+    label: "İzin Türleri",
+    eyebrow: "İzin Kuralları",
+    description: "İzin kodlarının çalışma saati etkisini ve kullanım mantığını tanımlayın.",
+    icon: ClipboardList,
+  },
+  {
+    id: "servisler",
+    label: "Servisler",
+    eyebrow: "Organizasyon",
+    description: "Kurumsal servis listesini ve aktif servis yapısını düzenleyin.",
+    icon: Building2,
+  },
+  {
+    id: "tatil-takvimi",
+    label: "Tatil Takvimi",
+    eyebrow: "Takvim",
+    description: "Resmi tatil ve arife günlerini tüm hesap ekranları için ortak yönetin.",
+    icon: CalendarClock,
+  },
+  {
+    id: "nobet-kurallari",
+    label: "Nöbet Kuralları",
+    eyebrow: "Kural Seti",
+    description: "Dinlenme, izin, ardışık vardiya ve güvenlik kurallarını yönetin.",
+    icon: ShieldCheck,
+  },
+  {
+    id: "nobet-yazma-kurallari",
+    label: "Nöbet Yazma Kuralları",
+    eyebrow: "Yazım Mantığı",
+    description: "Otomatik çizelge üretiminde kullanılan yazım davranışlarını belirleyin.",
+    icon: Settings2,
+  },
+  {
+    id: "istek",
+    label: "İstek",
+    eyebrow: "Talep Kaynağı",
+    description: "Personel taleplerinin planlama ve çizelgelere nasıl yansıyacağını yönetin.",
+    icon: FileSpreadsheet,
+  },
 ];
 
 const DEFAULT_ID = "calisma-alanlari";
@@ -208,16 +266,6 @@ export default function ParametersTab({
     return subFromHash() ?? subFromQuery() ?? lsGet() ?? DEFAULT_ID;
   }, []);
   const [active, setActive] = useState(isValid(initial) ? initial : DEFAULT_ID);
-  const [uiV2, setUiV2] = useState(() => {
-    try {
-      const raw = localStorage.getItem(LS_UI_V2);
-      if (raw === "0") return false;
-      if (raw === "1") return true;
-      return true; // ilk açılışta yeni görünüm açık
-    } catch {
-      return true;
-    }
-  });
 
   // Nöbet kuralları state'i (tek yerde yönetim)
   const [dutyRules, setDutyRules] = useState(() => {
@@ -329,55 +377,116 @@ export default function ParametersTab({
     handleClick(DEFAULT_ID);
   };
 
-  const toggleUi = () => {
-    setUiV2((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem(LS_UI_V2, next ? "1" : "0");
-      } catch {}
-      return next;
-    });
-  };
+  const activeMeta = SUBTABS.find((t) => t.id === active) || SUBTABS[0];
+  const ActiveIcon = activeMeta?.icon || Settings2;
 
   return (
-    <div className={cn("p-4", uiV2 && "params-ui-v2")}>
-      {/* Üst menü */}
-      <div data-params-topbar className="flex flex-wrap items-center gap-2 mb-4">
-        {SUBTABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => handleClick(t.id)}
-            data-params-tab-btn
-            data-active={active === t.id ? "true" : "false"}
-            className={cn(
-              "px-3 py-2 text-sm rounded border",
-              active === t.id ? "bg-blue-50 border-blue-400" : "bg-white"
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-        <div className="ml-auto flex gap-2">
-          <button
-            type="button"
-            className={cn(
-              "px-2 py-2 text-xs border rounded",
-              uiV2 ? "bg-emerald-50 border-emerald-300 text-emerald-700" : "bg-white"
-            )}
-            onClick={toggleUi}
-            title="Yeni parametreler görünümünü aç/kapat"
-          >
-            {uiV2 ? "Yeni Tasarım: Açık" : "Yeni Tasarım: Kapalı"}
-          </button>
-          <button type="button" className="px-2 py-2 text-sm border rounded" onClick={() => go(-1)} title="Önceki">‹</button>
-          <button type="button" className="px-2 py-2 text-sm border rounded" onClick={() => go(1)} title="Sonraki">›</button>
-          <button type="button" className="px-2 py-1 text-xs border rounded" onClick={resetRemembered}>Sıfırla</button>
-        </div>
-      </div>
+    <div className="params-ui-v2 p-4">
+      <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
+        <aside className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
+              <Settings2 className="h-3.5 w-3.5 text-sky-700" />
+              Sistem Parametreleri
+            </div>
+            <div className="mt-3 text-xl font-semibold tracking-tight text-slate-950">Yapılandırma Merkezi</div>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Buradaki ayarlar çalışma çizelgesi, aylık çalışma, fazla mesai ve izin akışlarının ortak davranışını belirler.
+            </p>
+          </div>
 
-      {/* İçerik */}
-      <div data-params-content className="mt-2">
+          <div className="mt-4 space-y-2">
+            {SUBTABS.map((t) => {
+              const Icon = t.icon;
+              const isActiveTab = active === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => handleClick(t.id)}
+                  data-params-tab-btn
+                  data-active={isActiveTab ? "true" : "false"}
+                  className={cn(
+                    "w-full rounded-[22px] border px-4 py-3 text-left transition-all",
+                    isActiveTab
+                      ? "border-slate-900 bg-slate-950 text-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.75)]"
+                      : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={cn(
+                      "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border",
+                      isActiveTab
+                        ? "border-white/15 bg-white/10 text-white"
+                        : "border-slate-200 bg-slate-100 text-slate-700"
+                    )}>
+                      <Icon className="h-4.5 w-4.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className={cn(
+                        "text-[11px] font-medium uppercase tracking-[0.16em]",
+                        isActiveTab ? "text-white/70" : "text-slate-500"
+                      )}>
+                        {t.eyebrow}
+                      </div>
+                      <div className={cn("mt-1 text-sm font-semibold", isActiveTab ? "text-white" : "text-slate-900")}>
+                        {t.label}
+                      </div>
+                      <div className={cn("mt-1 text-xs leading-5", isActiveTab ? "text-white/72" : "text-slate-500")}>
+                        {t.description}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
+            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Hızlı Geçiş</div>
+            <div className="mt-3 flex gap-2">
+              <button type="button" className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100" onClick={() => go(-1)} title="Önceki">
+                Önceki
+              </button>
+              <button type="button" className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100" onClick={() => go(1)} title="Sonraki">
+                Sonraki
+              </button>
+            </div>
+            <button
+              type="button"
+              className="mt-3 w-full rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100"
+              onClick={resetRemembered}
+            >
+              Varsayılan Sekmeye Dön
+            </button>
+          </div>
+        </aside>
+
+        <section className="min-w-0 space-y-4">
+          <div data-params-topbar className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
+                  <ActiveIcon className="h-3.5 w-3.5 text-sky-700" />
+                  {activeMeta.eyebrow}
+                </div>
+                <div className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{activeMeta.label}</div>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{activeMeta.description}</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[320px]">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Etkilediği Alanlar</div>
+                  <div className="mt-2 text-sm font-medium text-slate-800">Çizelgeler, Planlama, Fazla Mesai</div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Çalışma Notu</div>
+                  <div className="mt-2 text-sm font-medium text-slate-800">Değişiklikler tüm sistem davranışını etkileyebilir.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div data-params-content className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
         {active === "calisma-alanlari" && (
           <WorkAreasTab
             workAreas={workAreas}
@@ -415,6 +524,7 @@ export default function ParametersTab({
         {active === "izin-turleri"     && (
           <LeaveTypesTab leaveTypes={leaveTypes} setLeaveTypes={setLeaveTypes} />
         )}
+        {active === "servisler"        && <ServicesTab />}
         {active === "tatil-takvimi"    && <HolidayCalendarTab />}
         {active === "nobet-kurallari"  && (
           <DutyRulesTabExplained rules={dutyRules} setRules={setDutyRules} />
@@ -429,6 +539,8 @@ export default function ParametersTab({
             people={people}
           />
         )}
+          </div>
+        </section>
       </div>
     </div>
   );

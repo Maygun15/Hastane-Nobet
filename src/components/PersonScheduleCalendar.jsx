@@ -1,13 +1,16 @@
 // src/components/PersonScheduleCalendar.jsx (UPDATED)
 import React, { useEffect, useMemo, useState } from "react";
-import { buildMonthDays, shiftDurationHours } from "../utils/date.js";
+import { buildMonthDays } from "../utils/date.js";
 import { LS } from "../utils/storage.js";
-import { assignSchedule, getMonthlySchedule, unassignSchedule } from "../api/apiAdapter.js";
+import { assignSchedule, getGeneratedSchedule, getMonthlySchedule, unassignSchedule } from "../api/apiAdapter.js";
+import { API } from "../lib/api.js";
 import DayCard from "./DayCard.jsx";
 import MonthStats from "./MonthStats.jsx";
 import Modal from "./Modal.jsx";
 import { LEAVE_RULES } from "../constants/rules.js";
 import { buildLeaveCreditRules } from "../utils/leaveTypeRules.js";
+import { buildMonthlyTotalsIndex, createPlanWorkHourResolver, sumWorkedHoursForPersonMonth } from "../utils/planWorkCalculator.js";
+import { requiredHoursBase, workedLikeLeaveHours } from "../utils/overtime.js";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const stripDiacritics = (str = "") =>
@@ -26,6 +29,24 @@ const WORKING_HOURS_KEYS = ["workingHoursV2", "workingHours"];
 const SOURCE_PRIORITY = {
   remote: 3,
 };
+
+function buildDisplayCells(year, month0) {
+  const first = new Date(year, month0, 1);
+  const daysInMonth = new Date(year, month0 + 1, 0).getDate();
+  const offset = (first.getDay() + 6) % 7;
+  const total = Math.ceil((offset + daysInMonth) / 7) * 7;
+  const startDate = new Date(year, month0, 1 - offset);
+  const cells = [];
+  for (let i = 0; i < total; i++) {
+    const date = new Date(startDate);
+    date.setDate(startDate.getDate() + i);
+    cells.push({
+      date,
+      inMonth: date.getMonth() === month0,
+    });
+  }
+  return cells;
+}
 
 function assignmentKey(assg) {
   const shift = String(
@@ -279,14 +300,23 @@ function normalizeWorkingHours(input) {
   const map = new Map();
   (Array.isArray(input) ? input : []).forEach((item) => {
     if (!item) return;
-    const code = String(item.code ?? item.id ?? "").trim();
+    const code = String(
+      item.shiftCode ??
+      item.code ??
+      item.id ??
+      item.vardiyaKodu ??
+      item.vardiya ??
+      item.name ??
+      ""
+    ).trim();
     if (!code) return;
-    const start = String(item.start ?? "").trim();
-    const end = String(item.end ?? "").trim();
-    const labelRaw = String(item.label ?? item.name ?? "").trim();
+    const start = String(item.start ?? item.from ?? item.begin ?? item.startTime ?? "").trim();
+    const end = String(item.end ?? item.to ?? item.finish ?? item.endTime ?? "").trim();
+    const hours = item.hours ?? item.duration ?? item.totalHours;
+    const labelRaw = String(item.label ?? item.name ?? item.area ?? item.title ?? "").trim();
     const time = start && end ? `${start}-${end}` : "";
     const label = labelRaw || (time ? `${code} (${time})` : code);
-    map.set(code, { code, label, start, end });
+    map.set(code, { code, label, start, end, hours });
   });
   return Array.from(map.values()).sort((a, b) =>
     String(a.label || a.code).localeCompare(String(b.label || b.code), "tr", { sensitivity: "base" })
@@ -509,6 +539,7 @@ function buildDefsIndex(defs) {
 function normalizeRemoteAssignments(data, defs) {
   const merged = [];
   const seen = new Set();
+  const defIndex = buildDefsIndex(defs);
   const hasExplicitAssignments = Array.isArray(data?.assignments) && data.assignments.length > 0;
   const pushUnique = (item) => {
     if (!item) return;
@@ -516,14 +547,35 @@ function normalizeRemoteAssignments(data, defs) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return;
     const pid = String(item?.personId ?? item?.personID ?? item?.staffId ?? item?.pid ?? "").trim();
     const pname = String(item?.personName ?? item?.fullName ?? item?.name ?? "").trim();
-    const shift = String(item?.shiftCode ?? item?.shiftId ?? item?.shift ?? item?.code ?? "").trim();
-    const roleLabel = String(item?.roleLabel ?? item?.role ?? item?.label ?? "").trim();
+    let shiftId = item?.shiftId ?? item?.shiftCode ?? item?.shift ?? item?.code ?? "";
+    let shiftCode = item?.shiftCode ?? item?.shiftId ?? item?.shift ?? item?.code ?? "";
+    let roleLabel = item?.roleLabel ?? item?.role ?? item?.label ?? "";
+    const shiftIdKey = String(shiftId || "").trim();
+    const shiftCodeKey = String(shiftCode || "").trim();
+    const def =
+      (shiftIdKey && defIndex.byId.get(shiftIdKey)) ||
+      (shiftCodeKey && defIndex.byId.get(shiftCodeKey)) ||
+      (shiftCodeKey && defIndex.byShift.get(shiftCodeKey)) ||
+      null;
+    if (def) {
+      const defId = def.id ?? def.rowId ?? def._id ?? def.shiftId ?? def.code ?? "";
+      const defShift = String(def.shiftCode ?? def.code ?? "").trim();
+      const defLabel = String(def.label ?? def.name ?? def.area ?? "").trim();
+      if (!shiftIdKey && defId) shiftId = String(defId);
+      if (!shiftCodeKey && defShift) shiftCode = defShift;
+      if (!String(roleLabel || "").trim() && defLabel) roleLabel = defLabel;
+    }
+    const shift = String(shiftCode || shiftId || "").trim();
+    roleLabel = String(roleLabel || "").trim();
     const identity = canonName(pname) || (pid ? `id:${pid}` : "");
     const k = `${dateStr}|${identity}|${shift}|${roleLabel}`;
     if (seen.has(k)) return;
     seen.add(k);
     merged.push({
       ...item,
+      shiftId,
+      shiftCode,
+      roleLabel,
       date: dateStr,
       day: dateStr,
     });
@@ -540,7 +592,6 @@ function normalizeRemoteAssignments(data, defs) {
   const named = data?.roster?.namedAssignments || data?.namedAssignments || null;
   if (!named || typeof named !== "object") return merged;
 
-  const defIndex = buildDefsIndex(defs);
   Object.entries(named).forEach(([dayStr, perRow]) => {
     const dayNum = Number(dayStr);
     if (!Number.isFinite(dayNum) || dayNum < 1 || dayNum > 31) return;
@@ -654,6 +705,23 @@ function formatLeaveValue(val) {
   return String(val);
 }
 
+function buildLeaveCodesByDayMap(leavesForPerson = {}, year, month0) {
+  const out = {};
+  const ym = `${year}-${pad2(month0 + 1)}`;
+  for (const [key, val] of Object.entries(leavesForPerson || {})) {
+    if (!val) continue;
+    let dayNum = null;
+    if (/^\d+$/.test(String(key))) {
+      dayNum = Number(key);
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(String(key)) && String(key).startsWith(`${ym}-`)) {
+      dayNum = Number(String(key).slice(8, 10));
+    }
+    if (!Number.isFinite(dayNum) || dayNum < 1 || dayNum > 31) continue;
+    out[dayNum] = val;
+  }
+  return out;
+}
+
 function collapseLeaves(allLeaves, personId, canon, ymKey, aliasIds = []) {
   const merged = {};
   const ids = new Set(
@@ -714,7 +782,6 @@ export default function PersonScheduleCalendar({
   }, [canManage, userPersonId, options]);
 
   const [selectedId, setSelectedId] = useState(initialPersonId);
-  const [dpRevision, setDpRevision] = useState(0);
   const [showStats, setShowStats] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [remoteRevision, setRemoteRevision] = useState(0);
@@ -738,35 +805,49 @@ export default function PersonScheduleCalendar({
   const [assignError, setAssignError] = useState("");
   const [settingsRevision, setSettingsRevision] = useState(0);
 
+  // Tatil verisi: { "YYYY-MM-DD": { kind: "full"|"arife"|"half", name: string } }
+  const [holidayMap, setHolidayMap] = useState({});
+  useEffect(() => {
+    let active = true;
+    API.http.get(`/api/holidays?y=${year}&m=${month0 + 1}`)
+      .then((data) => {
+        if (!active) return;
+        const items = Array.isArray(data?.items) ? data.items : [];
+        const map = {};
+        for (const h of items) {
+          if (h?.date) map[String(h.date).slice(0, 10)] = { kind: h.kind || "full", name: h.name || "" };
+        }
+        setHolidayMap(map);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [year, month0]);
+
   useEffect(() => {
     setSelectedId(initialPersonId);
   }, [initialPersonId]);
 
   useEffect(() => {
-    const bumpLocal = () => setDpRevision((v) => v + 1);
     const bumpRemote = () => setRemoteRevision((v) => v + 1);
-    const onPlannerChange = () => {
-      bumpLocal();
-      bumpRemote();
-    };
+    const onPlannerChange = () => bumpRemote();
     const onScheduleBuilt = () => bumpRemote();
     const onScheduleSaved = () => bumpRemote();
     const onStorage = (ev) => {
-      if (ev?.key === "scheduleLastSaved" || ev?.key === "scheduleBuildTrigger") {
+      if (ev?.key === "scheduleLastSaved" || ev?.key === "scheduleBuildTrigger" || !ev?.key) {
         bumpRemote();
-        return;
       }
-      bumpLocal();
     };
 
     window.addEventListener("planner:changed", onPlannerChange);
     window.addEventListener("schedule:built", onScheduleBuilt);
     window.addEventListener("schedule:saved", onScheduleSaved);
+    window.addEventListener("schedule:invalidated", onScheduleSaved);
     window.addEventListener("storage", onStorage);
     return () => {
       window.removeEventListener("planner:changed", onPlannerChange);
       window.removeEventListener("schedule:built", onScheduleBuilt);
       window.removeEventListener("schedule:saved", onScheduleSaved);
+      window.removeEventListener("schedule:invalidated", onScheduleSaved);
       window.removeEventListener("storage", onStorage);
     };
   }, []);
@@ -818,8 +899,6 @@ export default function PersonScheduleCalendar({
       selectedPerson.aliasIds || selectedPerson.raw?.aliasIds || []
     );
   }, [allLeaves, selectedPerson, ymKey]);
-
-  void dpRevision;
 
   useEffect(() => {
     let active = true;
@@ -889,13 +968,36 @@ export default function PersonScheduleCalendar({
               month,
               countPersonMatches,
             });
-            if (!active) return;
-            setRemoteDefs(explicitCandidate?.defs || []);
-            setRemoteAssignmentsRaw(explicitCandidate?.normalizedAssignments || []);
-            setRemoteServiceIdUsed(explicitServiceKey || null);
-            setRemoteRoleUsed(explicitRoleKey || null);
-            setRemoteError("");
-            return;
+            const explicitGenerated = await getGeneratedSchedule({
+              sectionId,
+              serviceId: explicitServiceKey,
+              role: explicitRoleKey,
+              year,
+              month,
+            }).catch((err) => {
+              if (err?.status !== 404) throw err;
+              return null;
+            });
+            const explicitAssignments =
+              (explicitCandidate?.normalizedAssignments?.length
+                ? explicitCandidate.normalizedAssignments
+                : null) ??
+              (Array.isArray(explicitGenerated?.assignments) && explicitGenerated.assignments.length
+                ? explicitGenerated.assignments
+                : []);
+            const explicitMatches = countPersonMatches(explicitAssignments);
+            const hasTarget = !!targetPid || !!targetCanon;
+            const explicitUsable =
+              explicitAssignments.length > 0 && (!hasTarget || explicitMatches > 0);
+            if (explicitUsable) {
+              if (!active) return;
+              setRemoteDefs(explicitCandidate?.defs || []);
+              setRemoteAssignmentsRaw(explicitAssignments);
+              setRemoteServiceIdUsed(explicitServiceKey || null);
+              setRemoteRoleUsed(explicitRoleKey || null);
+              setRemoteError("");
+              return;
+            }
           }
         }
 
@@ -936,19 +1038,36 @@ export default function PersonScheduleCalendar({
         });
 
         const picked = fetched[0] || null;
+        const pickedMonthlyAssignments = picked?.normalizedAssignments?.length
+          ? picked.normalizedAssignments
+          : null;
+        const pickedGenerated = !pickedMonthlyAssignments && picked
+          ? await getGeneratedSchedule({
+              sectionId,
+              serviceId: String(picked.serviceId ?? ""),
+              role: String(picked.role ?? ""),
+              year,
+              month,
+            }).catch((err) => {
+              if (err?.status !== 404) throw err;
+              return null;
+            })
+          : null;
         if (!active) return;
         setRemoteDefs(picked?.defs || []);
-        setRemoteAssignmentsRaw(picked?.normalizedAssignments || []);
+        setRemoteAssignmentsRaw(
+          pickedMonthlyAssignments ??
+          (Array.isArray(pickedGenerated?.assignments) && pickedGenerated.assignments.length
+            ? pickedGenerated.assignments
+            : [])
+        );
         setRemoteServiceIdUsed(picked ? String(picked.serviceId ?? "") : null);
         setRemoteRoleUsed(picked ? String(picked.role ?? "") : null);
         setRemoteError("");
       } catch (err) {
         if (!active) return;
-        setRemoteAssignmentsRaw([]);
-        setRemoteDefs([]);
+        // Mevcut veriyi koru — geçici hata anında takvimi boşaltma
         setRemoteError(err?.message || "Sunucudan nöbet verisi alınamadı.");
-        setRemoteServiceIdUsed(null);
-        setRemoteRoleUsed(null);
       } finally {
         if (active) setRemoteLoading(false);
       }
@@ -974,8 +1093,16 @@ export default function PersonScheduleCalendar({
     return Array.isArray(workingHours) ? workingHours : [];
   }, [workingHours, settingsRevision]);
 
+  // remoteDefs, workingHoursRaw ile aynı shiftCode'a sahip olduğunda start/end bilgisini
+  // silerek saat hesabını bozuyor — bu yüzden summaryWorkingHours sadece workingHoursRaw'dan üretiliyor.
+  // remoteDefs, shiftOptions fallback'inde ve def etiket zenginleştirmesinde ayrıca kullanılıyor.
+  const summaryWorkingHours = useMemo(
+    () => normalizeWorkingHours(workingHoursRaw || []),
+    [workingHoursRaw]
+  );
+
   const shiftOptions = useMemo(() => {
-    const merged = normalizeWorkingHours(workingHoursRaw);
+    const merged = summaryWorkingHours;
     if (merged.length) return merged;
     const map = new Map();
     (remoteDefs || []).forEach((def) => {
@@ -987,7 +1114,7 @@ export default function PersonScheduleCalendar({
     return Array.from(map.values()).sort((a, b) =>
       String(a.label || a.code).localeCompare(String(b.label || b.code), "tr", { sensitivity: "base" })
     );
-  }, [remoteDefs, settingsRevision, workingHoursRaw]);
+  }, [remoteDefs, settingsRevision, summaryWorkingHours]);
 
   const areaOptions = useMemo(() => {
     const fromPropsRaw = Array.isArray(workAreas) ? workAreas : [];
@@ -1030,60 +1157,64 @@ export default function PersonScheduleCalendar({
     month0,
   ]);
 
+  const resolvePlanHours = useMemo(() => createPlanWorkHourResolver(summaryWorkingHours), [summaryWorkingHours]);
+
+  const displaySummaryAssignments = useMemo(() => {
+    const out = [];
+    for (const [dayNum, list] of assignmentsByDay.entries()) {
+      for (const item of Array.isArray(list) ? list : []) {
+        out.push({
+          ...item,
+          day: `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`,
+          date: `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`,
+          personId: String(item?.personId || selectedPerson?.id || "").trim(),
+          personName: String(item?.personName || selectedPerson?.name || "").trim(),
+          rowLabel: String(item?.rowLabel || item?.roleLabel || item?.label || item?.area || "").trim(),
+        });
+      }
+    }
+    return out;
+  }, [assignmentsByDay, year, month0, selectedPerson]);
+
+  const truthSummary = useMemo(() => {
+    if (!selectedPerson) return null;
+    const totalsIndex = buildMonthlyTotalsIndex(displaySummaryAssignments, {
+      people,
+      resolveHours: resolvePlanHours,
+      preferExplicitHours: true,
+    });
+    return (
+      totalsIndex.get(`id:${String(selectedPerson.id || "").trim()}`) ||
+      totalsIndex.get(`name:${selectedPerson.canon || canonName(selectedPerson.name || "")}`) ||
+      null
+    );
+  }, [selectedPerson, displaySummaryAssignments, people, resolvePlanHours]);
+
   const overtimeStats = useMemo(() => {
     if (!selectedPerson) return null;
     try {
-      const ym = `${year}-${pad2(month0 + 1)}`;
-
-      const storedBase = Number(localStorage.getItem(`monthlyHoursSheet/stdHours/${ym}`));
-      const requiredBase = Number.isFinite(storedBase) && storedBase > 0 ? storedBase : null;
-      if (!requiredBase) return null;
-
       const leaveRules = buildLeaveCreditRules(
         LS.get("leaveTypesV2", []),
         LEAVE_RULES
       );
 
-      let leaveCredit = 0;
-      const entries = (() => {
-        const src = leavesForPerson || {};
-        if (!src || typeof src !== "object") return [];
-        const keys = Object.keys(src);
-        if (keys.some((k) => /^\d{4}-\d{2}$/.test(k))) {
-          const out = [];
-          for (const ymKey of keys) {
-            const days = src[ymKey];
-            if (days && typeof days === "object") {
-              out.push(...Object.entries(days));
-            }
-          }
-          return out;
-        }
-        return Object.entries(src);
-      })();
+      const officialHolidaysYmd = new Set();
+      const arifeDaysYmd = new Set();
+      Object.entries(holidayMap || {}).forEach(([dateStr, holiday]) => {
+        const kind = String(holiday?.kind || "").toLowerCase();
+        if (kind === "arife" || kind === "half") arifeDaysYmd.add(dateStr);
+        else if (kind === "full") officialHolidaysYmd.add(dateStr);
+      });
 
-      for (const [dayKey, val] of entries) {
-        if (!dayKey) continue;
-        const code = typeof val === "string" ? val : val?.code;
-        if (!code) continue;
-        const rule = leaveRules[code];
-        if (!rule?.countsAsWorked) continue;
-        leaveCredit += Number.isFinite(rule.hoursPerDay) ? rule.hoursPerDay : 8;
-      }
-
-      const shiftHoursMap = {};
-      for (const sh of shiftOptions || []) {
-        if (sh?.start && sh?.end) {
-          shiftHoursMap[sh.code.toUpperCase()] = shiftDurationHours(sh.start, sh.end);
-        }
-      }
-
-      let worked = 0;
-      for (const [dayNum, list] of assignmentsByDay.entries()) {
-        const assg = list?.[0];
-        const code = String(assg?.shiftCode ?? assg?.shift ?? assg?.code ?? "").trim().toUpperCase();
-        if (code && shiftHoursMap[code]) worked += shiftHoursMap[code];
-      }
+      const requiredBase = requiredHoursBase(year, month0 + 1, officialHolidaysYmd, arifeDaysYmd);
+      const personLeavesByDay = buildLeaveCodesByDayMap(leavesForPerson, year, month0);
+      const leaveCredit = workedLikeLeaveHours(year, month0 + 1, personLeavesByDay, leaveRules);
+      const worked = sumWorkedHoursForPersonMonth(displaySummaryAssignments, selectedPerson.id, {
+        personName: selectedPerson.name,
+        people,
+        resolveHours: resolvePlanHours,
+        preferExplicitHours: true,
+      });
 
       const requiredFinal = Math.max(0, requiredBase - leaveCredit);
       const overtime = worked - requiredFinal;
@@ -1092,9 +1223,10 @@ export default function PersonScheduleCalendar({
     } catch {
       return null;
     }
-  }, [selectedPerson, year, month0, leavesForPerson, assignmentsByDay, shiftOptions, settingsRevision]);
+  }, [selectedPerson, year, month0, leavesForPerson, displaySummaryAssignments, people, resolvePlanHours, holidayMap]);
 
   const { cells } = useMemo(() => buildMonthDays(year, month0), [year, month0]);
+  const displayCells = useMemo(() => buildDisplayCells(year, month0), [year, month0]);
 
   const renderAssignments = (list = []) =>
     list.map((assg, idx) => {
@@ -1102,10 +1234,11 @@ export default function PersonScheduleCalendar({
       const isPinned = !!assg?.pinned;
       return (
         <div
-          key={idx}
-          className={`rounded bg-blue-50 border border-blue-200 px-1 py-0.5 text-[11px] text-blue-700 mt-1 flex items-center justify-between gap-2 group ${
+          key={assg.id ?? `${assg.shiftCode || ""}-${assg.roleLabel || ""}-${idx}`}
+          className={`rounded bg-blue-50 border border-blue-200 px-1 py-0.5 text-[11px] text-blue-700 mt-1 flex items-center justify-between gap-2 group overflow-hidden ${
             isEditable ? "cursor-pointer hover:bg-blue-100" : ""
           }`}
+          title={[assg.shiftCode || assg.code || "-", assg.roleLabel || ""].filter(Boolean).join(" · ")}
           onClick={isEditable ? () => openEditModal(assg) : undefined}
           role={isEditable ? "button" : undefined}
           tabIndex={isEditable ? 0 : undefined}
@@ -1120,10 +1253,10 @@ export default function PersonScheduleCalendar({
               : undefined
           }
         >
-          <span className="flex items-center gap-1">
+          <span className="flex min-w-0 items-center gap-1">
             {isPinned && <span title="Sabitlenmiş">📌</span>}
-            <span className="font-semibold">{assg.shiftCode || assg.code || "-"}</span>
-            {assg.roleLabel ? <span className="ml-1">{assg.roleLabel}</span> : null}
+            <span className="shrink-0 font-semibold">{assg.shiftCode || assg.code || "-"}</span>
+            {assg.roleLabel ? <span className="ml-1 truncate">{assg.roleLabel}</span> : null}
           </span>
           {isEditable && (
             <button
@@ -1255,15 +1388,11 @@ export default function PersonScheduleCalendar({
     <div className="space-y-4">
       {/* Başlık ve Personel Seçici */}
       <div className="flex flex-wrap items-end gap-3">
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-slate-500">Yıl</span>
-          <span className="text-sm font-semibold text-slate-800">{year}</span>
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-slate-500">Ay</span>
-          <span className="text-sm font-semibold text-slate-800">
-            {Intl.DateTimeFormat("tr-TR", { month: "long" }).format(new Date(year, month0))}
-          </span>
+        <div className="min-w-[140px]">
+          <div className="text-xs text-slate-500">Dönem</div>
+          <div className="text-base font-semibold text-slate-800">
+            {Intl.DateTimeFormat("tr-TR", { month: "long", year: "numeric" }).format(new Date(year, month0))}
+          </div>
         </div>
         <div className="flex-1" />
         {(role.isAdmin || role.isAuthorized) && (
@@ -1308,7 +1437,7 @@ export default function PersonScheduleCalendar({
               : "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200"
           }`}
         >
-          {showStats ? "📊 Özet" : "📊 Özet"}
+          {showStats ? "Özeti Gizle" : "Özeti Göster"}
         </button>
       </div>
 
@@ -1326,6 +1455,17 @@ export default function PersonScheduleCalendar({
         </div>
       )}
 
+      {/* Takvim Loading */}
+      {remoteLoading && (
+        <div className="flex items-center gap-2 rounded-lg border border-sky-100 bg-sky-50 px-4 py-2.5 text-sm text-sky-700">
+          <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+          </svg>
+          Çizelge yükleniyor…
+        </div>
+      )}
+
       {/* Takvim Başlığı */}
       <div className="grid grid-cols-7 gap-1 text-xs font-semibold text-slate-500 px-1">
         {dayNameTR.map((name) => (
@@ -1337,16 +1477,40 @@ export default function PersonScheduleCalendar({
 
       {/* Takvim Grid */}
       <div className="grid grid-cols-7 gap-1">
-        {cells.map((dt, idx) => {
-          if (!dt) {
-            return <div key={`empty-${idx}`} className="h-32 rounded-xl bg-transparent" />;
-          }
+        {displayCells.map(({ date: dt, inMonth }, idx) => {
           const dayNum = dt.getDate();
+          if (!inMonth) {
+            return (
+              <DayCard
+                key={`outside-${idx}-${year}-${month0}-${dayNum}`}
+                dayNum={dayNum}
+                dateObj={dt}
+                leaveCode=""
+                assignments={[]}
+                isWeekend={dt.getDay() === 0 || dt.getDay() === 6}
+                requiredCount={0}
+                showCoverageStatus={false}
+                isOutsideMonth
+                renderLeave={renderLeave}
+                renderAssignments={renderAssignments}
+                onAddShift={null}
+                onRemoveShift={null}
+                onEditShift={null}
+                hasConflict={false}
+                conflictLeaveCode=""
+                holiday={null}
+              />
+            );
+          }
           const assignments = assignmentsByDay.get(dayNum) || [];
           const leaveCodeRaw =
             leavesForPerson[String(dayNum)] || leavesForPerson[`${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`];
-          const leaveCode = assignments.length ? "" : formatLeaveValue(leaveCodeRaw);
+          const leaveFormatted = formatLeaveValue(leaveCodeRaw);
+          const hasConflict = assignments.length > 0 && !!leaveFormatted;
+          const leaveCode = hasConflict ? "" : leaveFormatted;
           const isWeekend = dt.getDay() === 0 || dt.getDay() === 6;
+          const dateStr = `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`;
+          const holiday = holidayMap[dateStr] || null;
 
           return (
             <DayCard
@@ -1356,12 +1520,16 @@ export default function PersonScheduleCalendar({
               leaveCode={leaveCode}
               assignments={assignments}
               isWeekend={isWeekend}
-              requiredCount={2}
+              requiredCount={0}
+              showCoverageStatus={false}
               renderLeave={renderLeave}
               renderAssignments={renderAssignments}
               onAddShift={canManage ? () => openAssignModal(dayNum) : null}
               onRemoveShift={canManage ? (assg) => handleRemoveShift(assg, dayNum) : null}
               onEditShift={null}
+              hasConflict={hasConflict}
+              conflictLeaveCode={hasConflict ? leaveFormatted : ""}
+              holiday={holiday}
             />
           );
         })}
@@ -1374,6 +1542,7 @@ export default function PersonScheduleCalendar({
           month={month}
           cells={cells}
           assignments={assignmentsByDay}
+          planSummary={truthSummary}
           requiredPerDay={2}
           workingHours={shiftOptions}
           overtimeStats={overtimeStats}
@@ -1389,6 +1558,14 @@ export default function PersonScheduleCalendar({
         <div className="mt-1">
           <span className="inline-block h-3 w-3 bg-blue-100 border border-blue-200 mr-2 align-middle rounded" />
           Nöbet atamaları (son plan / içe aktarılan görevler)
+        </div>
+        <div className="mt-1">
+          <span className="inline-block h-3 w-3 bg-amber-100 border border-amber-400 mr-2 align-middle rounded" />
+          İzin + Vardiya çakışması (aynı günde her ikisi de mevcut)
+        </div>
+        <div className="mt-1">
+          <span className="inline-block h-3 w-3 bg-orange-100 border border-orange-200 mr-2 align-middle rounded" />
+          Resmi tatil (Türkiye)
         </div>
         <div className="text-[10px] text-slate-400 mt-2">
           Not: Excel'den içe aktarılan görevler, serbest metin tarih ve vardiya alanlarını düzgün biçimde

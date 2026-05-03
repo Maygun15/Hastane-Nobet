@@ -232,7 +232,6 @@ export async function runHybridScheduling({
   token,
 }) {
   try {
-    console.log("[hybrid] Stage 1: Generating draft...");
     const draft = await generateDraftSchedule({
       year,
       month0,
@@ -242,7 +241,6 @@ export async function runHybridScheduling({
       staffRaw,
     });
 
-    console.log("[hybrid] Stage 2: Optimizing with backend...");
     const optimized = await optimizeScheduleWithBackend({
       sectionId,
       serviceId,
@@ -254,7 +252,6 @@ export async function runHybridScheduling({
       token,
     });
 
-    console.log("[hybrid] Stage 3: Comparing results...");
     const comparison = compareSchedules(draft, optimized);
 
     return {

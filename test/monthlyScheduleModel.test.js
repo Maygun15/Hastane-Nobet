@@ -138,3 +138,135 @@ test("parses backend namedAssignments and defs when explicit assignments are mis
   assert.equal(shift?.rowLabel, "SERVIS SORUMLUSU");
   assert.equal(shift?.source, "backend");
 });
+
+test("resolves V1 named assignments to 16 hours in schedule model", () => {
+  globalThis.localStorage.setItem(
+    `schedule::${YM}`,
+    JSON.stringify({
+      data: {
+        roster: {
+          namedAssignments: {
+            19: { "row-1": ["Gamze Ozturk"] },
+          },
+        },
+        defs: [
+          { id: "row-1", shiftCode: "V1", label: "YEŞİL" },
+        ],
+      },
+      sectionId: "calisma-cizelgesi",
+    })
+  );
+
+  const model = getScheduleModelSync({ year: 2026, month: 3, people: PEOPLE });
+  const shift = getPersonDayShift({
+    model,
+    personId: "p1",
+    personName: "Gamze Ozturk",
+    day: 19,
+  });
+
+  assert.equal(shift?.shiftCode, "V1");
+  assert.equal(shift?.hours, 16);
+});
+
+test("prefers scoped backend cache for the requested service and role", () => {
+  globalThis.localStorage.setItem(
+    `schedule::${YM}::calisma-cizelgesi::svc-a::Nurse`,
+    JSON.stringify({
+      data: {
+        assignments: [
+          {
+            date: "2026-03-19",
+            personId: "p1",
+            personName: "Gamze Ozturk",
+            shiftCode: "A",
+            roleLabel: "SERVIS SORUMLUSU",
+            hours: 4,
+          },
+        ],
+      },
+      sectionId: "calisma-cizelgesi",
+      serviceId: "svc-a",
+      role: "Nurse",
+    })
+  );
+  globalThis.localStorage.setItem(
+    `schedule::${YM}::calisma-cizelgesi::svc-b::Nurse`,
+    JSON.stringify({
+      data: {
+        assignments: [
+          {
+            date: "2026-03-19",
+            personId: "p1",
+            personName: "Gamze Ozturk",
+            shiftCode: "N",
+            roleLabel: "SERVIS SORUMLUSU",
+            hours: 24,
+          },
+        ],
+      },
+      sectionId: "calisma-cizelgesi",
+      serviceId: "svc-b",
+      role: "Nurse",
+    })
+  );
+
+  const model = getScheduleModelSync({
+    sectionId: "calisma-cizelgesi",
+    serviceId: "svc-a",
+    role: "Nurse",
+    year: 2026,
+    month: 3,
+    people: PEOPLE,
+  });
+  const shift = getPersonDayShift({
+    model,
+    personId: "p1",
+    personName: "Gamze Ozturk",
+    day: 19,
+  });
+
+  assert.equal(shift?.shiftCode, "A");
+  assert.equal(shift?.hours, 4);
+});
+
+test("does not let blank explicit assignments override richer named assignment data", () => {
+  globalThis.localStorage.setItem(
+    `schedule::${YM}`,
+    JSON.stringify({
+      data: {
+        roster: {
+          namedAssignments: {
+            19: { "row-1": ["Gamze Ozturk"] },
+          },
+        },
+        defs: [
+          { id: "row-1", shiftCode: "M", label: "SERVIS SORUMLUSU" },
+        ],
+        assignments: [
+          {
+            date: "2026-03-19",
+            personId: "p1",
+            personName: "Gamze Ozturk",
+            shiftCode: "",
+            roleLabel: "",
+            hours: 0,
+          },
+        ],
+      },
+      sectionId: "calisma-cizelgesi",
+    })
+  );
+
+  const model = getScheduleModelSync({ year: 2026, month: 3, people: PEOPLE });
+  const shift = getPersonDayShift({
+    model,
+    personId: "p1",
+    personName: "Gamze Ozturk",
+    day: 19,
+  });
+
+  assert.equal(shift?.shiftCode, "M");
+  assert.equal(shift?.rowLabel, "SERVIS SORUMLUSU");
+  assert.equal(shift?.hours, 8);
+});

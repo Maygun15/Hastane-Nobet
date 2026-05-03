@@ -54,7 +54,19 @@ function removeFromScheduleCache({ year, month, day, personId, personName }) {
   const dateStr = `${year}-${pad2(month)}-${pad2(day)}`;
   const pid = String(personId || "").trim();
   const pCanon = canon(personName || "");
-  const cacheKeys = [`schedule::${ym}`, `monthlySchedule::${ym}`];
+  const cacheKeys = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key) continue;
+    if (
+      key === `schedule::${ym}` ||
+      key === `monthlySchedule::${ym}` ||
+      key.startsWith(`schedule::${ym}::`) ||
+      key.startsWith(`monthlySchedule::${ym}::`)
+    ) {
+      cacheKeys.push(key);
+    }
+  }
 
   for (const key of cacheKeys) {
     const payload = LS.get(key, null);
@@ -176,7 +188,7 @@ export function scanMonthConflicts({ people, year, month }) {
   for (const person of people || []) {
     for (let day = 1; day <= 31; day += 1) {
       const result = checkLeaveShiftConflict({
-        personId: person?.id || person?._id,
+        personId: String(person?.id || person?._id || person?.personId || "").trim(),
         personName: person?.fullName || person?.name || "",
         year,
         month,

@@ -1,5 +1,11 @@
-function personIdOf(person) {
+// Tek ve yetkili ID çözümleyici: id/_id/personId/pid'yi dener.
+// TC numarası, kod veya diğer alanlar sistem ID'si olarak KULLANILMAZ.
+export function resolvePersonId(person) {
   return String(person?.id || person?._id || person?.personId || person?.pid || "").trim();
+}
+
+function personIdOf(person) {
+  return resolvePersonId(person);
 }
 
 function personNameOf(person) {

@@ -12,29 +12,29 @@ export const DEFAULT_CATEGORIES = [
 
 export const DEFAULT_SERVICES_SEED = [
   // ——— Dahili (örnekler) ———
-  { id: crypto.randomUUID(), name: "Kardiyoloji", category: "Dahili Branşlar", active: true, description: "" },
-  { id: crypto.randomUUID(), name: "Nefroloji", category: "Dahili Branşlar", active: true, description: "" },
-  { id: crypto.randomUUID(), name: "Endokrinoloji", category: "Dahili Branşlar", active: true, description: "" },
-  { id: crypto.randomUUID(), name: "Gastroenteroloji", category: "Dahili Branşlar", active: true, description: "" },
-  { id: crypto.randomUUID(), name: "Psikiyatri", category: "Dahili Branşlar", active: true, description: "" },
+  { id: "seed-kardiyoloji-001", name: "Kardiyoloji", category: "Dahili Branşlar", active: true, description: "" },
+  { id: "seed-nefroloji-002", name: "Nefroloji", category: "Dahili Branşlar", active: true, description: "" },
+  { id: "seed-endokrinoloji-003", name: "Endokrinoloji", category: "Dahili Branşlar", active: true, description: "" },
+  { id: "seed-gastroenteroloji-004", name: "Gastroenteroloji", category: "Dahili Branşlar", active: true, description: "" },
+  { id: "seed-psikiyatri-005", name: "Psikiyatri", category: "Dahili Branşlar", active: true, description: "" },
   // ——— Cerrahi ———
-  { id: crypto.randomUUID(), name: "Genel Cerrahi", category: "Cerrahi Branşlar", active: true, description: "" },
-  { id: crypto.randomUUID(), name: "Beyin Cerrahisi", category: "Cerrahi Branşlar", active: true, description: "" },
-  { id: crypto.randomUUID(), name: "Ortopedi", category: "Cerrahi Branşlar", active: true, description: "" },
-  { id: crypto.randomUUID(), name: "Üroloji", category: "Cerrahi Branşlar", active: true, description: "" },
-  { id: crypto.randomUUID(), name: "KBB", category: "Cerrahi Branşlar", active: true, description: "" },
+  { id: "seed-genel-cerrahi-006", name: "Genel Cerrahi", category: "Cerrahi Branşlar", active: true, description: "" },
+  { id: "seed-beyin-cerrahisi-007", name: "Beyin Cerrahisi", category: "Cerrahi Branşlar", active: true, description: "" },
+  { id: "seed-ortopedi-008", name: "Ortopedi", category: "Cerrahi Branşlar", active: true, description: "" },
+  { id: "seed-uroloji-009", name: "Üroloji", category: "Cerrahi Branşlar", active: true, description: "" },
+  { id: "seed-kbb-010", name: "KBB", category: "Cerrahi Branşlar", active: true, description: "" },
   // ——— Acil/Yoğun ———
-  { id: crypto.randomUUID(), name: "Acil Servis", category: "Yoğun Bakım / Acil", active: true, description: "" },
-  { id: crypto.randomUUID(), name: "Erişkin Yoğun Bakım", category: "Yoğun Bakım / Acil", active: true, description: "" },
-  { id: crypto.randomUUID(), name: "KVC Yoğun Bakım", category: "Yoğun Bakım / Acil", active: false, description: "" },
+  { id: "seed-acil-servis-011", name: "Acil Servis", category: "Yoğun Bakım / Acil", active: true, description: "" },
+  { id: "seed-eriskin-ybb-012", name: "Erişkin Yoğun Bakım", category: "Yoğun Bakım / Acil", active: true, description: "" },
+  { id: "seed-kvc-ybb-013", name: "KVC Yoğun Bakım", category: "Yoğun Bakım / Acil", active: false, description: "" },
   // ——— Poliklinik ———
-  { id: crypto.randomUUID(), name: "Dahiliye Polikliniği", category: "Poliklinikler", active: true, description: "" },
-  { id: crypto.randomUUID(), name: "Göz Polikliniği", category: "Poliklinikler", active: true, description: "" },
+  { id: "seed-dahiliye-poliklinik-014", name: "Dahiliye Polikliniği", category: "Poliklinikler", active: true, description: "" },
+  { id: "seed-goz-poliklinik-015", name: "Göz Polikliniği", category: "Poliklinikler", active: true, description: "" },
   // ——— Lab/Görüntüleme ———
-  { id: crypto.randomUUID(), name: "Biyokimya Laboratuvarı", category: "Laboratuvar / Görüntüleme", active: true, description: "" },
-  { id: crypto.randomUUID(), name: "Radyoloji", category: "Laboratuvar / Görüntüleme", active: true, description: "" },
+  { id: "seed-biyokimya-lab-016", name: "Biyokimya Laboratuvarı", category: "Laboratuvar / Görüntüleme", active: true, description: "" },
+  { id: "seed-radyoloji-017", name: "Radyoloji", category: "Laboratuvar / Görüntüleme", active: true, description: "" },
   // ——— Destek ———
-  { id: crypto.randomUUID(), name: "Sterilizasyon Ünitesi", category: "Destek Birimleri", active: true, description: "" },
+  { id: "seed-sterilizasyon-018", name: "Sterilizasyon Ünitesi", category: "Destek Birimleri", active: true, description: "" },
 ];
 
 function readLS() {

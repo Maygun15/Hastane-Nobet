@@ -9,6 +9,8 @@ function todayYM() {
 
 const initial = {
   ym: todayYM(),
+  activeServiceId: "",   // Seçili servis — tüm sekmeler tarafından paylaşılır
+  activeRole: "Nurse",   // Seçili rol (Nurse|Doctor) — tüm sekmeler tarafından paylaşılır
   // temel modeller (şimdilik boş; ileride dolduracağız)
   personnelById: {},   // {id: {id, fullName, title, service, tckn? ...}}
   rulesById: {},       // {id: {...}}
@@ -41,6 +43,18 @@ export const useAppStore = create(
         set({ ym: { year: d.getFullYear(), month: d.getMonth() + 1 } });
       },
       gotoToday: () => set({ ym: todayYM() }),
+
+      /* === SERVİS & ROL === */
+      setActiveServiceId: (id) => set({ activeServiceId: String(id ?? "") }),
+      setActiveRole: (role) => {
+        const val = role === "Doctor" ? "Doctor" : "Nurse";
+        set({ activeRole: val });
+        // Geriye dönük uyumluluk: LS ve event — eski bileşenler bunları dinliyor
+        try {
+          localStorage.setItem("activeRole", JSON.stringify(val));
+          window.dispatchEvent(new CustomEvent("activeRole:changed", { detail: val }));
+        } catch {}
+      },
 
       /* === PERSONNEL === */
       upsertPersonnel: (list) =>
@@ -82,7 +96,7 @@ export const useAppStore = create(
       /* === LEAVES === */
       setLeavesForPersonMonth: (personId, leavesArr) =>
         set((s) => ({
-          leavesByPerson: { ...s.leavesByPerson, [personId]: Array.isArray(leavesArr) ? leavesArr : [] },
+          leavesByPerson: { ...s.leavesByPerson, [personId]: Array.isArray(leavesArr) ? [...leavesArr] : [] },
         })),
 
       /* === RULES & LEAVE TYPES (örnek) === */

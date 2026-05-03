@@ -10,10 +10,14 @@ import React, {
 } from "react";
 import * as XLSX from "xlsx";
 import { LS } from "../utils/storage.js";
-import { fetchPersonnel, getMonthlySchedule } from "../api/apiAdapter.js";
+import { fetchPersonnel, getGeneratedSchedule, getMonthlySchedule } from "../api/apiAdapter.js";
 import { fetchHolidayCalendar } from "../api/apiAdapter.js";
 import { isGroupLabel } from "../lib/dataResolver.js";
 import { maskTC } from "../utils/format.js";
+import {
+  buildPersonDayHoursMapFromAssignments,
+  createPlanWorkHourResolver,
+} from "../utils/planWorkCalculator.js";
 
 /* ========= Şablon başlıkları ========= */
 const HEADER_STATIC_LEFT = [
@@ -225,10 +229,11 @@ const fallbackShiftHours = (code, label = "") => {
   if (c.includes("IZIN") || c.includes("İZİN") || lbl.includes("İZİN") || lbl.includes("IZIN")) return 0;
   if (c === "A" || /^A[\s/_-]/.test(c)) return 4;
   if (c.includes("4")) return 4;
+  if (c === "V1" || /^V1[\s/_-]/.test(c)) return 16;
   if (c.includes("8") || c === "M" || c === "GUND") return 8;
   if (c.includes("12")) return 12;
   if (["YARIM", "HALF"].some((k) => c.includes(k))) return 4;
-  if (["N", "GECE", "V2", "V1", "SV", "24"].some((k) => c.includes(k))) return 24;
+  if (["N", "GECE", "V2", "SV", "24"].some((k) => c.includes(k))) return 24;
   if (lbl.includes("NÖBET") || lbl.includes("GECE") || lbl.includes("SORUMLU")) return 24;
   return 0;
 };
@@ -324,7 +329,7 @@ function usePeople(roleLabel, sourcePeople = []){
 function emptyRow(person, monthlyRequired = LEGACY_MONTHLY_DEFAULT){
   return {
     sira:"", unvan:person?.unvan||"", tckn:person?.tckn||"", adsoyad:person?.adsoyad||"",
-    days:{}, aylikCalistigiSaat:0, gecenAydanDevir:0, gelecekAyaDevir:0, aylikCalisilacak:monthlyRequired,
+    days:{}, editedDays:{}, aylikCalistigiSaat:0, gecenAydanDevir:0, gelecekAyaDevir:0, aylikCalisilacak:monthlyRequired,
     toplamCalisma:0, ucretNobet:0, birimDisi:0,
   };
 }
@@ -373,7 +378,7 @@ function mostCommonMonthlyValue(rows) {
 }
 
 /* ========= Ana Bileşen (imperative API ile) ========= */
-const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHours, people: peopleProp = [] }, ref) {
+const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHours, people: peopleProp = [], serviceId = "" }, ref) {
   const year   = Number(ym?.year);
   const month1 = Number(ym?.month);                     // 1..12
   const month0 = Math.max(0, Math.min(11, month1 - 1)); // 0..11
@@ -388,11 +393,13 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
   // Kişiler + kod-saat haritası
   const people = usePeople(roleLabel, peopleProp);
   const shiftCodeHours = useShiftCodeHours(workingHours);
+  const resolvePlanHours = useMemo(() => createPlanWorkHourResolver(workingHours), [workingHours]);
   const [holidays, setHolidays] = useState([]);
   const stdMonthly = useMemo(() => computeMonthlyStdHours(year, month1, holidays), [year, month1, holidays]);
 
   // Satırlar + yükleme durumu
   const [rows, setRows] = useState([]);
+  const [truthAssignments, setTruthAssignments] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [version, setVersion] = useState(1);
   const fileRef = useRef(null);
@@ -400,6 +407,43 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
   const storageKey = useMemo(() => `monthlyHoursSheet/${ymKey(year, month0)}`, [year, month0]);
   const latestKey   = "monthlyHoursSheet/latest";
   const stdLsKey = useMemo(() => stdKey(year, month0), [year, month0]);
+  const truthDayHoursIndex = useMemo(
+    () => buildPersonDayHoursMapFromAssignments(truthAssignments, {
+      people: peopleProp,
+      resolveHours: resolvePlanHours,
+    }),
+    [truthAssignments, peopleProp, resolvePlanHours]
+  );
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const assignments = [];
+      const serviceKeys = Array.from(new Set([String(serviceId || ""), ""]));
+      for (const role of ["Nurse", "Doctor"]) {
+        for (const sid of serviceKeys) {
+          const generated = await getGeneratedSchedule({
+            sectionId: "calisma-cizelgesi",
+            serviceId: sid,
+            role,
+            year,
+            month: month1,
+          }).catch((err) => {
+            if (err?.status !== 404) console.error("getGeneratedSchedule err:", err);
+            return null;
+          });
+          if (Array.isArray(generated?.assignments) && generated.assignments.length) {
+            assignments.push(...generated.assignments);
+            break;
+          }
+        }
+      }
+      if (active) setTruthAssignments(assignments);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [year, month1, serviceId]);
 
   /* Yükle */
   useEffect(() => {
@@ -408,6 +452,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
     if (Array.isArray(saved)) {
       const ready = normalizeRows(saved, { sort:true, renumber:true, filterEmpty:true }).map((r) => ({
         ...r,
+        editedDays: { ...(r?.editedDays || {}) },
         ...computeTotals(r, days, shiftCodeHours),
       }));
       setRows(ready);
@@ -439,8 +484,11 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
       const next = [...(prev||[])];
       const r = { ...(next[ri]||{}) };
       const daysMap = { ...((r.days)||{}) };
+      const editedDays = { ...(r.editedDays || {}) };
       daysMap[dayYmd] = value;
       r.days = daysMap;
+      editedDays[dayYmd] = true;
+      r.editedDays = editedDays;
       const totals = computeTotals(r, days, shiftCodeHours);
       next[ri] = { ...r, ...totals };
       return next;
@@ -514,6 +562,37 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
       return changed ? next : prev;
     });
   }, [loaded, days, shiftCodeHours]);
+
+  useEffect(() => {
+    if (!loaded || !truthDayHoursIndex.size) return;
+    setRows((prev) => {
+      let changed = false;
+      const next = (prev || []).map((row) => {
+        const canon = canonName(row?.adsoyad || "");
+        if (!canon) return row;
+        const truthEntry = truthDayHoursIndex.get(`name:${canon}`);
+        if (!truthEntry) return row;
+        const editedDays = { ...(row?.editedDays || {}) };
+        const nextDays = { ...(row?.days || {}) };
+        let rowChanged = false;
+        for (const d of days || []) {
+          if (editedDays[d.ymd]) continue;
+          const truthVal = Number(truthEntry?.byDay?.[d.d]);
+          const normalizedTruth = Number.isFinite(truthVal) && truthVal > 0 ? truthVal : "";
+          const currentVal = nextDays[d.ymd] ?? "";
+          if (String(currentVal ?? "") !== String(normalizedTruth ?? "")) {
+            nextDays[d.ymd] = normalizedTruth;
+            rowChanged = true;
+          }
+        }
+        if (!rowChanged) return row;
+        changed = true;
+        const updated = { ...row, days: nextDays, editedDays };
+        return { ...updated, ...computeTotals(updated, days, shiftCodeHours) };
+      });
+      return changed ? next : prev;
+    });
+  }, [loaded, truthDayHoursIndex, days, shiftCodeHours]);
 
   /* Excel dışa aktar — ISO başlık */
   const exportExcel = () => {
@@ -595,7 +674,12 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
         obj.tckn    = row[2] ?? "";
         obj.adsoyad = row[3] ?? "";
         obj.days = {};
-        dayIdx.forEach(({i, ymd}) => { obj.days[ymd] = (row[i] ?? "").toString(); });
+        obj.editedDays = {};
+        dayIdx.forEach(({i, ymd}) => {
+          const value = (row[i] ?? "").toString();
+          obj.days[ymd] = value;
+          if (String(value).trim() !== "") obj.editedDays[ymd] = true;
+        });
         const base = 4 + dayIdx.length;
         const g = (idx, def=0) => num(row[base+idx], def);
         obj.aylikCalistigiSaat = g(0,0);
@@ -726,19 +810,94 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
         if (!hasKnownPeople) return true;
         return remoteByCanon.has(canon) || metaIndex.byCanon.has(canon);
       };
+
+      const next = Array.isArray(rows) ? rows.map((r) => ({ ...r, days: { ...(r.days || {}) } })) : [];
+      const nameIndex = new Map(next.map((r, i) => [canonName(r?.adsoyad || ""), i]));
+      const ensureRow = (canon, meta) => {
+        if (nameIndex.has(canon)) return nameIndex.get(canon);
+        const newRow = emptyRow({
+          unvan: meta?.title || "",
+          adsoyad: meta?.name || "",
+        });
+        newRow.tckn = meta?.tckn || "";
+        next.push(newRow);
+        const idx = next.length - 1;
+        nameIndex.set(canon, idx);
+        return idx;
+      };
+
+      const truthAssignments = [];
+      const serviceKeys = Array.from(new Set([String(serviceId || ""), ""]));
+      for (const role of ["Nurse", "Doctor"]) {
+        for (const sid of serviceKeys) {
+          const generated = await getGeneratedSchedule({
+            sectionId: "calisma-cizelgesi",
+            serviceId: sid,
+            role,
+            year,
+            month: month1,
+          }).catch((err) => {
+            if (err?.status !== 404) console.error("getGeneratedSchedule err:", err);
+            return null;
+          });
+          if (Array.isArray(generated?.assignments) && generated.assignments.length) {
+            truthAssignments.push(...generated.assignments);
+            break;
+          }
+        }
+      }
+
+      if (truthAssignments.length) {
+        const personDayHours = buildPersonDayHoursMapFromAssignments(truthAssignments, {
+          people: peopleProp,
+          resolveHours: resolvePlanHours,
+        });
+
+        for (const personEntry of personDayHours.values()) {
+          const canon = canonName(personEntry?.personName || "");
+          if (!canon || !isKnownPersonName(personEntry?.personName || "")) continue;
+          const meta = remoteByCanon.get(canon) || metaIndex.byCanon.get(canon) || null;
+          const idx = ensureRow(canon, meta);
+          const row = next[idx];
+          if (meta) {
+            if (meta.title && !row.unvan) row.unvan = meta.title;
+            if (meta.tckn && !row.tckn) row.tckn = meta.tckn;
+            if (meta.name && !row.adsoyad) row.adsoyad = meta.name;
+          }
+          if (!row.adsoyad) row.adsoyad = personEntry.personName || "";
+          for (const [dayNum, hours] of Object.entries(personEntry.byDay || {})) {
+            const ymd = `${year}-${String(month1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+            row.days[ymd] = Number(hours);
+          }
+        }
+
+        const finalized = normalizeRows(
+          next.map((r) => ({ ...r, ...computeTotals(r, days, shiftCodeHours) })),
+          { sort: true, renumber: true, filterEmpty: true }
+        );
+        setRows(finalized);
+        setLoaded(true);
+        alert("Çalışma Çizelgesi'nden aylık tablo dolduruldu.");
+        return;
+      }
+
       const roles = ["Nurse", "Doctor"];
       const assignments = [];
       for (const role of roles) {
-        const schedule = await getMonthlySchedule({
-          sectionId: "calisma-cizelgesi",
-          serviceId: "",
-          role,
-          year,
-          month: month1,
-        }).catch((err) => {
-          if (err?.status !== 404) console.error("getMonthlySchedule err:", err);
-          return null;
-        });
+        let schedule = null;
+        for (const sid of serviceKeys) {
+          schedule = await getMonthlySchedule({
+            sectionId: "calisma-cizelgesi",
+            serviceId: sid,
+            role,
+            year,
+            month: month1,
+          }).catch((err) => {
+            if (err?.status !== 404) console.error("getMonthlySchedule err:", err);
+            return null;
+          });
+          if (schedule) break;
+        }
         const data = schedule?.data || schedule || {};
         const named = {};
         const namedRemote = data?.roster?.namedAssignments;
@@ -830,22 +989,6 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
         alert("Çalışma Çizelgesi verisi bulunamadı. Önce ilgili ayı kaydedin.");
         return;
       }
-
-      const next = Array.isArray(rows) ? rows.map((r) => ({ ...r, days: { ...(r.days || {}) } })) : [];
-      const nameIndex = new Map(next.map((r, i) => [canonName(r?.adsoyad || ""), i]));
-
-      const ensureRow = (canon, meta) => {
-        if (nameIndex.has(canon)) return nameIndex.get(canon);
-        const newRow = emptyRow({
-          unvan: meta?.title || "",
-          adsoyad: meta?.name || "",
-        });
-        newRow.tckn = meta?.tckn || "";
-        next.push(newRow);
-        const idx = next.length - 1;
-        nameIndex.set(canon, idx);
-        return idx;
-      };
 
       assignments.forEach((item) => {
         const canon = canonName(item.name);
@@ -953,7 +1096,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
           </thead>
           <tbody>
             {(rows||[]).map((r,ri)=>(
-              <tr key={ri} style={{ background: ri%2 ? "#ffffff" : "rgba(249,250,251,0.6)" }}>
+              <tr key={r.tckn || r.adsoyad || ri} style={{ background: ri%2 ? "#ffffff" : "rgba(249,250,251,0.6)" }}>
                 <td style={{ border:"1px solid #e5e7eb", padding:4 }}>
                   <input className="border rounded px-2 py-1 w-16" value={r?.sira ?? ""} onChange={(e)=>setField(ri,"sira",e.target.value)} />
                 </td>

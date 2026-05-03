@@ -54,8 +54,6 @@ export default function IDCard({ person, serviceNames }) {
   const [expanded, setExpanded] = useState(false);
   const [revealTC, setRevealTC] = useState(false);
   const [revealPhone, setRevealPhone] = useState(false);
-  console.log("MASK RENDER TC", person?.tc || person?.tckn, maskTC(person?.tc || person?.tckn));
-  console.log("MASK RENDER PHONE", person?.phone, maskPhone(person?.phone));
 
   const servicesDisplay = (
     Array.isArray(serviceNames) && serviceNames.length

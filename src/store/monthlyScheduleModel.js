@@ -4,24 +4,69 @@ import {
   canonName,
   resolvePersonRef,
 } from "../utils/personIdentity.js";
+import { createPlanWorkHourResolver } from "../utils/planWorkCalculator.js";
 import { LS } from "../utils/storage.js";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const canon = (s) => canonName(s || "");
+const normalizeScopePart = (value = "") => {
+  const s = String(value ?? "").trim();
+  return s || "ALL";
+};
 
-function shiftHoursFromCode(code = "") {
-  const c = String(code || "").toUpperCase();
-  if (!c) return 0;
-  if (c === "A" || /^A[\s/_-]?/.test(c)) return 4;
-  if (/^M\d*$/.test(c) || c === "M") return 8;
-  if (["Y", "YILLIK", "E", "R", "İ", "I", "B", "AN", "RAPOR"].includes(c)) return 0;
-  if (c.includes("4")) return 4;
-  if (c.includes("8")) return 8;
-  if (c.includes("12")) return 12;
-  if (["N", "V1", "V2", "SV", "24", "GECE"].some((k) => c.includes(k))) {
-    return 24;
+// Önbellek geçerlilik süresi: 5 dakika
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+function cacheKey({ ym, sectionId = "", serviceId = "", role = "" }) {
+  return `schedule::${ym}::${normalizeScopePart(sectionId)}::${normalizeScopePart(serviceId)}::${normalizeScopePart(role)}`;
+}
+
+function legacyCacheKey(ym) {
+  return `schedule::${ym}`;
+}
+
+function readCache({ ym, sectionId = "", serviceId = "", role = "" }) {
+  const raw =
+    LS.get(cacheKey({ ym, sectionId, serviceId, role }), null) ||
+    LS.get(`monthlySchedule::${ym}::${normalizeScopePart(sectionId)}::${normalizeScopePart(serviceId)}::${normalizeScopePart(role)}`, null) ||
+    LS.get(legacyCacheKey(ym), null) ||
+    LS.get(`monthlySchedule::${ym}`, null);
+  if (!raw) return null;
+  // TTL zarfı varsa kontrol et
+  if (raw?._cachedAt && Date.now() - raw._cachedAt > CACHE_TTL_MS) {
+    const scoped = cacheKey({ ym, sectionId, serviceId, role });
+    LS.remove ? LS.remove(scoped) : localStorage.removeItem(scoped);
+    return null;
   }
-  return 8;
+  return raw;
+}
+
+function writeCache({ ym, sectionId = "", serviceId = "", role = "" }, data) {
+  LS.set(cacheKey({ ym, sectionId, serviceId, role }), { ...data, _cachedAt: Date.now() });
+}
+
+// Dışa açık: yazma işlemlerinden sonra çağrılacak
+export function invalidateScheduleCache(year, month) {
+  const ym = `${year}-${pad2(month)}`;
+  try {
+    const prefixes = [`schedule::${ym}`, `monthlySchedule::${ym}`];
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (prefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}::`))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((key) => localStorage.removeItem(key));
+    window.dispatchEvent(new Event("schedule:invalidated"));
+  } catch {}
+}
+
+const resolveFallbackShiftHours = createPlanWorkHourResolver([]);
+
+function shiftHoursFromCode(code = "", label = "") {
+  return resolveFallbackShiftHours(code, label);
 }
 
 function addModelEntry(target, { personId = "", nameKey = "", day, entry }) {
@@ -61,7 +106,7 @@ function fromRowsV2(people = []) {
       const entry = {
         shiftCode,
         rowLabel: row.label || row.GOREV || row["GÖREV"] || "",
-        hours: shiftHoursFromCode(shiftCode),
+        hours: shiftHoursFromCode(shiftCode, row.label || row.GOREV || row["GÖREV"] || ""),
         source: "scheduleRowsV2",
       };
       addModelEntry({ assignments, byName }, { personId, nameKey, day, entry });
@@ -104,10 +149,11 @@ function fromNamedAssignments(data, people = []) {
         const nameKey = canon(name);
         const pid = String(resolvePersonRef({ name: nameKey }, peopleIndex)?.id || "").trim();
         const shiftCode = shiftByRow.get(rowId) || "";
+        const rowLabel = labelByRow.get(rowId) || rowId;
         const entry = {
           shiftCode,
-          rowLabel: labelByRow.get(rowId) || rowId,
-          hours: shiftHoursFromCode(shiftCode),
+          rowLabel,
+          hours: shiftHoursFromCode(shiftCode, rowLabel),
           source: "backend",
         };
         addModelEntry({ assignments, byName }, { personId: pid, nameKey, day, entry });
@@ -149,10 +195,14 @@ function fromExplicitAssignments(data, people = []) {
     const shiftCode = item.shiftCode || item.shift || item.code || "";
     const rowLabel = item.roleLabel || item.rowLabel || item.area || item.label || "";
     const explicitHours = Number(item.hours);
+    const hasUsefulHours = Number.isFinite(explicitHours) && explicitHours > 0;
+    const hasUsefulShift = !!String(shiftCode || "").trim();
+    const hasUsefulLabel = !!String(rowLabel || "").trim();
+    if (!hasUsefulHours && !hasUsefulShift && !hasUsefulLabel) continue;
     const entry = {
       shiftCode,
       rowLabel,
-      hours: Number.isFinite(explicitHours) ? explicitHours : shiftHoursFromCode(shiftCode),
+      hours: hasUsefulHours ? explicitHours : shiftHoursFromCode(shiftCode, rowLabel),
       source: "backend",
     };
     addModelEntry({ assignments, byName }, { personId: resolvedPid, nameKey, day, entry });
@@ -176,6 +226,29 @@ function fromBackendSchedule(data, people = []) {
   return merge(named, explicit) || { assignments: {}, byName: {} };
 }
 
+function entryScore(entry) {
+  if (!entry || typeof entry !== "object") return 0;
+  let score = 0;
+  if (String(entry.shiftCode || "").trim()) score += 4;
+  if (String(entry.rowLabel || "").trim()) score += 2;
+  if (Number(entry.hours) > 0) score += 3;
+  if (entry.source === "backend") score += 1;
+  return score;
+}
+
+function mergeDayMaps(baseDays = {}, overrideDays = {}) {
+  const result = { ...(baseDays || {}) };
+  for (const [day, entry] of Object.entries(overrideDays || {})) {
+    const existing = result[day];
+    if (!existing) {
+      result[day] = entry;
+      continue;
+    }
+    result[day] = entryScore(entry) >= entryScore(existing) ? entry : existing;
+  }
+  return result;
+}
+
 function merge(base, override) {
   if (!base) return override || { assignments: {}, byName: {} };
   if (!override) return base;
@@ -186,18 +259,18 @@ function merge(base, override) {
   };
 
   for (const [pid, days] of Object.entries(override.assignments || {})) {
-    result.assignments[pid] = { ...(result.assignments[pid] || {}), ...days };
+    result.assignments[pid] = mergeDayMaps(result.assignments[pid] || {}, days || {});
   }
   for (const [name, days] of Object.entries(override.byName || {})) {
-    result.byName[name] = { ...(result.byName[name] || {}), ...days };
+    result.byName[name] = mergeDayMaps(result.byName[name] || {}, days || {});
   }
 
   return result;
 }
 
-export function getScheduleModelSync({ year, month, people = [] }) {
+export function getScheduleModelSync({ sectionId = "", serviceId = "", role = "", year, month, people = [] }) {
   const ym = `${year}-${pad2(month)}`;
-  const backendCache = LS.get(`schedule::${ym}`, null) || LS.get(`monthlySchedule::${ym}`, null);
+  const backendCache = readCache({ ym, sectionId, serviceId, role });
   if (hasBackendEnvelope(backendCache)) {
     return fromBackendSchedule(backendCache, people);
   }
@@ -214,14 +287,14 @@ export async function getScheduleModel({ sectionId, serviceId, role = "", year, 
   try {
     if (sectionId) {
       backendData = await getMonthlySchedule({ sectionId, serviceId, role, year, month });
-      if (backendData) LS.set(`schedule::${ym}`, backendData);
+      if (backendData) writeCache({ ym, sectionId, serviceId, role }, backendData);
     }
   } catch {
     backendData = null;
   }
 
   if (!backendData) {
-    backendData = LS.get(`schedule::${ym}`, null) || LS.get(`monthlySchedule::${ym}`, null);
+    backendData = readCache({ ym, sectionId, serviceId, role });
   }
   if (hasBackendEnvelope(backendData)) {
     return fromBackendSchedule(backendData, people);

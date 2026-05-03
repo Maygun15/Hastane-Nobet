@@ -1,5 +1,6 @@
 // src/tabs/PersonnelTab.jsx
 import React, { useEffect, useMemo, useState } from "react";
+import { Building2, ShieldCheck, Stethoscope, UserRound, Users } from "lucide-react";
 import TopTabsBar from "../components/TopTabsBar.jsx";
 import PeopleTab from "./PeopleTab.jsx";
 import { ROLE } from "../constants/enums.js";
@@ -22,6 +23,19 @@ const DEFAULT_SECTIONS = [
   { id: "hemsireler", name: "Hemşireler", role: "nurse" },
   { id: "doktorlar",  name: "Doktorlar",  role: "doctor" },
 ];
+
+const SECTION_META = {
+  nurse: {
+    icon: Stethoscope,
+    eyebrow: "Hemşire Grupları",
+    description: "Hemşire gruplarını, çalışma alanlarını ve vardiya uygunluklarını yönetin.",
+  },
+  doctor: {
+    icon: UserRound,
+    eyebrow: "Doktor Grupları",
+    description: "Doktor personelini, hizmet kapsamını ve çalışma bilgilerinin temel kaydını yönetin.",
+  },
+};
 
 /** URL yardımcıları */
 const getQueryParam = (k) => new URLSearchParams(window.location.search).get(k);
@@ -217,42 +231,102 @@ export default function PersonnelTab({
     [effectiveSetDoctors, masterWorkAreas]
   );
 
-  return (
-    <div className="space-y-4">
-      <TopTabsBar
-        tabs={tabs}
-        activeId={activeId}
-        onSelect={(id) => {
-          setActiveId(id);
-          setQueryParam("sec", id); // anında URL senkronu
-        }}
-        onMove={move}
-        onAdd={(name) => {
-          // 👇 Rolü isme göre tahmin et: "doktor" geçiyorsa doctor, aksi halde nurse
-          const role = /doktor|doctor/i.test(name) ? "doctor" : "nurse";
-          const base = slugifyTR(name) || (role === "doctor" ? "doktor-grubu" : "hemsire-grubu");
-          const id = uniqueId(base, new Set(sections.map(s => s.id)));
-          persist([...sections, { id, name, role }], id);
-        }}
-        onRename={renameSection}
-        onRemove={removeSection}
-        getHref={getHref}
-        storageKey="TopTabsBar:Personnel"
-      />
+  const activeMeta = SECTION_META[active?.role] || SECTION_META.nurse;
+  const ActiveIcon = activeMeta.icon;
+  const totalPersonnel = effectiveNurses.length + effectiveDoctors.length;
+  const visibleServices = services.length;
 
-      {/* İçerik */}
-      <div className="rounded-lg border bg-white p-4">
-        <SectionContent
-          section={active}
-          workAreas={workAreaOptions}
-          workingHours={effectiveWorkingHours}
-          services={services}
-          nurses={normalizePeople(effectiveNurses, masterWorkAreas)}
-          setNurses={setNursesNormalized}
-          doctors={normalizePeople(effectiveDoctors, masterWorkAreas)}
-          setDoctors={setDoctorsNormalized}
-        />
-      </div>
+  return (
+    <div className="space-y-5">
+      <section className="rounded-[30px] border border-slate-200 bg-white px-5 py-5 shadow-sm md:px-6">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_340px]">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
+                <ActiveIcon className="h-3.5 w-3.5 text-sky-700" />
+                {activeMeta.eyebrow}
+              </span>
+              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Personel Yapılandırması
+              </span>
+            </div>
+            <div className="mt-4 flex items-start gap-4">
+              <div className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm md:flex">
+                <ActiveIcon className="h-7 w-7" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-2xl font-semibold tracking-tight text-slate-950">{active?.name || "Personel"}</h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{activeMeta.description}</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+                    <Users className="h-4 w-4 text-sky-700" />
+                    Toplam {totalPersonnel} personel
+                  </span>
+                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+                    <Building2 className="h-4 w-4 text-emerald-700" />
+                    {visibleServices} servis görünür
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Aktif Grup</div>
+              <div className="mt-2 text-lg font-semibold text-slate-900">{active?.name || "Personel"}</div>
+              <p className="mt-1 text-sm leading-5 text-slate-600">Çalışma alanı ve vardiya uygunluğu bu grup üstünden yönetilir.</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Operasyon Etkisi</div>
+              <div className="mt-2 text-sm font-medium text-slate-800">Planlama, çizelgeler ve kullanıcı bağlantıları bu kayıtları kullanır.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
+        <aside className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+          <TopTabsBar
+            tabs={tabs}
+            activeId={activeId}
+            onSelect={(id) => {
+              setActiveId(id);
+              setQueryParam("sec", id);
+            }}
+            onMove={move}
+            onAdd={(name) => {
+              const role = /doktor|doctor/i.test(name) ? "doctor" : "nurse";
+              const base = slugifyTR(name) || (role === "doctor" ? "doktor-grubu" : "hemsire-grubu");
+              const id = uniqueId(base, new Set(sections.map(s => s.id)));
+              persist([...sections, { id, name, role }], id);
+            }}
+            onRename={renameSection}
+            onRemove={removeSection}
+            getHref={getHref}
+            storageKey="TopTabsBar:Personnel"
+            variant="sidebar"
+            title="Personel Grupları"
+            subtitle="Ekipleri ayrı çalışma kümeleri halinde yönetin. Aktif grup sağdaki kayıt ekranını belirler."
+            addLabel="Grup Ekle"
+            inputPlaceholder="Yeni grup adı"
+          />
+        </aside>
+
+        <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+          <SectionContent
+            section={active}
+            workAreas={workAreaOptions}
+            workingHours={effectiveWorkingHours}
+            services={services}
+            nurses={normalizePeople(effectiveNurses, masterWorkAreas)}
+            setNurses={setNursesNormalized}
+            doctors={normalizePeople(effectiveDoctors, masterWorkAreas)}
+            setDoctors={setDoctorsNormalized}
+          />
+        </div>
+      </section>
     </div>
   );
 }

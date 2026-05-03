@@ -1,6 +1,15 @@
 // src/tabs/SchedulesTab.jsx
 import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import * as XLSX from "xlsx";
+import {
+  CalendarClock,
+  ClipboardList,
+  Clock3,
+  FileSpreadsheet,
+  ShieldCheck,
+  Stethoscope,
+  Users,
+} from "lucide-react";
 import { LS } from "../utils/storage.js";
 import DutyRowsEditor from "../components/DutyRowsEditor.jsx";
 import ScheduleToolbar from "../components/ScheduleToolbar.jsx";
@@ -13,6 +22,7 @@ import { checkLeaveShiftConflict, removeShiftOnDay } from "../utils/conflictChec
 import useActiveYM from "../hooks/useActiveYM.js";
 import useServiceScope from "../hooks/useServiceScope.js"; // ⬅️ YENİ: servis kapsamı
 import { useAppData } from "../context/AppDataContext.jsx";
+import { useAppStore } from "../state/appStore";
 
 /* =========================================================
    INLINE SCHEDULER — “Liste Oluştur” için yedek algoritma
@@ -297,6 +307,46 @@ const toZeroBased = (m) => {
 const toOneBased = (m) => toZeroBased(m) + 1;
 /* eslint-enable no-unused-vars */
 
+const MONTHS_TR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+
+const SECTION_META = {
+  "calisma-cizelgesi": {
+    icon: ClipboardList,
+    eyebrow: "Planlama Motoru",
+    shortLabel: "Çalışma",
+    description: "Vardiya atamalarını üretin, düzenleyin ve kaydedin. Bu alan diğer çizelgelerin veri kaynağıdır.",
+  },
+  "aylik-calisma-ve-mesai-saatleri-cizelgesi": {
+    icon: FileSpreadsheet,
+    eyebrow: "Aylık Hesap",
+    shortLabel: "Aylık Çalışma",
+    description: "Çalışma çizelgesinden gelen vardiyaları aylık saat ve devir hesabına dönüştürün.",
+  },
+  "fazla-mesai-takip": {
+    icon: Clock3,
+    eyebrow: "Mesai İzleme",
+    shortLabel: "Fazla Mesai",
+    description: "Personel bazında fiili çalışma, izin kredisi ve fazla mesai çıktısını tek tabloda izleyin.",
+  },
+  "toplu-izin-listesi": {
+    icon: CalendarClock,
+    eyebrow: "İzin Yönetimi",
+    shortLabel: "Toplu İzin",
+    description: "Ay içindeki izin kodlarını toplu görün, aktarın ve diğer çizelgelerle uyumlu tutun.",
+  },
+};
+
+function getSectionMeta(sectionId, fallbackName = "") {
+  return (
+    SECTION_META[sectionId] || {
+      icon: FileSpreadsheet,
+      eyebrow: "Çizelge Modülü",
+      shortLabel: fallbackName || "Çizelge",
+      description: "Bu çalışma alanı için özel içerik burada görüntülenir.",
+    }
+  );
+}
+
 function getSecFromLocation() {
   try {
     const { hash, search } = window.location;
@@ -360,7 +410,9 @@ function SectionContent({
   allLeaves,
   leaveTypes,
   workingHours,
-  selectedServiceId, // ⬅️ YENİ
+  selectedServiceId,
+  selectedServiceName,
+  activeRole,
 }) {
   const editorRef = useRef(null);
   const monthlyRef = useRef(null);
@@ -578,6 +630,10 @@ function SectionContent({
               month={month}
               sectionId={sectionId}
               serviceId={selectedServiceId}
+              role={activeRole}
+              peopleAll={peopleAll}
+              workingHours={workingHours}
+              personLeaves={allLeaves}
             />
           </div>
         </div>
@@ -600,6 +656,7 @@ function SectionContent({
               ym={{ year, month }}
               people={Array.isArray(peopleAll) ? peopleAll : []}
               workingHours={workingHours}
+              serviceId={selectedServiceId || ""}
               setYm={(val) => {
                 const y = Number(val?.year) || year;
                 const m = Number(val?.month) || month;
@@ -629,6 +686,8 @@ function SectionContent({
               workingHours={workingHours}
               people={Array.isArray(peopleAll) ? peopleAll : []}
               leaveTypes={Array.isArray(leaveTypes) ? leaveTypes : []}
+              selectedServiceId={selectedServiceId}
+              selectedServiceName={selectedServiceName}
             />
           </div>
         </div>
@@ -681,7 +740,7 @@ function SectionContent({
 /* =========================
    Ana bileşen
 ========================= */
-export default function SchedulesTab({ workingHours, peopleAll: peopleAllProp, leaveTypes: leaveTypesProp }) {
+export default function SchedulesTab({ workAreas, workingHours, peopleAll: peopleAllProp, leaveTypes: leaveTypesProp, personLeaves: personLeavesProp }) {
   const appData = useAppData();
   const effectiveWorkingHours = Array.isArray(workingHours)
     ? workingHours
@@ -692,9 +751,11 @@ export default function SchedulesTab({ workingHours, peopleAll: peopleAllProp, l
   const effectiveLeaveTypesProp = Array.isArray(leaveTypesProp)
     ? leaveTypesProp
     : (Array.isArray(appData.leaveTypes) ? appData.leaveTypes : []);
-  const effectivePersonLeaves = appData?.personLeaves && typeof appData.personLeaves === "object"
-    ? appData.personLeaves
-    : null;
+  const effectivePersonLeaves = (personLeavesProp && typeof personLeavesProp === "object")
+    ? personLeavesProp
+    : (appData?.personLeaves && typeof appData.personLeaves === "object")
+      ? appData.personLeaves
+      : null;
 
   const initialSections = useMemo(() => {
     const v = LS.get(LS_KEY, DEFAULT_SECTIONS);
@@ -821,7 +882,16 @@ export default function SchedulesTab({ workingHours, peopleAll: peopleAllProp, l
 
   /* ======== SERVİS KAPSAMI (3.5) ======== */
   const scope = useServiceScope();
-  const [svc, setSvc] = useState(scope.defaultServiceId);
+  // Servis ve rol seçimi artık Zustand store üzerinden yönetiliyor.
+  // PlanTab da aynı store'u kullandığı için sekmeler arası otomatik senkronize.
+  const storeServiceId = useAppStore((s) => s.activeServiceId);
+  const setStoreServiceId = useAppStore((s) => s.setActiveServiceId);
+  const svc = storeServiceId || scope.defaultServiceId || "";
+  const setSvc = useCallback((id) => setStoreServiceId(id), [setStoreServiceId]);
+
+  /* ======== ROL SENKRONIZASYONU (PlanTab ile — Zustand store) ======== */
+  const activeRole = useAppStore((s) => s.activeRole);
+  const setActiveRole = useAppStore((s) => s.setActiveRole);
 
   // Person kaydından servisId nasıl okunur?
   const getPersonServiceId = useCallback((p) =>
@@ -839,95 +909,246 @@ export default function SchedulesTab({ workingHours, peopleAll: peopleAllProp, l
   }, [peopleAll, scope.isAdmin, scope.allowedIds, svc, getPersonServiceId]);
 
   const selectedServiceId = scope.isAdmin ? (svc || "") : scope.defaultServiceId;
+  const selectedServiceName = scope.isAdmin
+    ? (selectedServiceId
+        ? (scope.servicesById.get(String(selectedServiceId))?.name
+            || scope.servicesById.get(String(selectedServiceId))?.code
+            || String(selectedServiceId))
+        : "Tümü")
+    : (
+        scope.servicesById.get(scope.defaultServiceId)?.name
+        || scope.servicesById.get(scope.defaultServiceId)?.code
+        || scope.defaultServiceId
+        || "-"
+      );
+
+  const activeMeta = getSectionMeta(active?.id, active?.name);
+  const ActiveIcon = activeMeta.icon;
+  const monthLabel = `${MONTHS_TR[Math.max(0, Math.min(11, Number(month || 1) - 1))]} ${year}`;
+  const scopeBadgeLabel = scope.isAdmin ? (selectedServiceName || "Tümü") : selectedServiceName;
+  const roleLabel = activeRole === "Doctor" ? "Doktor" : "Hemşire";
 
   return (
-    <div className="p-4 space-y-4">
-      {/* Sekme pill’leri */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div
-          className="flex items-center gap-2 overflow-x-auto pr-2"
-          style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-        >
-          {sections.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => handleTabClick(s.id)}
-              title={s.id}
-              className={`shrink-0 rounded-full border px-4 h-10 text-sm ${
-                s.id === activeId
-                  ? "bg-blue-600 text-white border-blue-600"
-                  : "bg-white hover:bg-gray-50"
-              }`}
-            >
-              {s.name}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Servis filtresi (admin için seçim, kullanıcı için rozet) */}
-      <div className="flex items-center gap-2">
-        {scope.isAdmin ? (
-          <>
-            <label className="text-sm text-slate-600">Servis:</label>
-            <select
-              className="h-9 px-2 rounded-lg border"
-              value={svc}
-              onChange={(e) => setSvc(e.target.value)}
-            >
-              <option value="">Tümü</option>
-              {(scope.allowedIds || []).map((id) => {
-                const s = scope.servicesById.get(String(id));
-                const name = s?.name || s?.code || id;
-                return (
-                  <option key={id} value={id}>
-                    {name}
-                  </option>
-                );
-              })}
-            </select>
-          </>
-        ) : (
-          <span className="text-xs px-2 py-1 rounded-lg bg-slate-100 text-slate-700">
-            Servis:&nbsp;
-            {
-              scope.servicesById.get(scope.defaultServiceId)?.name
-              || scope.servicesById.get(scope.defaultServiceId)?.code
-              || scope.defaultServiceId || "-"
-            }
-          </span>
-        )}
-      </div>
-
-      {/* Alt sekmeleri canlı tut (diğerlerine geçince state kaybolmasın) */}
-      <div>
-        {visitedInOrder.map((id) => {
-          const section = sections.find((s) => s.id === id);
-          if (!section) return null;
-          const isActive = id === activeId;
-          return (
-            <div
-              key={id}
-              className={isActive ? "" : "hidden"}
-              hidden={!isActive}
-              aria-hidden={isActive ? "false" : "true"}
-            >
-              <SectionContent
-                sectionId={section.id}
-                year={year}
-                month={month}       // 1..12
-                setYear={setYear}
-                setMonth={setMonth}
-                peopleAll={scopedPeople}      /* ⬅️ sadece kapsam içindekiler */
-                allLeaves={allLeaves}
-                leaveTypes={leaveTypes}
-                workingHours={effectiveWorkingHours}
-                selectedServiceId={selectedServiceId} /* ⬅️ içeriğe geçir */
-              />
+    <div className="p-4 space-y-5">
+      <section className="rounded-[30px] border border-slate-200 bg-white px-5 py-5 shadow-sm md:px-6">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_340px]">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
+                <ActiveIcon className="h-3.5 w-3.5 text-sky-700" />
+                {activeMeta.eyebrow}
+              </span>
+              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                {scope.isAdmin ? "Yönetim Kapsamı" : "Servis Kapsamı"}
+              </span>
             </div>
-          );
-        })}
-      </div>
+            <div className="mt-4 flex items-start gap-4">
+              <div className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm md:flex">
+                <ActiveIcon className="h-7 w-7" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-2xl font-semibold tracking-tight text-slate-950">{active?.name || "Çizelgeler"}</h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{activeMeta.description}</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+                    <CalendarClock className="h-4 w-4 text-sky-700" />
+                    {monthLabel}
+                  </span>
+                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+                    <Stethoscope className="h-4 w-4 text-emerald-700" />
+                    {scopeBadgeLabel || "Tümü"}
+                  </span>
+                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+                    <Users className="h-4 w-4 text-violet-700" />
+                    {scopedPeople.length} kişi görünür
+                  </span>
+                  {activeId === "calisma-cizelgesi" && (
+                    <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+                      <ClipboardList className="h-4 w-4 text-amber-700" />
+                      Aktif rol: {roleLabel}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Çalışma Bağlamı</div>
+              <div className="mt-2 text-lg font-semibold text-slate-900">{activeMeta.shortLabel}</div>
+              <p className="mt-1 text-sm leading-5 text-slate-600">
+                Bu modül, aynı ay ve servis kapsamı içinde diğer çizelgelerle senkron çalışır.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Kullanım Notu</div>
+              <div className="mt-2 text-sm leading-6 text-slate-700">
+                Önce çalışma çizelgesini üretin, sonra aylık çalışma ve fazla mesai çıktılarında aynı ayı doğrulayın.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {sections.map((s) => {
+            const meta = getSectionMeta(s.id, s.name);
+            const Icon = meta.icon;
+            const isActive = s.id === activeId;
+            return (
+              <button
+                key={s.id}
+                onClick={() => handleTabClick(s.id)}
+                title={s.id}
+                className={`group rounded-[24px] border px-4 py-4 text-left transition-all ${
+                  isActive
+                    ? "border-slate-900 bg-slate-950 text-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.75)]"
+                    : "border-slate-200 bg-white hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className={`flex h-11 w-11 items-center justify-center rounded-2xl border ${isActive ? "border-white/15 bg-white/10 text-white" : "border-slate-200 bg-slate-100 text-slate-700"}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  {isActive && (
+                    <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-white/85">
+                      Aktif
+                    </span>
+                  )}
+                </div>
+                <div className={`mt-4 text-sm font-medium uppercase tracking-[0.16em] ${isActive ? "text-white/70" : "text-slate-500"}`}>
+                  {meta.eyebrow}
+                </div>
+                <div className={`mt-2 text-lg font-semibold ${isActive ? "text-white" : "text-slate-900"}`}>{s.name}</div>
+                <p className={`mt-2 text-sm leading-6 ${isActive ? "text-white/72" : "text-slate-600"}`}>
+                  {meta.description}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 rounded-[30px] border border-slate-200 bg-slate-50/70 p-3 md:p-4">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <div>
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Aktif Çalışma Alanı</div>
+              <div className="mt-1 text-lg font-semibold text-slate-900">{active?.name || "Çizelgeler"}</div>
+            </div>
+            <div className="text-sm text-slate-500">
+              Kapsam: <span className="font-medium text-slate-700">{scopeBadgeLabel || "Tümü"}</span>
+            </div>
+          </div>
+
+          {visitedInOrder.map((id) => {
+            const section = sections.find((s) => s.id === id);
+            if (!section) return null;
+            const isActive = id === activeId;
+            return (
+              <div
+                key={id}
+                className={isActive ? "" : "hidden"}
+                hidden={!isActive}
+                aria-hidden={isActive ? "false" : "true"}
+              >
+                <SectionContent
+                  sectionId={section.id}
+                  year={year}
+                  month={month}
+                  setYear={setYear}
+                  setMonth={setMonth}
+                  peopleAll={scopedPeople}
+                  allLeaves={allLeaves}
+                  leaveTypes={leaveTypes}
+                  workingHours={effectiveWorkingHours}
+                  selectedServiceId={selectedServiceId}
+                  selectedServiceName={selectedServiceName}
+                  activeRole={activeRole}
+                />
+              </div>
+            );
+          })}
+        </div>
+
+        <aside className="space-y-4">
+          <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Kapsam Ayarları</div>
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Servis</label>
+                {scope.isAdmin ? (
+                  <select
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:bg-white"
+                    value={svc}
+                    onChange={(e) => setSvc(e.target.value)}
+                  >
+                    <option value="">Tümü</option>
+                    {(scope.allowedIds || []).map((id) => {
+                      const s = scope.servicesById.get(String(id));
+                      const name = s?.name || s?.code || id;
+                      return (
+                        <option key={id} value={id}>
+                          {name}
+                        </option>
+                      );
+                    })}
+                  </select>
+                ) : (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                    {selectedServiceName || "-"}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="mb-2 text-sm font-medium text-slate-700">Rol</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setActiveRole("Nurse")}
+                    className={`h-11 rounded-2xl border text-sm font-medium transition ${
+                      activeRole === "Nurse"
+                        ? "border-slate-900 bg-slate-950 text-white"
+                        : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
+                    }`}
+                  >
+                    Hemşireler
+                  </button>
+                  <button
+                    onClick={() => setActiveRole("Doctor")}
+                    className={`h-11 rounded-2xl border text-sm font-medium transition ${
+                      activeRole === "Doctor"
+                        ? "border-slate-900 bg-slate-950 text-white"
+                        : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
+                    }`}
+                  >
+                    Doktorlar
+                  </button>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  Rol seçimi özellikle çalışma çizelgesi üretiminde etkili olur; diğer çizelgeler aynı ay kapsamını paylaşır.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Önerilen Akış</div>
+            <ol className="mt-4 space-y-3 text-sm text-slate-700">
+              <li className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                <span className="font-medium text-slate-900">1.</span> Çalışma çizelgesini üretin ve kaydedin.
+              </li>
+              <li className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                <span className="font-medium text-slate-900">2.</span> Aylık çalışma saatlerini aynı ay ve servis kapsamında doğrulayın.
+              </li>
+              <li className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                <span className="font-medium text-slate-900">3.</span> Fazla mesai ve toplu izin çıktılarında son kontrolü yapın.
+              </li>
+            </ol>
+          </div>
+        </aside>
+      </section>
     </div>
   );
 }

@@ -1,9 +1,13 @@
 // src/store/leavesStore.js
-// Toplu izinler için tek veri kaynağı (LS + publish/subscribe)
+// Toplu izin listesi (dizi formatı) için veri kaynağı.
+// NOT: Bireysel nöbet izinleri için leaves.js kullanılır.
+// Bu iki sistem farklı formatlarda veri tutar ve ayrı event kanalları kullanır.
 
 import { LS } from "../utils/storage.js";
 
-const LS_KEY = "allLeavesV2"; // istersen mevcut anahtarı yazarsın
+const LS_KEY = "allLeavesV2";
+// Çakışmayı önlemek için kendi event adını kullan (leaves.js ile karışmaz)
+const CHANGE_EVENT = "leavesArray:changed";
 
 function readLS() {
   try {
@@ -16,7 +20,9 @@ function readLS() {
 
 function writeLS(next) {
   localStorage.setItem(LS_KEY, JSON.stringify(next || []));
-  window.dispatchEvent(new CustomEvent("leaves:changed", { detail: next }));
+  try {
+    window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: next }));
+  } catch {}
 }
 
 let _cache = readLS();
@@ -50,6 +56,6 @@ export function replaceLeaves(nextArray) {
 
 export function onLeavesChange(cb) {
   const handler = (e) => cb(e.detail);
-  window.addEventListener("leaves:changed", handler);
-  return () => window.removeEventListener("leaves:changed", handler);
+  window.addEventListener(CHANGE_EVENT, handler);
+  return () => window.removeEventListener(CHANGE_EVENT, handler);
 }

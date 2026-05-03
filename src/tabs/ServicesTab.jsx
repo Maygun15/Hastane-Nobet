@@ -1,5 +1,5 @@
 // src/tabs/ServicesTab.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useServicesModel, { useServices } from "../hooks/useServicesModel.js";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { PERMISSIONS } from "../constants/roles.js";
@@ -22,10 +22,13 @@ function slugCode(s = "") {
 }
 function useDebounced(fn, delay = 300) {
   const t = useRef();
-  return (...args) => {
+  const fnRef = useRef(fn);
+  fnRef.current = fn;
+  useEffect(() => () => clearTimeout(t.current), []);
+  return useCallback((...args) => {
     clearTimeout(t.current);
-    t.current = setTimeout(() => fn(...args), delay);
-  };
+    t.current = setTimeout(() => fnRef.current(...args), delay);
+  }, [delay]);
 }
 const toBool = (v) => {
   const s = String(v ?? "").trim().toLowerCase();

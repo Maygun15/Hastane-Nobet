@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import * as XLSX from "xlsx";
 import {
-  FileSpreadsheet, Upload, RotateCcw, Settings, Trash2, Search, ListChecks
+  FileSpreadsheet, Upload, RotateCcw, Search, ListChecks, Building2, Users, Clock3, TrendingUp, Trash2
 } from "lucide-react";
 import {
   fetchHolidayCalendar,
@@ -24,6 +24,11 @@ import {
   getScheduleModelSync,
   getPersonMonthShifts,
 } from "../store/monthlyScheduleModel.js";
+import {
+  buildWorkRowsFromPlanAssignments,
+  createPlanShiftHourResolver,
+  fetchGeneratedPlanAssignmentsForMonth,
+} from "../utils/overtimePlanTruth.js";
 
 /* ================ Helpers ================ */
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -140,51 +145,6 @@ function buildPersonMetaIndex(source = []) {
   return { byId, byCanon };
 }
 
-function loadShiftCodeHours(preferredList) {
-  try {
-    const arr = Array.isArray(preferredList) ? preferredList : [];
-    const map = {};
-    (arr || []).forEach((x) => {
-      const code = String(x?.code || "").trim().toUpperCase();
-      if (!code) return;
-      let hours = 0;
-      if (x?.hours !== undefined && x?.hours !== null && String(x.hours).trim() !== "") {
-        const n = Number(x.hours);
-        hours = Number.isFinite(n) ? n : 0;
-      } else if (x?.start && x?.end) {
-        const start = String(x.start).split(":");
-        const end = String(x.end).split(":");
-        if (start.length === 2 && end.length === 2) {
-          const sh = Number(start[0]) || 0, sm = Number(start[1]) || 0;
-          const eh = Number(end[0]) || 0, em = Number(end[1]) || 0;
-          let diff = (eh * 60 + em) - (sh * 60 + sm);
-          if (!Number.isFinite(diff)) diff = 0;
-          if (diff < 0) diff += 24 * 60;
-          hours = Math.round((diff / 60) * 100) / 100;
-        }
-      }
-      map[code] = hours;
-    });
-    return map;
-  } catch { return {}; }
-}
-
-const fallbackShiftHours = (code, label = "") => {
-  const c = String(code || "").trim().toUpperCase();
-  const lbl = String(label || "").trim().toUpperCase();
-  if (!c) {
-    if (lbl.includes("YARIM") || lbl.includes("4 SAAT")) return 4;
-    if (lbl.includes("POL") || lbl.includes("GÜNDÜZ") || lbl.includes("KISA")) return 8;
-    return 24;
-  }
-  if (c.includes("4")) return 4;
-  if (c.includes("8") || c === "M" || c === "GUND") return 8;
-  if (c.includes("12")) return 12;
-  if (["YARIM", "HALF"].some((k) => c.includes(k))) return 4;
-  if (["N", "GECE", "V2", "V1", "SV", "24"].some((k) => c.includes(k))) return 24;
-  if (lbl.includes("NÖBET") || lbl.includes("SORUMLU") || lbl.includes("RESÜS") || lbl.includes("TRİAJ") || lbl.includes("CERRAHİ")) return 24;
-  return 24;
-};
 
 const INPUT =
   "outline-none text-center px-1.5 py-1 rounded-md border border-gray-300 bg-white " +
@@ -195,14 +155,23 @@ const TXT =
   "text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200";
 
 /* ================ LS & Model ================ */
-const LS_DATA_PREFIX = "overtimeMatrixV3::";
+const LS_DATA_PREFIX = "overtimeMatrixV4::";
 const LS_CFG = "overtimeMatrixCfgV1";
 const DEFAULT_CFG = { department: "ACİL SERVİS", unitId: "" };
 
-function loadOvertimeRowsFromCache(year, month) {
+function storageScopeKey(serviceId = "") {
+  const val = String(serviceId || "").trim();
+  return val || "ALL";
+}
+
+function loadOvertimeRowsFromCache(year, month, serviceId = "") {
   try {
-    const raw = JSON.parse(localStorage.getItem(LS_DATA_PREFIX + ymKey(year, month)) || "[]");
-    return dedupeImportedPersonRows(Array.isArray(raw) ? raw : []);
+    const scopedKey = LS_DATA_PREFIX + ymKey(year, month) + "::" + storageScopeKey(serviceId);
+    const raw = JSON.parse(localStorage.getItem(scopedKey) || "[]");
+    return dedupeImportedPersonRows(Array.isArray(raw) ? raw : []).map((row) => ({
+      ...row,
+      editedDays: { ...(row?.editedDays || {}) },
+    }));
   } catch {
     return [];
   }
@@ -214,6 +183,7 @@ const makeBlankRow = (y, m) => ({
   person: "",
   title: "",
   service: "",
+  editedDays: {},
   days: Array.from({ length: daysInMonth(y, m) }, () => ""),
 });
 
@@ -355,17 +325,29 @@ function mergeScheduleModels(base, incoming) {
 }
 
 /* ================ Component ================ */
-const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, workingHours, people: peopleProp = [], leaveTypes = [] }, ref) {
+const OvertimeTab = forwardRef(function OvertimeTab({
+  hideToolbar = false,
+  workingHours,
+  people: peopleProp = [],
+  leaveTypes = [],
+  selectedServiceId = "",
+  selectedServiceName = "",
+}, ref) {
   const { ym } = useActiveYM();
   const { year, month } = ym;
+  const serviceScopeKey = useMemo(() => storageScopeKey(selectedServiceId), [selectedServiceId]);
+  const storageKey = useMemo(
+    () => LS_DATA_PREFIX + ymKey(year, month) + "::" + serviceScopeKey,
+    [year, month, serviceScopeKey]
+  );
 
   const [cfg, setCfg] = useState(() => ({ ...DEFAULT_CFG, ...(JSON.parse(localStorage.getItem(LS_CFG) || "null") || {}) }));
-  const [rows, setRows] = useState(() => loadOvertimeRowsFromCache(year, month));
+  const [rows, setRows] = useState(() => loadOvertimeRowsFromCache(year, month, selectedServiceId));
+  const [truthRows, setTruthRows] = useState([]);
   const [holidays, setHolidays] = useState([]);
   const [search, setSearch] = useState("");
   const fileRef = useRef(null);
   const dcount = daysInMonth(year, month);
-  const shiftCodeHours = useMemo(() => loadShiftCodeHours(workingHours), [workingHours]);
   const [importing, setImporting] = useState(false);
   const leaveRules = useMemo(
     () => buildLeaveCreditRules(Array.isArray(leaveTypes) ? leaveTypes : [], DEFAULT_LEAVE_RULES),
@@ -381,22 +363,35 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
         service: p?.serviceId || p?.service || p?.department || "",
       }))
       .filter((p) => p.fullName);
-    const svc = String(cfg.unitId || "").trim();
+    const svc = String(selectedServiceId || "").trim();
     if (!svc) return normalized;
     return normalized.filter((p) => String(p.service || "").trim() === svc);
-  }, [peopleProp, cfg.unitId]);
+  }, [peopleProp, selectedServiceId]);
 
 
   useEffect(() => localStorage.setItem(LS_CFG, JSON.stringify(cfg)), [cfg]);
   useEffect(() => {
-    localStorage.setItem(LS_DATA_PREFIX + ymKey(year, month), JSON.stringify(rows));
-  }, [rows, year, month]);
+    localStorage.setItem(storageKey, JSON.stringify(rows));
+  }, [rows, storageKey]);
 
   useEffect(() => {
     try {
-      setRows(loadOvertimeRowsFromCache(year, month));
+      setRows(loadOvertimeRowsFromCache(year, month, selectedServiceId));
     } catch {}
-  }, [year, month]);
+  }, [year, month, selectedServiceId]);
+
+  useEffect(() => {
+    const nextDepartment = selectedServiceName || (selectedServiceId ? String(selectedServiceId) : "TÜM SERVİSLER");
+    setCfg((prev) => {
+      const next = {
+        ...prev,
+        unitId: String(selectedServiceId || ""),
+        department: nextDepartment,
+      };
+      if (prev.unitId === next.unitId && prev.department === next.department) return prev;
+      return next;
+    });
+  }, [selectedServiceId, selectedServiceName]);
 
   useEffect(() => {
     setRows((prev) => remapOvertimeRowsWithPeople(prev, people));
@@ -440,6 +435,201 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
       window.removeEventListener("leaves:changed", refresh);
     };
   }, []);
+
+  const resolveShiftHours = useMemo(() => createPlanShiftHourResolver(workingHours), [workingHours]);
+  const truthRowIndex = useMemo(() => {
+    const map = new Map();
+    for (const row of Array.isArray(truthRows) ? truthRows : []) {
+      const pid = String(row?.personId || "").trim();
+      const nameKey = canonName(row?.person || "");
+      if (pid) map.set(`id:${pid}`, row);
+      if (nameKey) map.set(`name:${nameKey}`, row);
+    }
+    return map;
+  }, [truthRows]);
+
+  const buildRowsFromScheduleModelData = useCallback((model) => {
+    const metaIndex = buildPersonMetaIndex(people);
+    const peopleIndex = buildPersonIdentityIndex(people);
+    const personRows = new Map();
+    const ensureRow = (key, sourceName, personObj, metaInfo) => {
+      if (personRows.has(key)) return personRows.get(key);
+      const days = Array.from({ length: dcount }, () => "");
+      const baseTitle = personObj?.title || personObj?.role || "";
+      const row = {
+        id: crypto.randomUUID(),
+        personId: personObj?.id || "",
+        person: personObj?.fullName || sourceName,
+        title: (metaInfo?.title || baseTitle || "").trim(),
+        service: personObj?.service || metaInfo?.service || "",
+        editedDays: {},
+        days,
+      };
+      personRows.set(key, row);
+      return row;
+    };
+
+    for (const [pid, dayMap] of Object.entries(model?.assignments || {})) {
+      const personObj = resolvePersonRef({ personId: String(pid) }, peopleIndex);
+      const sourceName = personObj?.fullName || personObj?.name || "";
+      const cn = canonName(sourceName);
+      const meta = personObj?.id
+        ? metaIndex.byId.get(String(personObj.id))
+        : (cn ? metaIndex.byCanon.get(cn) : null);
+      const row = ensureRow(`id:${pid}`, sourceName || pid, personObj, meta);
+      for (const [dayKey, entry] of Object.entries(dayMap || {})) {
+        const day = Number(dayKey);
+        if (!Number.isFinite(day) || day < 1 || day > dcount) continue;
+        const explicit = Number(entry?.hours);
+        const hours = Number.isFinite(explicit) && explicit > 0
+          ? explicit
+          : resolveShiftHours(entry?.shiftCode, entry?.rowLabel);
+        row.days[day - 1] = hours > 0 ? Math.round(hours * 100) / 100 : "";
+      }
+    }
+
+    for (const [nameKey, dayMap] of Object.entries(model?.byName || {})) {
+      const normalizedNameKey = alignScheduleModelNameKey(nameKey);
+      const personObj = resolvePersonRef({ name: normalizedNameKey }, peopleIndex);
+      const sourceName = personObj?.fullName || personObj?.name || nameKey;
+      const meta = personObj?.id
+        ? metaIndex.byId.get(String(personObj.id))
+        : metaIndex.byCanon.get(normalizedNameKey);
+      const rowKey = personObj?.id ? `id:${personObj.id}` : `name:${normalizedNameKey}`;
+      const row = ensureRow(rowKey, sourceName, personObj, meta);
+      for (const [dayKey, entry] of Object.entries(dayMap || {})) {
+        const day = Number(dayKey);
+        if (!Number.isFinite(day) || day < 1 || day > dcount) continue;
+        const explicit = Number(entry?.hours);
+        const hours = Number.isFinite(explicit) && explicit > 0
+          ? explicit
+          : resolveShiftHours(entry?.shiftCode, entry?.rowLabel);
+        row.days[day - 1] = hours > 0 ? Math.round(hours * 100) / 100 : "";
+      }
+    }
+
+    return remapOvertimeRowsWithPeople(Array.from(personRows.values()), people).sort((a, b) =>
+      String(a.person || "").localeCompare(String(b.person || ""), "tr", { sensitivity: "base" })
+    );
+  }, [dcount, people, resolveShiftHours]);
+
+  const loadTruthRowsFromRoster = useCallback(async () => {
+    const rolesToTry = ["Nurse", "Doctor"];
+
+    let model = { assignments: {}, byName: {} };
+    for (const role of rolesToTry) {
+      const roleModel = await getScheduleModel({
+        sectionId: "calisma-cizelgesi",
+        serviceId: String(selectedServiceId || ""),
+        role,
+        year,
+        month,
+        people,
+      }).catch((err) => {
+        if (err?.status !== 404) console.error("getScheduleModel err:", err);
+        return null;
+      });
+      model = mergeScheduleModels(model, roleModel);
+    }
+    const modelRows = buildRowsFromScheduleModelData(model);
+    if (modelRows.length) return modelRows.map((row) => ({ ...row, editedDays: {} }));
+
+    const generatedAssignments = await fetchGeneratedPlanAssignmentsForMonth({
+      year,
+      month,
+      roles: rolesToTry,
+      serviceId: String(selectedServiceId || ""),
+    }).catch((err) => {
+      if (err?.status !== 404) console.error("fetchGeneratedPlanAssignmentsForMonth err:", err);
+      return [];
+    });
+    if (generatedAssignments.length) {
+      return buildWorkRowsFromPlanAssignments({
+        assignments: generatedAssignments,
+        people,
+        dcount,
+        resolveShiftHours,
+      }).map((row) => ({ ...row, editedDays: {} }));
+    }
+    return [];
+  }, [buildRowsFromScheduleModelData, dcount, month, people, resolveShiftHours, selectedServiceId, year]);
+
+  useEffect(() => {
+    let active = true;
+    const refreshTruth = async () => {
+      const nextRows = await loadTruthRowsFromRoster();
+      if (active) setTruthRows(nextRows);
+    };
+    refreshTruth();
+    const onRefresh = () => refreshTruth();
+    window.addEventListener("schedule:saved", onRefresh);
+    window.addEventListener("schedule:built", onRefresh);
+    window.addEventListener("schedule:invalidated", onRefresh);
+    window.addEventListener("storage", onRefresh);
+    return () => {
+      active = false;
+      window.removeEventListener("schedule:saved", onRefresh);
+      window.removeEventListener("schedule:built", onRefresh);
+      window.removeEventListener("schedule:invalidated", onRefresh);
+      window.removeEventListener("storage", onRefresh);
+    };
+  }, [loadTruthRowsFromRoster]);
+
+  useEffect(() => {
+    if (!truthRowIndex.size) return;
+    setRows((prev) => {
+      if (!Array.isArray(prev) || prev.length === 0) return truthRows;
+      const prevByKey = new Map();
+      for (const row of prev || []) {
+        const pid = String(row?.personId || "").trim();
+        const nameKey = canonName(row?.person || "");
+        if (pid) prevByKey.set(`id:${pid}`, row);
+        if (nameKey) prevByKey.set(`name:${nameKey}`, row);
+      }
+
+      const next = [];
+      for (const truthRow of truthRows) {
+        const pid = String(truthRow?.personId || "").trim();
+        const nameKey = canonName(truthRow?.person || "");
+        const prevRow =
+          (pid ? prevByKey.get(`id:${pid}`) : null) ||
+          (nameKey ? prevByKey.get(`name:${nameKey}`) : null);
+        if (!prevRow) {
+          next.push(truthRow);
+          continue;
+        }
+        const editedDays = { ...(prevRow?.editedDays || {}) };
+        const mergedDays = Array.from({ length: dcount }, (_, idx) => {
+          if (editedDays[idx]) return prevRow?.days?.[idx] ?? "";
+          const truthVal = Number(truthRow?.days?.[idx]);
+          return Number.isFinite(truthVal) && truthVal > 0 ? truthVal : "";
+        });
+        next.push({
+          ...prevRow,
+          personId: truthRow?.personId || prevRow.personId,
+          person: truthRow?.person || prevRow.person,
+          title: truthRow?.title || prevRow.title,
+          service: truthRow?.service || prevRow.service,
+          days: mergedDays,
+          editedDays,
+        });
+      }
+
+      for (const row of prev || []) {
+        const pid = String(row?.personId || "").trim();
+        const nameKey = canonName(row?.person || "");
+        const existsInTruth =
+          (pid && truthRowIndex.has(`id:${pid}`)) ||
+          (nameKey && truthRowIndex.has(`name:${nameKey}`));
+        if (existsInTruth) continue;
+        const hasManualData = Object.keys(row?.editedDays || {}).length > 0 || (row?.days || []).some((v) => v !== "" && v != null);
+        if (hasManualData) next.push(row);
+      }
+
+      const changed = JSON.stringify(next) !== JSON.stringify(prev);
+      return changed ? next : prev;
+    });
+  }, [truthRowIndex, truthRows, dcount]);
 
   const computed = useMemo(() => {
     const stdMonthly = computeMonthlyStdHours(year, month, holidays);
@@ -496,111 +686,22 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
       const a = [...r.days];
       const v = String(val).replace(",", ".");
       a[idx] = v === "" ? "" : Number(v);
-      return { ...r, days: a };
+      return { ...r, days: a, editedDays: { ...(r?.editedDays || {}), [idx]: true } };
     }));
   const resetMonth = () => { if (confirm("Bu ayın çizelgesi sıfırlansın mı?")) setRows([]); };
   const resetMonthSilent = () => setRows([]);
-
-  const resolveShiftHours = useMemo(() => {
-    const map = shiftCodeHours || {};
-    return (code, label = "") => {
-      const key = String(code || "").trim().toUpperCase();
-      if (!key) return 0;
-      const mapped = map[key];
-      let hrs = Number.isFinite(mapped) ? Number(mapped) : NaN;
-      if (!Number.isFinite(hrs) || hrs <= 0) hrs = fallbackShiftHours(key, label);
-      if (!Number.isFinite(hrs) || hrs <= 0) hrs = 24;
-      if (hrs > 0 && hrs < 4) hrs = 24;
-      return Math.round(hrs * 100) / 100;
-    };
-  }, [shiftCodeHours]);
 
   async function importFromDutyRoster() {
     if (importing) return;
     setImporting(true);
     try {
-      const rolesToTry = ["Nurse", "Doctor"];
-      let model = { assignments: {}, byName: {} };
-      for (const role of rolesToTry) {
-        const roleModel = await getScheduleModel({
-          sectionId: "calisma-cizelgesi",
-          serviceId: "",
-          role,
-          year,
-          month,
-          people,
-        }).catch((err) => {
-          if (err?.status !== 404) console.error("getScheduleModel err:", err);
-          return null;
-        });
-        model = mergeScheduleModels(model, roleModel);
-      }
-
-      const metaIndex = buildPersonMetaIndex(people);
-      const peopleIndex = buildPersonIdentityIndex(people);
-      const personRows = new Map();
-      const ensureRow = (key, sourceName, personObj, metaInfo) => {
-        if (personRows.has(key)) return personRows.get(key);
-        const days = Array.from({ length: dcount }, () => "");
-        const baseTitle = personObj?.title || personObj?.role || "";
-        const row = {
-          id: crypto.randomUUID(),
-          personId: personObj?.id || "",
-          person: personObj?.fullName || sourceName,
-          title: (metaInfo?.title || baseTitle || "").trim(),
-          days,
-        };
-        personRows.set(key, row);
-        return row;
-      };
-
-      for (const [pid, dayMap] of Object.entries(model.assignments || {})) {
-        const personObj = resolvePersonRef({ personId: String(pid) }, peopleIndex);
-        const sourceName = personObj?.fullName || personObj?.name || "";
-        const cn = canonName(sourceName);
-        const meta = personObj?.id
-          ? metaIndex.byId.get(String(personObj.id))
-          : (cn ? metaIndex.byCanon.get(cn) : null);
-        const row = ensureRow(`id:${pid}`, sourceName || pid, personObj, meta);
-        for (const [dayKey, entry] of Object.entries(dayMap || {})) {
-          const day = Number(dayKey);
-          if (!Number.isFinite(day) || day < 1 || day > dcount) continue;
-          const explicit = Number(entry?.hours);
-          const hours = Number.isFinite(explicit) && explicit > 0
-            ? explicit
-            : resolveShiftHours(entry?.shiftCode, entry?.rowLabel);
-          row.days[day - 1] = hours > 0 ? Math.round(hours * 100) / 100 : "";
-        }
-      }
-
-      for (const [nameKey, dayMap] of Object.entries(model.byName || {})) {
-        const normalizedNameKey = alignScheduleModelNameKey(nameKey);
-        const personObj = resolvePersonRef({ name: normalizedNameKey }, peopleIndex);
-        const sourceName = personObj?.fullName || personObj?.name || nameKey;
-        const meta = personObj?.id
-          ? metaIndex.byId.get(String(personObj.id))
-          : metaIndex.byCanon.get(normalizedNameKey);
-        const rowKey = personObj?.id ? `id:${personObj.id}` : `name:${normalizedNameKey}`;
-        const row = ensureRow(rowKey, sourceName, personObj, meta);
-        for (const [dayKey, entry] of Object.entries(dayMap || {})) {
-          const day = Number(dayKey);
-          if (!Number.isFinite(day) || day < 1 || day > dcount) continue;
-          const explicit = Number(entry?.hours);
-          const hours = Number.isFinite(explicit) && explicit > 0
-            ? explicit
-            : resolveShiftHours(entry?.shiftCode, entry?.rowLabel);
-          row.days[day - 1] = hours > 0 ? Math.round(hours * 100) / 100 : "";
-        }
-      }
-
-      const newRows = remapOvertimeRowsWithPeople(Array.from(personRows.values()), people).sort((a, b) =>
-        String(a.person || "").localeCompare(String(b.person || ""), "tr", { sensitivity: "base" })
-      );
+      const newRows = await loadTruthRowsFromRoster();
       if (!newRows.length) {
         alert("Aktarılacak görev ataması bulunamadı. Önce Çalışma Çizelgesi'ni doldurup kaydedin.");
         return;
       }
       setRows(newRows);
+      setTruthRows(newRows);
       const assignedDays = newRows.reduce(
         (sum, row) => sum + (row.days || []).filter((h) => Number(h) > 0).length,
         0
@@ -635,10 +736,28 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
   async function onSelectPerson(rowId, personId) {
     const p = people.find((x) => x.id === personId);
     setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, personId, person: p?.fullName || "", title: p?.title || "", service: p?.service || "" } : r));
+    const rowMatch =
+      truthRows.find((row) => String(row?.personId || "") === String(personId || ""))
+      || truthRows.find((row) => canonName(row?.person || "") === canonName(p?.fullName || p?.name || ""));
     setRows((prev) => prev.map((r) => {
       if (r.id !== rowId) return r;
-      const copy = { ...r, days: [...r.days] };
-      const model = getScheduleModelSync({ year, month, people });
+      const copy = { ...r, days: Array.from({ length: dcount }, () => ""), editedDays: {} };
+      if (rowMatch && Array.isArray(rowMatch.days)) {
+        for (let idx = 0; idx < Math.min(copy.days.length, rowMatch.days.length); idx++) {
+          const hours = Number(rowMatch.days[idx]);
+          copy.days[idx] = Number.isFinite(hours) ? hours : "";
+        }
+        return copy;
+      }
+
+      const model = getScheduleModelSync({
+        sectionId: "calisma-cizelgesi",
+        serviceId: String(selectedServiceId || ""),
+        role: "",
+        year,
+        month,
+        people,
+      });
       const dayMap = getPersonMonthShifts({
         model,
         personId,
@@ -657,19 +776,26 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
     }));
   }
 
+  const [exporting, setExporting] = useState(false);
   const exportExcel = () => {
-    const header1 = [cfg.department, "", ...Array(dcount - 1).fill(""), "AYLIK ÇALIŞMA SAATİ (kişi başı):", computed.stdMonthly];
-    const header2 = ["Unvan", "Adı Soyadı", ...Array.from({ length: dcount }, (_, i) => `${i + 1}`), "Çalışma", "İzin(ÇS)", "Gereken", "Fazla Mesai"];
-    const body = rows.map((r) => {
-      const rec = computed.perRow.find((x) => x.id === r.id) || { work: 0, credited: 0, required: 0, overtime: 0 };
-      return [r.title || "", r.person || "", ...r.days.map((x) => (x === "" ? "" : Number(x))), Number(rec.work.toFixed(2)), Number(rec.credited.toFixed(2)), Number(rec.required.toFixed(2)), Number(rec.overtime.toFixed(2))];
-    });
-    const totalsRow = ["TOPLAM", "", ...Array.from({ length: dcount }, (_, i) => rows.reduce((sum, r) => sum + (Number(r.days[i]) || 0), 0)), Number(computed.grandWork.toFixed(2)), "", "", Number(computed.grandOT.toFixed(2))];
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([header1, header2, ...body, totalsRow]);
-    ws["!cols"] = [{ wch: 16 }, { wch: 24 }, ...Array.from({ length: dcount }, () => ({ wch: 5 })), { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 10 }];
-    XLSX.utils.book_append_sheet(wb, ws, `FazlaMesai-${ymKey(year, month)}`);
-    XLSX.writeFile(wb, `fazla-mesai-${ymKey(year, month)}.xlsx`, { compression: true });
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const header1 = [cfg.department, "", ...Array(dcount - 1).fill(""), "AYLIK ÇALIŞMA SAATİ (kişi başı):", computed.stdMonthly];
+      const header2 = ["Unvan", "Adı Soyadı", ...Array.from({ length: dcount }, (_, i) => `${i + 1}`), "Çalışma", "İzin(ÇS)", "Gereken", "Fazla Mesai"];
+      const body = rows.map((r) => {
+        const rec = computed.perRow.find((x) => x.id === r.id) || { work: 0, credited: 0, required: 0, overtime: 0 };
+        return [r.title || "", r.person || "", ...r.days.map((x) => (x === "" ? "" : Number(x))), Number(rec.work.toFixed(2)), Number(rec.credited.toFixed(2)), Number(rec.required.toFixed(2)), Number(rec.overtime.toFixed(2))];
+      });
+      const totalsRow = ["TOPLAM", "", ...Array.from({ length: dcount }, (_, i) => rows.reduce((sum, r) => sum + (Number(r.days[i]) || 0), 0)), Number(computed.grandWork.toFixed(2)), "", "", Number(computed.grandOT.toFixed(2))];
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([header1, header2, ...body, totalsRow]);
+      ws["!cols"] = [{ wch: 16 }, { wch: 24 }, ...Array.from({ length: dcount }, () => ({ wch: 5 })), { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 10 }];
+      XLSX.utils.book_append_sheet(wb, ws, `FazlaMesai-${ymKey(year, month)}`);
+      XLSX.writeFile(wb, `fazla-mesai-${ymKey(year, month)}.xlsx`, { compression: true });
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleExcelImport = (e) => {
@@ -698,7 +824,11 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
             const v = row[colIdx];
             return v === "" || v === undefined ? "" : Number(v);
           });
-          newRows.push({ id: crypto.randomUUID(), personId: "", person, title: String(row[titleCol] || "").trim(), service: "", days });
+          const editedDays = {};
+          days.forEach((value, idx) => {
+            if (value !== "" && value != null) editedDays[idx] = true;
+          });
+          newRows.push({ id: crypto.randomUUID(), personId: "", person, title: String(row[titleCol] || "").trim(), service: "", editedDays, days });
         }
         if (!newRows.length) { alert("Aktarılacak satır bulunamadı."); return; }
         setRows(newRows);
@@ -709,10 +839,18 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
     e.target.value = "";
   };
 
+  const filteredRows = useMemo(() => {
+    const q = canonName(search || "");
+    if (!q) return rows;
+    return (rows || []).filter((r) => canonName(`${r.person || ""} ${r.title || ""}`).includes(q));
+  }, [rows, search]);
+
   const dailyTotals = useMemo(() =>
-    Array.from({ length: dcount }, (_, i) => rows.reduce((sum, r) => sum + (Number(r.days[i]) || 0), 0)),
-    [rows, dcount]
+    Array.from({ length: dcount }, (_, i) => filteredRows.reduce((sum, r) => sum + (Number(r.days[i]) || 0), 0)),
+    [filteredRows, dcount]
   );
+
+  const summaryLabel = selectedServiceName || cfg.department || "TÜM SERVİSLER";
 
   useImperativeHandle(ref, () => ({ importFromRoster: importFromDutyRoster, exportExcel, reset: resetMonth }));
 
@@ -723,14 +861,9 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
           title="Fazla Mesai Takip Formu"
           leftExtras={
             <>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-50 border">
-                <Settings size={16} className="opacity-70" />
-                <label className="text-sm">Birim:</label>
-                <input className="w-48 outline-none bg-transparent" value={cfg.department}
-                  onChange={(e) => setCfg((c) => ({ ...c, department: e.target.value }))} />
-                <label className="text-sm ml-2">UnitId:</label>
-                <input className="w-32 outline-none bg-transparent" value={cfg.unitId}
-                  onChange={(e) => setCfg((c) => ({ ...c, unitId: e.target.value }))} />
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-50 border text-sm text-slate-700">
+                <Building2 size={16} className="opacity-70" />
+                <span>{summaryLabel}</span>
               </div>
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border bg-white">
                 <Search size={16} className="opacity-70" />
@@ -756,23 +889,67 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
               </button>
               <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
                 onChange={handleExcelImport} />
-              <button onClick={exportExcel}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">
-                <FileSpreadsheet size={16} /> .xlsx Dışa Aktar
+              <button onClick={exportExcel} disabled={exporting}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-white ${exporting ? "bg-emerald-400 cursor-wait" : "bg-emerald-600 hover:bg-emerald-700"}`}>
+                <FileSpreadsheet size={16} /> {exporting ? "Hazırlanıyor…" : ".xlsx Dışa Aktar"}
               </button>
             </>
           }
         />
       )}
 
-      <div className="flex items-center justify-between p-3 rounded-2xl border bg-white sticky top-0 z-20">
-        <div className="text-lg font-semibold">{cfg.department}</div>
-        <div className="text-sm opacity-70">
-          AYLIK ÇALIŞMA SAATİ (kişi başı): <span className="font-semibold">{computed.stdMonthly}</span>
-          <span className="mx-2">•</span>
-          GENEL TOPLAM ÇALIŞMA: <span className="font-semibold">{computed.grandWork}</span>
-          <span className="mx-2">•</span>
-          TOPLAM FAZLA MESAİ: <span className="font-semibold text-rose-600">{computed.grandOT.toFixed(2)}</span>
+      <div className="sticky top-0 z-20 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+                <Building2 className="h-3.5 w-3.5 text-sky-600" />
+                {summaryLabel}
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+                <Users className="h-3.5 w-3.5 text-emerald-600" />
+                {filteredRows.length} personel
+              </span>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <label className="flex min-w-[260px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <Search size={16} className="text-slate-400" />
+                <input
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+                  placeholder="Personel veya unvan ara"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </label>
+              <div className="text-xs text-slate-500">
+                Liste, üst çubuktaki <span className="font-semibold text-slate-700">Liste Oluştur</span> aksiyonuyla doğrudan çalışma çizelgesinden beslenir.
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[520px]">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">
+                <Clock3 className="h-3.5 w-3.5 text-amber-600" />
+                Aylık Standart
+              </div>
+              <div className="mt-2 text-2xl font-semibold text-slate-900">{computed.stdMonthly}</div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">
+                <Users className="h-3.5 w-3.5 text-sky-600" />
+                Toplam Çalışma
+              </div>
+              <div className="mt-2 text-2xl font-semibold text-slate-900">{computed.grandWork.toFixed(2)}</div>
+            </div>
+            <div className="rounded-2xl border border-rose-200 bg-rose-50/70 px-4 py-3">
+              <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-rose-700">
+                <TrendingUp className="h-3.5 w-3.5" />
+                Toplam Fazla Mesai
+              </div>
+              <div className="mt-2 text-2xl font-semibold text-rose-700">{computed.grandOT.toFixed(2)}</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -784,10 +961,10 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
         </div>
       )}
 
-      <div className="rounded-2xl border overflow-auto">
+      <div className="rounded-[22px] border border-slate-200 bg-white shadow-sm overflow-auto">
         <table className="min-w-full text-xs md:text-sm">
           <thead>
-            <tr className="bg-gray-100 text-gray-700 text-sm sticky top-0 z-10">
+            <tr className="bg-slate-100 text-slate-700 text-sm sticky top-0 z-10">
               <th className="p-2 text-left sticky left-0 z-20 bg-white">Unvan</th>
               <th className="p-2 text-left sticky left-[160px] z-20 bg-white">Adı Soyadı</th>
               {Array.from({ length: dcount }, (_, i) => (
@@ -803,10 +980,10 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {filteredRows.length === 0 ? (
               <tr><td colSpan={dcount + 9} className="p-6 text-center text-gray-500">Kayıt yok. Personel seçin veya satır ekleyin.</td></tr>
             ) : (
-              rows.map((r) => {
+              filteredRows.map((r) => {
                 const rec = computed.perRow.find((x) => x.id === r.id) || { work: 0, credited: 0, required: 0, overtime: 0 };
                 const otColor = rec.overtime === 0 ? "text-gray-400" : rec.overtime <= 8 ? "text-amber-600" : "text-rose-600";
                 return (
@@ -845,11 +1022,11 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
               })
             )}
           </tbody>
-          {rows.length > 0 && (
+          {filteredRows.length > 0 && (
             <tfoot>
-              <tr className="bg-gray-100 font-semibold text-xs border-t-2 border-gray-300">
-                <td className="p-2 sticky left-0 bg-gray-100 z-10">TOPLAM</td>
-                <td className="p-2 sticky left-[160px] bg-gray-100 z-10"></td>
+              <tr className="bg-slate-100 font-semibold text-xs border-t-2 border-slate-300">
+                <td className="p-2 sticky left-0 bg-slate-100 z-10">TOPLAM</td>
+                <td className="p-2 sticky left-[160px] bg-slate-100 z-10"></td>
                 {dailyTotals.map((total, i) => (
                   <td key={i} className={`p-2 text-center tabular-nums font-mono text-xs ${isWeekend(year, month, i + 1) ? "bg-blue-100" : ""}`}>
                     {total > 0 ? total : ""}
@@ -868,7 +1045,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({ hideToolbar = false, worki
         </table>
       </div>
 
-      <div className="rounded-2xl border p-3 bg-white">
+      <div className="rounded-[22px] border border-slate-200 p-3 bg-white shadow-sm">
         <div className="flex items-center justify-between mb-2">
           <div className="text-sm font-medium">Personel Listesi</div>
           <button onClick={addRow} className="text-sm px-3 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700">

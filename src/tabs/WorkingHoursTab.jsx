@@ -88,7 +88,6 @@ export default function WorkingHoursTab({ workingHours, setWorkingHours }) {
       const [eh, em] = end5.split(":").map(Number);
       const sMin = (sh % 24) * 60 + (sm % 60);
       const eMin = (eh % 24) * 60 + (em % 60);
-      if (eMin < sMin) console.info("Bilgi: Bu vardiya gece devrediyor (ertesi güne taşıyor).");
     }
 
     const id = editingId ?? Date.now();

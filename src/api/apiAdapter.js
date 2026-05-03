@@ -4,6 +4,7 @@
 import { getToken } from "../lib/api.js";
 import { getApiBase, assertProdWriteAllowed } from "../lib/apiConfig.js";
 import { LS } from "../utils/storage.js";
+import { invalidateScheduleCache } from "../store/monthlyScheduleModel.js";
 
 const API_BASE = (() => {
   if (typeof window !== "undefined" && window.__API_BASE__) return window.__API_BASE__;
@@ -77,14 +78,16 @@ export async function fetchPersonnel({
     const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
     return items.map((p) => {
       const fullName = p.fullName ?? `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim();
+      // serviceId her zaman string olarak normalize edilir (number/string karışıklığını önler)
+      const serviceId = String(p.serviceId ?? p.service ?? p.department ?? p.meta?.serviceId ?? p.meta?.service ?? "").trim();
       return {
-        id: p.id,
+        id: String(p.id || p._id || p.personId || "").trim(),
         name: p.name ?? fullName,
         fullName,
         title: p.title ?? p.title_name ?? "",
         role: p.role ?? p.departmentRole ?? p.meta?.role ?? p.meta?.unvan ?? p.meta?.title ?? "",
-        service: p.service ?? p.department ?? p.serviceId ?? "",
-        serviceId: p.serviceId ?? p.service ?? p.department ?? p.meta?.serviceId ?? p.meta?.service ?? "",
+        service: serviceId,
+        serviceId,
         active: p.active ?? p.isActive ?? p.meta?.active ?? p.meta?.isActive ?? null,
         isActive: p.isActive ?? p.active ?? p.meta?.isActive ?? p.meta?.active ?? null,
         status: p.status ?? p.meta?.status ?? null,
@@ -278,16 +281,10 @@ export async function saveMonthlySchedule({
     method: "PUT",
     body,
   });
+  invalidateScheduleCache(year, month);
   if (typeof window !== "undefined") {
     try {
-      const detail = {
-        sectionId,
-        serviceId,
-        role,
-        year,
-        month,
-        ts: Date.now(),
-      };
+      const detail = { sectionId, serviceId, role, year, month, ts: Date.now() };
       window.dispatchEvent(new CustomEvent("schedule:saved", { detail }));
       localStorage.setItem("scheduleLastSaved", JSON.stringify(detail));
     } catch {}
@@ -328,7 +325,15 @@ export async function assignSchedule({
     note,
     ...(pinned !== undefined ? { pinned } : {}),
   };
-  return httpRequest("/api/schedules/assign", { method: "POST", body });
+  const result = await httpRequest("/api/schedules/assign", { method: "POST", body });
+  if (date && year == null) {
+    const y = parseInt(date.slice(0, 4), 10);
+    const m = parseInt(date.slice(5, 7), 10);
+    if (y && m) invalidateScheduleCache(y, m);
+  } else if (year && month) {
+    invalidateScheduleCache(year, month);
+  }
+  return result;
 }
 
 export async function unassignSchedule({
@@ -355,7 +360,13 @@ export async function unassignSchedule({
     personId,
     ...(personName ? { personName } : {}),
   };
-  return httpRequest("/api/schedules/assign", { method: "DELETE", body });
+  const result = await httpRequest("/api/schedules/assign", { method: "DELETE", body });
+  if (date) {
+    const y = parseInt(date.slice(0, 4), 10);
+    const m = parseInt(date.slice(5, 7), 10);
+    if (y && m) invalidateScheduleCache(y, m);
+  }
+  return result;
 }
 
 /* ================= Duty Rules ================= */

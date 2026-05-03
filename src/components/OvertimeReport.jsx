@@ -18,6 +18,12 @@ import {
   choosePreferredName,
   resolvePersonRef,
 } from "../utils/personIdentity.js";
+import { buildPersonDayHoursMapFromAssignments } from "../utils/planWorkCalculator.js";
+import {
+  buildPersonDayHoursFromPlanAssignments,
+  createPlanShiftHourResolver,
+  fetchGeneratedPlanAssignmentsForMonth,
+} from "../utils/overtimePlanTruth.js";
 
 /* ================ Helpers ================ */
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -87,7 +93,10 @@ const DEFAULT_CFG = { department: "ACİL SERVİS", unitId: "" };
 function loadOvertimeRowsFromCache(year, month, people = []) {
   try {
     const raw = JSON.parse(localStorage.getItem(LS_DATA_PREFIX + ymKey(year, month)) || "[]");
-    return remapOvertimeRowsWithPeople(Array.isArray(raw) ? raw : [], people);
+    return remapOvertimeRowsWithPeople(Array.isArray(raw) ? raw : [], people).map((row) => ({
+      ...row,
+      editedDays: { ...(row?.editedDays || {}) },
+    }));
   } catch {
     return [];
   }
@@ -99,6 +108,7 @@ const makeBlankRow = (y, m) => ({
   person: "",
   title: "",
   service: "",
+  editedDays: {},
   days: Array.from({ length: daysInMonth(y, m) }, () => ""),
 });
 
@@ -153,6 +163,24 @@ function creditedLeaveHoursForMonth({ year, month, leaves, holidays }) {
   return dayCredit.reduce((a, b) => a + b, 0);
 }
 
+function collectLeaveDaysForMonth({ year, month, leaves }) {
+  const out = new Set();
+  const eachDay = (startIso, endIso, cb) => {
+    const s = new Date(startIso);
+    const e = new Date(endIso ?? startIso);
+    for (let dt = new Date(s); dt <= e; dt.setDate(dt.getDate() + 1)) cb(new Date(dt));
+  };
+  for (const lv of Array.isArray(leaves) ? leaves : []) {
+    eachDay(lv.start, lv.end, (dt) => {
+      const y = dt.getFullYear();
+      const m = dt.getMonth() + 1;
+      const d = dt.getDate();
+      if (y === year && m === month) out.add(d);
+    });
+  }
+  return out;
+}
+
 /* ================ Component ================ */
 export default function OvertimeTab() {
   // >>> Tek AY/YIL kaynağı <<<
@@ -161,6 +189,7 @@ export default function OvertimeTab() {
 
   const [cfg, setCfg] = useState(() => ({ ...DEFAULT_CFG, ...(JSON.parse(localStorage.getItem(LS_CFG) || "null") || {}) }));
   const [rows, setRows] = useState(() => loadOvertimeRowsFromCache(year, month));
+  const [truthAssignments, setTruthAssignments] = useState([]);
 
   const [people, setPeople] = useState([]);
   const [holidays, setHolidays] = useState([]);
@@ -224,21 +253,74 @@ export default function OvertimeTab() {
     };
   }, [year, month]);
 
+  const resolveShiftHours = useMemo(() => createPlanShiftHourResolver([]), []);
+  const truthDayHoursIndex = useMemo(
+    () => buildPersonDayHoursMapFromAssignments(truthAssignments, { people, resolveHours: resolveShiftHours }),
+    [truthAssignments, people, resolveShiftHours]
+  );
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const assignments = await fetchGeneratedPlanAssignmentsForMonth({ year, month }).catch((err) => {
+        console.error("fetchGeneratedPlanAssignmentsForMonth err:", err);
+        return [];
+      });
+      if (active) setTruthAssignments(Array.isArray(assignments) ? assignments : []);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [year, month]);
+
+  useEffect(() => {
+    if (!truthDayHoursIndex.size) return;
+    setRows((prev) => {
+      let changed = false;
+      const next = (prev || []).map((row) => {
+        const rowPid = String(row?.personId || "").trim();
+        const rowCanon = canonName(row?.person || "");
+        const truthEntry =
+          (rowPid ? truthDayHoursIndex.get(`id:${rowPid}`) : null) ||
+          (rowCanon ? truthDayHoursIndex.get(`name:${rowCanon}`) : null);
+        if (!truthEntry) return row;
+        const editedDays = { ...(row?.editedDays || {}) };
+        const currentDays = Array.isArray(row?.days) ? row.days : [];
+        const nextDays = Array.from({ length: dcount }, (_, idx) => currentDays[idx] ?? "");
+        let rowChanged = false;
+        for (let idx = 0; idx < dcount; idx++) {
+          if (editedDays[idx]) continue;
+          const truthVal = Number(truthEntry?.byDay?.[idx + 1]);
+          const normalizedTruth = Number.isFinite(truthVal) && truthVal > 0 ? truthVal : "";
+          if (String(nextDays[idx] ?? "") !== String(normalizedTruth ?? "")) {
+            nextDays[idx] = normalizedTruth;
+            rowChanged = true;
+          }
+        }
+        if (!rowChanged) return row;
+        changed = true;
+        return { ...row, days: nextDays, editedDays };
+      });
+      return changed ? next : prev;
+    });
+  }, [truthDayHoursIndex, dcount]);
+
   /* hesaplar */
   const computed = useMemo(() => {
     const stdMonthly = computeMonthlyStdHours(year, month, holidays); // kişi başı
-    const perRowBase = rows.map((r) => {
-      const work = (r.days || []).reduce((a, b) => a + (Number(b) || 0), 0);
-      return { id: r.id, work };
-    });
     const perRowLeave = rows.map((r) => {
       const leaves = leavesByPerson[r.personId] || [];
       const credited = creditedLeaveHoursForMonth({ year, month, leaves, holidays });
-      return { id: r.id, credited };
+      const leaveDays = collectLeaveDaysForMonth({ year, month, leaves });
+      return { id: r.id, credited, leaveDays };
     });
     const perRow = rows.map((r) => {
-      const work = perRowBase.find((x) => x.id === r.id)?.work || 0;
-      const credited = perRowLeave.find((x) => x.id === r.id)?.credited || 0;
+      const leaveMeta = perRowLeave.find((x) => x.id === r.id) || { credited: 0, leaveDays: new Set() };
+      const work = (r.days || []).reduce((sum, val, idx) => {
+        if (leaveMeta.leaveDays.has(idx + 1)) return sum;
+        return sum + (Number(val) || 0);
+      }, 0);
+      const credited = leaveMeta.credited || 0;
       const required = Math.max(0, stdMonthly - credited); // Gereken Saat
       const overtime = Math.max(0, work - required);       // Fazla Mesai
       return { id: r.id, work, credited, required, overtime };
@@ -259,7 +341,7 @@ export default function OvertimeTab() {
         const a = [...r.days];
         const v = String(val).replace(",", ".");
         a[idx] = v === "" ? "" : Number(v);
-        return { ...r, days: a };
+        return { ...r, days: a, editedDays: { ...(r?.editedDays || {}), [idx]: true } };
       })
     );
   const resetMonth = () => { if (confirm("Bu ayın çizelgesi sıfırlansın mı?")) setRows([]); };
@@ -275,15 +357,34 @@ export default function OvertimeTab() {
       )
     );
 
-    // Vardiya
-    const plan = await fetchMonthlySchedule({ personId, year, month /*, token */ });
+    const generatedAssignments = await fetchGeneratedPlanAssignmentsForMonth({ year, month });
+    const truthDayHours = generatedAssignments.length
+      ? buildPersonDayHoursFromPlanAssignments({
+          assignments: generatedAssignments,
+          personId,
+          personName: p?.fullName || p?.name || "",
+          people,
+          resolveShiftHours,
+        })
+      : {};
+    const fallbackPlan = !Object.keys(truthDayHours || {}).length
+      ? await fetchMonthlySchedule({ personId, year, month })
+      : [];
+
     setRows((prev) =>
       prev.map((r) => {
         if (r.id !== rowId) return r;
-        const copy = { ...r, days: [...r.days] };
-        for (const s of plan || []) {
-          const d = new Date(s.date).getDate();
-          if (d >= 1 && d <= copy.days.length) copy.days[d - 1] = Number(s.hours);
+        const copy = { ...r, days: Array.from({ length: daysInMonth(year, month) }, () => ""), editedDays: {} };
+        if (Object.keys(truthDayHours || {}).length) {
+          for (const [dayKey, hours] of Object.entries(truthDayHours || {})) {
+            const d = Number(dayKey);
+            if (d >= 1 && d <= copy.days.length) copy.days[d - 1] = Number(hours);
+          }
+        } else {
+          for (const s of fallbackPlan || []) {
+            const d = new Date(s.date).getDate();
+            if (d >= 1 && d <= copy.days.length) copy.days[d - 1] = Number(s.hours);
+          }
         }
         return copy;
       })
@@ -365,7 +466,53 @@ export default function OvertimeTab() {
           </div>
           <button onClick={resetMonth} className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-600 text-white hover:bg-rose-700"><RotateCcw size={16} /> Sıfırla</button>
           <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700"><Upload size={16} /> Excel Yükle</button>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={() => { /* içe aktarım eklenecekse buraya */ }} className="hidden" />
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            e.target.value = "";
+            try {
+              const buf = await file.arrayBuffer();
+              const wb = XLSX.read(buf, { type: "array" });
+              const ws = wb.Sheets[wb.SheetNames[0]];
+              const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+              const headerIdx = data.findIndex((row) =>
+                row.some((c) => String(c).includes("Adı Soyadı") || String(c).includes("Soyadı"))
+              );
+              if (headerIdx < 0) return alert("Başlık satırı bulunamadı (\"Adı Soyadı\" sütunu gerekli).");
+              const header = data[headerIdx].map((c) => String(c).trim());
+              const idxTitle = header.indexOf("Unvan");
+              const idxName = header.findIndex((h) => h.includes("Adı Soyadı") || h.includes("Soyadı"));
+              const idxService = header.indexOf("Servis");
+              const dayIndices = header.reduce((acc, h, i) => {
+                const d = parseInt(h, 10);
+                if (d >= 1 && d <= 31) acc.push([d, i]);
+                return acc;
+              }, []);
+              const importedRows = data.slice(headerIdx + 1).filter((row) => row.some((c) => c !== "")).map((row) => {
+                const personName = String(row[idxName] || "").trim();
+                const matched = people.find((p) => (p.fullName || "").toLowerCase() === personName.toLowerCase());
+                const days = Array.from({ length: dcount }, () => "");
+                for (const [d, i] of dayIndices) {
+                  if (d <= dcount) {
+                    const v = row[i];
+                    days[d - 1] = v === "" ? "" : Number(v) || "";
+                  }
+                }
+                return {
+                  ...makeBlankRow(year, month),
+                  personId: matched?.id || "",
+                  person: personName || matched?.fullName || "",
+                  title: idxTitle >= 0 ? String(row[idxTitle] || "").trim() : (matched?.title || ""),
+                  service: idxService >= 0 ? String(row[idxService] || "").trim() : (matched?.service || ""),
+                  days,
+                };
+              }).filter((r) => r.person);
+              if (!importedRows.length) return alert("İçe aktarılacak satır bulunamadı.");
+              setRows(importedRows);
+            } catch (err) {
+              alert("Excel okunurken hata oluştu: " + (err?.message || err));
+            }
+          }} className="hidden" />
           <button onClick={exportExcel} className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"><FileSpreadsheet size={16} /> .xlsx Dışa Aktar</button>
           <button onClick={gotoNext} className="p-2 rounded-xl hover:bg-gray-100"><ChevronRight size={18} /></button>
         </div>
@@ -422,7 +569,7 @@ export default function OvertimeTab() {
                       <input className={TXT} value={r.service} onChange={(e) => updateField(r.id, "service", e.target.value)} placeholder="Servis" />
                     </td>
                     {r.days.map((v, i) => (
-                      <td key={i} className="p-0.5 w-12 text-center">
+                      <td key={`${r.id}-d${i}`} className="p-0.5 w-12 text-center">
                         <input className={`${INPUT} h-8 md:h-9`} value={v} inputMode="decimal" onChange={(e) => updateDay(r.id, i, e.target.value)} />
                       </td>
                     ))}
