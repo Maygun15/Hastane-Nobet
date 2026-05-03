@@ -150,19 +150,9 @@ function shiftChangedTemplate({
 }
 
 async function dispatchMail({ to, subject, html, text }) {
-  if (!notificationsEnabled()) {
-    console.log('[notify] SKIP: NOTIFICATIONS_ENABLED is not true, value:', process.env.NOTIFICATIONS_ENABLED);
-    return { ok: false, skipped: true, reason: 'notifications disabled' };
-  }
-  console.log('[notify] mailer configured:', isConfigured?.() ?? 'no isConfigured fn');
-  if (!isConfigured()) {
-    console.log('[notify] SKIP: SMTP not configured');
-    return { ok: false, skipped: true, reason: 'smtp not configured' };
-  }
-  if (!to) {
-    console.log('[notify] SKIP: recipient email missing');
-    return { ok: false, skipped: true, reason: 'recipient email missing' };
-  }
+  if (!notificationsEnabled()) return { ok: false, skipped: true, reason: 'notifications disabled' };
+  if (!isConfigured()) return { ok: false, skipped: true, reason: 'smtp not configured' };
+  if (!to) return { ok: false, skipped: true, reason: 'recipient email missing' };
   return sendMail({ to, subject, html, text });
 }
 
@@ -172,29 +162,15 @@ async function sendLeaveApproved({ request, actorName }) {
     personId: request?.fromPersonId,
     fallbackName: request?.fromName,
   });
-  if (!recipient?.email) {
-    console.log('[notify] SKIP leave-approved: recipient not found', {
-      fromUserId: request?.fromUserId ? String(request.fromUserId) : null,
-      fromPersonId: request?.fromPersonId ? String(request.fromPersonId) : null,
-      fromName: request?.fromName || '',
-    });
-    return { ok: false, skipped: true, reason: 'recipient not found' };
-  }
+  if (!recipient?.email) return { ok: false, skipped: true, reason: 'recipient not found' };
 
   const html = leaveApprovedTemplate({ name: recipient.name, request, actorName });
-  const result = await dispatchMail({
+  return dispatchMail({
     to: recipient.email,
     subject: 'İzin Talebiniz Onaylandı',
     html,
     text: `Merhaba ${recipient.name || 'çalışan'}, ${leaveDateText(request)} tarihli izin talebiniz onaylandı.`,
   });
-  console.log('[notify] leave-approved result:', {
-    ok: !!result?.ok,
-    skipped: !!result?.skipped,
-    reason: result?.reason || null,
-    to: recipient.email,
-  });
-  return result;
 }
 
 async function sendLeaveRejected({ request, actorName }) {
@@ -203,29 +179,15 @@ async function sendLeaveRejected({ request, actorName }) {
     personId: request?.fromPersonId,
     fallbackName: request?.fromName,
   });
-  if (!recipient?.email) {
-    console.log('[notify] SKIP leave-rejected: recipient not found', {
-      fromUserId: request?.fromUserId ? String(request.fromUserId) : null,
-      fromPersonId: request?.fromPersonId ? String(request.fromPersonId) : null,
-      fromName: request?.fromName || '',
-    });
-    return { ok: false, skipped: true, reason: 'recipient not found' };
-  }
+  if (!recipient?.email) return { ok: false, skipped: true, reason: 'recipient not found' };
 
   const html = leaveRejectedTemplate({ name: recipient.name, request, actorName });
-  const result = await dispatchMail({
+  return dispatchMail({
     to: recipient.email,
     subject: 'İzin Talebiniz Reddedildi',
     html,
     text: `Merhaba ${recipient.name || 'çalışan'}, ${leaveDateText(request)} tarihli izin talebiniz reddedildi.`,
   });
-  console.log('[notify] leave-rejected result:', {
-    ok: !!result?.ok,
-    skipped: !!result?.skipped,
-    reason: result?.reason || null,
-    to: recipient.email,
-  });
-  return result;
 }
 
 async function sendShiftChanged({
@@ -247,14 +209,7 @@ async function sendShiftChanged({
     fallbackName: personName,
     fallbackEmail: email,
   });
-  if (!recipient?.email) {
-    console.log('[notify] SKIP shift-changed: recipient not found', {
-      personId: personId || null,
-      userId: userId || null,
-      personName: personName || '',
-    });
-    return { ok: false, skipped: true, reason: 'recipient not found' };
-  }
+  if (!recipient?.email) return { ok: false, skipped: true, reason: 'recipient not found' };
 
   const html = shiftChangedTemplate({
     name: recipient.name,
@@ -269,21 +224,12 @@ async function sendShiftChanged({
   });
 
   const actionText = action === 'removed' ? 'silindi' : 'güncellendi';
-  const result = await dispatchMail({
+  return dispatchMail({
     to: recipient.email,
     subject: `Vardiya Kaydınız ${actionText === 'silindi' ? 'Silindi' : 'Güncellendi'}`,
     html,
     text: `Merhaba ${recipient.name || 'çalışan'}, ${date || '-'} tarihli vardiya kaydınız ${actionText}.`,
   });
-  console.log('[notify] shift-changed result:', {
-    ok: !!result?.ok,
-    skipped: !!result?.skipped,
-    reason: result?.reason || null,
-    action,
-    to: recipient.email,
-    date: date || null,
-  });
-  return result;
 }
 
 module.exports = {

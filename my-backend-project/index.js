@@ -15,7 +15,7 @@ const helmet   = require('helmet');
 const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 const jwt      = require('jsonwebtoken');
-const bcrypt   = require('bcryptjs');
+const bcrypt   = require('bcrypt');
 const auditLogger = require('./middleware/auditLogger');
 const requestId = require('./middleware/requestId');
 const { isConfigured: isMailerConfigured } = require(path.join(__dirname, 'utils', 'mailer.js'));
@@ -178,7 +178,9 @@ app.use((req, _res, next) => {
   }
   next();
 });
-app.use((req, _res, next) => { console.log('[REQ]', req.method, req.originalUrl); next(); });
+if (!IS_PROD) {
+  app.use((req, _res, next) => { console.log('[REQ]', req.method, req.originalUrl); next(); });
+}
 const globalApiLimiter = rateLimit({
   windowMs: API_RATE_WINDOW_MS,
   max: API_RATE_MAX,
@@ -563,12 +565,16 @@ app.use('/api/holidays', ...secureTenant, holidayRoutes);
 app.get('/api/admin/ping', ...secureTenant, requireRole('admin'),
   (req, res) => res.json({ ok: true, role: req.user.role })
 );
-app.get('/api/admin/audit-logs', ...secureTenant, requireRole('admin'), async (_req, res) => {
-  const logs = await AuditLog.find({})
-    .sort({ createdAt: -1 })
-    .limit(50)
-    .lean();
-  res.json(logs);
+app.get('/api/admin/audit-logs', ...secureTenant, requireRole('admin'), async (req, res) => {
+  try {
+    const logs = await AuditLog.find(withHospitalFilter(req, {}))
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+    res.json(logs);
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
 });
 
 /* ========== 404 & ERROR ========== */

@@ -123,10 +123,8 @@ function withHospitalFilter(req, base = {}) {
   const filter = base && typeof base === 'object' ? { ...base } : {};
   const role = normalizeRole(req.user?.role);
   if (isSuperAdminRole(role)) return filter;
-  if (!req.hospitalId) return { ...filter, hospitalId: '__missing_hospital__' };
-  if (!Object.prototype.hasOwnProperty.call(filter, 'hospitalId')) {
-    filter.hospitalId = req.hospitalId;
-  }
+  // Always force hospitalId — never allow caller-supplied value to override tenant scope
+  filter.hospitalId = req.hospitalId || null;
   return filter;
 }
 

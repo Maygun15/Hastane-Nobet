@@ -375,15 +375,6 @@ const DutyRuleSchema = new mongoose.Schema(
       notes: String
     },
 
-    // TIMESTAMPS
-    createdAt: {
-      type: Date,
-      default: Date.now
-    },
-    updatedAt: {
-      type: Date,
-      default: Date.now
-    },
     createdBy: String,
     updatedBy: String
   },

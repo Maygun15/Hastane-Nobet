@@ -1,6 +1,6 @@
 // routes/auth.routes.js
 const express = require('express');
-const bcrypt  = require('bcryptjs');
+const bcrypt  = require('bcrypt');
 const crypto  = require('crypto');
 const jwt     = require('jsonwebtoken');
 const mongoose = require('mongoose');
@@ -54,18 +54,30 @@ function authRateLimit({ limit, keyOf, message }) {
   };
 }
 
+function getRateState(key, now = Date.now()) {
+  const current = RATE_STORE.get(key);
+  if (!current || current.resetAt <= now) {
+    return { count: 0, resetAt: now + AUTH_WINDOW_MS };
+  }
+  return current;
+}
+
+function bumpRateState(key) {
+  const now = Date.now();
+  const state = getRateState(key, now);
+  const next = { count: Number(state.count || 0) + 1, resetAt: state.resetAt };
+  RATE_STORE.set(key, next);
+  return next;
+}
+
+function clearRateState(key) {
+  RATE_STORE.delete(key);
+}
+
 const registerRateLimit = authRateLimit({
   limit: 20,
   keyOf: (req) => `reg:${getClientIp(req)}`,
   message: 'Çok fazla kayıt denemesi, lütfen sonra tekrar deneyin',
-});
-const loginRateLimit = authRateLimit({
-  limit: 15,
-  keyOf: (req) => {
-    const identifier = pickIdentifier(req.body || {});
-    return `login:${getClientIp(req)}:${String(identifier || '').toLowerCase()}`;
-  },
-  message: 'Çok fazla giriş denemesi, lütfen sonra tekrar deneyin',
 });
 const resetRequestRateLimit = authRateLimit({
   limit: 10,
@@ -239,12 +251,21 @@ router.post('/register', registerRateLimit, ...registerValidation, async (req, r
 });
 
 /* ============= LOGIN ============= */
-router.post('/login', loginRateLimit, ...loginValidation, async (req, res) => {
+router.post('/login', ...loginValidation, async (req, res) => {
   try {
     const identifier = pickIdentifier(req.body);
     const password   = normalize(req.body.password ?? req.body.parola);
+    const rateKey = `login:${getClientIp(req)}:${String(identifier || '').toLowerCase()}`;
+    const rateState = getRateState(rateKey);
+
+    if (rateState.count >= 15) {
+      const retrySec = Math.max(1, Math.ceil((rateState.resetAt - Date.now()) / 1000));
+      res.setHeader('Retry-After', String(retrySec));
+      return res.status(429).json({ message: 'Çok fazla giriş denemesi, lütfen sonra tekrar deneyin' });
+    }
 
     if (!identifier || !password) {
+      bumpRateState(rateKey);
       return res.status(400).json({ message: 'Kimlik ve şifre zorunlu' });
     }
 
@@ -253,6 +274,7 @@ router.post('/login', loginRateLimit, ...loginValidation, async (req, res) => {
     if (!dbReady && ALLOW_DEV && DEV_EMAIL && DEV_PASSWORD) {
       const idLc = String(identifier || '').toLowerCase();
       if (idLc === DEV_EMAIL && password === DEV_PASSWORD) {
+        clearRateState(rateKey);
         const token = makeToken({ _id: 'dev1', role: 'admin', personId: null });
         return res.json({
           token,
@@ -273,23 +295,23 @@ router.post('/login', loginRateLimit, ...loginValidation, async (req, res) => {
     const user = await User.findByIdentifier(identifier)
       .select('passwordHash +password active role name email tc phone serviceIds mustChangePassword personId');
 
-    if (!user) return res.status(401).json({ message: 'Kullanıcı bulunamadı' });
-
-    let ok = await user.comparePassword(password);
-    if (!ok) {
-      const adminEmail = String(process.env.ADMIN_EMAIL || '').toLowerCase();
-      const adminPass  = process.env.ADMIN_PASSWORD;
-      if (adminPass && user.email && user.email.toLowerCase() === adminEmail && password === adminPass && process.env.NODE_ENV !== 'production') {
-        await user.setPassword(password);
-        user.password = undefined;
-        await user.save();
-        ok = true;
-      }
+    if (!user) {
+      bumpRateState(rateKey);
+      return res.status(401).json({ message: 'Kullanıcı bulunamadı' });
     }
-    if (!ok) return res.status(401).json({ message: 'Şifre hatalı' });
 
-    if (user.active === false) return res.status(403).json({ message: 'Hesap pasif' });
+    const ok = await user.comparePassword(password);
+    if (!ok) {
+      bumpRateState(rateKey);
+      return res.status(401).json({ message: 'Şifre hatalı' });
+    }
 
+    if (user.active === false) {
+      bumpRateState(rateKey);
+      return res.status(403).json({ message: 'Hesap pasif' });
+    }
+
+    clearRateState(rateKey);
     const token = makeToken(user);
     return res.json({
       token,
@@ -346,11 +368,7 @@ Bu baglanti 15 dakika gecerlidir.`,
       }
     }
 
-    const resp = { ok: true };
-    if (process.env.NODE_ENV !== 'production' && user?.resetToken) {
-      resp.resetToken = user.resetToken; // DEV kolayligi
-    }
-    return res.json(resp);
+    return res.json({ ok: true });
   } catch (err) {
     console.error('REQUEST RESET ERR:', err);
     return res.status(500).json({ message: 'Reset istegi basarisiz' });

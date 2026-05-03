@@ -31,7 +31,10 @@ router.get('/',
 
       const query = {};
       if (unitId) query.serviceId = String(unitId);
-      if (q) query.name = new RegExp(q, 'i');
+      if (q) {
+        const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        query.name = new RegExp(escaped, 'i');
+      }
       if (req.query.active === 'true') query.active = { $ne: false };
       if (req.query.active === 'false') query.active = false;
       const scopedQuery = withHospitalFilter(req, query);

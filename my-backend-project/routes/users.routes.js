@@ -204,7 +204,7 @@ router.put('/:userId/link-person', requireAdmin, async (req, res) => {
 ---------------------------- */
 router.post('/quick-create', requireAdminOrStaff, async (req, res) => {
   try {
-    const { name, tc, phone, email, role } = req.body || {};
+    const { name, tc, phone, email, role, personId } = req.body || {};
     if (!name || !String(name).trim()) {
       return res.status(400).json({ message: 'Ad Soyad zorunlu.' });
     }
@@ -218,7 +218,7 @@ router.post('/quick-create', requireAdminOrStaff, async (req, res) => {
       if (exists) return res.status(409).json({ message: 'Bu e-posta/telefon/TC zaten kayıtlı olabilir' });
     }
 
-    const user = new User({
+    const userData = {
       name: String(name).trim(),
       tc: tc ? String(tc).trim() : '',
       phone: phone ? String(phone).trim() : '',
@@ -226,7 +226,11 @@ router.post('/quick-create', requireAdminOrStaff, async (req, res) => {
       role: role || 'user',
       active: true,
       serviceIds: [],
-    });
+    };
+    if (personId && String(personId).length === 24) {
+      userData.personId = personId;
+    }
+    const user = new User(userData);
     const tempPassword = (tc ? String(tc).trim() : '') || 'Hastane2026!';
     await user.setPassword(tempPassword);
     user.mustChangePassword = true;
@@ -362,7 +366,7 @@ router.post('/change-password', requireAuth, async (req, res) => {
     const userId = String(req.user?.uid || '').trim();
     if (!userId) return res.status(401).json({ error: 'Yetkisiz' });
 
-    const user = await User.findOne(withHospitalFilter(req, { _id: userId })).select('+password');
+    const user = await User.findOne(withHospitalFilter(req, { _id: userId })).select('+password +passwordHash');
     if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
 
     const ok = await user.comparePassword(currentPassword);

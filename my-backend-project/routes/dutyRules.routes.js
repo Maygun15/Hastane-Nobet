@@ -20,23 +20,6 @@ function normalizeRuleScope(input = {}) {
   };
 }
 
-function buildRuleScopeFilter(req, scope) {
-  const filter = {
-    sectionId: scope.sectionId,
-    serviceId: scope.serviceId,
-    role: scope.role,
-  };
-  if (!req.hospitalId) return filter;
-  return {
-    ...filter,
-    $or: [
-      { hospitalId: req.hospitalId },
-      { hospitalId: null },
-      { hospitalId: { $exists: false } },
-    ],
-  };
-}
-
 function buildScopedRuleFilter(req, scope) {
   return withHospitalFilter(req, {
     sectionId: scope.sectionId,
@@ -53,7 +36,7 @@ router.get('/', async (req, res) => {
     if (!sectionId) {
       return res.status(400).json({ ok: false, message: 'sectionId gerekli' });
     }
-    const doc = await DutyRule.findOne(buildRuleScopeFilter(req, scope)).lean();
+    const doc = await DutyRule.findOne(buildScopedRuleFilter(req, scope)).lean();
     return res.json({
       ok: true,
       rule: doc ?? { sectionId, serviceId, role, rules: [], weights: {} },
@@ -83,8 +66,8 @@ router.put('/', requireRole('admin', 'yetkili'), async (req, res) => {
     if (!sectionId) {
       return res.status(400).json({ ok: false, message: 'sectionId gerekli' });
     }
-    let doc = await DutyRule.findOneAndUpdate(
-      buildRuleScopeFilter(req, scope),
+    const doc = await DutyRule.findOneAndUpdate(
+      buildScopedRuleFilter(req, scope),
       {
         $set: {
           sectionId,
@@ -103,38 +86,13 @@ router.put('/', requireRole('admin', 'yetkili'), async (req, res) => {
           updatedBy: req.user?.uid || null,
           updatedAt: new Date(),
         },
-      },
-      { new: true }
-    ).lean();
-    if (!doc) {
-      doc = await DutyRule.findOneAndUpdate(
-        buildScopedRuleFilter(req, scope),
-        {
-          $set: {
-            sectionId,
-            serviceId,
-            role,
-            rules: Array.isArray(rules) ? rules : [],
-            weights: weights && typeof weights === 'object' && !Array.isArray(weights) ? weights : {},
-            departman: departman || 'Acil Servis',
-            ...(description !== undefined ? { description } : {}),
-            ...(basicRules !== undefined ? { basicRules } : {}),
-            ...(leaveRules !== undefined ? { leaveRules } : {}),
-            ...(shiftRules !== undefined ? { shiftRules } : {}),
-            ...(taskRequirements !== undefined ? { taskRequirements } : {}),
-            ...(personnelRules !== undefined ? { personnelRules } : {}),
-            ...(metadata !== undefined ? { metadata } : {}),
-            updatedBy: req.user?.uid || null,
-            updatedAt: new Date(),
-          },
-          $setOnInsert: {
-            ...(req.hospitalId ? { hospitalId: req.hospitalId } : {}),
-            createdBy: req.user?.uid || null,
-          },
+        $setOnInsert: {
+          ...(req.hospitalId ? { hospitalId: req.hospitalId } : {}),
+          createdBy: req.user?.uid || null,
         },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      ).lean();
-    }
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean();
     return res.json({ ok: true, rule: doc });
   } catch (err) {
     return res.status(500).json({ message: safeMessage(err) });

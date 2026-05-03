@@ -1,6 +1,6 @@
 // models/User.js
 const mongoose = require('mongoose');
-const bcrypt   = require('bcryptjs');
+const bcrypt   = require('bcrypt');
 const crypto   = require('crypto');
 const { applyHospitalScope } = require('./plugins/hospitalScope');
 
@@ -73,7 +73,7 @@ const userSchema = new mongoose.Schema({
     default: null,
     index: true,
   },
-  email: { type: String, trim: true, lowercase: true, sparse: true, unique: true },
+  email: { type: String, trim: true, lowercase: true, sparse: true, unique: true, match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Geçerli bir e-posta adresi giriniz'] },
   phone: { type: String, trim: true, sparse: true, unique: true },
   tc:    { type: String, trim: true, sparse: true, unique: true },
   name:  { type: String, trim: true },

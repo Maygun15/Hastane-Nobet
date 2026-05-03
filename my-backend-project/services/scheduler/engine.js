@@ -21,6 +21,7 @@ const FALLBACK_BLOCKING_RULE_CODES = Object.freeze([
   "REST_AFTER_NIGHT",
   "MAX_WEEKLY_SHIFTS",
   "MAX_CONSECUTIVE_DAYS",
+  "ONE_SHIFT_PER_DAY",
 ]);
 
 const getISOWeekKey = (dateStr) => {
@@ -304,8 +305,6 @@ function logSlotDebug({
   if (afterConstraints === 0 || Object.keys(rejectedByReason).length) {
     payload.rejectedByReason = rejectedByReason;
   }
-
-  console.log("[SLOT DEBUG]", payload);
 }
 
 function buildRawStaffPoolForSlot(staff = [], usedOnDay = new Set()) {
@@ -860,7 +859,7 @@ function buildTopCandidateSummary(scoredCandidates = [], selectedId = null) {
       personId: normalizePersonId(candidate?.id),
       schedulerScore: Number(candidate?.schedulerScore || 0),
       policyScore: Number(candidate?.policyScore || 0),
-      totalScore: Number(candidate?.policyScore || 0),
+      totalScore: Number(candidate?.policyScore || 0) + Number(candidate?.schedulerScore || 0),
       selected: normalizePersonId(candidate?.id) === normalizePersonId(selectedId),
     }));
 }

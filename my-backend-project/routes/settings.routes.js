@@ -1,5 +1,4 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const router = express.Router();
 const Setting = require('../models/Setting');
 const { requireAuth, requireRole } = require('../middleware/authz');
@@ -65,25 +64,7 @@ router.get('/:key', requireAuth, async (req, res) => {
 
     const serviceId = normalizeServiceId(req.query?.serviceId || '');
 
-    console.log('[SETTINGS GET HIT]', {
-      key,
-      queryServiceId: req.query?.serviceId,
-      normalizedServiceId: serviceId,
-      hospitalId: req.hospitalId || null,
-      userRole: req.user?.role || null,
-      dbName: mongoose.connection?.name,
-      host: mongoose.connection?.host,
-    });
-
     const doc = await ensureScopedSetting(req, key, serviceId);
-
-    console.log('[SETTINGS GET RESULT]', {
-      key,
-      serviceId,
-      found: !!doc,
-      docId: doc?._id || null,
-      docHospitalId: doc?.hospitalId || null,
-    });
 
     return res.json({
       ok: true,
@@ -114,27 +95,8 @@ router.put('/:key', requireAuth, requireRole('admin', 'authorized'), async (req,
     const serviceId = normalizeServiceId(req.body?.serviceId ?? req.query?.serviceId);
     const value = req.body?.value ?? null;
 
-    console.log('[SETTINGS PUT HIT]', {
-      key,
-      bodyServiceId: req.body?.serviceId,
-      queryServiceId: req.query?.serviceId,
-      normalizedServiceId: serviceId,
-      hospitalId: req.hospitalId || null,
-      userRole: req.user?.role || null,
-      dbName: mongoose.connection?.name,
-      host: mongoose.connection?.host,
-      bodyKeys: Object.keys(req.body || {}),
-      valueType: Array.isArray(value) ? 'array' : typeof value,
-      valueLength: Array.isArray(value) ? value.length : null,
-    });
-
     const legacyFilter = buildSettingScopeFilter(req, key, serviceId);
     const scopedFilter = buildScopedSettingFilter(req, key, serviceId);
-
-    console.log('[SETTINGS PUT FILTERS]', {
-      legacyFilter,
-      scopedFilter,
-    });
 
     let doc = await Setting.findOneAndUpdate(
       legacyFilter,
@@ -148,12 +110,6 @@ router.put('/:key', requireAuth, requireRole('admin', 'authorized'), async (req,
       },
       { new: true }
     ).lean();
-
-    console.log('[SETTINGS PUT FIRST UPDATE RESULT]', {
-      matched: !!doc,
-      docId: doc?._id || null,
-      docHospitalId: doc?.hospitalId || null,
-    });
 
     if (!doc) {
       doc = await Setting.findOneAndUpdate(
@@ -172,11 +128,6 @@ router.put('/:key', requireAuth, requireRole('admin', 'authorized'), async (req,
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       ).lean();
-
-      console.log('[SETTINGS PUT UPSERT RESULT]', {
-        docId: doc?._id || null,
-        docHospitalId: doc?.hospitalId || null,
-      });
     }
 
     return res.json({

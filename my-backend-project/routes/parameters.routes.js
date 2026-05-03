@@ -206,9 +206,15 @@ router.post('/leave-types', requireRole('admin', 'yetkili'), async (req, res) =>
 // PUT update leave type
 router.put('/leave-types/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
-    const updates = req.body;
-    updates.updatedAt = new Date();
-    
+    const { name, description, color, category, maxDaysPerYear, paidLeave } = req.body;
+    const updates = { updatedAt: new Date() };
+    if (name !== undefined) updates.name = name;
+    if (description !== undefined) updates.description = description;
+    if (color !== undefined) updates.color = color;
+    if (category !== undefined) updates.category = category;
+    if (maxDaysPerYear !== undefined) updates.maxDaysPerYear = maxDaysPerYear;
+    if (paidLeave !== undefined) updates.paidLeave = paidLeave;
+
     const type = await LeaveType.findOneAndUpdate(
       withHospitalFilter(req, { _id: req.params.id }),
       updates,
@@ -241,8 +247,8 @@ router.get('/calendar', async (req, res) => {
     const { year, month } = req.query;
     let query = withHospitalFilter(req, {});
     
-    if (year) query.year = parseInt(year);
-    if (month) query.month = parseInt(month);
+    if (year) { const y = parseInt(year, 10); if (Number.isFinite(y)) query.year = y; }
+    if (month) { const m = parseInt(month, 10); if (Number.isFinite(m)) query.month = m; }
     
     const settings = await CalendarSetting.find(query)
       .populate('createdBy', 'name email')
@@ -296,15 +302,20 @@ router.post('/calendar', requireRole('admin', 'yetkili'), async (req, res) => {
 // PUT update calendar setting
 router.put('/calendar/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
-    const updates = req.body;
-    updates.updatedAt = new Date();
-    
-    if (updates.date) {
-      const dateObj = new Date(updates.date);
+    const { name, date, type, isHoliday, startDate, endDate } = req.body;
+    const updates = { updatedAt: new Date() };
+    if (name !== undefined) updates.name = name;
+    if (type !== undefined) updates.type = type;
+    if (isHoliday !== undefined) updates.isHoliday = isHoliday;
+    if (date !== undefined) {
+      const dateObj = new Date(date);
+      updates.date = dateObj;
       updates.year = dateObj.getFullYear();
       updates.month = dateObj.getMonth() + 1;
     }
-    
+    if (startDate !== undefined) updates.startDate = startDate ? new Date(startDate) : null;
+    if (endDate !== undefined) updates.endDate = endDate ? new Date(endDate) : null;
+
     const setting = await CalendarSetting.findOneAndUpdate(
       withHospitalFilter(req, { _id: req.params.id }),
       updates,
@@ -374,9 +385,13 @@ router.post('/request-types', requireRole('admin', 'yetkili'), async (req, res) 
 // PUT update request type
 router.put('/request-types/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
-    const updates = req.body;
-    updates.updatedAt = new Date();
-    
+    const { name, description, category, requiresApproval } = req.body;
+    const updates = { updatedAt: new Date() };
+    if (name !== undefined) updates.name = name;
+    if (description !== undefined) updates.description = description;
+    if (category !== undefined) updates.category = category;
+    if (requiresApproval !== undefined) updates.requiresApproval = requiresApproval;
+
     const type = await RequestType.findOneAndUpdate(
       withHospitalFilter(req, { _id: req.params.id }),
       updates,
