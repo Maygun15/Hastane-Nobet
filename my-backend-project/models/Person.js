@@ -37,6 +37,8 @@ const personSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 personSchema.index({ tc: 1 }, { sparse: true });
+personSchema.index({ hospitalId: 1, tc: 1 }, { unique: true, sparse: true });
+personSchema.index({ hospitalId: 1, serviceId: 1 });
 applyHospitalScope(personSchema);
 
 module.exports = mongoose.models.Person || mongoose.model('Person', personSchema);

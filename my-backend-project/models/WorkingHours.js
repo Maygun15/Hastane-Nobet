@@ -48,16 +48,8 @@ const WorkingHoursSchema = new mongoose.Schema({
   notes: {
     type: String,
     default: ''
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
   }
-}, { 
+}, {
   timestamps: true,
   collection: 'working_hours'
 });
@@ -68,4 +60,4 @@ WorkingHoursSchema.index({ workAreaId: 1 });
 WorkingHoursSchema.index({ status: 1 });
 applyHospitalScope(WorkingHoursSchema);
 
-module.exports = mongoose.model('WorkingHours', WorkingHoursSchema);
+module.exports = mongoose.models.WorkingHours || mongoose.model('WorkingHours', WorkingHoursSchema);

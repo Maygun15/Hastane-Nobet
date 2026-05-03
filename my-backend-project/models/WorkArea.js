@@ -32,15 +32,7 @@ const WorkAreaSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Service'
   }],
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  }
-}, { 
+}, {
   timestamps: true,
   collection: 'work_areas'
 });
@@ -50,4 +42,4 @@ WorkAreaSchema.index({ name: 1 });
 WorkAreaSchema.index({ status: 1 });
 applyHospitalScope(WorkAreaSchema);
 
-module.exports = mongoose.model('WorkArea', WorkAreaSchema);
+module.exports = mongoose.models.WorkArea || mongoose.model('WorkArea', WorkAreaSchema);

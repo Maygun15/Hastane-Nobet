@@ -7,6 +7,8 @@
     "start": "node index.js",
     "start:dev": "nodemon --watch src --watch routes --watch services --watch models --watch middleware --watch index.js index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
+    "seed": "node scripts/seed.js",
+    "seed:clean": "node scripts/seed.js --clean",
     "test:policy-layer": "node scripts/test-policy-layer.js",
     "test:candidate-builder": "node scripts/test-candidate-builder-integration.js",
     "test:candidate-builder-v22": "node scripts/test-candidate-builder-v22-rules.js",
