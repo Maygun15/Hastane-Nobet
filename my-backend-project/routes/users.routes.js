@@ -580,6 +580,45 @@ router.patch('/:id/services', requireAuth, async (req, res) => {
 });
 
 /* ---------------------------
+   Aktif/pasif yap (admin)
+   POST /api/users/:id/activate
+   POST /api/users/:id/deactivate
+---------------------------- */
+router.post('/:id/activate', requireAdmin, async (req, res) => {
+  try {
+    const u = await User.findOneAndUpdate(
+      withHospitalFilter(req, { _id: req.params.id }),
+      { $set: { active: true } },
+      { new: true }
+    ).lean();
+    if (!u) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+    return res.json({ ok: true, user: { id: String(u._id), active: u.active } });
+  } catch (err) {
+    console.error('ACTIVATE ERR:', err);
+    return res.status(500).json({ error: 'Aktivasyon başarısız' });
+  }
+});
+
+router.post('/:id/deactivate', requireAdmin, async (req, res) => {
+  try {
+    const me = req.user;
+    if (String(me.uid || me._id || '') === String(req.params.id)) {
+      return res.status(400).json({ error: 'Kendi hesabını pasifleştiremezsin' });
+    }
+    const u = await User.findOneAndUpdate(
+      withHospitalFilter(req, { _id: req.params.id }),
+      { $set: { active: false } },
+      { new: true }
+    ).lean();
+    if (!u) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+    return res.json({ ok: true, user: { id: String(u._id), active: u.active } });
+  } catch (err) {
+    console.error('DEACTIVATE ERR:', err);
+    return res.status(500).json({ error: 'Deaktivasyon başarısız' });
+  }
+});
+
+/* ---------------------------
    Kullanıcı sil (admin)
    DELETE /api/users/:id
 ---------------------------- */
