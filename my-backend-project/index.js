@@ -214,6 +214,7 @@ const AuditLog = require(path.join(__dirname, 'models', 'AuditLog.js'));
 // Indeks ve TTL'lerin oluşması için startup'ta register et
 require(path.join(__dirname, 'models', 'AILog.js'));
 require(path.join(__dirname, 'models', 'AIPreference.js'));
+require(path.join(__dirname, 'models', 'SchedulerJob.js'));
 
 async function createAdmin() {
   try {

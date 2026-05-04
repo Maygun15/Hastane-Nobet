@@ -2,6 +2,7 @@ const GeneratedSchedule = require('../models/GeneratedSchedule');
 const MonthlySchedule = require('../models/MonthlySchedule');
 const Person = require('../models/Person');
 const mongoose = require('mongoose');
+const { computeQualityScore } = require('./scheduleQuality');
 const { listHolidays } = require('./holidayService');
 const { generateMonthlyPlan } = require('./scheduler');
 const { generateDraftRoster } = require('./scheduler/draftRoster');
@@ -511,8 +512,14 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     requiredSlots,
   });
 
+  const quality = computeQualityScore({
+    assignments:  data.assignments  || [],
+    issues:       data.issues       || [],
+    requiredSlots: Number(data.debug?.requiredSlots || requiredSlots || 0),
+  });
+
   if (dryRun) {
-    return { data, rules, weights, sourceScheduleId: scheduleDoc?._id || null };
+    return { data, rules, weights, quality, sourceScheduleId: scheduleDoc?._id || null };
   }
 
   let persistedData = data;
@@ -582,7 +589,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     }
   }
 
-  return { data: persistedData, rules, weights, generatedId: String(doc._id) };
+  return { data: persistedData, rules, weights, quality, generatedId: String(doc._id) };
 }
 
 module.exports = {
