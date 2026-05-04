@@ -331,7 +331,7 @@ export default function AIChatPanel({ activeYM, serviceName, style }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKey}
-          placeholder='Türkçe komut yazın… ("Ayşe\'yi 15 Mayıs gecesinden çıkar")'
+          placeholder="Türkçe komut yazın… (ör: Ayşe'yi 15 Mayıs gecesinden çıkar)"
           rows={2}
           disabled={loading}
           style={{

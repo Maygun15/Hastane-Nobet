@@ -36,6 +36,7 @@ import UsersTab from "../tabs/UsersTab.jsx";
 import MyRequestsTab from "../tabs/MyRequestsTab.jsx";
 import RequestsManagementTab from "../tabs/RequestsManagementTab.jsx";
 import UserProfile from "../components/UserProfile.jsx";
+import AIChatPanel from "../components/AIChatPanel.jsx";
 
 // Normal kullanıcı takvimi
 import PersonScheduleCalendar from "../components/PersonScheduleCalendar.jsx";
@@ -124,6 +125,7 @@ export default function HospitalRosterApp() {
   const canSeeSchedules   = isAdmin || isAuthorized;   // Çizelgeler
   const canSeeParameters  = isAdmin;                   // Parametreler (yalnız Admin)
   const canSeeUsersTab    = isAdmin;                   // Kullanıcılar: yalnız Admin
+  const canSeeAI          = isAdmin || isAuthorized;   // AI Asistan: Admin + Yetkili
 
   const [activeTab, setActiveTab] = useState("plan");
   const [navOrder, setNavOrder] = useState(() => {
@@ -855,6 +857,15 @@ export default function HospitalRosterApp() {
                 >
                   Kullanıcılar</NavBtn></div>
               )}
+
+              {/* AI ASİSTAN — Admin + Yetkili */}
+              {canSeeAI && (
+                <div style={{ order: navOrder.indexOf("ai") !== -1 ? navOrder.indexOf("ai") : 6 }}><NavBtn active={activeTab === "ai"}
+                  onClick={() => setActiveTab("ai")}
+                  icon={() => <span style={{ fontSize: 16 }}>🤖</span>}
+                >
+                  AI Asistan</NavBtn></div>
+              )}
                 </>
               )}
             
@@ -960,6 +971,12 @@ export default function HospitalRosterApp() {
           {activeTab === "myRequests" && <MyRequestsTab />}
           {activeTab === "requests" && (isAdmin || isStaff) && <RequestsManagementTab />}
           {activeTab === "profile" && <UserProfile currentUser={user} onUpdate={refresh} />}
+
+          {activeTab === "ai" && canSeeAI && (
+            <div style={{ padding: 24, maxWidth: 720, margin: '0 auto', height: 'calc(100vh - 120px)' }}>
+              <AIChatPanel style={{ height: '100%' }} />
+            </div>
+          )}
         </main>
       </div>
       </AppDataProvider>
