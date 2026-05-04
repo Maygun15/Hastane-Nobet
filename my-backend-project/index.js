@@ -9,6 +9,20 @@ if (!process.env.MONGODB_URI) {
   require('dotenv').config({ path: path.join(__dirname, '.env'), override: true });
 }
 
+// ── Sentry: hata takibi (SENTRY_DSN varsa aktif olur) ──────────────────────
+let Sentry;
+if (process.env.SENTRY_DSN) {
+  try {
+    Sentry = require('@sentry/node');
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      environment: process.env.NODE_ENV || 'development',
+      tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 0,
+    });
+    console.log('[BOOT] Sentry aktif');
+  } catch (e) { console.warn('[BOOT] Sentry yüklenemedi:', e?.message); }
+}
+
 const express  = require('express');
 const cors     = require('cors');
 const helmet   = require('helmet');
@@ -597,8 +611,18 @@ app.get('/api/admin/audit-logs', ...secureTenant, requireRole('admin'), async (r
 
 /* ========== 404 & ERROR ========== */
 app.use((req, res) => res.status(404).json({ status: 'error', message: 'Not Found' }));
+
+// Sentry error handler (Sentry aktifse hataları yakala)
+if (Sentry) {
+  try { app.use(Sentry.expressErrorHandler()); } catch {}
+}
+
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
+  // 5xx hatalarını Sentry'e ilet
+  if (Sentry && (!err?.status || err.status >= 500)) {
+    try { Sentry.captureException(err); } catch {}
+  }
   console.error('ERR:', err);
   const status = err?.status || err?.statusCode || 500;
   const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';

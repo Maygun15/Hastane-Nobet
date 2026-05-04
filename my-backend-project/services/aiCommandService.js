@@ -1,6 +1,55 @@
 // services/aiCommandService.js — Türkçe komut → yapılandırılmış JSON
 const { llmChat } = require('./llmService');
 
+// ── Güvenlik: Prompt injection koruması ──────────────────────────────────────
+const MAX_INPUT_LENGTH = 800; // LLM'e gönderilecek max karakter sayısı
+
+// Yaygın prompt injection pattern'ları
+const INJECTION_PATTERNS = [
+  /ignore\s+(previous|all|prior)\s+(instructions?|prompts?|rules?|system)/i,
+  /you\s+are\s+now\s+/i,
+  /act\s+as\s+(if\s+you\s+are|a\s+)/i,
+  /forget\s+(everything|all|your|previous)/i,
+  /system\s*:\s*you/i,
+  /\[system\]/i,
+  /\<system\>/i,
+  /\|\s*system\s*\|/i,
+  /jailbreak/i,
+  /dan\s+mode/i,
+];
+
+function sanitizeUserInput(text) {
+  if (!text) return '';
+  let s = String(text)
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // control chars (keep \n \r \t)
+    .replace(/\r\n/g, '\n')
+    .trim();
+
+  // Uzunluk sınırı
+  if (s.length > MAX_INPUT_LENGTH) s = s.slice(0, MAX_INPUT_LENGTH) + '…';
+
+  // Injection pattern tespiti — sıfırlamak yerine loglayıp devam ediyoruz
+  // (kullanıcı Türkçe yazdığı için İngilizce pattern'ler zararsız olabilir)
+  const hasInjection = INJECTION_PATTERNS.some((rx) => rx.test(s));
+  if (hasInjection) {
+    // Güvenli fallback: intent'i unknown yap, LLM'e gönderme
+    throw Object.assign(new Error('INJECTION_DETECTED'), { code: 'INJECTION_DETECTED' });
+  }
+
+  return s;
+}
+
+// ── KVKK: Bağlam verisini anonimleştir (servis adı tutulur, PII temizlenir) ──
+function sanitizeContext(context = {}) {
+  return {
+    // activeYM tarih bilgisi — kişisel veri değil, tutulur
+    activeYM: context.activeYM ? String(context.activeYM).slice(0, 7) : null,
+    // serviceName — organizasyonel birim — PII değil, tutulur
+    serviceName: context.serviceName ? String(context.serviceName).slice(0, 64) : null,
+    // Diğer context alanları atlanır (personId, userId vs. LLM'e gitmez)
+  };
+}
+
 // Her sessionId için son N mesajı bellekte tut (server restart'ta temizlenir — MVP için yeterli)
 const SESSION_HISTORY = new Map(); // sessionId → [{role, content}]
 const SESSION_MAX_MSGS = 10; // 5 tur (user + assistant)
@@ -86,12 +135,29 @@ KURALLAR:
  * @param {*}      [opts.userId]
  */
 async function parseCommand({ text, sessionId, context = {}, hospitalId, userId }) {
+  // ── Güvenlik: input sanitize + injection tespiti ──
+  let safeText;
+  try {
+    safeText = sanitizeUserInput(text);
+  } catch (err) {
+    if (err?.code === 'INJECTION_DETECTED') {
+      return {
+        intent: 'unknown', confidence: 0, entities: {},
+        humanReadable: 'Güvenlik politikası: bu komut işlenemiyor. Lütfen sade Türkçe yazın.',
+        missingInfo: [], requiresConfirmation: true, canExecute: false,
+        _securityBlock: true,
+      };
+    }
+    throw err;
+  }
+
+  const safeCtx = sanitizeContext(context);
   const history = getHistory(sessionId);
 
-  // Bağlam bilgisini kullanıcı mesajına ekle (AI daha iyi anlar)
-  let enrichedText = text;
-  if (context.activeYM) enrichedText += `\n[Aktif ay: ${context.activeYM}]`;
-  if (context.serviceName) enrichedText += `\n[Servis: ${context.serviceName}]`;
+  // Bağlam bilgisini kullanıcı mesajına ekle — yalnızca anonimleştirilmiş veriler
+  let enrichedText = safeText;
+  if (safeCtx.activeYM)    enrichedText += `\n[Aktif ay: ${safeCtx.activeYM}]`;
+  if (safeCtx.serviceName) enrichedText += `\n[Servis: ${safeCtx.serviceName}]`;
 
   const messages = [...history, { role: 'user', content: enrichedText }];
 

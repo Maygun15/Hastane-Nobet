@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node index.js",
     "start:dev": "nodemon --watch src --watch routes --watch services --watch models --watch middleware --watch index.js index.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest --testPathPattern='test/' --forceExit",
+    "test:constraints": "jest test/scheduler.constraints.test.js --forceExit",
+    "test:ai": "jest test/ai.intent.test.js --forceExit",
     "seed": "node scripts/seed.js",
     "seed:clean": "node scripts/seed.js --clean",
     "test:policy-layer": "node scripts/test-policy-layer.js",
@@ -26,6 +28,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@sentry/node": "^10.51.0",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "axios": "^1.7.7",
@@ -49,6 +52,7 @@
     "nodemailer": "^7.0.13"
   },
   "devDependencies": {
+    "jest": "^30.3.0",
     "nodemon": "^3.1.10"
   }
 }
