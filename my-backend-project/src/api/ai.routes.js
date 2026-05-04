@@ -101,7 +101,50 @@ router.get('/cost-summary', async (req, res) => {
       }},
     ]);
 
-    return res.json({ ok: true, period: '30d', summary: total || {} });
+    // Model bazlı breakdown
+    const byModel = await AILog.aggregate([
+      { $match: filter },
+      { $group: {
+        _id: '$model',
+        calls:            { $sum: 1 },
+        promptTokens:     { $sum: '$promptTokens' },
+        completionTokens: { $sum: '$completionTokens' },
+        totalTokens:      { $sum: '$totalTokens' },
+        costUsd:          { $sum: '$costUsd' },
+      }},
+      { $project: { _id: 0, model: '$_id', calls: 1, promptTokens: 1, completionTokens: 1, totalTokens: 1, costUsd: 1 } },
+      { $sort: { costUsd: -1 } },
+    ]);
+
+    return res.json({ ok: true, period: '30d', summary: total || {}, byModel });
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: safeMessage(err) });
+  }
+});
+
+/* ─── /cost-daily ───────────────────────────────────────────
+   Son 30 günlük günlük token & maliyet trendi (admin).
+   ─────────────────────────────────────────────────────────── */
+router.get('/cost-daily', async (req, res) => {
+  try {
+    const AILog = require('../../models/AILog');
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const filter = { createdAt: { $gte: since } };
+    if (req.hospitalId) filter.hospitalId = req.hospitalId;
+
+    const daily = await AILog.aggregate([
+      { $match: filter },
+      { $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+        calls:       { $sum: 1 },
+        totalTokens: { $sum: '$totalTokens' },
+        costUsd:     { $sum: '$costUsd' },
+      }},
+      { $project: { _id: 0, date: '$_id', calls: 1, totalTokens: 1, costUsd: 1 } },
+      { $sort: { date: 1 } },
+    ]);
+
+    return res.json({ ok: true, data: daily });
   } catch (err) {
     return res.status(500).json({ ok: false, message: safeMessage(err) });
   }

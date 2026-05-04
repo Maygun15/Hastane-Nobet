@@ -573,6 +573,12 @@ try {
 const holidayRoutes = require(path.join(__dirname, 'routes', 'holiday.js'));
 app.use('/api/holidays', ...secureTenant, holidayRoutes);
 
+/* ============== NOTIFICATIONS (SSE) ============== */
+try {
+  const notificationsRoutes = require('./routes/notifications.routes.js');
+  app.use('/api/notifications', notificationsRoutes); // requireAuth kendi içinde
+} catch (e) { console.warn('[BOOT] notifications route yüklenemedi:', e?.message); }
+
 /* ============ ADMIN ÖRNEĞİ ============ */
 app.get('/api/admin/ping', ...secureTenant, requireRole('admin'),
   (req, res) => res.json({ ok: true, role: req.user.role })
@@ -608,6 +614,14 @@ app.use((err, req, res, _next) => {
 const server = app.listen(PORT, () => {
   console.log(`🚀 Sunucu http://localhost:${PORT} üzerinde`);
   console.log('[BOOT] ENV:', { SKIP_DB, ALLOW_DEV, FRONTEND_ORIGIN: [...ALLOWED_ORIGINS] });
+
+  // 24h nöbet hatırlatma servisi
+  if (!SKIP_DB && NOTIFICATIONS_ENABLED) {
+    try {
+      const { startReminderJob } = require('./services/reminderService');
+      startReminderJob();
+    } catch (e) { console.warn('[BOOT] reminderService yüklenemedi:', e?.message); }
+  }
 });
 
 // SKIP_DB modunda bazı ortamlarda event loop erken boşalıyor → dev server'ı ayakta tut

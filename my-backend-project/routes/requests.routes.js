@@ -8,6 +8,7 @@ const Setting = require('../models/Setting');
 const {
   sendLeaveApproved,
   sendLeaveRejected,
+  sendShiftChanged,
 } = require('../services/notificationService');
 const { withHospitalFilter, isSuperAdminRole } = require('../middleware/hospital');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
@@ -302,6 +303,25 @@ router.put('/:id', requireAuth, async (req, res) => {
         } catch (e) {
           console.error('[swap-execute] ERR:', e?.message || e);
         }
+        // Takas onay bildirimi — her iki tarafa
+        void sendShiftChanged({
+          personId: request.fromPersonId,
+          userId:   request.fromUserId,
+          personName: request.fromName,
+          date:       request.swapMyDate,
+          previousShift: request.swapMyShiftLabel || request.swapMyShiftId,
+          newShift:      request.swapTargetShiftLabel || request.swapTargetShiftId,
+          changedByName: actorName,
+          action: 'updated',
+        }).catch((e) => console.error('[notify][swap-from] ERR:', e?.message || e));
+        void sendShiftChanged({
+          personId: request.swapWithPersonId,
+          date:     request.swapTargetDate,
+          previousShift: request.swapTargetShiftLabel || request.swapTargetShiftId,
+          newShift:      request.swapMyShiftLabel || request.swapMyShiftId,
+          changedByName: actorName,
+          action: 'updated',
+        }).catch((e) => console.error('[notify][swap-to] ERR:', e?.message || e));
       }
     } else if (isLeaveRequest && hasStatusChange && status === 'rejected') {
       void sendLeaveRejected({ request, actorName }).catch((e) => {

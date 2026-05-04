@@ -10,6 +10,7 @@ const { validateAssignment } = require('../utils/rulesValidator');
 const { checkSameDayConflict, checkLeaveConflict } = require('../services/conflictService');
 const { requireAuth, sameServiceOrAdmin, requireRole } = require('../middleware/authz');
 const { assignShiftSchema, validate } = require('../middleware/validate');
+const ExcelJS = require('exceljs');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
@@ -1338,6 +1339,144 @@ router.post('/comparison',
     }
   }
 );
+
+/* ─── GET /api/schedules/export/ical ───────────────────────────
+   iCal (.ics) dışa aktarma — personId veya serviceId bazlı.
+   Query: year, month, personId?, serviceId?
+   ─────────────────────────────────────────────────────────────── */
+router.get('/export/ical', requireAuth, async (req, res) => {
+  try {
+    const year  = Number(req.query.year  || new Date().getFullYear());
+    const month = Number(req.query.month || new Date().getMonth() + 1);
+    const { personId, serviceId } = req.query;
+
+    const q = { year, month };
+    if (serviceId) q.serviceId = serviceId;
+    const docs = await MonthlySchedule.find(q).lean();
+
+    let assignments = docs.flatMap((d) => d?.data?.assignments || []);
+    if (personId) {
+      assignments = assignments.filter((a) =>
+        String(a?.personId || '') === String(personId) ||
+        String(a?.personName || '').toLowerCase() === String(personId).toLowerCase()
+      );
+    }
+
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Hastane Nöbet Sistemi//TR',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'X-WR-CALNAME:Nöbet Çizelgesi',
+      'X-WR-TIMEZONE:Europe/Istanbul',
+    ];
+
+    for (const a of assignments) {
+      const dateStr = String(a?.date || '').replace(/-/g, '');
+      if (!dateStr || dateStr.length < 8) continue;
+
+      // All-day event: DTEND is next day
+      const d = new Date(`${a.date}T00:00:00`);
+      d.setDate(d.getDate() + 1);
+      const endStr = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+
+      const uid = `${dateStr}-${String(a?.shiftId||'').replace(/[^A-Z0-9]/g,'')||'S'}-${String(a?.personId||'').slice(-6)||'X'}@hastane.nobet`;
+      const summary = `${a?.shiftId || 'Nöbet'} — ${a?.personName || 'Çalışan'}`;
+      const desc = `Vardiya: ${a?.shiftId || '—'} | Kişi: ${a?.personName || '—'} | Saat: ${a?.hours || '—'}s`;
+
+      lines.push(
+        'BEGIN:VEVENT',
+        `DTSTART;VALUE=DATE:${dateStr}`,
+        `DTEND;VALUE=DATE:${endStr}`,
+        `SUMMARY:${summary}`,
+        `DESCRIPTION:${desc}`,
+        `UID:${uid}`,
+        'END:VEVENT'
+      );
+    }
+
+    lines.push('END:VCALENDAR');
+    const icsContent = lines.join('\r\n') + '\r\n';
+
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="nobetler-${year}-${String(month).padStart(2,'0')}.ics"`);
+    return res.send(icsContent);
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: err?.message || 'iCal oluşturma hatası' });
+  }
+});
+
+/* ─── GET /api/schedules/export/excel ──────────────────────────
+   Excel (.xlsx) dışa aktarma.
+   Query: year, month, serviceId?
+   ─────────────────────────────────────────────────────────────── */
+router.get('/export/excel', requireAuth, requireRole('admin', 'authorized'), async (req, res) => {
+  try {
+    const year  = Number(req.query.year  || new Date().getFullYear());
+    const month = Number(req.query.month || new Date().getMonth() + 1);
+    const { serviceId } = req.query;
+
+    const q = { year, month };
+    if (serviceId) q.serviceId = serviceId;
+    const docs = await MonthlySchedule.find(q).lean();
+    const assignments = docs.flatMap((d) => d?.data?.assignments || []);
+
+    const TR_MONTHS = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+    const monthLabel = `${TR_MONTHS[month-1]} ${year}`;
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Hastane Nöbet Sistemi';
+    const ws = wb.addWorksheet(monthLabel);
+
+    // Başlık satırı
+    ws.columns = [
+      { header: 'Tarih', key: 'date', width: 14 },
+      { header: 'Gün',   key: 'weekday', width: 10 },
+      { header: 'Vardiya', key: 'shiftId', width: 14 },
+      { header: 'Kişi', key: 'personName', width: 28 },
+      { header: 'Saat', key: 'hours', width: 8 },
+    ];
+
+    // Header style
+    ws.getRow(1).eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF6366F1' } };
+      cell.alignment = { horizontal: 'center' };
+    });
+
+    // Rows
+    const TR_DAYS = ['Pazar','Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi'];
+    assignments
+      .sort((a, b) => (a.date || '') < (b.date || '') ? -1 : 1)
+      .forEach((a, i) => {
+        const d = new Date((a.date || '') + 'T00:00:00');
+        ws.addRow({
+          date: a.date || '—',
+          weekday: isNaN(d.getTime()) ? '—' : TR_DAYS[d.getDay()],
+          shiftId: a.shiftId || a.shiftCode || '—',
+          personName: a.personName || '—',
+          hours: a.hours || '—',
+        });
+        // Zebra striping
+        if (i % 2 === 1) {
+          ws.getRow(i + 2).eachCell((cell) => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8F9FF' } };
+          });
+        }
+      });
+
+    // Auto filter
+    ws.autoFilter = { from: 'A1', to: 'E1' };
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="nobetler-${year}-${String(month).padStart(2,'0')}.xlsx"`);
+    await wb.xlsx.write(res);
+    return res.end();
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: err?.message || 'Excel oluşturma hatası' });
+  }
+});
 
 module.exports = router;
 

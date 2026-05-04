@@ -1,6 +1,6 @@
 // src/app/HospitalRosterApp.jsx
 import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { Toaster } from "sonner";
+import { toast, Toaster } from "sonner";
 import {
   Calendar as CalendarIcon,
   ChevronDown,
@@ -40,6 +40,9 @@ import AIChatPanel from "../components/AIChatPanel.jsx";
 import FloatingAIChat from "../components/FloatingAIChat.jsx";
 import DashboardPage from "../pages/DashboardPage.jsx";
 import AISchedulerPage from "../pages/AISchedulerPage.jsx";
+import AICostPage from "../pages/AICostPage.jsx";
+import FairnessReportPage from "../pages/FairnessReportPage.jsx";
+import useSSENotifications from "../hooks/useSSENotifications.js";
 
 // Normal kullanıcı takvimi
 import PersonScheduleCalendar from "../components/PersonScheduleCalendar.jsx";
@@ -131,11 +134,18 @@ export default function HospitalRosterApp() {
   const canSeeAI          = isAdmin || isAuthorized;   // AI Asistan: Admin + Yetkili
   const canSeeDashboard   = isAdmin || isAuthorized;   // Dashboard: Admin + Yetkili
   const canSeeAIScheduler = isAdmin || isAuthorized;   // AI Çizelge: Admin + Yetkili
+  const canSeeAICost      = isAdmin;                   // AI Maliyet: yalnız Admin
+  const canSeeFairness    = isAdmin || isAuthorized;   // Adillik Raporu: Admin + Yetkili
+
+  // SSE bildirimleri — bağlantı kur, Toaster ile göster
+  useSSENotifications(React.useCallback((data) => {
+    if (data?.message) toast.info(data.message);
+  }, []));
 
   const [activeTab, setActiveTab] = useState(() => (isAdmin || isAuthorized) ? "dashboard" : "plan");
   const [navOrder, setNavOrder] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("navOrder")) || ["dashboard", "plan", "personnel", "schedules", "parameters", "users", "aiScheduler"]; }
-    catch { return ["dashboard", "plan", "personnel", "schedules", "parameters", "users", "aiScheduler"]; }
+    try { return JSON.parse(localStorage.getItem("navOrder")) || ["dashboard", "plan", "personnel", "schedules", "parameters", "users", "aiScheduler", "fairness", "aiCost"]; }
+    catch { return ["dashboard", "plan", "personnel", "schedules", "parameters", "users", "aiScheduler", "fairness", "aiCost"]; }
   });
 
   const handleDragStart = (e, id) => {
@@ -889,6 +899,24 @@ export default function HospitalRosterApp() {
                 >
                   AI Çizelge</NavBtn></div>
               )}
+
+              {/* ADİLLİK RAPORU — Admin + Yetkili */}
+              {canSeeFairness && (
+                <div style={{ order: navOrder.indexOf("fairness") !== -1 ? navOrder.indexOf("fairness") : 8 }} draggable onDragStart={(e) => handleDragStart(e, "fairness")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "fairness")}><NavBtn active={activeTab === "fairness"}
+                  onClick={() => setActiveTab("fairness")}
+                  icon={() => <span style={{ fontSize: 14 }}>📊</span>}
+                >
+                  Adillik</NavBtn></div>
+              )}
+
+              {/* AI MALİYET — yalnız Admin */}
+              {canSeeAICost && (
+                <div style={{ order: navOrder.indexOf("aiCost") !== -1 ? navOrder.indexOf("aiCost") : 9 }} draggable onDragStart={(e) => handleDragStart(e, "aiCost")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "aiCost")}><NavBtn active={activeTab === "aiCost"}
+                  onClick={() => setActiveTab("aiCost")}
+                  icon={() => <span style={{ fontSize: 14 }}>💰</span>}
+                >
+                  AI Maliyet</NavBtn></div>
+              )}
                 </>
               )}
             
@@ -941,6 +969,14 @@ export default function HospitalRosterApp() {
 
           {activeTab === "aiScheduler" && canSeeAIScheduler && (
             <AISchedulerPage activeYM={getActiveYM()} />
+          )}
+
+          {activeTab === "fairness" && canSeeFairness && (
+            <FairnessReportPage activeYM={getActiveYM()} />
+          )}
+
+          {activeTab === "aiCost" && canSeeAICost && (
+            <AICostPage />
           )}
 
           {activeTab === "plan" && (
