@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "start:dev": "nodemon --watch src --watch routes --watch services --watch models --watch middleware --watch index.js index.js",
-    "test": "jest --testPathPattern='test/' --forceExit",
+    "test": "jest --testPathPatterns='test/' --forceExit",
     "test:constraints": "jest test/scheduler.constraints.test.js --forceExit",
     "test:ai": "jest test/ai.intent.test.js --forceExit",
     "seed": "node scripts/seed.js",

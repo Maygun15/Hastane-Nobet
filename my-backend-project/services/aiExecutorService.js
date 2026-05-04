@@ -133,10 +133,86 @@ async function execRemoveLeave({ entities }) {
   return { ok: true, humanReadable: `${resolvedPerson.name} için izin silindi` };
 }
 
+// ── Assign shift: kişiye belirli tarih + vardiya ata ──
+async function execAssignShift({ entities }) {
+  const { person, date, shiftCode, shiftLabel } = entities || {};
+  if (!person)    return { ok: false, message: 'Kişi belirtilmedi' };
+  if (!date)      return { ok: false, message: 'Tarih belirtilmedi' };
+  if (!shiftCode) return { ok: false, message: 'Vardiya kodu belirtilmedi' };
+
+  const ym = parseYM(date);
+  if (!ym) return { ok: false, message: 'Geçersiz tarih formatı' };
+
+  const resolvedPerson = await resolvePerson(person);
+  if (!resolvedPerson) return { ok: false, message: `Kişi bulunamadı: ${person}` };
+
+  const serviceId = String(resolvedPerson.serviceId || '');
+  const doc = await MonthlySchedule.findOne({ year: ym.year, month: ym.month, serviceId }).lean();
+  if (!doc) return { ok: false, message: `${ym.year}-${String(ym.month).padStart(2,'0')} için çizelge bulunamadı` };
+
+  const data = doc.data || {};
+  const assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
+  const pid = String(resolvedPerson._id);
+
+  const alreadyAssigned = assignments.some(
+    (a) => String(a.personId) === pid && String(a.date || a.day || '').slice(0, 10) === date
+  );
+  if (alreadyAssigned) {
+    return { ok: false, message: `${resolvedPerson.name} için ${date} tarihinde zaten bir atama var` };
+  }
+
+  assignments.push({
+    personId:   pid,
+    personName: resolvedPerson.name,
+    date,
+    shiftId:    shiftCode,
+    shiftCode,
+    shiftLabel: shiftLabel || shiftCode,
+  });
+
+  await MonthlySchedule.findByIdAndUpdate(doc._id, { $set: { 'data.assignments': assignments } });
+  return { ok: true, humanReadable: `${resolvedPerson.name} için ${date} tarihine ${shiftCode} vardiyası atandı` };
+}
+
+// ── Remove shift: kişinin belirli tarihteki nöbetini sil ──
+async function execRemoveShift({ entities }) {
+  const { person, date, shiftCode } = entities || {};
+  if (!person) return { ok: false, message: 'Kişi belirtilmedi' };
+  if (!date)   return { ok: false, message: 'Tarih belirtilmedi' };
+
+  const ym = parseYM(date);
+  if (!ym) return { ok: false, message: 'Geçersiz tarih formatı' };
+
+  const resolvedPerson = await resolvePerson(person);
+  if (!resolvedPerson) return { ok: false, message: `Kişi bulunamadı: ${person}` };
+
+  const serviceId = String(resolvedPerson.serviceId || '');
+  const doc = await MonthlySchedule.findOne({ year: ym.year, month: ym.month, serviceId }).lean();
+  if (!doc) return { ok: false, message: 'Çizelge bulunamadı' };
+
+  const data = doc.data || {};
+  const assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
+  const pid = String(resolvedPerson._id);
+
+  const filtered = assignments.filter((a) => {
+    const aDate = String(a.date || a.day || '').slice(0, 10);
+    const aPid  = String(a.personId || '');
+    if (aPid !== pid || aDate !== date) return true;
+    // shiftCode belirtildiyse sadece o kodu sil; yoksa o gündeki tüm atamayı sil
+    if (shiftCode) return String(a.shiftId || a.shiftCode || '').toUpperCase() !== shiftCode.toUpperCase();
+    return false;
+  });
+
+  if (filtered.length === assignments.length) {
+    return { ok: false, message: `${resolvedPerson.name} için ${date} tarihinde silinecek atama bulunamadı` };
+  }
+
+  await MonthlySchedule.findByIdAndUpdate(doc._id, { $set: { 'data.assignments': filtered } });
+  return { ok: true, humanReadable: `${resolvedPerson.name} için ${date} tarihindeki vardiya silindi` };
+}
+
 /**
  * Onaylanmış bir AI komutunu çalıştırır.
- * assign_shift / remove_shift → route'lara yönlendir (executor yetersiz bağlam nedeniyle)
- * query_schedule / add_leave / remove_leave → burada çalıştır
  */
 async function executeCommand({ intent, entities }) {
   switch (intent) {
@@ -148,21 +224,23 @@ async function executeCommand({ intent, entities }) {
     case 'remove_leave':
       return execRemoveLeave({ entities });
     case 'assign_shift':
+      return execAssignShift({ entities });
     case 'remove_shift':
+      return execRemoveShift({ entities });
     case 'swap_shifts':
-      // Tam bağlam (sectionId, serviceId, year/month, etc.) gerektirir.
-      // Frontend bu intentler için kendi schedule route'larına yönlendirilmeli.
+      // swap iki kişi gerektirir; AI entity şeması tek kişiyi destekliyor.
+      // Frontend takas talep akışını kullanmalı.
       return {
         ok: false,
         requiresManual: true,
-        message: `"${intent}" işlemi için çizelge ekranından manuel atama yapılmalı. AI gerekli tüm bağlamı belirleyemiyor.`,
+        message: 'Takas işlemi için Talepler ekranındaki takas talebi akışını kullanın.',
         hint: { intent, entities },
       };
     case 'generate_schedule':
       return {
         ok: false,
         requiresManual: true,
-        message: 'Otomatik çizelge oluşturma için Çizelge sekmesinden çalıştırın.',
+        message: 'Otomatik çizelge oluşturma için ✨ AI Çizelge sekmesinden çalıştırın.',
       };
     default:
       return { ok: false, message: `Bilinmeyen intent: ${intent}` };

@@ -120,6 +120,11 @@ router.post('/explain', requireAuth, async (req, res) => {
     const { personName, date, shiftId, shiftLabel, hours } = assignment;
     const { rules = {}, issues = [], qualityScore = null } = context;
 
+    // KVKK: gerçek isim LLM'e gitmesin — pozisyon tabanlı pseudonym kullan
+    let h = 0;
+    for (let i = 0; i < (personName || '').length; i++) h = (Math.imul(31, h) + personName.charCodeAt(i)) | 0;
+    const personRef = `Personel-${Math.abs(h).toString(36).slice(0, 4).toUpperCase()}`;
+
     const activeRules = Object.entries(rules)
       .filter(([, v]) => v)
       .map(([k]) => k)
@@ -132,7 +137,7 @@ router.post('/explain', requireAuth, async (req, res) => {
       .join('\n') || 'Sorun yok';
 
     const userPrompt = `Çizelge ataması:
-- Kişi: ${personName}
+- Kişi: ${personRef}
 - Tarih: ${date}
 - Vardiya: ${shiftId}${shiftLabel ? ` (${shiftLabel})` : ''}${hours ? `, ${hours} saat` : ''}
 

@@ -46,7 +46,7 @@ import useSSENotifications from "../hooks/useSSENotifications.js";
 
 // Normal kullanıcı takvimi
 import PersonScheduleCalendar from "../components/PersonScheduleCalendar.jsx";
-import { getActiveYM, setActiveYM } from "../utils/activeYM.js";
+import { getActiveYM, setActiveYM, ymKey } from "../utils/activeYM.js";
 import { apiChangePassword, API, getToken } from "../lib/api.js";
 import { getAllLeaves } from "../lib/leaves.js";
 import { ROLE } from "../constants/enums.js";
@@ -960,7 +960,7 @@ export default function HospitalRosterApp() {
         <main className="flex-1 w-full px-4 py-6 md:px-6 space-y-6 overflow-auto">
           {activeTab === "dashboard" && canSeeDashboard && (
             <DashboardPage
-              activeYM={getActiveYM()}
+              activeYM={ymKey(getActiveYM())}
               peopleAll={peopleAll}
               onGoSchedules={() => setActiveTab("schedules")}
               onGoAI={() => setActiveTab("ai")}
@@ -968,11 +968,11 @@ export default function HospitalRosterApp() {
           )}
 
           {activeTab === "aiScheduler" && canSeeAIScheduler && (
-            <AISchedulerPage activeYM={getActiveYM()} />
+            <AISchedulerPage activeYM={ymKey(getActiveYM())} />
           )}
 
           {activeTab === "fairness" && canSeeFairness && (
-            <FairnessReportPage activeYM={getActiveYM()} />
+            <FairnessReportPage activeYM={ymKey(getActiveYM())} />
           )}
 
           {activeTab === "aiCost" && canSeeAICost && (
@@ -1053,7 +1053,7 @@ export default function HospitalRosterApp() {
 
         {/* Floating AI Chat — her yerden erişilebilir, AI tab'ında gizle */}
         {canSeeAI && activeTab !== "ai" && (
-          <FloatingAIChat activeYM={getActiveYM()} />
+          <FloatingAIChat activeYM={ymKey(getActiveYM())} />
         )}
       </div>
       </AppDataProvider>
