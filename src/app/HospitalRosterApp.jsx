@@ -37,6 +37,9 @@ import MyRequestsTab from "../tabs/MyRequestsTab.jsx";
 import RequestsManagementTab from "../tabs/RequestsManagementTab.jsx";
 import UserProfile from "../components/UserProfile.jsx";
 import AIChatPanel from "../components/AIChatPanel.jsx";
+import FloatingAIChat from "../components/FloatingAIChat.jsx";
+import DashboardPage from "../pages/DashboardPage.jsx";
+import AISchedulerPage from "../pages/AISchedulerPage.jsx";
 
 // Normal kullanıcı takvimi
 import PersonScheduleCalendar from "../components/PersonScheduleCalendar.jsx";
@@ -126,11 +129,13 @@ export default function HospitalRosterApp() {
   const canSeeParameters  = isAdmin;                   // Parametreler (yalnız Admin)
   const canSeeUsersTab    = isAdmin;                   // Kullanıcılar: yalnız Admin
   const canSeeAI          = isAdmin || isAuthorized;   // AI Asistan: Admin + Yetkili
+  const canSeeDashboard   = isAdmin || isAuthorized;   // Dashboard: Admin + Yetkili
+  const canSeeAIScheduler = isAdmin || isAuthorized;   // AI Çizelge: Admin + Yetkili
 
-  const [activeTab, setActiveTab] = useState("plan");
+  const [activeTab, setActiveTab] = useState(() => (isAdmin || isAuthorized) ? "dashboard" : "plan");
   const [navOrder, setNavOrder] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("navOrder")) || ["plan", "personnel", "schedules", "parameters", "users"]; }
-    catch { return ["plan", "personnel", "schedules", "parameters", "users"]; }
+    try { return JSON.parse(localStorage.getItem("navOrder")) || ["dashboard", "plan", "personnel", "schedules", "parameters", "users", "aiScheduler"]; }
+    catch { return ["dashboard", "plan", "personnel", "schedules", "parameters", "users", "aiScheduler"]; }
   });
 
   const handleDragStart = (e, id) => {
@@ -714,6 +719,15 @@ export default function HospitalRosterApp() {
 
                 <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-2">
                   <nav className="flex flex-wrap gap-2">
+              {/* DASHBOARD — Admin + Yetkili */}
+              {canSeeDashboard && (
+                <div style={{ order: navOrder.indexOf("dashboard") !== -1 ? navOrder.indexOf("dashboard") : 0 }} draggable onDragStart={(e) => handleDragStart(e, "dashboard")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "dashboard")}><NavBtn active={activeTab === "dashboard"}
+                  onClick={() => { setActiveTab("dashboard"); pushUrl("/"); closePersonnelDd(); closeSchedulesDd(); closeParamsDd(); }}
+                  icon={LayoutDashboard}
+                >
+                  Genel Bakış</NavBtn></div>
+              )}
+
               <div style={{ order: navOrder.indexOf("plan") !== -1 ? navOrder.indexOf("plan") : 1 }} draggable onDragStart={(e) => handleDragStart(e, "plan")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "plan")}><NavBtn active={activeTab === "plan"}
                 onClick={() => {
                   setActiveTab("plan");
@@ -866,6 +880,15 @@ export default function HospitalRosterApp() {
                 >
                   AI Asistan</NavBtn></div>
               )}
+
+              {/* AI ÇİZELGE — Admin + Yetkili */}
+              {canSeeAIScheduler && (
+                <div style={{ order: navOrder.indexOf("aiScheduler") !== -1 ? navOrder.indexOf("aiScheduler") : 7 }} draggable onDragStart={(e) => handleDragStart(e, "aiScheduler")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "aiScheduler")}><NavBtn active={activeTab === "aiScheduler"}
+                  onClick={() => setActiveTab("aiScheduler")}
+                  icon={() => <span style={{ fontSize: 14 }}>✨</span>}
+                >
+                  AI Çizelge</NavBtn></div>
+              )}
                 </>
               )}
             
@@ -907,6 +930,19 @@ export default function HospitalRosterApp() {
         </header>
 
         <main className="flex-1 w-full px-4 py-6 md:px-6 space-y-6 overflow-auto">
+          {activeTab === "dashboard" && canSeeDashboard && (
+            <DashboardPage
+              activeYM={getActiveYM()}
+              peopleAll={peopleAll}
+              onGoSchedules={() => setActiveTab("schedules")}
+              onGoAI={() => setActiveTab("ai")}
+            />
+          )}
+
+          {activeTab === "aiScheduler" && canSeeAIScheduler && (
+            <AISchedulerPage activeYM={getActiveYM()} />
+          )}
+
           {activeTab === "plan" && (
             isBasicUser ? (
               <MyCalendarBox
@@ -978,6 +1014,11 @@ export default function HospitalRosterApp() {
             </div>
           )}
         </main>
+
+        {/* Floating AI Chat — her yerden erişilebilir, AI tab'ında gizle */}
+        {canSeeAI && activeTab !== "ai" && (
+          <FloatingAIChat activeYM={getActiveYM()} />
+        )}
       </div>
       </AppDataProvider>
     </ErrorBoundary>
