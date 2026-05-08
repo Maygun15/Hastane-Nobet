@@ -184,13 +184,75 @@ const TR_FIXED_HOLIDAYS = [
   { mm: "10", dd: "29", name: "Cumhuriyet Bayramı" },
 ];
 
+// Dini bayramlar — hicri takvime bağlı, yıl bazlı sabit liste (2024-2028)
+// Arife 1 gün önce, bayram günleri "full" olarak işaretlendi.
+const TR_RELIGIOUS_HOLIDAYS = {
+  2024: [
+    { date: "2024-04-09", kind: "arife", name: "Ramazan Bayramı Arifesi" },
+    { date: "2024-04-10", kind: "full",  name: "Ramazan Bayramı 1. Gün" },
+    { date: "2024-04-11", kind: "full",  name: "Ramazan Bayramı 2. Gün" },
+    { date: "2024-04-12", kind: "full",  name: "Ramazan Bayramı 3. Gün" },
+    { date: "2024-06-16", kind: "arife", name: "Kurban Bayramı Arifesi" },
+    { date: "2024-06-17", kind: "full",  name: "Kurban Bayramı 1. Gün" },
+    { date: "2024-06-18", kind: "full",  name: "Kurban Bayramı 2. Gün" },
+    { date: "2024-06-19", kind: "full",  name: "Kurban Bayramı 3. Gün" },
+    { date: "2024-06-20", kind: "full",  name: "Kurban Bayramı 4. Gün" },
+  ],
+  2025: [
+    { date: "2025-03-29", kind: "arife", name: "Ramazan Bayramı Arifesi" },
+    { date: "2025-03-30", kind: "full",  name: "Ramazan Bayramı 1. Gün" },
+    { date: "2025-03-31", kind: "full",  name: "Ramazan Bayramı 2. Gün" },
+    { date: "2025-04-01", kind: "full",  name: "Ramazan Bayramı 3. Gün" },
+    { date: "2025-06-05", kind: "arife", name: "Kurban Bayramı Arifesi" },
+    { date: "2025-06-06", kind: "full",  name: "Kurban Bayramı 1. Gün" },
+    { date: "2025-06-07", kind: "full",  name: "Kurban Bayramı 2. Gün" },
+    { date: "2025-06-08", kind: "full",  name: "Kurban Bayramı 3. Gün" },
+    { date: "2025-06-09", kind: "full",  name: "Kurban Bayramı 4. Gün" },
+  ],
+  2026: [
+    { date: "2026-03-18", kind: "arife", name: "Ramazan Bayramı Arifesi" },
+    { date: "2026-03-19", kind: "full",  name: "Ramazan Bayramı 1. Gün" },
+    { date: "2026-03-20", kind: "full",  name: "Ramazan Bayramı 2. Gün" },
+    { date: "2026-03-21", kind: "full",  name: "Ramazan Bayramı 3. Gün" },
+    { date: "2026-05-25", kind: "arife", name: "Kurban Bayramı Arifesi" },
+    { date: "2026-05-26", kind: "full",  name: "Kurban Bayramı 1. Gün" },
+    { date: "2026-05-27", kind: "full",  name: "Kurban Bayramı 2. Gün" },
+    { date: "2026-05-28", kind: "full",  name: "Kurban Bayramı 3. Gün" },
+    { date: "2026-05-29", kind: "full",  name: "Kurban Bayramı 4. Gün" },
+  ],
+  2027: [
+    { date: "2027-03-07", kind: "arife", name: "Ramazan Bayramı Arifesi" },
+    { date: "2027-03-08", kind: "full",  name: "Ramazan Bayramı 1. Gün" },
+    { date: "2027-03-09", kind: "full",  name: "Ramazan Bayramı 2. Gün" },
+    { date: "2027-03-10", kind: "full",  name: "Ramazan Bayramı 3. Gün" },
+    { date: "2027-05-15", kind: "arife", name: "Kurban Bayramı Arifesi" },
+    { date: "2027-05-16", kind: "full",  name: "Kurban Bayramı 1. Gün" },
+    { date: "2027-05-17", kind: "full",  name: "Kurban Bayramı 2. Gün" },
+    { date: "2027-05-18", kind: "full",  name: "Kurban Bayramı 3. Gün" },
+    { date: "2027-05-19", kind: "full",  name: "Kurban Bayramı 4. Gün" },
+  ],
+  2028: [
+    { date: "2028-02-24", kind: "arife", name: "Ramazan Bayramı Arifesi" },
+    { date: "2028-02-25", kind: "full",  name: "Ramazan Bayramı 1. Gün" },
+    { date: "2028-02-26", kind: "full",  name: "Ramazan Bayramı 2. Gün" },
+    { date: "2028-02-27", kind: "full",  name: "Ramazan Bayramı 3. Gün" },
+    { date: "2028-05-03", kind: "arife", name: "Kurban Bayramı Arifesi" },
+    { date: "2028-05-04", kind: "full",  name: "Kurban Bayramı 1. Gün" },
+    { date: "2028-05-05", kind: "full",  name: "Kurban Bayramı 2. Gün" },
+    { date: "2028-05-06", kind: "full",  name: "Kurban Bayramı 3. Gün" },
+    { date: "2028-05-07", kind: "full",  name: "Kurban Bayramı 4. Gün" },
+  ],
+};
+
 function trFixedHolidaysForYear(year) {
-  return TR_FIXED_HOLIDAYS.map((h) => ({
+  const fixed = TR_FIXED_HOLIDAYS.map((h) => ({
     date: `${year}-${h.mm}-${h.dd}`,
     kind: h.kind || "full",
     name: h.name,
     _builtin: true,
   }));
+  const religious = (TR_RELIGIOUS_HOLIDAYS[year] || []).map((h) => ({ ...h, _builtin: true }));
+  return [...fixed, ...religious];
 }
 
 function mergeHolidays(builtins, userDefined) {
