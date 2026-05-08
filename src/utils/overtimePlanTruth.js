@@ -78,6 +78,7 @@ export function buildWorkRowsFromPlanAssignments({
   const grouped = groupAssignmentsByPersonAndDay(assignments, {
     people,
     resolveHours: resolveShiftHours,
+    preferExplicitHours: false,
   });
   const rows = new Map();
 

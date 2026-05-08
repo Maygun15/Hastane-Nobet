@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { buildMonthDays } from "../utils/date.js";
 import { LS } from "../utils/storage.js";
-import { assignSchedule, getGeneratedSchedule, getMonthlySchedule, unassignSchedule } from "../api/apiAdapter.js";
+import { assignSchedule, unassignSchedule } from "../api/apiAdapter.js";
 import { API } from "../lib/api.js";
 import DayCard from "./DayCard.jsx";
 import MonthStats from "./MonthStats.jsx";
@@ -11,6 +11,10 @@ import { LEAVE_RULES } from "../constants/rules.js";
 import { buildLeaveCreditRules } from "../utils/leaveTypeRules.js";
 import { buildMonthlyTotalsIndex, createPlanWorkHourResolver, sumWorkedHoursForPersonMonth } from "../utils/planWorkCalculator.js";
 import { requiredHoursBase, workedLikeLeaveHours } from "../utils/overtime.js";
+import { fetchScheduleTruth } from "../utils/scheduleTruth.js";
+import OverrideDialog from "./OverrideDialog.jsx";
+import QuickReplacePanel from "./QuickReplacePanel.jsx";
+import { resolvePersonId } from "../utils/personIdentity.js";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const stripDiacritics = (str = "") =>
@@ -95,24 +99,6 @@ function preferSingleAssignment(list) {
     return 0;
   });
   return [scored[0]];
-}
-
-function buildRemoteScheduleCandidate({ schedule, serviceId, role, year, month, countPersonMatches }) {
-  if (!schedule) return null;
-  const data = schedule?.data || {};
-  const defs = Array.isArray(data.defs) ? data.defs : Array.isArray(data.rows) ? data.rows : [];
-  const normalizedAssignments = normalizeRemoteAssignments({ ...data, year, month }, defs);
-  return {
-    schedule,
-    serviceId,
-    role,
-    defs,
-    normalizedAssignments,
-    personMatches: countPersonMatches(normalizedAssignments),
-    assignmentCount: normalizedAssignments.length,
-    defCount: defs.length,
-    updatedAtTs: Date.parse(schedule?.updatedAt || "") || 0,
-  };
 }
 
 function collectLeaveDays(leavesForPerson, year, month0) {
@@ -325,19 +311,6 @@ function normalizeWorkingHours(input) {
 
 function normalizePerson(person) {
   if (!person) return null;
-  const idCandidates = [
-    person.id,
-    person.personId,
-    person.pid,
-    person.tc,
-    person.tcNo,
-    person.TCKN,
-    person.kod,
-    person.code,
-  ]
-    .map((v) => (v == null ? "" : String(v).trim()))
-    .filter(Boolean);
-  const id = idCandidates[0] || "";
   const nameCandidates = [
     person.fullName,
     person.name,
@@ -351,6 +324,9 @@ function normalizePerson(person) {
     .map((v) => (v == null ? "" : String(v).trim()))
     .filter(Boolean);
   const name = nameCandidates[0] || "";
+  const realId = resolvePersonId(person);
+  const fallbackId = name ? `name:${canonName(name)}` : "";
+  const id = realId || fallbackId;
   if (!name && !id) return null;
   return {
     id,
@@ -536,91 +512,6 @@ function buildDefsIndex(defs) {
   return { byId, byShift };
 }
 
-function normalizeRemoteAssignments(data, defs) {
-  const merged = [];
-  const seen = new Set();
-  const defIndex = buildDefsIndex(defs);
-  const hasExplicitAssignments = Array.isArray(data?.assignments) && data.assignments.length > 0;
-  const pushUnique = (item) => {
-    if (!item) return;
-    const dateStr = String(item?.date ?? item?.day ?? "").slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return;
-    const pid = String(item?.personId ?? item?.personID ?? item?.staffId ?? item?.pid ?? "").trim();
-    const pname = String(item?.personName ?? item?.fullName ?? item?.name ?? "").trim();
-    let shiftId = item?.shiftId ?? item?.shiftCode ?? item?.shift ?? item?.code ?? "";
-    let shiftCode = item?.shiftCode ?? item?.shiftId ?? item?.shift ?? item?.code ?? "";
-    let roleLabel = item?.roleLabel ?? item?.role ?? item?.label ?? "";
-    const shiftIdKey = String(shiftId || "").trim();
-    const shiftCodeKey = String(shiftCode || "").trim();
-    const def =
-      (shiftIdKey && defIndex.byId.get(shiftIdKey)) ||
-      (shiftCodeKey && defIndex.byId.get(shiftCodeKey)) ||
-      (shiftCodeKey && defIndex.byShift.get(shiftCodeKey)) ||
-      null;
-    if (def) {
-      const defId = def.id ?? def.rowId ?? def._id ?? def.shiftId ?? def.code ?? "";
-      const defShift = String(def.shiftCode ?? def.code ?? "").trim();
-      const defLabel = String(def.label ?? def.name ?? def.area ?? "").trim();
-      if (!shiftIdKey && defId) shiftId = String(defId);
-      if (!shiftCodeKey && defShift) shiftCode = defShift;
-      if (!String(roleLabel || "").trim() && defLabel) roleLabel = defLabel;
-    }
-    const shift = String(shiftCode || shiftId || "").trim();
-    roleLabel = String(roleLabel || "").trim();
-    const identity = canonName(pname) || (pid ? `id:${pid}` : "");
-    const k = `${dateStr}|${identity}|${shift}|${roleLabel}`;
-    if (seen.has(k)) return;
-    seen.add(k);
-    merged.push({
-      ...item,
-      shiftId,
-      shiftCode,
-      roleLabel,
-      date: dateStr,
-      day: dateStr,
-    });
-  };
-
-  if (Array.isArray(data?.assignments) && data.assignments.length) {
-    (data.assignments || []).forEach((item) => pushUnique(item));
-  }
-
-  // assignments varsa onu otorite kabul et; eski/stale namedAssignments
-  // manuel düzenlemeleri gölgede bırakmasın.
-  if (hasExplicitAssignments) return merged;
-
-  const named = data?.roster?.namedAssignments || data?.namedAssignments || null;
-  if (!named || typeof named !== "object") return merged;
-
-  Object.entries(named).forEach(([dayStr, perRow]) => {
-    const dayNum = Number(dayStr);
-    if (!Number.isFinite(dayNum) || dayNum < 1 || dayNum > 31) return;
-    const dateStr = `${String(data?.year || "").padStart(4, "0")}-${pad2(data?.month || 0)}-${pad2(dayNum)}`;
-    Object.entries(perRow || {}).forEach(([rowId, names]) => {
-      if (!Array.isArray(names) || !names.length) return;
-      const def =
-        defIndex.byId.get(String(rowId).trim()) ||
-        defIndex.byShift.get(String(rowId).trim()) ||
-        null;
-      const shiftId = def?.id ?? def?.rowId ?? def?._id ?? def?.shiftId ?? rowId;
-      const shiftCode = String(def?.shiftCode ?? def?.code ?? rowId).trim();
-      const roleLabel = String(def?.label ?? def?.name ?? def?.area ?? rowId).trim();
-      names.forEach((nameRaw) => {
-        if (!nameRaw) return;
-        pushUnique({
-          date: dateStr,
-          day: dateStr,
-          shiftId,
-          shiftCode,
-          roleLabel,
-          personName: String(nameRaw),
-        });
-      });
-    });
-  });
-  return merged;
-}
-
 function collectAssignmentsFromRemote({ year, month0, personId, personCanon, assignments, defs }) {
   const map = new Map();
   if (!Array.isArray(assignments)) return map;
@@ -803,6 +694,8 @@ export default function PersonScheduleCalendar({
   const [assignNote, setAssignNote] = useState("");
   const [assignPinned, setAssignPinned] = useState(false);
   const [assignError, setAssignError] = useState("");
+  const [overrideDialog, setOverrideDialog] = useState({ open: false, errors: [], pending: null });
+  const [quickReplaceOpen, setQuickReplaceOpen] = useState(false);
   const [settingsRevision, setSettingsRevision] = useState(0);
 
   // Tatil verisi: { "YYYY-MM-DD": { kind: "full"|"arife"|"half", name: string } }
@@ -949,55 +842,39 @@ export default function PersonScheduleCalendar({
           return count;
         };
 
+        // Bu ekran Assignment/person-calendar fast-path kullanmıyor.
+        // Kaynak doğrudan Çalışma Çizelgesi read-modeli olmalı:
+        // önce monthly/generated schedule, sonra zorunlu legacy fallback.
+        // Böylece görev etiketi ve vardiya saatleri defs üzerinden doğru çözülür.
         // Prefer the explicit monthly key first. If that exact read-model row exists,
         // do not guess across other service/role combinations.
         if (explicitServiceKey || explicitRoleKey) {
-          const explicitSchedule = await getMonthlySchedule({
+          const explicitCandidate = await fetchScheduleTruth({
             sectionId,
             serviceId: explicitServiceKey,
             role: explicitRoleKey,
             year,
             month,
+            options: { preferScheduleReadModel: true },
+          }).catch((err) => {
+            if (err?.status !== 404) throw err;
+            return null;
           });
-          if (explicitSchedule) {
-            const explicitCandidate = buildRemoteScheduleCandidate({
-              schedule: explicitSchedule,
-              serviceId: explicitServiceKey,
-              role: explicitRoleKey,
-              year,
-              month,
-              countPersonMatches,
-            });
-            const explicitGenerated = await getGeneratedSchedule({
-              sectionId,
-              serviceId: explicitServiceKey,
-              role: explicitRoleKey,
-              year,
-              month,
-            }).catch((err) => {
-              if (err?.status !== 404) throw err;
-              return null;
-            });
-            const explicitAssignments =
-              (explicitCandidate?.normalizedAssignments?.length
-                ? explicitCandidate.normalizedAssignments
-                : null) ??
-              (Array.isArray(explicitGenerated?.assignments) && explicitGenerated.assignments.length
-                ? explicitGenerated.assignments
-                : []);
-            const explicitMatches = countPersonMatches(explicitAssignments);
-            const hasTarget = !!targetPid || !!targetCanon;
-            const explicitUsable =
-              explicitAssignments.length > 0 && (!hasTarget || explicitMatches > 0);
-            if (explicitUsable) {
-              if (!active) return;
-              setRemoteDefs(explicitCandidate?.defs || []);
-              setRemoteAssignmentsRaw(explicitAssignments);
-              setRemoteServiceIdUsed(explicitServiceKey || null);
-              setRemoteRoleUsed(explicitRoleKey || null);
-              setRemoteError("");
-              return;
-            }
+          const explicitAssignments = Array.isArray(explicitCandidate?.assignments)
+            ? explicitCandidate.assignments
+            : [];
+          const explicitMatches = countPersonMatches(explicitAssignments);
+          const hasTarget = !!targetPid || !!targetCanon;
+          const explicitUsable =
+            explicitAssignments.length > 0 && (!hasTarget || explicitMatches > 0);
+          if (explicitUsable) {
+            if (!active) return;
+            setRemoteDefs(explicitCandidate?.defs || []);
+            setRemoteAssignmentsRaw(explicitAssignments);
+            setRemoteServiceIdUsed(explicitServiceKey || null);
+            setRemoteRoleUsed(explicitRoleKey || null);
+            setRemoteError("");
+            return;
           }
         }
 
@@ -1005,22 +882,28 @@ export default function PersonScheduleCalendar({
         const roleList = roleCandidates.length ? roleCandidates : [""];
         for (const roleKey of roleList) {
           for (const sid of candidates) {
-            const s = await getMonthlySchedule({
+            const truth = await fetchScheduleTruth({
               sectionId,
               serviceId: sid,
               role: roleKey,
               year,
               month,
+              options: { preferScheduleReadModel: true },
+            }).catch((err) => {
+              if (err?.status !== 404) throw err;
+              return null;
             });
-            if (!s) continue;
-            fetched.push(buildRemoteScheduleCandidate({
-              schedule: s,
+            if (!truth) continue;
+            fetched.push({
               serviceId: sid,
               role: roleKey,
-              year,
-              month,
-              countPersonMatches,
-            }));
+              defs: truth?.defs || [],
+              normalizedAssignments: Array.isArray(truth?.assignments) ? truth.assignments : [],
+              personMatches: countPersonMatches(truth?.assignments || []),
+              assignmentCount: Array.isArray(truth?.assignments) ? truth.assignments.length : 0,
+              defCount: Array.isArray(truth?.defs) ? truth.defs.length : 0,
+              updatedAtTs: Date.parse(truth?.schedule?.updatedAt || "") || 0,
+            });
           }
         }
 
@@ -1038,29 +921,9 @@ export default function PersonScheduleCalendar({
         });
 
         const picked = fetched[0] || null;
-        const pickedMonthlyAssignments = picked?.normalizedAssignments?.length
-          ? picked.normalizedAssignments
-          : null;
-        const pickedGenerated = !pickedMonthlyAssignments && picked
-          ? await getGeneratedSchedule({
-              sectionId,
-              serviceId: String(picked.serviceId ?? ""),
-              role: String(picked.role ?? ""),
-              year,
-              month,
-            }).catch((err) => {
-              if (err?.status !== 404) throw err;
-              return null;
-            })
-          : null;
         if (!active) return;
         setRemoteDefs(picked?.defs || []);
-        setRemoteAssignmentsRaw(
-          pickedMonthlyAssignments ??
-          (Array.isArray(pickedGenerated?.assignments) && pickedGenerated.assignments.length
-            ? pickedGenerated.assignments
-            : [])
-        );
+        setRemoteAssignmentsRaw(Array.isArray(picked?.normalizedAssignments) ? picked.normalizedAssignments : []);
         setRemoteServiceIdUsed(picked ? String(picked.serviceId ?? "") : null);
         setRemoteRoleUsed(picked ? String(picked.role ?? "") : null);
         setRemoteError("");
@@ -1322,6 +1185,31 @@ export default function PersonScheduleCalendar({
     } catch {}
   };
 
+  const buildAssignParams = () => {
+    const shiftId = String(assignShiftId || "").trim();
+    const prevShiftId = String(
+      assignModal.assg?.shiftId || assignModal.assg?.shiftCode || assignModal.assg?.shift || assignModal.assg?.code || ""
+    ).trim();
+    const baseRoleLabel = String(assignRoleLabel || "").trim();
+    const roleLabel = baseRoleLabel || (assignModal.assg?.supervisorTask ? SERVICE_SUPERVISOR_LABEL : "");
+    return {
+      sectionId,
+      serviceId: remoteServiceIdUsed ?? effectiveServiceId,
+      role: remoteRoleUsed ?? scheduleRole,
+      date: assignModal.dateStr,
+      shiftId,
+      shiftCode: shiftId,
+      ...(assignModal.mode === "edit" && prevShiftId && prevShiftId !== shiftId
+        ? { previousShiftId: prevShiftId }
+        : {}),
+      personId: selectedPerson.id,
+      personName: selectedPerson.name,
+      roleLabel,
+      note: assignNote,
+      pinned: assignPinned,
+    };
+  };
+
   const handleConfirmAssign = async () => {
     if (!assignModal.open || !selectedPerson) return;
     const shiftId = String(assignShiftId || "").trim();
@@ -1330,32 +1218,31 @@ export default function PersonScheduleCalendar({
       return;
     }
     try {
-      const prevShiftId = String(
-        assignModal.assg?.shiftId || assignModal.assg?.shiftCode || assignModal.assg?.shift || assignModal.assg?.code || ""
-      ).trim();
-      const baseRoleLabel = String(assignRoleLabel || "").trim();
-      const roleLabel = baseRoleLabel
-        || (assignModal.assg?.supervisorTask ? SERVICE_SUPERVISOR_LABEL : "");
-      await assignSchedule({
-        sectionId,
-        serviceId: remoteServiceIdUsed ?? effectiveServiceId,
-        role: remoteRoleUsed ?? scheduleRole,
-        date: assignModal.dateStr,
-        shiftId,
-        shiftCode: shiftId,
-        ...(assignModal.mode === "edit" && prevShiftId && prevShiftId !== shiftId
-          ? { previousShiftId: prevShiftId }
-          : {}),
-        personId: selectedPerson.id,
-        personName: selectedPerson.name,
-        roleLabel,
-        note: assignNote,
-        pinned: assignPinned,
-      });
+      await assignSchedule(buildAssignParams());
+      closeAssignModal();
+      refreshRemote();
+    } catch (err) {
+      if (err?.status === 409 && err?.body?.canForce) {
+        const violations = Array.isArray(err.body.errors)
+          ? err.body.errors.map((e) => (typeof e === "string" ? e : e?.message || JSON.stringify(e)))
+          : [err.body.message || "Kural ihlali"];
+        setOverrideDialog({ open: true, errors: violations, pending: buildAssignParams() });
+      } else {
+        setAssignError(err?.message || "Nöbet eklenemedi.");
+      }
+    }
+  };
+
+  const handleOverrideConfirm = async (reason) => {
+    if (!overrideDialog.pending) return;
+    try {
+      await assignSchedule({ ...overrideDialog.pending, force: true, overrideReason: reason });
+      setOverrideDialog({ open: false, errors: [], pending: null });
       closeAssignModal();
       refreshRemote();
     } catch (err) {
       setAssignError(err?.message || "Nöbet eklenemedi.");
+      setOverrideDialog({ open: false, errors: [], pending: null });
     }
   };
 
@@ -1439,6 +1326,14 @@ export default function PersonScheduleCalendar({
         >
           {showStats ? "Özeti Gizle" : "Özeti Göster"}
         </button>
+        {canManage && (
+          <button
+            onClick={() => setQuickReplaceOpen(true)}
+            className="px-3 py-2 rounded-lg text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
+          >
+            Hızlı Yerine Atama
+          </button>
+        )}
       </div>
 
       {/* Uyarılar */}
@@ -1675,6 +1570,25 @@ export default function PersonScheduleCalendar({
           )}
         </div>
       </Modal>
+
+      <OverrideDialog
+        open={overrideDialog.open}
+        errors={overrideDialog.errors}
+        onConfirm={handleOverrideConfirm}
+        onCancel={() => setOverrideDialog({ open: false, errors: [], pending: null })}
+      />
+
+      <QuickReplacePanel
+        open={quickReplaceOpen}
+        onClose={() => setQuickReplaceOpen(false)}
+        sectionId={sectionId}
+        serviceId={effectiveServiceId}
+        scheduleRole={scheduleRole}
+        year={year}
+        month={month0 + 1}
+        people={options}
+        onAssigned={refreshRemote}
+      />
     </div>
   );
 }

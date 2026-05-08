@@ -657,6 +657,7 @@ function SectionContent({
               people={Array.isArray(peopleAll) ? peopleAll : []}
               workingHours={workingHours}
               serviceId={selectedServiceId || ""}
+              activeRole={activeRole}
               setYm={(val) => {
                 const y = Number(val?.year) || year;
                 const m = Number(val?.month) || month;
@@ -688,6 +689,7 @@ function SectionContent({
               leaveTypes={Array.isArray(leaveTypes) ? leaveTypes : []}
               selectedServiceId={selectedServiceId}
               selectedServiceName={selectedServiceName}
+              activeRole={activeRole}
             />
           </div>
         </div>

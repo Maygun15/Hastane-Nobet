@@ -4,12 +4,12 @@
 //
 // FORMAT A: "namedAssignments" — DutyRowsEditor tarafından üretilir
 //   { [günNumarası]: { [satırId]: [kişiAdı, ...] } }
-//   Örn: { "1": { "row-kirmizi-v1": ["AYŞE YILMAZ"] } }
+//   Örn: { "1": { "row-sabah-v1": ["AYŞE YILMAZ", "FATİH DEMİR"] } }
 //
-// FORMAT B: "assignments[]" — PlanTab/runPlannerOnce tarafından üretilir
+// FORMAT B: "assignments[]" — AI scheduler / PlanTab tarafından üretilir
 //   [{ day, personId, personName, shiftCode, roleLabel, hours, pinned? }]
 //   Örn: [{ day: "2026-05-01", personId: "p1", personName: "AYŞE YILMAZ",
-//           shiftCode: "V1", roleLabel: "KIRMIZI", hours: 8 }]
+//           shiftCode: "V1", roleLabel: "SABAH", hours: 8 }]
 //
 // Bu çevirici sayesinde hangi motordan çıkarsa çıksın, tüm bileşenler
 // (MonthlyHoursSheet, OvertimeTab, vb.) veriyi okuyabilir.
@@ -32,21 +32,16 @@ const canonName = (s = "") =>
  * DutyRowsEditor'ün ürettiği namedAssignments nesnesini,
  * MonthlyHoursSheet ve OvertimeTab'ın okuyabileceği
  * flat assignments dizisine çevirir.
- *
- * @param {Object} namedAssignments - { [gün]: { [satırId]: [isim, ...] } }
- * @param {Array}  defs             - Görev satırı tanımları: [{ id, label, shiftCode }]
- * @param {number} year             - Yıl (ör. 2026)
- * @param {number} month1           - 1-bazlı ay (1..12)
- * @param {Object} options
- * @param {Array}  options.people   - Personel listesi (id eşleştirme için)
- * @param {Function} options.hoursForShift - Vardiya kodundan saat hesaplayan fonksiyon
- * @returns {Array} assignments dizisi
+ * Çok kişili satırlar (sabah hemşiresi x3 gibi) tam olarak aktarılır.
  */
 export function namedToAssignments(namedAssignments, defs = [], year, month1, options = {}) {
-  const { people = [], hoursForShift } = options;
+  // hoursForShift veya resolveHours — her iki ismi de kabul et
+  const { people = [], hoursForShift, resolveHours } = options;
+  const resolveHoursFn = (typeof hoursForShift === "function" ? hoursForShift : null)
+    ?? (typeof resolveHours === "function" ? resolveHours : null);
   if (!namedAssignments || typeof namedAssignments !== "object") return [];
 
-  // Personel haritası: canonName → personId
+  // Personel haritası: canonName → { id, name }
   const personIndex = new Map();
   (Array.isArray(people) ? people : []).forEach((p) => {
     if (!p) return;
@@ -56,7 +51,7 @@ export function namedToAssignments(namedAssignments, defs = [], year, month1, op
     if (canon && id) personIndex.set(canon, { id, name });
   });
 
-  // Satır tanım haritası: rowId → { label, shiftCode }
+  // Satır tanım haritası: rowId → def
   const defIndex = new Map();
   (Array.isArray(defs) ? defs : []).forEach((d) => {
     if (!d) return;
@@ -76,20 +71,21 @@ export function namedToAssignments(namedAssignments, defs = [], year, month1, op
 
     for (const [rowId, namesList] of Object.entries(byRow)) {
       if (!Array.isArray(namesList)) continue;
+      // Çok kişili satırlarda TÜM isimler aktarılır (slice(0,1) kaldırıldı)
+      const safeNames = namesList.filter((item) => typeof item === "string" && item.trim());
       const def = defIndex.get(rowId);
       const shiftCode = def?.shiftCode || "";
       const roleLabel = def?.label || rowId;
+      const shiftId = String(def?.id || def?.rowId || rowId || "").trim();
 
-      // Saat hesapla
       let hours = 0;
-      if (typeof hoursForShift === "function") {
-        hours = hoursForShift(shiftCode) || 0;
+      if (resolveHoursFn) {
+        hours = resolveHoursFn(shiftCode, roleLabel) || 0;
       } else if (def?.hours != null) {
         hours = Number(def.hours) || 0;
       }
 
-      for (const personName of namesList) {
-        if (!personName || typeof personName !== "string") continue;
+      for (const personName of safeNames) {
         const trimmed = personName.trim();
         if (!trimmed) continue;
 
@@ -101,6 +97,8 @@ export function namedToAssignments(namedAssignments, defs = [], year, month1, op
         assignments.push({
           day: dateStr,
           date: dateStr,
+          rowId: String(rowId || "").trim(),
+          shiftId,
           personId,
           personName: displayName,
           shiftCode,
@@ -117,17 +115,14 @@ export function namedToAssignments(namedAssignments, defs = [], year, month1, op
 /**
  * assignments[] → namedAssignments dönüşümü
  *
- * PlanTab/runPlannerOnce'ın ürettiği flat assignments dizisini,
+ * AI scheduler / PlanTab'ın ürettiği flat assignments dizisini,
  * DutyRowsEditor'ün okuyabileceği namedAssignments nesnesine çevirir.
- *
- * @param {Array}  assignments - [{ day|date, personName, shiftCode, roleLabel }]
- * @param {Array}  defs        - Görev satırı tanımları: [{ id, label, shiftCode }]
- * @returns {Object} namedAssignments nesnesi
+ * Çok kişili satırlarda tüm kişiler diziye eklenir.
  */
 export function assignmentsToNamed(assignments, defs = []) {
   if (!Array.isArray(assignments)) return {};
 
-  // label+shiftCode → rowId eşleştirmesi
+  // label+shiftCode → rowId
   const rowIdIndex = new Map();
   (Array.isArray(defs) ? defs : []).forEach((d) => {
     if (!d) return;
@@ -156,12 +151,9 @@ export function assignmentsToNamed(assignments, defs = []) {
     if (!named[dayKey]) named[dayKey] = {};
     if (!named[dayKey][rowId]) named[dayKey][rowId] = [];
 
-    // Aynı kişiyi aynı gün+satır'a iki kez ekleme
-    const existing = named[dayKey][rowId];
-    const canon = canonName(personName);
-    const alreadyExists = existing.some((n) => canonName(n) === canon);
-    if (!alreadyExists) {
-      existing.push(personName);
+    // Çok kişili satırlar: aynı satırda birden fazla kişi olabilir
+    if (!named[dayKey][rowId].includes(personName)) {
+      named[dayKey][rowId].push(personName);
     }
   }
 
@@ -171,22 +163,48 @@ export function assignmentsToNamed(assignments, defs = []) {
 /**
  * Backend'den dönen schedule verisinden assignments[] çıkar.
  * Her iki formatı da destekler:
- * - data.assignments (PlanTab formatı)
- * - data.roster.namedAssignments (DutyRowsEditor formatı)
+ *   - data.assignments[] (AI scheduler / PlanTab formatı)
+ *   - data.roster.namedAssignments (DutyRowsEditor formatı)
  *
- * @param {Object} scheduleData - Backend'den dönen schedule.data
- * @param {number} year
- * @param {number} month1 - 1-bazlı ay
- * @param {Object} options - { people, hoursForShift }
- * @returns {Array} Normalize edilmiş assignments dizisi
+ * data.assignments varsa, defs'ten roleLabel zenginleştirmesi yapılır
+ * böylece OvertimeTab ve MonthlyHoursSheet doğru satır etiketini görür.
  */
 export function extractAssignmentsFromSchedule(scheduleData, year, month1, options = {}) {
   if (!scheduleData || typeof scheduleData !== "object") return [];
 
-  // 1) Doğrudan assignments[] varsa onu kullan
+  const defs = Array.isArray(scheduleData.defs)
+    ? scheduleData.defs
+    : Array.isArray(scheduleData.rows)
+      ? scheduleData.rows
+      : [];
+
+  // def haritası: shiftId/rowId/shiftCode → def
+  const defById = new Map();
+  const defByCode = new Map();
+  for (const def of defs) {
+    if (!def) continue;
+    const id = String(def.id || def.rowId || "").trim();
+    const code = String(def.shiftCode || def.code || "").trim().toUpperCase();
+    if (id) defById.set(id, def);
+    if (code) defByCode.set(code, def);
+  }
+
+  // 1) Doğrudan assignments[] varsa — roleLabel eksikse defs'ten ekle
   const directAssignments = scheduleData.assignments;
   if (Array.isArray(directAssignments) && directAssignments.length > 0) {
-    return directAssignments;
+    return directAssignments.map((a) => {
+      if (!a) return null;
+      if (a.roleLabel) return a;
+      const shiftId = String(a.shiftId || a.rowId || "").trim();
+      const shiftCode = String(a.shiftCode || a.shift || a.code || "").trim().toUpperCase();
+      const def = defById.get(shiftId) || defByCode.get(shiftCode) || null;
+      if (!def) return a;
+      return {
+        ...a,
+        roleLabel: def.label || def.area || def.name || shiftId,
+        shiftCode: shiftCode || String(def.shiftCode || def.code || "").trim(),
+      };
+    }).filter(Boolean);
   }
 
   // 2) namedAssignments varsa dönüştür
@@ -195,7 +213,6 @@ export function extractAssignmentsFromSchedule(scheduleData, year, month1, optio
     scheduleData.namedAssignments ||
     null;
   if (named && typeof named === "object") {
-    const defs = scheduleData.defs || scheduleData.rows || [];
     return namedToAssignments(named, defs, year, month1, options);
   }
 

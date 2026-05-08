@@ -4,18 +4,19 @@ import { Activity, ArrowRight, BellRing, Building2, CalendarDays, ClipboardList,
 import { useAuth } from "../auth/AuthContext.jsx";
 import useServiceScope from "../hooks/useServiceScope.js";
 import useActiveYM from "../hooks/useActiveYM.js";
-import { getAllLeaves } from "../lib/leaves.js";
+import { buildNameUnavailability, getAllLeaves } from "../lib/leaves.js";
 import { LS } from "../utils/storage.js";
 import { useAppStore } from "../state/appStore";
 import ScheduleToolbar from "../components/ScheduleToolbar.jsx";
 import PersonScheduleCalendar from "../components/PersonScheduleCalendar.jsx";
 import { API } from "../lib/api.js";
-import { runPlannerOnce } from "../lib/runPlannerOnce.js";
-import { getMyRequests, saveMonthlySchedule } from "../api/apiAdapter.js";
+import { generateSchedulerPlan, getMyRequests } from "../api/apiAdapter.js";
+import { invalidateScheduleCache } from "../store/monthlyScheduleModel.js";
 import { services as STATIC_SERVICES } from "../constants/enums.js";
 
 const MONTH_LABEL = (year, month) =>
   `${Intl.DateTimeFormat("tr-TR", { month: "long" }).format(new Date(year, month - 1, 1))} ${year}`;
+const DUTY_RULES_LS_KEY = "dutyRulesV2";
 
 function stripDiacritics(str = "") {
   return str.normalize("NFD").replace(/\p{Diacritic}/gu, "");
@@ -144,6 +145,103 @@ function splitByRole(items) {
   nurses.push(...seenNurses.values());
   doctors.push(...seenDoctors.values());
   return { nurses, doctors };
+}
+
+function mapRulesToBackend(list) {
+  const arr = Array.isArray(list) ? list : [];
+  const findById = (id) => arr.find((rule) => rule?.id === id);
+  const findAny = (ids) => ids.map(findById).find(Boolean);
+  const findEnabled = (ids) => ids.map(findById).find((rule) => rule && rule.enabled);
+
+  const boolRule = (ids) => {
+    const any = findAny(ids);
+    if (!any) return undefined;
+    return !!findEnabled(ids);
+  };
+  const numRule = (ids, fallback) => {
+    const any = findAny(ids);
+    if (!any) return undefined;
+    const enabled = findEnabled(ids);
+    if (!enabled) return 0;
+    const value = Number(enabled.value);
+    return Number.isFinite(value) ? value : fallback;
+  };
+
+  const out = {};
+  const oneShift = boolRule(["ONE_SHIFT_PER_DAY", "NO_MULTIPLE_ASSIGNMENTS_PER_DAY"]);
+  if (oneShift !== undefined) out.ONE_SHIFT_PER_DAY = oneShift;
+
+  const leaveBlock = boolRule(["LEAVE_BLOCK_GENERIC"]);
+  if (leaveBlock !== undefined) out.LEAVE_BLOCK = leaveBlock;
+
+  const consecutive = numRule(["MAX_CONSECUTIVE_6D"], 6);
+  if (consecutive !== undefined) out.MAX_CONSECUTIVE_DAYS = consecutive;
+
+  const rest = numRule(["MIN_GAP_12H", "MIN_REST_11H"], 11);
+  if (rest !== undefined) out.MIN_REST_HOURS = rest;
+
+  const nightNextDay = boolRule(["NIGHT_NEXT_DAY_OFF"]);
+  if (nightNextDay !== undefined) out.NIGHT_NEXT_DAY_OFF = nightNextDay;
+
+  const weeklyMax = numRule(["WEEKLY_MAX_SHIFTS", "WEEKLY_MAX_DUTIES", "WEEKLY_MAX_SHIFTS_PER_PERSON"], 0);
+  if (weeklyMax !== undefined) out.MAX_SHIFTS_PER_WEEK = weeklyMax;
+
+  const maxTask = numRule(["MAX_TASK_PER_PERSON", "MAX_SAME_TASK_PER_PERSON"], 0);
+  if (maxTask !== undefined) out.MAX_TASK_PER_PERSON = maxTask;
+
+  return out;
+}
+
+function readDutyRulesFromLS() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DUTY_RULES_LS_KEY) || "[]");
+    const mapped = mapRulesToBackend(raw);
+    if (mapped?.ONE_SHIFT_PER_DAY === false) delete mapped.ONE_SHIFT_PER_DAY;
+    return mapped;
+  } catch {
+    return {};
+  }
+}
+
+function buildLeavesByPersonForMonth(allLeaves = {}, year, month, people = []) {
+  const ym = `${year}-${String(month).padStart(2, "0")}`;
+  const leaveSets = {};
+  const ensure = (personId) => {
+    const key = String(personId || "").trim();
+    if (!key) return null;
+    leaveSets[key] ??= new Set();
+    return leaveSets[key];
+  };
+  const addDay = (personId, day) => {
+    const dayNum = Number(day);
+    if (!Number.isFinite(dayNum) || dayNum < 1 || dayNum > 31) return;
+    const bucket = ensure(personId);
+    if (!bucket) return;
+    bucket.add(`${year}-${String(month).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`);
+  };
+
+  for (const [personId, byYm] of Object.entries(allLeaves || {})) {
+    const monthly = byYm?.[ym];
+    if (!monthly || typeof monthly !== "object") continue;
+    Object.keys(monthly).forEach((dayKey) => addDay(personId, dayKey));
+  }
+
+  if (Array.isArray(people) && people.length) {
+    const daysByName = buildNameUnavailability(people, year, month);
+    for (const person of people) {
+      const personId = String(person?.id || "").trim();
+      const personName = person?.name || person?.fullName || "";
+      const days = daysByName.get(canonName(personName));
+      if (!personId || !days || !days.size) continue;
+      days.forEach((day) => addDay(personId, day));
+    }
+  }
+
+  return Object.fromEntries(
+    Object.entries(leaveSets)
+      .map(([personId, dates]) => [personId, Array.from(dates.values())])
+      .filter(([, dates]) => dates.length > 0)
+  );
 }
 
 function buildCountsFromPattern(def, year, month0) {
@@ -771,102 +869,109 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
 
       const roleKey = activeRole;
       const serviceId = selectedService || "";
-      const month0 = Math.min(11, Math.max(0, Number(month) - 1));
-
-      const [personnelRes, hoursRes, scheduleRes, holidaysRes] = await Promise.all([
+      const [personnelRes, scheduleRes] = await Promise.all([
         API.http.get(`/api/personnel?page=1&size=2000`),
-        API.http.get(`/api/settings/workingHours?serviceId=`),
         API.http.get(
           `/api/schedules/monthly?sectionId=calisma-cizelgesi&serviceId=${encodeURIComponent(
             serviceId
           )}&role=${encodeURIComponent(roleKey)}&year=${year}&month=${month}`
         ),
-        API.http.get(`/api/holidays?y=${year}&m=${month}`),
       ]);
 
       const items = Array.isArray(personnelRes?.items) ? personnelRes.items : [];
       const { nurses, doctors } = splitByRole(items);
-      const workingHours = Array.isArray(hoursRes?.value) ? hoursRes.value : [];
-      const holidays = Array.isArray(holidaysRes?.items) ? holidaysRes.items : [];
-      const holidayKindByDate = Object.fromEntries(
-        holidays
-          .filter((row) => row?.date)
-          .map((row) => [String(row.date).slice(0, 10), normalizeHolidayKind(row)])
-      );
+      const scheduleData =
+        scheduleRes?.schedule?.data && typeof scheduleRes.schedule.data === "object"
+          ? scheduleRes.schedule.data
+          : {};
+      const defs = Array.isArray(scheduleData?.defs) ? scheduleData.defs : [];
+      const overrides =
+        scheduleData?.overrides && typeof scheduleData.overrides === "object"
+          ? scheduleData.overrides
+          : {};
+      const shiftOptions = Array.isArray(scheduleData?.shiftOptions) ? scheduleData.shiftOptions : [];
 
-      const defs = scheduleRes?.schedule?.data?.defs || [];
-      const taskLines = (Array.isArray(defs) ? defs : [])
-        .flatMap((d) => {
-          const label = (d?.label || "").toString().trim();
-          const shiftCode = (d?.shiftCode || "").toString().trim();
-          if (!label || !shiftCode) return [];
-          const counts = buildCountsFromPattern(d, year, month0);
-          return buildSupervisorTaskLines({
-            label,
-            shiftCode,
-            defaultCount: Number(d?.defaultCount ?? 0) || 0,
-            counts,
-          }, year, month0, holidayKindByDate);
+      if (!defs.length) {
+        throw new Error("Çalışma çizelgesi şablonu bulunamadı.");
+      }
+
+      const rolePeople = roleKey === "Doctor" ? doctors : nurses;
+      const scopedRolePeople = serviceId
+        ? rolePeople.filter((person) => String(person.serviceId || person.service || person.meta?.serviceId || person.meta?.service || "") === String(serviceId))
+        : rolePeople;
+      const staffSource = scopedRolePeople.length ? scopedRolePeople : rolePeople;
+      const staffPayload = staffSource
+        .map((person) => {
+          const areas = Array.isArray(person.areas) ? person.areas : [];
+          const shiftCodes = Array.isArray(person.shiftCodes) ? person.shiftCodes : [];
+          const meta = person?.meta && typeof person.meta === "object" ? { ...person.meta } : {};
+          if (!meta.areas && areas.length) meta.areas = areas;
+          if (!meta.shiftCodes && shiftCodes.length) meta.shiftCodes = shiftCodes;
+          if (!meta.role && person.role) meta.role = person.role;
+          if (!meta.serviceId && person.serviceId) meta.serviceId = person.serviceId;
+          return {
+            id: String(person.id || ""),
+            name: person.name || person.fullName || "",
+            fullName: person.fullName || person.name || "",
+            role: person.role || "",
+            serviceId: person.serviceId || person.service || "",
+            areas,
+            shiftCodes,
+            meta,
+          };
         })
-        .filter((line) => line && line.label && line.shiftCode);
+        .filter((person) => person.id && person.name);
 
-      const result = await runPlannerOnce({
+      const rules = readDutyRulesFromLS();
+      const leavesByPerson = buildLeavesByPersonForMonth(allLeaves, year, month, staffPayload);
+      const supervisorConfig = LS.get("supervisorConfig", null);
+      const supervisorPool = LS.get("supervisorPool", null);
+
+      const result = await generateSchedulerPlan({
+        sectionId: "calisma-cizelgesi",
+        serviceId,
+        role: roleKey,
         year,
-        month: month0,
-        activeServiceId: serviceId,
-        activeRole: roleKey,
-        nurses,
-        doctors,
-        workingHours,
-        personLeaves: allLeaves || {},
-        taskLines,
+        month,
+        sync: true,
+        dryRun: false,
+        defs,
+        overrides,
+        shiftOptions,
+        ...(staffPayload.length ? { staff: staffPayload } : {}),
+        ...(Object.keys(rules).length ? { rules } : {}),
+        ...(Object.keys(leavesByPerson).length ? { leavesByPerson } : {}),
+        ...(supervisorConfig ? { supervisorConfig } : {}),
+        ...(Array.isArray(supervisorPool) && supervisorPool.length ? { supervisorPool } : {}),
       });
+      const data = result?.data || result?.result?.data || null;
+      if (!data) {
+        throw new Error("Scheduler sonucu alınamadı.");
+      }
 
-      const cleanedAssignments = sanitizeSupervisorAssignments(
-        result?.dpResult?.assignments || [],
-        year,
-        month0,
-        holidayKindByDate,
-        workingHours
-      );
-      const cleanedResult = {
-        ...result,
-        dpResult: {
-          ...(result?.dpResult || {}),
-          assignments: cleanedAssignments,
-        },
-      };
-
-      // Plan çıktısını çalışma çizelgesine yaz (backend ile senkron)
+      invalidateScheduleCache(year, month);
       try {
-        const baseData =
-          scheduleRes?.schedule?.data && typeof scheduleRes.schedule.data === "object"
-            ? scheduleRes.schedule.data
-            : {};
-        const data = {
-          ...baseData,
-          assignments: Array.isArray(cleanedResult.dpResult?.assignments) ? cleanedResult.dpResult.assignments : [],
-          generatedAt: new Date().toISOString(),
-        };
-        await saveMonthlySchedule({
+        const detail = {
           sectionId: "calisma-cizelgesi",
           serviceId,
           role: roleKey,
           year,
           month,
-          data,
-          meta: scheduleRes?.schedule?.meta || {},
-        });
-      } catch (err) {
-        console.warn("Planı backend'e yazma hatası:", err?.message || err);
-      }
+          ts: Date.now(),
+        };
+        window.dispatchEvent(new CustomEvent("schedule:saved", { detail }));
+        window.dispatchEvent(new Event("planner:changed"));
+        window.dispatchEvent(new Event("schedule:built"));
+        localStorage.setItem("scheduleLastSaved", JSON.stringify(detail));
+        localStorage.setItem("scheduleBuildTrigger", JSON.stringify({ ym: `${year}-${String(month).padStart(2, "0")}`, ts: detail.ts }));
+      } catch {}
 
       setPlannerStatus("done");
     } catch (err) {
       setPlannerStatus("error");
       setPlannerError(err?.message || "Planlama çalıştırılamadı.");
     }
-  }, [activeRole, selectedService, year, month]);
+  }, [activeRole, selectedService, year, month, allLeaves]);
 
   return (
     <div className="p-4 md:p-5 space-y-5">

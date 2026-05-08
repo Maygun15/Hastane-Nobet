@@ -258,6 +258,29 @@ export async function getGeneratedSchedule({
   return payload?.data || null;
 }
 
+/**
+ * Assignment koleksiyonundan aylık atama listesi döner.
+ * scheduleTruth.js için SSOT okuma ucu.
+ */
+export async function getAssignmentsForMonth({
+  sectionId,
+  serviceId = "",
+  role = "",
+  year,
+  month,
+} = {}) {
+  if (!sectionId) throw new Error("sectionId gerekli");
+  const qs = new URLSearchParams({
+    sectionId,
+    year: String(year),
+    month: String(month),
+  });
+  if (serviceId != null) qs.append("serviceId", String(serviceId));
+  if (role != null && role !== "") qs.append("role", String(role));
+  const payload = await httpRequest(`/api/schedules/assignments?${qs.toString()}`);
+  return Array.isArray(payload?.assignments) ? payload.assignments : [];
+}
+
 export async function saveMonthlySchedule({
   sectionId,
   serviceId = "",
@@ -306,6 +329,8 @@ export async function assignSchedule({
   roleLabel,
   note,
   pinned,
+  force = false,
+  overrideReason = "",
 } = {}) {
   if (!sectionId) throw new Error("sectionId gerekli");
   if (!date) throw new Error("date gerekli");
@@ -324,6 +349,7 @@ export async function assignSchedule({
     roleLabel,
     note,
     ...(pinned !== undefined ? { pinned } : {}),
+    ...(force ? { force: true, overrideReason: overrideReason || "" } : {}),
   };
   const result = await httpRequest("/api/schedules/assign", { method: "POST", body });
   if (date && year == null) {
@@ -447,6 +473,38 @@ export async function checkDutyEligibility(payload = {}, { token } = {}) {
     method: "POST",
     body: payload,
     token,
+  });
+}
+
+// ===== SWAP SUGGESTIONS =====
+export async function validateBatchSchedule({ sectionId, serviceId, role, year, month, assignments } = {}) {
+  if (!sectionId || !year || !month) throw new Error("sectionId, year, month gerekli");
+  return httpRequest("/api/schedules/validate-batch", {
+    method: "POST",
+    body: { sectionId, serviceId: serviceId || "", role: role || "", year, month, assignments: assignments || [] },
+  });
+}
+
+export async function getPersonCalendar({ personId, sectionId, year, month, serviceId, role } = {}) {
+  if (!personId || !year || !month) throw new Error("personId, year, month gerekli");
+  const qs = new URLSearchParams({ personId, year, month });
+  if (sectionId) qs.set("sectionId", sectionId);
+  if (serviceId != null) qs.set("serviceId", serviceId);
+  if (role) qs.set("role", role);
+  const payload = await httpRequest(`/api/schedules/person-calendar?${qs.toString()}`);
+  return payload?.assignments || [];
+}
+
+export async function getSwapSuggestions({ personId, date, shiftId, roleLabel, serviceId, limit } = {}) {
+  if (!personId || !date || !shiftId) throw new Error("personId, date, shiftId gerekli");
+  return httpRequest("/api/scheduler/swap-suggestions", {
+    method: "POST",
+    body: {
+      personId, date, shiftId,
+      ...(roleLabel ? { roleLabel } : {}),
+      ...(serviceId ? { serviceId } : {}),
+      ...(limit ? { limit } : {}),
+    },
   });
 }
 

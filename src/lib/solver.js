@@ -38,6 +38,14 @@ export const DEFAULT_RULES = {
   distinctTasksSameHour: true,
 };
 
+// Soft-constraint ağırlıkları — daha yüksek = daha öncelikli
+export const DEFAULT_SCORING_WEIGHTS = {
+  fairness: 100,      // (hedef - mevcut) saat farkı katsayısı
+  preference: 50,     // talep/tercih puanı katsayısı
+  avoidNextDay: -20,  // ertesi gün yasak penaltısı (negatif = kötü)
+  consecutiveNights: -15, // art arda gece penaltısı
+};
+
 /* ============================ 
    Dinamik Kurallar (DutyRulesTab) Okuyucu
 ============================ */
@@ -593,38 +601,34 @@ export function solveHourBalanced({
     return null;
   };
 
-  /* ------- Aday sıralama: hedef saat dengesi, avoidNextDay, toplam saat ------- */
-  const sortCandidates = (list, day, shiftCode) => {
-    return [...list].sort((p1, p2) => {
-      const h1 = hoursByPerson.get(String(p1)) || 0;
-      const h2 = hoursByPerson.get(String(p2)) || 0;
-
-      const t1 = targetByPerson.get(String(p1)) ?? baseTarget;
-      const t2 = targetByPerson.get(String(p2)) ?? baseTarget;
-      const d1 = t1 - h1;
-      const d2 = t2 - h2;
-      if (d1 !== d2) return d2 - d1;
-
-      const pref1 = requestPreferScore(String(p1), day, shiftCode);
-      const pref2 = requestPreferScore(String(p2), day, shiftCode);
-      if (pref1 !== pref2) return pref2 - pref1;
-
-      // avoidNextDay: sadece küçük bir penaltı (yumuşak)
-      const prev1 = getPrevDayShiftForPerson(assignments, String(p1), day);
-      const prev2 = getPrevDayShiftForPerson(assignments, String(p2), day);
-      const avoidPenalty = (prevAssg) => {
-        if (!prevAssg?.shiftCode) return 0;
-        const prevDef = getShiftDef(prevAssg.shiftCode, shiftIndex);
-        return prevDef?.avoidNextDay?.includes(shiftCode) ? 1 : 0;
-      };
-      const ap1 = avoidPenalty(prev1);
-      const ap2 = avoidPenalty(prev2);
-      if (ap1 !== ap2) return ap1 - ap2;
-
-      // daha az toplam saat öne
-      return h1 - h2;
-    });
+  const scoringWeights = {
+    ...DEFAULT_SCORING_WEIGHTS,
+    ...(hardRules?.scoringWeights || {}),
   };
+
+  /* ------- Ağırlıklı aday puanlayıcı — yüksek puan = daha iyi aday ------- */
+  const scoreCandidate = (pidStr, day, shiftCode) => {
+    const h = hoursByPerson.get(pidStr) || 0;
+    const t = targetByPerson.get(pidStr) ?? baseTarget;
+    const fairness = (t - h) * scoringWeights.fairness;
+    const preference = requestPreferScore(pidStr, day, shiftCode) * scoringWeights.preference;
+
+    const prev = getPrevDayShiftForPerson(assignments, pidStr, day);
+    const avoidPrev = prev?.shiftCode
+      ? (getShiftDef(prev.shiftCode, shiftIndex)?.avoidNextDay?.includes(shiftCode) ? 1 : 0)
+      : 0;
+    const avoidPenalty = avoidPrev * scoringWeights.avoidNextDay;
+
+    const nightCount = isNightish(shiftCode, shiftIndex)
+      ? countConsecutiveNightsBefore(assignments, pidStr, day, shiftIndex)
+      : 0;
+    const nightPenalty = nightCount * scoringWeights.consecutiveNights;
+
+    return fairness + preference + avoidPenalty + nightPenalty;
+  };
+
+  const sortCandidates = (list, day, shiftCode) =>
+    [...list].sort((p1, p2) => scoreCandidate(String(p2), day, shiftCode) - scoreCandidate(String(p1), day, shiftCode));
 
   let failInfo = null;
 

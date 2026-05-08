@@ -1,4 +1,4 @@
-import { getMonthlySchedule } from "../api/apiAdapter.js";
+import { getMonthlySchedule, getAssignmentsForMonth } from "../api/apiAdapter.js";
 import {
   buildPersonIdentityIndex,
   canonName,
@@ -280,10 +280,56 @@ export function getScheduleModelSync({ sectionId = "", serviceId = "", role = ""
   return model || { assignments: {}, byName: {} };
 }
 
+// Build model directly from Assignment collection flat array
+function fromAssignmentsList(list = [], people = []) {
+  const peopleIndex = buildPersonIdentityIndex(people);
+  const assignments = {};
+  const byName = {};
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const dateRaw = String(item.date || item.day || "").slice(0, 10);
+    const dayFromDate = /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? Number(dateRaw.slice(8, 10)) : NaN;
+    const day = Number.isFinite(dayFromDate) ? dayFromDate : NaN;
+    if (!Number.isFinite(day) || day < 1 || day > 31) continue;
+    const pid = String(item.personId || item.pid || "").trim();
+    const nameRaw = item.personName || item.fullName || item.name || "";
+    const nameKey = canon(nameRaw);
+    const resolvedPid = String(
+      resolvePersonRef({ personId: pid, name: nameKey }, peopleIndex)?.id || pid || ""
+    ).trim();
+    const shiftCode = String(item.shiftCode || item.shift || item.code || "").trim();
+    const rowLabel = String(item.roleLabel || item.rowLabel || item.area || item.label || "").trim();
+    const explicitHours = Number(item.hours);
+    const entry = {
+      shiftCode,
+      rowLabel,
+      hours: Number.isFinite(explicitHours) && explicitHours > 0
+        ? explicitHours
+        : shiftHoursFromCode(shiftCode, rowLabel),
+      source: "assignments",
+    };
+    addModelEntry({ assignments, byName }, { personId: resolvedPid, nameKey, day, entry });
+  }
+  return { assignments, byName };
+}
+
 export async function getScheduleModel({ sectionId, serviceId, role = "", year, month, people = [] }) {
   const ym = `${year}-${pad2(month)}`;
-  let backendData = null;
 
+  // 1) Assignment koleksiyonu — SSOT
+  try {
+    if (sectionId) {
+      const list = await getAssignmentsForMonth({ sectionId, serviceId, role, year, month });
+      if (Array.isArray(list) && list.length > 0) {
+        return fromAssignmentsList(list, people);
+      }
+    }
+  } catch {
+    // Endpoint yoksa eski yoldan devam et
+  }
+
+  // 2) Fallback: MonthlySchedule
+  let backendData = null;
   try {
     if (sectionId) {
       backendData = await getMonthlySchedule({ sectionId, serviceId, role, year, month });
@@ -300,7 +346,7 @@ export async function getScheduleModel({ sectionId, serviceId, role = "", year, 
     return fromBackendSchedule(backendData, people);
   }
 
-  // Backend veri yoksa yalnız draft/local scheduleRowsV2 fallback'ini kullan.
+  // 3) Son çare: taslak localStorage
   const model = fromRowsV2(people);
   return model || { assignments: {}, byName: {} };
 }

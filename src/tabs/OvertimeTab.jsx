@@ -19,16 +19,17 @@ import {
 } from "../utils/personIdentity.js";
 import { LS } from "../utils/storage.js";
 import { getAllLeaves } from "../lib/leaves.js";
+import { getShifts } from "../lib/dataResolver.js";
 import {
-  getScheduleModel,
   getScheduleModelSync,
   getPersonMonthShifts,
 } from "../store/monthlyScheduleModel.js";
 import {
   buildWorkRowsFromPlanAssignments,
   createPlanShiftHourResolver,
-  fetchGeneratedPlanAssignmentsForMonth,
 } from "../utils/overtimePlanTruth.js";
+import { fetchMergedScheduleTruth } from "../utils/scheduleTruth.js";
+import { buildPersonDayHoursMapFromAssignments } from "../utils/planWorkCalculator.js";
 
 /* ================ Helpers ================ */
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -46,7 +47,10 @@ const isGroupLabel = (nm) =>
   /^(hemşire(ler)?|hemsire(ler)?|doktor(lar)?|personel|nurses?|doctors?)$/i.test(
     String(nm).trim()
   );
-const alignScheduleModelNameKey = (s) => canonName(s || "");
+const looksDoctor = (title = "") => {
+  const t = String(title || "").toLocaleUpperCase("tr-TR");
+  return /\b(DR|DOKTOR|HEKIM|HEKİM|TABIP|TABİP)\b/.test(t);
+};
 
 function dedupeImportedPersonRows(rows = []) {
   const byCanon = new Map();
@@ -110,39 +114,62 @@ function remapOvertimeRowsWithPeople(rows = [], people = []) {
   return Array.from(merged.values());
 }
 
-function buildPersonMetaIndex(source = []) {
-  const combined = Array.isArray(source) ? source : [];
-  const byId = new Map();
-  const byCanon = new Map();
-  const capture = (entry, fallbackId) => {
-    if (!entry) return;
-    const name = entry.fullName || entry.name || entry.displayName || entry["AD SOYAD"] || entry.personName || entry.title || "";
-    if (!name || isGroupLabel(name)) return;
-    const id = entry.id ?? entry.personId ?? entry.uid ?? entry.pid ?? entry.tc ?? entry.tcNo ?? entry.code ?? entry.employeeId ?? fallbackId ?? null;
-    const info = {
-      id: id != null ? String(id) : null,
-      name,
-      title: entry.title || entry.unvan || entry.position || entry.role || (entry.meta && (entry.meta.title || entry.meta.role)) || "",
-      service: entry.service || entry.unit || entry.department || entry.branch || (entry.meta && (entry.meta.service || entry.meta.unit || entry.meta.department)) || "",
-      tckn: entry.tckn || entry.tc || entry.tcKimlik || entry.tcNo || entry["T.C."] || entry.nationalId || "",
+function buildDerivedOvertimeRows({ assignments = [], people = [], dcount = 31, resolveShiftHours }) {
+  const grouped = buildPersonDayHoursMapFromAssignments(assignments, {
+    people,
+    resolveHours: resolveShiftHours,
+  });
+  const out = [];
+  const used = new Set();
+
+  for (const person of Array.isArray(people) ? people : []) {
+    const pid = String(person?.id || person?.personId || "").trim();
+    const pname = person?.fullName || person?.name || "";
+    const nameKey = canonName(pname);
+    const truthEntry =
+      (pid ? grouped.get(`id:${pid}`) : null) ||
+      (nameKey ? grouped.get(`name:${nameKey}`) : null);
+    const row = {
+      id: pid || crypto.randomUUID(),
+      personId: pid,
+      person: pname,
+      title: person?.title || person?.role || "",
+      service: person?.service || person?.serviceId || "",
+      editedDays: {},
+      days: Array.from({ length: dcount }, (_, idx) => {
+        const dayNum = idx + 1;
+        const hours = Number(truthEntry?.byDay?.[dayNum]);
+        return Number.isFinite(hours) && hours > 0 ? hours : "";
+      }),
     };
-    const canon = canonName(name);
-    if (info.id) {
-      const prev = byId.get(info.id);
-      if (!prev || (info.title && !prev.title) || (info.service && !prev.service) || (info.tckn && !prev.tckn)) byId.set(info.id, info);
-    }
-    if (canon) {
-      if (!byCanon.has(canon)) byCanon.set(canon, { ...info });
-      else {
-        const prev = byCanon.get(canon);
-        if (info.title && !prev.title) prev.title = info.title;
-        if (info.service && !prev.service) prev.service = info.service;
-        if (info.tckn && !prev.tckn) prev.tckn = info.tckn;
-      }
-    }
-  };
-  combined.forEach((entry, idx) => capture(entry, `tmp-${idx}`));
-  return { byId, byCanon };
+    out.push(row);
+    if (pid) used.add(`id:${pid}`);
+    if (nameKey) used.add(`name:${nameKey}`);
+  }
+
+  for (const entry of grouped.values()) {
+    const pid = String(entry?.personId || "").trim();
+    const nameKey = canonName(entry?.personName || "");
+    const key = pid ? `id:${pid}` : `name:${nameKey}`;
+    if (used.has(key)) continue;
+    out.push({
+      id: pid || crypto.randomUUID(),
+      personId: pid,
+      person: entry?.personName || "",
+      title: "",
+      service: "",
+      editedDays: {},
+      days: Array.from({ length: dcount }, (_, idx) => {
+        const dayNum = idx + 1;
+        const hours = Number(entry?.byDay?.[dayNum]);
+        return Number.isFinite(hours) && hours > 0 ? hours : "";
+      }),
+    });
+  }
+
+  return out.sort((a, b) =>
+    String(a.person || "").localeCompare(String(b.person || ""), "tr", { sensitivity: "base" })
+  );
 }
 
 
@@ -308,22 +335,6 @@ function collectLeaveDaysForMonth({ year, month, leaves, codesByDay }) {
   return out;
 }
 
-function mergeScheduleModels(base, incoming) {
-  const a = base && typeof base === "object" ? base : { assignments: {}, byName: {} };
-  const b = incoming && typeof incoming === "object" ? incoming : { assignments: {}, byName: {} };
-  const out = {
-    assignments: { ...(a.assignments || {}) },
-    byName: { ...(a.byName || {}) },
-  };
-  for (const [pid, days] of Object.entries(b.assignments || {})) {
-    out.assignments[pid] = { ...(out.assignments[pid] || {}), ...(days || {}) };
-  }
-  for (const [name, days] of Object.entries(b.byName || {})) {
-    out.byName[name] = { ...(out.byName[name] || {}), ...(days || {}) };
-  }
-  return out;
-}
-
 /* ================ Component ================ */
 const OvertimeTab = forwardRef(function OvertimeTab({
   hideToolbar = false,
@@ -332,6 +343,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({
   leaveTypes = [],
   selectedServiceId = "",
   selectedServiceName = "",
+  activeRole = "Nurse",
 }, ref) {
   const { ym } = useActiveYM();
   const { year, month } = ym;
@@ -364,9 +376,20 @@ const OvertimeTab = forwardRef(function OvertimeTab({
       }))
       .filter((p) => p.fullName);
     const svc = String(selectedServiceId || "").trim();
-    if (!svc) return normalized;
-    return normalized.filter((p) => String(p.service || "").trim() === svc);
-  }, [peopleProp, selectedServiceId]);
+    const byService = !svc ? normalized : normalized.filter((p) => String(p.service || "").trim() === svc);
+    const roleKey = String(activeRole || "").toLowerCase();
+    if (roleKey === "doctor") {
+      return byService.filter((p) => looksDoctor(p?.title || p?.role || ""));
+    }
+    if (roleKey === "nurse") {
+      return byService.filter((p) => !looksDoctor(p?.title || p?.role || ""));
+    }
+    return byService;
+  }, [peopleProp, selectedServiceId, activeRole]);
+  const truthRoles = useMemo(
+    () => (String(activeRole || "").toLowerCase() === "doctor" ? ["Doctor"] : String(activeRole || "").toLowerCase() === "nurse" ? ["Nurse"] : ["Nurse", "Doctor"]),
+    [activeRole]
+  );
 
 
   useEffect(() => localStorage.setItem(LS_CFG, JSON.stringify(cfg)), [cfg]);
@@ -436,123 +459,36 @@ const OvertimeTab = forwardRef(function OvertimeTab({
     };
   }, []);
 
-  const resolveShiftHours = useMemo(() => createPlanShiftHourResolver(workingHours), [workingHours]);
-  const truthRowIndex = useMemo(() => {
-    const map = new Map();
-    for (const row of Array.isArray(truthRows) ? truthRows : []) {
-      const pid = String(row?.personId || "").trim();
-      const nameKey = canonName(row?.person || "");
-      if (pid) map.set(`id:${pid}`, row);
-      if (nameKey) map.set(`name:${nameKey}`, row);
-    }
-    return map;
-  }, [truthRows]);
-
-  const buildRowsFromScheduleModelData = useCallback((model) => {
-    const metaIndex = buildPersonMetaIndex(people);
-    const peopleIndex = buildPersonIdentityIndex(people);
-    const personRows = new Map();
-    const ensureRow = (key, sourceName, personObj, metaInfo) => {
-      if (personRows.has(key)) return personRows.get(key);
-      const days = Array.from({ length: dcount }, () => "");
-      const baseTitle = personObj?.title || personObj?.role || "";
-      const row = {
-        id: crypto.randomUUID(),
-        personId: personObj?.id || "",
-        person: personObj?.fullName || sourceName,
-        title: (metaInfo?.title || baseTitle || "").trim(),
-        service: personObj?.service || metaInfo?.service || "",
-        editedDays: {},
-        days,
-      };
-      personRows.set(key, row);
-      return row;
-    };
-
-    for (const [pid, dayMap] of Object.entries(model?.assignments || {})) {
-      const personObj = resolvePersonRef({ personId: String(pid) }, peopleIndex);
-      const sourceName = personObj?.fullName || personObj?.name || "";
-      const cn = canonName(sourceName);
-      const meta = personObj?.id
-        ? metaIndex.byId.get(String(personObj.id))
-        : (cn ? metaIndex.byCanon.get(cn) : null);
-      const row = ensureRow(`id:${pid}`, sourceName || pid, personObj, meta);
-      for (const [dayKey, entry] of Object.entries(dayMap || {})) {
-        const day = Number(dayKey);
-        if (!Number.isFinite(day) || day < 1 || day > dcount) continue;
-        const explicit = Number(entry?.hours);
-        const hours = Number.isFinite(explicit) && explicit > 0
-          ? explicit
-          : resolveShiftHours(entry?.shiftCode, entry?.rowLabel);
-        row.days[day - 1] = hours > 0 ? Math.round(hours * 100) / 100 : "";
-      }
-    }
-
-    for (const [nameKey, dayMap] of Object.entries(model?.byName || {})) {
-      const normalizedNameKey = alignScheduleModelNameKey(nameKey);
-      const personObj = resolvePersonRef({ name: normalizedNameKey }, peopleIndex);
-      const sourceName = personObj?.fullName || personObj?.name || nameKey;
-      const meta = personObj?.id
-        ? metaIndex.byId.get(String(personObj.id))
-        : metaIndex.byCanon.get(normalizedNameKey);
-      const rowKey = personObj?.id ? `id:${personObj.id}` : `name:${normalizedNameKey}`;
-      const row = ensureRow(rowKey, sourceName, personObj, meta);
-      for (const [dayKey, entry] of Object.entries(dayMap || {})) {
-        const day = Number(dayKey);
-        if (!Number.isFinite(day) || day < 1 || day > dcount) continue;
-        const explicit = Number(entry?.hours);
-        const hours = Number.isFinite(explicit) && explicit > 0
-          ? explicit
-          : resolveShiftHours(entry?.shiftCode, entry?.rowLabel);
-        row.days[day - 1] = hours > 0 ? Math.round(hours * 100) / 100 : "";
-      }
-    }
-
-    return remapOvertimeRowsWithPeople(Array.from(personRows.values()), people).sort((a, b) =>
-      String(a.person || "").localeCompare(String(b.person || ""), "tr", { sensitivity: "base" })
-    );
-  }, [dcount, people, resolveShiftHours]);
-
+  const effectiveWorkingHours = useMemo(
+    () => (Array.isArray(workingHours) && workingHours.length > 0 ? workingHours : getShifts()),
+    [workingHours]
+  );
+  const resolveShiftHours = useMemo(() => createPlanShiftHourResolver(effectiveWorkingHours), [effectiveWorkingHours]);
   const loadTruthRowsFromRoster = useCallback(async () => {
-    const rolesToTry = ["Nurse", "Doctor"];
-
-    let model = { assignments: {}, byName: {} };
-    for (const role of rolesToTry) {
-      const roleModel = await getScheduleModel({
-        sectionId: "calisma-cizelgesi",
-        serviceId: String(selectedServiceId || ""),
-        role,
-        year,
-        month,
-        people,
-      }).catch((err) => {
-        if (err?.status !== 404) console.error("getScheduleModel err:", err);
-        return null;
-      });
-      model = mergeScheduleModels(model, roleModel);
-    }
-    const modelRows = buildRowsFromScheduleModelData(model);
-    if (modelRows.length) return modelRows.map((row) => ({ ...row, editedDays: {} }));
-
-    const generatedAssignments = await fetchGeneratedPlanAssignmentsForMonth({
+    const truthAssignments = await fetchMergedScheduleTruth({
+      sectionId: "calisma-cizelgesi",
+      serviceId: String(selectedServiceId || ""),
+      roles: truthRoles,
       year,
       month,
-      roles: rolesToTry,
-      serviceId: String(selectedServiceId || ""),
-    }).catch((err) => {
-      if (err?.status !== 404) console.error("fetchGeneratedPlanAssignmentsForMonth err:", err);
-      return [];
-    });
-    if (generatedAssignments.length) {
-      return buildWorkRowsFromPlanAssignments({
-        assignments: generatedAssignments,
+      options: {
+        people,
+        resolveHours: resolveShiftHours,
+        preferScheduleReadModel: true,
+      },
+    }).then((t) => Array.isArray(t?.assignments) ? t.assignments : [])
+      .catch(() => []);
+
+    if (truthAssignments.length) {
+      return buildDerivedOvertimeRows({
+        assignments: truthAssignments,
         people,
         dcount,
         resolveShiftHours,
       }).map((row) => ({ ...row, editedDays: {} }));
     }
     return [];
-  }, [buildRowsFromScheduleModelData, dcount, month, people, resolveShiftHours, selectedServiceId, year]);
+  }, [dcount, month, people, resolveShiftHours, selectedServiceId, year, truthRoles]);
 
   useEffect(() => {
     let active = true;
@@ -565,71 +501,33 @@ const OvertimeTab = forwardRef(function OvertimeTab({
     window.addEventListener("schedule:saved", onRefresh);
     window.addEventListener("schedule:built", onRefresh);
     window.addEventListener("schedule:invalidated", onRefresh);
+    window.addEventListener("planner:changed", onRefresh);
     window.addEventListener("storage", onRefresh);
     return () => {
       active = false;
       window.removeEventListener("schedule:saved", onRefresh);
       window.removeEventListener("schedule:built", onRefresh);
       window.removeEventListener("schedule:invalidated", onRefresh);
+      window.removeEventListener("planner:changed", onRefresh);
       window.removeEventListener("storage", onRefresh);
     };
   }, [loadTruthRowsFromRoster]);
 
   useEffect(() => {
-    if (!truthRowIndex.size) return;
+    if (!Array.isArray(truthRows) || truthRows.length === 0) return;
     setRows((prev) => {
-      if (!Array.isArray(prev) || prev.length === 0) return truthRows;
-      const prevByKey = new Map();
-      for (const row of prev || []) {
-        const pid = String(row?.personId || "").trim();
-        const nameKey = canonName(row?.person || "");
-        if (pid) prevByKey.set(`id:${pid}`, row);
-        if (nameKey) prevByKey.set(`name:${nameKey}`, row);
-      }
-
-      const next = [];
-      for (const truthRow of truthRows) {
-        const pid = String(truthRow?.personId || "").trim();
-        const nameKey = canonName(truthRow?.person || "");
-        const prevRow =
-          (pid ? prevByKey.get(`id:${pid}`) : null) ||
-          (nameKey ? prevByKey.get(`name:${nameKey}`) : null);
-        if (!prevRow) {
-          next.push(truthRow);
-          continue;
-        }
-        const editedDays = { ...(prevRow?.editedDays || {}) };
-        const mergedDays = Array.from({ length: dcount }, (_, idx) => {
-          if (editedDays[idx]) return prevRow?.days?.[idx] ?? "";
-          const truthVal = Number(truthRow?.days?.[idx]);
-          return Number.isFinite(truthVal) && truthVal > 0 ? truthVal : "";
-        });
-        next.push({
-          ...prevRow,
-          personId: truthRow?.personId || prevRow.personId,
-          person: truthRow?.person || prevRow.person,
-          title: truthRow?.title || prevRow.title,
-          service: truthRow?.service || prevRow.service,
-          days: mergedDays,
-          editedDays,
-        });
-      }
-
-      for (const row of prev || []) {
-        const pid = String(row?.personId || "").trim();
-        const nameKey = canonName(row?.person || "");
-        const existsInTruth =
-          (pid && truthRowIndex.has(`id:${pid}`)) ||
-          (nameKey && truthRowIndex.has(`name:${nameKey}`));
-        if (existsInTruth) continue;
-        const hasManualData = Object.keys(row?.editedDays || {}).length > 0 || (row?.days || []).some((v) => v !== "" && v != null);
-        if (hasManualData) next.push(row);
-      }
-
+      const next = truthRows.map((row) => ({
+        ...row,
+        editedDays: {},
+        days: Array.from({ length: dcount }, (_, idx) => {
+          const hours = Number(row?.days?.[idx]);
+          return Number.isFinite(hours) && hours > 0 ? hours : "";
+        }),
+      }));
       const changed = JSON.stringify(next) !== JSON.stringify(prev);
       return changed ? next : prev;
     });
-  }, [truthRowIndex, truthRows, dcount]);
+  }, [truthRows, dcount]);
 
   const computed = useMemo(() => {
     const stdMonthly = computeMonthlyStdHours(year, month, holidays);

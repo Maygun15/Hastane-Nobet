@@ -169,12 +169,19 @@ export function normalizePlanAssignments(assignments = [], {
     const personId = String(person?.id || item.personId || item.pid || item.staffId || "").trim();
     const personName = person?.fullName || person?.name || item.personName || item.name || "";
     const explicit = Number(item.hours);
+    const hasExplicit = Number.isFinite(explicit) && explicit > 0;
     const resolvedHours = resolve(
       item.shiftCode || item.shift || item.code || "",
       item.roleLabel || item.rowLabel || item.label || item.area || ""
     );
-    const useExplicit = preferExplicitHours && Number.isFinite(explicit) && explicit > 0;
-    const hours = useExplicit ? roundHours(explicit) : resolvedHours;
+    let hours;
+    if (preferExplicitHours) {
+      // stored hours win; resolver is the fallback
+      hours = hasExplicit ? roundHours(explicit) : resolvedHours;
+    } else {
+      // resolver wins; stored hours are the safety-net fallback when resolver returns 0
+      hours = resolvedHours > 0 ? resolvedHours : (hasExplicit ? roundHours(explicit) : 0);
+    }
     if (!(hours > 0)) continue;
 
     out.push({

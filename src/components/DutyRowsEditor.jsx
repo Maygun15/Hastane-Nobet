@@ -32,10 +32,12 @@ import {
   saveMonthlySchedule,
   generateSchedulerPlan,
   fetchPersonnel,
+  validateBatchSchedule,
 } from "../api/apiAdapter.js";
 import { namedToAssignments, assignmentsToNamed } from "../utils/scheduleAdapter.js";
 import { createPlanWorkHourResolver } from "../utils/planWorkCalculator.js";
 import { runPlannerOnce } from "../lib/runPlannerOnce.js";
+import OverrideDialog from "./OverrideDialog.jsx";
 import { toast } from "sonner";
 
 /* ===== Toaster (opsiyonel) ===== */
@@ -44,6 +46,7 @@ let toastSafe = toast;
 /* ======================= yardımcılar ======================= */
 const WD_TR = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
 const HEAD_TR = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+const MONTHS_TR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 const DUTY_RULES_LS_KEY = "dutyRulesV2";
 const norm = (s) => (s || "").toString().trim().toLocaleUpperCase("tr-TR");
 const stripDiacritics = (str) =>
@@ -81,6 +84,10 @@ const mergeDisplayNameLists = (base = [], addon = []) => {
   (Array.isArray(addon) ? addon : []).forEach(pushName);
   return Array.from(merged.values());
 };
+const keepSingleAssignee = (names = []) => {
+  const merged = mergeDisplayNameLists([], names);
+  return merged.length ? [merged[0]] : [];
+};
 const normalizeRosterNamedAssignments = (namedAssignments) => {
   const source = namedAssignments && typeof namedAssignments === "object" ? namedAssignments : {};
   const normalized = {};
@@ -88,7 +95,7 @@ const normalizeRosterNamedAssignments = (namedAssignments) => {
     if (!byRow || typeof byRow !== "object") return;
     normalized[dayKey] = {};
     Object.entries(byRow).forEach(([rowId, list]) => {
-      normalized[dayKey][rowId] = mergeDisplayNameLists([], list);
+      normalized[dayKey][rowId] = keepSingleAssignee(list);
     });
   });
   return normalized;
@@ -121,11 +128,54 @@ const isGroupLabel = (nm) =>
   /^(hemşire(ler)?|hemsire(ler)?|doktor(lar)?|personel|nurses?|doctors?)$/i.test(
     String(nm).trim()
   );
+const compactRosterDisplayName = (name) => {
+  const raw = String(name || "").trim();
+  if (!raw) return "";
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return raw;
+  const first = parts[0];
+  const last = parts[parts.length - 1];
+  const compact = `${first} ${last.charAt(0)}.`;
+  return compact.length < raw.length ? compact : raw;
+};
+const clampSingleSlotCount = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return 1;
+};
 const formatDateTime = (iso) => {
   if (!iso) return null;
   const dt = new Date(iso);
   return Number.isNaN(dt.getTime()) ? null : dt.toLocaleString("tr-TR");
 };
+function normalizeDutyDefsAndOverrides(defs = [], overrides = {}) {
+  const nextDefs = [];
+  const nextOverrides = {};
+  for (const row of Array.isArray(defs) ? defs : []) {
+    const rowId = String(row?.id ?? row?.rowId ?? "").trim();
+    const normalizedPattern = Array.isArray(row?.pattern)
+      ? row.pattern.map((value) => clampSingleSlotCount(value))
+      : Array(7).fill(clampSingleSlotCount(row?.defaultCount || 0));
+    const normalizedDefaultCount = clampSingleSlotCount(row?.defaultCount || 0);
+    const normalizedRow = {
+      ...row,
+      defaultCount: normalizedDefaultCount,
+      pattern: normalizedPattern,
+    };
+    nextDefs.push(normalizedRow);
+    if (!rowId) continue;
+    const source = overrides?.[rowId] || {};
+    const normalizedDays = {};
+    for (const [day, value] of Object.entries(source)) {
+      normalizedDays[day] = clampSingleSlotCount(value);
+    }
+    if (Object.keys(normalizedDays).length) {
+      nextOverrides[rowId] = normalizedDays;
+    }
+  }
+
+  return { defs: nextDefs, overrides: nextOverrides };
+}
 
 function mapRulesToBackend(list) {
   const arr = Array.isArray(list) ? list : [];
@@ -793,6 +843,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const [loadingRemote, setLoadingRemote] = useState(false);
   const [saving, setSaving] = useState(false);
   const [lastSavedInfo, setLastSavedInfo] = useState(null);
+  const [overrideDialog, setOverrideDialog] = useState({ open: false, errors: [], pendingPayload: null });
   const [rawGeneratedExplainability, setRawGeneratedExplainability] = useState(() => createEmptyExplainability());
   const [monthlyReadModelState, setMonthlyReadModelState] = useState(() => ({
     scheduleId: null,
@@ -839,6 +890,32 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const [roster, setRoster] = useState(null);
   /* AI Plan: backend varsa backend, local sadece fallback */
   const [aiPlan, setAiPlan] = useState(null);
+  const shiftMetaByCode = useMemo(() => {
+    const map = new Map();
+    for (const item of shiftOptions || []) {
+      const code = String(item?.code || item?.id || "").trim();
+      if (!code) continue;
+      map.set(code, item);
+    }
+    return map;
+  }, [shiftOptions]);
+  const rosterDisplayRows = useMemo(() => {
+    return (rows || []).map((row) => {
+      const namesByDay = Array.from({ length: daysInMonth }, (_x, idx) =>
+        (roster?.namedAssignments?.[idx + 1]?.[row.id] || [])
+          .filter((nm) => !isGroupLabel(nm))
+          .sort((a, b) => a.localeCompare(b, "tr"))
+      );
+      const depth = Math.max(1, ...namesByDay.map((names) => names.length));
+      const shiftMeta = shiftMetaByCode.get(String(row?.shiftCode || "").trim()) || null;
+      return {
+        ...row,
+        namesByDay,
+        depth,
+        shiftHoursText: shiftMeta ? `${shiftMeta.start || ""} - ${shiftMeta.end || ""}`.trim() : "",
+      };
+    });
+  }, [rows, roster, daysInMonth, shiftMetaByCode]);
 
   /* Pinler (Sabitlenenler) */
   const [pins, setPins] = useState([]);
@@ -895,21 +972,28 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
   /* Basit toast */
   const note = useCallback((msg, type = "info") => {
-    if (typeof toastSafe === "function") {
-      toastSafe({
-        title: type === "error" ? "Hata" : type === "success" ? "Başarılı" : "Bilgi",
-        desc: msg,
-        type,
-      });
+    const message = String(msg || "").trim() || "İşlem tamamlandı.";
+    const title =
+      type === "error"
+        ? "Hata"
+        : type === "success"
+          ? "Başarılı"
+          : type === "warning"
+            ? "Uyarı"
+            : "Bilgi";
+    if (toastSafe && typeof toastSafe[type] === "function") {
+      toastSafe[type](title, { description: message });
+    } else if (typeof toastSafe === "function") {
+      toastSafe(title, { description: message });
     } else {
-      alert(msg);
+      alert(`${title}: ${message}`);
     }
   }, []);
 
   /* setCount */
   const setCount = (rowId, day, val) => {
     setOverrides((prev) => {
-      const n = val === "" ? null : Math.max(0, Number(val || 0));
+      const n = val === "" ? null : clampSingleSlotCount(val);
       const curr = { ...(prev[rowId] || {}) };
       if (n == null) delete curr[day];
       else curr[day] = n;
@@ -921,7 +1005,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     (rowId, n) => {
       const row = rows.find((r) => r.id === rowId);
       if (!row) return;
-      const val = Math.max(0, Number(n || 0));
+      const val = clampSingleSlotCount(n);
       setOverrides((prev) => {
         const next = { ...(prev[rowId] || {}) };
         for (let d = 1; d <= daysInMonth; d++) {
@@ -940,7 +1024,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const addRow = () => {
     if (!form.label) return note("Görev (Çalışma Alanı) seçin.", "info");
     if (!form.shiftCode) return note("Vardiya seçin.", "info");
-    const base = Math.max(0, Number(form.defaultCount || 0));
+    const base = clampSingleSlotCount(form.defaultCount || 0);
     const id = Date.now();
     const newDef = {
       id,
@@ -949,6 +1033,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       defaultCount: base,
       pattern: [base, base, base, base, base, base, base],
       weekendOff: false,
+      holidayPolicy: 'none',
     };
     createDef(newDef);
     fillRowAllDays(id, base);
@@ -1058,19 +1143,20 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       aoa.push(line);
     }
 
+    const previewData = { header, rows: aoa.slice(1) };
     setOverrides(committed);
-    setPreview({ header, rows: aoa.slice(1) });
+    setPreview(previewData);
 
     if (!generateLocalRoster) {
       setRoster(null);
-      return;
+      return { committedOverrides: committed, previewData, roster: null };
     }
 
     // personel yoksa yalnızca sayı listesi
     const staff = staffForRole;
     if (!staff.length) {
       setRoster(null);
-      return;
+      return { committedOverrides: committed, previewData, roster: null };
     }
 
     // izinler
@@ -1251,7 +1337,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     const FLAT_KEY = "generatedRosterFlat";
     const flatAll = LS.get(FLAT_KEY, {});
     const flatByRole = flatAll[role] || {};
-    flatByRole[monthKey] = flatAssignments;
+    flatByRole[monthKey] = flatAssignments.map((a) => ({ ...a, _draft: true }));
     flatAll[role] = flatByRole;
     LS.set(FLAT_KEY, flatAll);
     try {
@@ -1261,6 +1347,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       LS.set("scheduleBuildTrigger", { ym: monthKey, ts: Date.now() });
       window.dispatchEvent(new Event("schedule:built"));
     } catch {}
+    return { committedOverrides: committed, previewData, roster: rosterRes };
   };
 
   const exportXlsx = () => {
@@ -1344,7 +1431,12 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       return;
     }
     const byKey = new Map();
-    (defs || []).forEach((r) => byKey.set(`${norm(r.label)}|${norm(r.shiftCode)}`, r));
+    (defs || []).forEach((r) => {
+      const key = `${norm(r.label)}|${norm(r.shiftCode)}`;
+      const bucket = byKey.get(key) || [];
+      bucket.push(r);
+      byKey.set(key, bucket);
+    });
 
     const nextOverrides = { ...(overrides || {}) };
     let createdCount = 0,
@@ -1362,7 +1454,11 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       }
 
       const key = `${norm(service)}|${norm(shiftCode)}`;
-      let target = byKey.get(key);
+      let bucket = byKey.get(key) || [];
+      let target = bucket.find((candidate) => {
+        const dayVal = Number(nextOverrides?.[candidate.id]?.[day] || 0);
+        return dayVal < 1;
+      });
 
       if (!target) {
         const id = Date.now() + Math.floor(Math.random() * 100000);
@@ -1374,16 +1470,17 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           defaultCount: base,
           pattern: [base, base, base, base, base, base, base],
           weekendOff: false,
+          holidayPolicy: 'none',
         };
         createDef(newDef);
-        byKey.set(key, newDef);
+        bucket = [...bucket, newDef];
+        byKey.set(key, bucket);
         target = newDef;
         createdCount++;
       }
 
       if (!nextOverrides[target.id]) nextOverrides[target.id] = {};
-      const curr = Number(nextOverrides[target.id][day] || 0);
-      nextOverrides[target.id][day] = curr + 1;
+      nextOverrides[target.id][day] = 1;
       appliedCount++;
     }
 
@@ -1446,7 +1543,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         if (!row || row.length === 0) continue;
         const label = (row[idxLabel] ?? "").toString().trim();
         const shiftText = (row[idxShift] ?? "").toString().trim();
-        const defCount = idxDef >= 0 ? Number(row[idxDef] ?? 0) || 0 : 0;
+        const defCount = idxDef >= 0 ? clampSingleSlotCount(row[idxDef] ?? 0) : 0;
         if (!label && !shiftText && !defCount) continue;
 
         const id = Date.now() + r;
@@ -1458,13 +1555,13 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           if (v === "" || v == null) continue;
           const n = Number(v);
           if (!Number.isFinite(n) || n < 0) continue;
-          ovr[day] = n;
+          ovr[day] = clampSingleSlotCount(n);
           const wd = new Date(year, month0, day).getDay();
           const i = monIndex(wd);
           bucket[i].push(n);
         }
-        const pattern = bucket.map((arr) => (arr.length ? arr[0] : defCount));
-        newDefs.push({ id, label, shiftCode, defaultCount: defCount, pattern, weekendOff: false });
+        const pattern = bucket.map((arr) => (arr.length ? clampSingleSlotCount(arr[0]) : defCount));
+        newDefs.push({ id, label, shiftCode, defaultCount: defCount, pattern, weekendOff: false, holidayPolicy: 'none' });
         newOverrides[id] = ovr;
       }
       if (!newDefs.length) throw new Error("İçe aktarılacak satır bulunamadı.");
@@ -1587,11 +1684,14 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           const remoteDefs = Array.isArray(data.defs) ? data.defs : [];
           const remoteAssignments = Array.isArray(data.assignments) ? data.assignments : [];
           savedAssignmentsRef.current = remoteAssignments;
-          const defsForUI = remoteDefs;
+          const normalizedRemote = normalizeDutyDefsAndOverrides(
+            remoteDefs,
+            data.overrides && typeof data.overrides === "object" ? data.overrides : {}
+          );
+          const defsForUI = normalizedRemote.defs;
           if (Array.isArray(defsForUI)) replaceAllDefs(defsForUI);
           if ("overrides" in data) {
-            const nextOverrides =
-              data.overrides && typeof data.overrides === "object" ? data.overrides : {};
+            const nextOverrides = normalizedRemote.overrides;
             setOverrides(nextOverrides);
           }
           if ("preview" in data) setPreview(data.preview || null);
@@ -1626,7 +1726,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           }
           lastSavedSignatureRef.current = makeSignature(
             Array.isArray(defsForUI) ? defsForUI : data.rows || [],
-            data.overrides || {},
+            normalizedRemote.overrides || {},
             rosterForUI ?? null,
             data.preview ?? null,
             data.aiPlan ?? null,
@@ -1807,10 +1907,34 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         rules,
         generatedAt: new Date().toISOString(),
       };
+
+      // Pre-save validation (only on explicit saves, not silent auto-saves)
+      if (!silent && !payload._forceOverride && mergedAssignments.length > 0) {
+        try {
+          const validation = await validateBatchSchedule({
+            sectionId,
+            serviceId: serviceKey,
+            role,
+            year,
+            month: month1,
+            assignments: mergedAssignments,
+          });
+          if (validation?.canForce && validation.violations?.length > 0) {
+            const errorMessages = validation.violations.flatMap((v) =>
+              v.errors.map((e) => `${v.personName || v.personId} (${v.date}): ${e}`)
+            );
+            setOverrideDialog({ open: true, errors: errorMessages, pendingPayload: { ...payload, _forceOverride: true } });
+            setSaving(false);
+            return null;
+          }
+        } catch { /* validation endpoint unavailable — proceed */ }
+      }
+
       const meta = {
         role,
         daysInMonth,
         source: "DutyRowsEditor",
+        ...(payload._forceOverride ? { forceOverride: true } : {}),
       };
       const saved = await saveMonthlySchedule({
         sectionId,
@@ -1834,6 +1958,17 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         payload.pins,
         payload.rules
       );
+      // After successful backend save, evict draft localStorage entries for this month
+      try {
+        const mKey = `${year}-${String(month1).padStart(2, "0")}`;
+        const flatAll = LS.get("generatedRosterFlat", {});
+        const flatByRole = flatAll[role] || {};
+        if (flatByRole[mKey]) {
+          delete flatByRole[mKey];
+          flatAll[role] = flatByRole;
+          LS.set("generatedRosterFlat", flatAll);
+        }
+      } catch {}
       setAutoSaveStatus("saved");
       setAutoSaveError(null);
       if (!silent) note("Çizelge kaydedildi.", "success");
@@ -1909,7 +2044,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       .map((a, i) => {
         const label = a?.name?.toString().trim();
         if (!label) return null;
-        const defCount = Number(a?.required ?? 1) || 1;
+        const defCount = clampSingleSlotCount(a?.required ?? 1);
         const code = pickDefaultShiftCode(a, shifts);
         return {
           id: makeId(i),
@@ -1918,6 +2053,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           defaultCount: defCount,
           pattern: [defCount, defCount, defCount, defCount, defCount, defCount, defCount],
           weekendOff: false,
+          holidayPolicy: 'none',
         };
       })
       .filter(Boolean);
@@ -1990,7 +2126,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         canon &&
         (!knownNameSet.size || knownNameSet.has(canon))
       ) {
-        named[day][rowId] = mergeDisplayNameLists(named[day][rowId], [nm]);
+        named[day][rowId] = keepSingleAssignee([...named[day][rowId], nm]);
       }
     });
 
@@ -2036,7 +2172,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       if (!namedBase[dayKey] || typeof namedBase[dayKey] !== "object") namedBase[dayKey] = {};
       Object.entries(byRow || {}).forEach(([rowId, list]) => {
         const prev = Array.isArray(namedBase[dayKey][rowId]) ? namedBase[dayKey][rowId] : [];
-        namedBase[dayKey][rowId] = mergeDisplayNameLists(prev, list);
+        namedBase[dayKey][rowId] = keepSingleAssignee([...prev, ...(Array.isArray(list) ? list : [])]);
       });
     });
 
@@ -2060,8 +2196,25 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     // İzinler backend'den gelebiliyor → build öncesi senkronize et
     await loadLeavesFromBackend();
     const added = ensureRowsFromParameters();
-    await buildCommitThisMonth({ generateLocalRoster: false });
-    await doSave({ silent: true });
+    const commitResult = await buildCommitThisMonth({ generateLocalRoster: false });
+    const effectiveRows = Array.isArray(rows) ? rows : [];
+    const effectiveOverrides = commitResult?.committedOverrides || overrides;
+    const effectivePreview = commitResult?.previewData || preview;
+    await doSave({
+      silent: true,
+      payloadOverride: {
+        version: 1,
+        defs: effectiveRows,
+        overrides: effectiveOverrides,
+        assignments: Array.isArray(savedAssignmentsRef.current) ? [...savedAssignmentsRef.current] : [],
+        roster: null,
+        preview: effectivePreview,
+        aiPlan,
+        pins,
+        rules,
+        generatedAt: new Date().toISOString(),
+      },
+    });
     const staff = staffForRole;
     const hasStaff = staff.length > 0;
     const hasServiceInfo = staff.some((s) =>
@@ -2142,9 +2295,10 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         role,
         year,
         month: month1,
+        sync: true,
         dryRun: false,
-        defs: rows,
-        overrides,
+        defs: effectiveRows,
+        overrides: effectiveOverrides,
         shiftOptions,
         pins: pinnedAssignments, // Pinleri sunucuya gönder
         ...(supervisorConfig ? { supervisorConfig } : {}),
@@ -2169,11 +2323,11 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         setRoster(rosterFromServer);
         const payload = {
           version: 1,
-          defs: rows,
-          overrides,
+          defs: effectiveRows,
+          overrides: effectiveOverrides,
           roster: rosterFromServer,
           assignments: Array.isArray(data.assignments) ? data.assignments : [],
-          preview,
+          preview: effectivePreview,
           aiPlan,
           pins,
           rules,
@@ -2609,39 +2763,110 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           )}
 
           <div className="overflow-auto">
-            <table className="w-full text-sm">
+            <table className="min-w-[1600px] border-separate border-spacing-0 text-[12px]">
               <thead>
-                <tr className="bg-slate-50">
-                  <th className="p-2 text-left w-[240px]">Görev</th>
-                  <th className="p-2 text-left w-[120px]">Vardiya</th>
-                  {Array.from({ length: daysInMonth }).map((_, d) => (
-                    <th key={d} className="p-2 text-center">
-                      {d + 1}
-                    </th>
-                  ))}
+                <tr>
+                  <th colSpan={3} className="border border-slate-300 bg-white px-3 py-2 text-left text-sm font-semibold text-slate-700">
+                    {MONTHS_TR[month0]} {year}
+                  </th>
+                  <th
+                    colSpan={daysInMonth + 1}
+                    className="border border-slate-300 bg-slate-50 px-3 py-2 text-left text-sm font-semibold text-slate-800"
+                  >
+                    Çalışma Çizelgesi Önizleme
+                  </th>
+                </tr>
+                <tr>
+                  <th className="sticky left-0 z-20 border border-slate-300 bg-slate-100 px-3 py-2 text-left font-semibold text-slate-700">
+                    Görev
+                  </th>
+                  <th className="sticky left-[220px] z-20 border border-slate-300 bg-slate-100 px-3 py-2 text-left font-semibold text-slate-700">
+                    Saat
+                  </th>
+                  <th className="sticky left-[360px] z-20 border border-slate-300 bg-slate-100 px-3 py-2 text-center font-semibold text-slate-700">
+                    Kod
+                  </th>
+                  {Array.from({ length: daysInMonth }).map((_x, idx) => {
+                    const day = idx + 1;
+                    const weekday = new Date(year, month0, day).getDay();
+                    const headLabel = WD_TR[weekday];
+                    const isWeekend = weekday === 0 || weekday === 6;
+                    return (
+                      <th
+                        key={`head-${day}`}
+                        className={`min-w-[112px] border border-slate-300 px-2 py-2 text-center font-semibold ${
+                          isWeekend ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        <div>{day}</div>
+                        <div className="text-[10px] font-medium">{headLabel}</div>
+                      </th>
+                    );
+                  })}
+                  <th className="border border-slate-300 bg-slate-100 px-3 py-2 text-center font-semibold text-slate-700">
+                    Toplam
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => {
-                  const shift = r.shiftCode;
-                  return (
-                    <tr key={r.id} className="border-t align-top">
-                      <td className="p-2 font-medium">{r.label}</td>
-                      <td className="p-2">{shift}</td>
-                      {Array.from({ length: daysInMonth }).map((_, dIdx) => {
-                        const d = dIdx + 1;
-                        const names = (roster.namedAssignments?.[d]?.[r.id] || [])
-                          .filter((nm) => !isGroupLabel(nm))
-                          .sort((a, b) => a.localeCompare(b, "tr"));
+                {rosterDisplayRows.map((row) =>
+                  Array.from({ length: row.depth }).map((_slot, slotIdx) => (
+                    <tr key={`${row.id}-${slotIdx}`}>
+                      {slotIdx === 0 && (
+                        <td
+                          rowSpan={row.depth}
+                          className="sticky left-0 z-10 border border-slate-300 bg-white px-3 py-2 align-middle font-semibold text-slate-800"
+                          style={{ minWidth: 220 }}
+                        >
+                          {row.label}
+                        </td>
+                      )}
+                      {slotIdx === 0 && (
+                        <td
+                          rowSpan={row.depth}
+                          className="sticky left-[220px] z-10 border border-slate-300 bg-white px-3 py-2 align-middle text-slate-600"
+                          style={{ minWidth: 140 }}
+                        >
+                          {row.shiftHoursText || "-"}
+                        </td>
+                      )}
+                      {slotIdx === 0 && (
+                        <td
+                          rowSpan={row.depth}
+                          className="sticky left-[360px] z-10 border border-slate-300 bg-white px-3 py-2 text-center align-middle font-semibold text-slate-700"
+                          style={{ minWidth: 64 }}
+                        >
+                          {row.shiftCode || "-"}
+                        </td>
+                      )}
+                      {row.namesByDay.map((names, dayIdx) => {
+                        const day = dayIdx + 1;
+                        const weekday = new Date(year, month0, day).getDay();
+                        const isWeekend = weekday === 0 || weekday === 6;
+                        const name = names[slotIdx] || "";
                         return (
-                          <td key={dIdx} className="p-2 text-center whitespace-pre-wrap">
-                            {names.join("\n")}
+                          <td
+                            key={`${row.id}-${slotIdx}-${day}`}
+                            title={name || ""}
+                            className={`border border-slate-200 px-2 py-2 text-center align-middle ${
+                              isWeekend ? "bg-amber-50/40" : "bg-white"
+                            } ${name ? "text-slate-700" : "text-slate-300"}`}
+                          >
+                            {name ? compactRosterDisplayName(name) : ""}
                           </td>
                         );
                       })}
+                      {slotIdx === 0 && (
+                        <td
+                          rowSpan={row.depth}
+                          className="border border-slate-300 bg-slate-50 px-3 py-2 text-center align-middle text-xs font-semibold text-slate-600"
+                        >
+                          {row.namesByDay.reduce((sum, names) => sum + names.length, 0)}
+                        </td>
+                      )}
                     </tr>
-                  );
-                })}
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -2738,7 +2963,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                         className="w-20 h-8 rounded border px-2 text-center"
                         value={Number(r.defaultCount || 0)}
                         onChange={(e) => {
-                          const n = Math.max(0, Number(e.target.value || 0));
+                          const n = clampSingleSlotCount(e.target.value || 0);
                           updateDef(r.id, { defaultCount: n, pattern: Array(7).fill(n) });
                           fillRowAllDays(r.id, n);
                         }}
@@ -2861,7 +3086,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                                 className="w-full h-9 rounded border px-2 mt-1"
                                 value={Number(r.defaultCount || 0)}
                                 onChange={(e) => {
-                                  const n = Math.max(0, Number(e.target.value || 0));
+                                  const n = clampSingleSlotCount(e.target.value || 0);
                                   updateDef(r.id, { defaultCount: n, pattern: Array(7).fill(n) });
                                   fillRowAllDays(r.id, n);
                                 }}
@@ -2896,6 +3121,19 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                                 <label htmlFor={`wk-${r.id}`} className="text-sm">
                                   Hafta sonu çalışmaz (Cmt·Paz = 0)
                                 </label>
+                              </div>
+                              <div className="mt-2 flex items-center gap-2">
+                                <label className="text-sm text-slate-600 shrink-0">Tatil politikası:</label>
+                                <select
+                                  className="h-8 rounded border px-2 text-sm"
+                                  value={r.holidayPolicy || 'none'}
+                                  onChange={(e) => updateDef(r.id, { holidayPolicy: e.target.value })}
+                                >
+                                  <option value="none">Normal (tatilde de çalışır)</option>
+                                  <option value="full_off">Resmi tatillerde çalışmaz</option>
+                                  <option value="all_off">Tüm tatillerde çalışmaz (arife dahil)</option>
+                                  <option value="supervisor">Servis sorumlusu (H.sonu+tatil=yok, arife=yarım)</option>
+                                </select>
                               </div>
                             </div>
                           </div>
@@ -3015,6 +3253,19 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           </div>
         </div>
       )}
+
+      <OverrideDialog
+        open={overrideDialog.open}
+        title="Kayıt Öncesi Kural İhlali"
+        errors={overrideDialog.errors}
+        onConfirm={async (reason) => {
+          setOverrideDialog({ open: false, errors: [], pendingPayload: null });
+          if (overrideDialog.pendingPayload) {
+            await doSave({ payloadOverride: { ...overrideDialog.pendingPayload, overrideReason: reason } });
+          }
+        }}
+        onCancel={() => setOverrideDialog({ open: false, errors: [], pendingPayload: null })}
+      />
     </div>
   );
 });
