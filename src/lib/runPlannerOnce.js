@@ -4,6 +4,39 @@ import { buildMonthDays, fmtYmd, shiftDurationHours } from "../utils/date.js";
 import { DEFAULT_RULES, solveHourBalanced } from "./solver.js";
 import { leavesToUnavailable } from "./leaves.js";
 import { collectRequestsByPerson } from "./requestParser.js";
+import { fetchHolidayCalendar } from "../api/apiAdapter.js";
+
+// Tatil politikasına göre taskLine counts’larını sıfırla.
+// weekendOff:true → Cmt/Paz günleri count=0
+// full_off        → Resmi tatil günleri count=0
+// all_off         → Arife dahil tüm tatil günleri count=0
+// supervisor      → Hafta sonu + resmi tatil + arife count=0
+function applyHolidayPoliciesToTaskLines({ taskLines, days, holidayKindByDate }) {
+  return (taskLines || []).map((tl) => {
+    const policy = String(tl?.holidayPolicy || "none");
+    const weekendOff = tl?.weekendOff === true;
+    if (policy === "none" && !weekendOff) return tl;
+
+    const counts = { ...(tl?.counts || {}) };
+    for (const ymd of days || []) {
+      const dnum = Number(ymd.slice(-2));
+      const weekday = new Date(ymd).getDay();
+      const isWeekend = weekday === 0 || weekday === 6;
+      const kind = holidayKindByDate.get(ymd) || "";
+      const isFull = kind === "full";
+      const isArife = kind === "arife" || kind === "half";
+
+      let zero = false;
+      if (weekendOff && isWeekend) zero = true;
+      if (policy === "full_off" && isFull) zero = true;
+      if (policy === "all_off" && (isFull || isArife)) zero = true;
+      if (policy === "supervisor" && (isWeekend || isFull || isArife)) zero = true;
+
+      if (zero) counts[dnum] = 0;
+    }
+    return { ...tl, counts };
+  });
+}
 
 /* Yardımcılar: (PlanTab’dekilerin birebir kopyası, bağımsız çalışsın diye) */
 const norm = (s = "") => s.toString().trim().replace(/\s+/g, " ").toUpperCase();
@@ -662,6 +695,11 @@ export async function runPlannerOnce({
 
   const taskLinesWithHours = (taskLines||[]).map(tl => ({ ...tl, hours: hoursOfShiftCode(tl.shiftCode) }));
 
+  // Tatil takvimi — backend offline olsa bile localStorage fallback çalışır
+  const holidayList = await fetchHolidayCalendar({ year, month: month + 1 }).catch(() => []);
+  const holidayKindByDate = new Map((holidayList || []).map(h => [String(h.date || '').slice(0, 10), String(h.kind || '').toLowerCase()]));
+  const taskLinesEffective = applyHolidayPoliciesToTaskLines({ taskLines: taskLinesWithHours, days, holidayKindByDate });
+
   const unavailable = leavesToUnavailable(personLeaves || {}, year, month + 1);
 
   // kişi-bazlı izin düzleştirme (hedef etkisi için)
@@ -687,7 +725,7 @@ export async function runPlannerOnce({
 
   const res = solveHourBalanced({
     days,
-    taskLines: taskLinesWithHours,
+    taskLines: taskLinesEffective,
     people: (staff||[]).map(n=>({ id:String(n.id), name:n.name })),
     unavailable,
     hardRules: dpRules,
@@ -710,7 +748,7 @@ export async function runPlannerOnce({
   const unavailableSet = new Set((unavailable||[]).map(([pid,day])=>`${pid}|${day}`));
   const repaired = repairAfterCap({
     assignments:[...cap.assignments],
-    taskLines: taskLinesWithHours,
+    taskLines: taskLinesEffective,
     year, month, daysInMonth, staff,
     eligibleByLabel, unavailableSet, requestAvoid, requestAvoidCanon, canonById,
     rules: dpRules, hoursOfShiftCode, shiftIndex: codeIndex,
@@ -728,7 +766,7 @@ export async function runPlannerOnce({
   const finalAssignments = removedByRequest.length
     ? repairAfterCap({
         assignments: [...keptAfterRequest],
-        taskLines: taskLinesWithHours,
+        taskLines: taskLinesEffective,
         year,
         month,
         daysInMonth,
