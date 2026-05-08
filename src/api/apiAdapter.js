@@ -171,27 +171,59 @@ export async function generateSchedulerPlan(payload = {}, { token } = {}) {
 }
 
 /* ================= Holidays (resmî tatil / arife / yarım gün) ================= */
+
+// Türkiye sabit milli tatilleri — her yıl aynı tarihte
+const TR_FIXED_HOLIDAYS = [
+  { mm: "01", dd: "01", name: "Yılbaşı" },
+  { mm: "04", dd: "23", name: "Ulusal Egemenlik ve Çocuk Bayramı" },
+  { mm: "05", dd: "01", name: "Emek ve Dayanışma Bayramı" },
+  { mm: "05", dd: "19", name: "Atatürk'ü Anma, Gençlik ve Spor Bayramı" },
+  { mm: "07", dd: "15", name: "Demokrasi ve Millî Birlik Günü" },
+  { mm: "08", dd: "30", name: "Zafer Bayramı" },
+  { mm: "10", dd: "28", name: "Cumhuriyet Bayramı Arifesi", kind: "arife" },
+  { mm: "10", dd: "29", name: "Cumhuriyet Bayramı" },
+];
+
+function trFixedHolidaysForYear(year) {
+  return TR_FIXED_HOLIDAYS.map((h) => ({
+    date: `${year}-${h.mm}-${h.dd}`,
+    kind: h.kind || "full",
+    name: h.name,
+    _builtin: true,
+  }));
+}
+
+function mergeHolidays(builtins, userDefined) {
+  const map = new Map(builtins.map((h) => [h.date, h]));
+  for (const h of userDefined || []) {
+    if (h?.date) map.set(h.date, { ...map.get(h.date), ...h, _builtin: false });
+  }
+  return Array.from(map.values());
+}
+
 // Dönüş beklenen: [{ date:"YYYY-MM-DD", kind:"full"|"arife"|"half", name?:string }]
 export async function fetchHolidayCalendar({ year, month, token } = {}) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const prefix = month != null ? `${year}-${pad(month)}` : null;
+  const builtins = trFixedHolidaysForYear(year);
+  const local = LS.get("holidayCalendarV1", []);
+
   try {
-    // TODO: G6'da tatil/arife nereden geliyorsa burayla değiştir
     const qs = new URLSearchParams({ y: String(year) });
     if (month != null) qs.append("m", String(month));
     const data = await httpRequest(`/api/holidays?${qs.toString()}`, { token });
-
     const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-    const mapped = items.map((h) => ({
+    const remote = items.map((h) => ({
       date: h.date,
       kind: h.kind === "arife" ? "arife" : h.kind === "half" ? "half" : "full",
       name: h.name,
     }));
-    if (mapped.length) return mapped;
-    const local = LS.get("holidayCalendarV1", []);
-    return (local || []).filter((h) => (h.date || "").startsWith(`${year}-${String(month).padStart(2, "0")}`));
+    const merged = mergeHolidays(builtins, [...(local || []), ...remote]);
+    return prefix ? merged.filter((h) => (h.date || "").startsWith(prefix)) : merged;
   } catch (err) {
     if (err?.status !== 404) console.error("fetchHolidayCalendar err:", err);
-    const local = LS.get("holidayCalendarV1", []);
-    return (local || []).filter((h) => (h.date || "").startsWith(`${year}-${String(month).padStart(2, "0")}`));
+    const merged = mergeHolidays(builtins, local || []);
+    return prefix ? merged.filter((h) => (h.date || "").startsWith(prefix)) : merged;
   }
 }
 
