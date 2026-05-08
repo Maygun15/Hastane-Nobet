@@ -7,6 +7,7 @@ const { listHolidays } = require('./holidayService');
 const { generateMonthlyPlan } = require('./scheduler');
 const { generateDraftRoster } = require('./scheduler/draftRoster');
 const { fetchDutyRules, DEFAULT_RULES, DEFAULT_WEIGHTS } = require('./scheduler/ruleResolver');
+const { replaceAssignmentsForSchedule } = require('./assignmentSyncService');
 const { resolveStaff } = require('./scheduler/staffResolver');
 const { validateAssignments } = require('./scheduler/validator');
 const { applyHolidayPolicies } = require('./scheduler/holidayPolicyAdapter');
@@ -587,6 +588,26 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     } catch (persistErr) {
       console.warn('[scheduler] GeneratedSchedule monthlyWriteBack diagnostic yazma hatası:', persistErr?.message || persistErr);
     }
+  }
+
+  // Sync to Assignment collection (SSOT) so personal calendars stay consistent
+  try {
+    await replaceAssignmentsForSchedule({
+      scope: {
+        sectionId,
+        serviceId,
+        role,
+        year,
+        month,
+        sourceScheduleId: scheduleDoc?._id || doc._id,
+      },
+      payload: { assignments: persistedData.assignments || [] },
+      source: 'scheduler',
+      createdBy: userId || null,
+      updatedBy: userId || null,
+    });
+  } catch (syncErr) {
+    console.warn('[scheduler] Assignment sync hatası:', syncErr?.message || syncErr);
   }
 
   return { data: persistedData, rules, weights, quality, generatedId: String(doc._id) };

@@ -2,13 +2,52 @@ const normalizeCode = (s) => String(s || '').trim().toUpperCase();
 const pad2 = (n) => String(n).padStart(2, '0');
 const monIndex = (wdSun0) => (wdSun0 + 6) % 7; // 0=Mon
 
+// "HH:MM" → dakika
+function toMinutes(hhmm) {
+  if (!hhmm) return NaN;
+  const [h, m] = String(hhmm).split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return NaN;
+  return h * 60 + m;
+}
+
+// Gece devreden vardiyalarda da doğru hesaplar (08:00→08:00 = 24 saat)
+function calcShiftHours(start, end) {
+  const s = toMinutes(start);
+  const e = toMinutes(end);
+  if (!Number.isFinite(s) || !Number.isFinite(e)) return null;
+  let diff = e - s;
+  if (diff <= 0) diff += 24 * 60; // gece devreden veya aynı saat (24h)
+  return Math.round((diff / 60) * 100) / 100;
+}
+const normalizeText = (s = '') =>
+  String(s || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+const isServiceSupervisorLabel = (label = '') => normalizeText(label).includes('servis sorumlu');
+const normalizeRequiredCount = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return 1;
+};
+
+function resolveItemHours(item) {
+  const explicit = Number(item?.hours);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const fromTimes = calcShiftHours(item?.start, item?.end);
+  if (fromTimes !== null && fromTimes > 0) return fromTimes;
+  return null;
+}
+
 function buildShiftMetaLookup(shiftOptions = []) {
   const out = Object.create(null);
   for (const item of shiftOptions || []) {
     const code = normalizeCode(item?.code || item?.id || '');
     if (!code) continue;
     out[code] = {
-      hours: item?.hours,
+      hours: resolveItemHours(item),
       start: item?.start || null,
       end: item?.end || null,
       isNight: !!item?.isNight,
@@ -24,13 +63,21 @@ function buildShiftMetaMap(data) {
     const code = String(s.code || s.id || '').trim();
     if (!code) continue;
     map.set(code, {
-      hours: Number(s.hours || 0) || undefined,
+      hours: resolveItemHours(s) ?? undefined,
       start: s.start || null,
       end: s.end || null,
       isNight: !!s.isNight,
     });
   }
   return map;
+}
+
+function normalizeSpecialShiftConstraints(shifts = []) {
+  if (!Array.isArray(shifts) || !shifts.length) return [];
+  return shifts.map((shift) => ({
+    ...shift,
+    requiredCount: normalizeRequiredCount(shift?.requiredCount ?? 0),
+  })).filter((shift) => Number(shift?.requiredCount || 0) > 0);
 }
 
 function buildDaysFromScheduleData({ year, month, data }) {
@@ -73,9 +120,8 @@ function buildDaysFromScheduleData({ year, month, data }) {
         if (!sh) continue;
         const code = String(sh.code || sh.shiftCode || sh.id || sh.label || sh.name || "").trim();
         const area = String(sh.area || sh.label || def.label || def.area || def.name || "").trim();
-        const need = Math.max(
-          0,
-          Number(sh.requiredCount ?? sh.count ?? sh.need ?? sh.required ?? sh.qty ?? 0) || 0
+        const need = normalizeRequiredCount(
+          sh.requiredCount ?? sh.count ?? sh.need ?? sh.required ?? sh.qty ?? 0
         );
         if (!code || need <= 0) continue;
         const meta = shiftMeta.get(code) || {};
@@ -88,6 +134,7 @@ function buildDaysFromScheduleData({ year, month, data }) {
           start: meta.start,
           end: meta.end,
           isNight: meta.isNight || false,
+          holidayPolicy: String(sh.holidayPolicy || def.holidayPolicy || '').trim(),
         });
       }
       byDate.set(key, arr);
@@ -101,7 +148,7 @@ function buildDaysFromScheduleData({ year, month, data }) {
       days.push({
         date,
         weekday: wd,
-        shifts: byDate.get(date) || [],
+        shifts: normalizeSpecialShiftConstraints(byDate.get(date) || []),
       });
     }
     return days;
@@ -130,7 +177,7 @@ function buildDaysFromScheduleData({ year, month, data }) {
       }
 
       if (def.weekendOff && (wd === 0 || wd === 6)) v = 0;
-      const need = Math.max(0, Number(v) || 0);
+      const need = normalizeRequiredCount(v);
       if (need <= 0) continue;
 
       const meta = shiftMeta.get(String(shiftCode)) || {};
@@ -143,13 +190,14 @@ function buildDaysFromScheduleData({ year, month, data }) {
         start: meta.start,
         end: meta.end,
         isNight: meta.isNight || false,
+        holidayPolicy: String(def.holidayPolicy || '').trim(),
       });
     }
 
     days.push({
       date: `${year}-${pad2(month)}-${pad2(d)}`,
       weekday: wd,
-      shifts,
+      shifts: normalizeSpecialShiftConstraints(shifts),
     });
   }
 

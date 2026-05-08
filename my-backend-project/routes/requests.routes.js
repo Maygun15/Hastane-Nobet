@@ -10,6 +10,7 @@ const {
   sendLeaveRejected,
   sendShiftChanged,
 } = require('../services/notificationService');
+const { replaceAssignmentsForSchedule } = require('../services/assignmentSyncService');
 const { withHospitalFilter, isSuperAdminRole } = require('../middleware/hospital');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
@@ -118,6 +119,24 @@ async function executeSwap(request) {
     doc.data = { ...doc.data, assignments: r2.assignments };
     doc.markModified('data');
     await doc.save();
+    try {
+      await replaceAssignmentsForSchedule({
+        scope: {
+          sectionId: String(doc.sectionId || sectionId || '').trim(),
+          serviceId: doc.serviceId != null ? String(doc.serviceId).trim() : '',
+          role: doc.role != null ? String(doc.role).trim() : '',
+          year: myYm.year,
+          month: myYm.month,
+          sourceScheduleId: doc._id,
+        },
+        payload: doc.data || {},
+        createdBy: doc.createdBy || null,
+        updatedBy: null,
+        source: 'requestSwap',
+      });
+    } catch (syncErr) {
+      console.error('[assignmentSync][swap-same-doc] ERR:', syncErr?.message || syncErr);
+    }
   } else {
     const [fromDoc, toDoc] = await Promise.all([
       MonthlySchedule.findOne({ sectionId, year: myYm.year, month: myYm.month }),
@@ -136,6 +155,40 @@ async function executeSwap(request) {
     toDoc.markModified('data');
 
     await Promise.all([fromDoc.save(), toDoc.save()]);
+    try {
+      await Promise.all([
+        replaceAssignmentsForSchedule({
+          scope: {
+            sectionId: String(fromDoc.sectionId || sectionId || '').trim(),
+            serviceId: fromDoc.serviceId != null ? String(fromDoc.serviceId).trim() : '',
+            role: fromDoc.role != null ? String(fromDoc.role).trim() : '',
+            year: myYm.year,
+            month: myYm.month,
+            sourceScheduleId: fromDoc._id,
+          },
+          payload: fromDoc.data || {},
+          createdBy: fromDoc.createdBy || null,
+          updatedBy: null,
+          source: 'requestSwap',
+        }),
+        replaceAssignmentsForSchedule({
+          scope: {
+            sectionId: String(toDoc.sectionId || sectionId || '').trim(),
+            serviceId: toDoc.serviceId != null ? String(toDoc.serviceId).trim() : '',
+            role: toDoc.role != null ? String(toDoc.role).trim() : '',
+            year: tYm.year,
+            month: tYm.month,
+            sourceScheduleId: toDoc._id,
+          },
+          payload: toDoc.data || {},
+          createdBy: toDoc.createdBy || null,
+          updatedBy: null,
+          source: 'requestSwap',
+        }),
+      ]);
+    } catch (syncErr) {
+      console.error('[assignmentSync][swap-cross-doc] ERR:', syncErr?.message || syncErr);
+    }
   }
   return true;
 }

@@ -3,7 +3,7 @@ const { applyHospitalScope } = require('./plugins/hospitalScope');
 
 const SettingSchema = new mongoose.Schema(
   {
-    hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null, index: true },
+    hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null },
     key: { type: String, required: true, trim: true, index: true },
     serviceId: { type: String, default: '', trim: true, index: true },
     value: { type: mongoose.Schema.Types.Mixed, default: null },

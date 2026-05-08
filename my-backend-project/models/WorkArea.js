@@ -7,13 +7,11 @@ const WorkAreaSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Hospital',
     default: null,
-    index: true,
   },
   name: {
     type: String,
     required: true,
-    trim: true,
-    index: true
+    trim: true
   },
   description: {
     type: String,

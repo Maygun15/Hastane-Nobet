@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const AuditLogSchema = new mongoose.Schema({
-  hospitalId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null, index: true },
+  hospitalId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null },
   userId:       { type: String, default: '' },
   action:       { type: String, default: '' },
   endpoint:     { type: String, default: '' },
@@ -11,7 +11,7 @@ const AuditLogSchema = new mongoose.Schema({
   ip:           { type: String, default: '' },
   requestId:    { type: String, default: '', index: true },
   changes:      { type: mongoose.Schema.Types.Mixed, default: null }, // { before, after }
-  createdAt:    { type: Date, default: Date.now, index: true },
+  createdAt:    { type: Date, default: Date.now },
 });
 
 // 90 gün sonra otomatik sil

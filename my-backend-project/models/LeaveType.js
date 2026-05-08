@@ -7,13 +7,11 @@ const LeaveTypeSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Hospital',
     default: null,
-    index: true,
   },
   name: {
     type: String,
     required: true,
-    trim: true,
-    index: true
+    trim: true
   },
   description: {
     type: String,
@@ -73,7 +71,6 @@ const LeaveTypeSchema = new mongoose.Schema({
 
 // Index for faster queries
 LeaveTypeSchema.index({ name: 1 });
-LeaveTypeSchema.index({ code: 1 });
 LeaveTypeSchema.index({ category: 1 });
 LeaveTypeSchema.index({ isActive: 1 });
 applyHospitalScope(LeaveTypeSchema);

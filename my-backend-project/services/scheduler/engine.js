@@ -42,6 +42,14 @@ const normalizeCode = (s) =>
     .replace(/\p{Diacritic}/gu, "")
     .toUpperCase()
     .trim();
+const normalizePersonName = (s) =>
+  (s || "")
+    .toString()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .trim();
 
 const getShiftKey = (shift) =>
   normalizeCode(shift?.id || shift?.code || shift?.label || shift?.name || "");
@@ -148,13 +156,14 @@ function runScheduler(context) {
 
   for (const day of context.days) {
     const usedOnDay = new Set();
+    const usedNamesOnDay = new Set();
     if (!day || !Array.isArray(day.shifts)) continue;
     for (const shift of day.shifts) {
       const need = Math.max(1, Number(shift.requiredCount || 1));
       if (!shift.assignedPersons) shift.assignedPersons = [];
 
       for (let i = 0; i < need; i++) {
-        const rawStaffPool = buildRawStaffPoolForSlot(context.staff, usedOnDay);
+        const rawStaffPool = buildRawStaffPoolForSlot(context.staff, usedOnDay, usedNamesOnDay);
         const candidateBuild = buildEligiblePoolForSlot({
           rawStaffPool,
           day,
@@ -246,6 +255,8 @@ function runScheduler(context) {
         if (selectionStage.selectedCandidate?.id) {
           usedOnDay.add(selectionStage.selectedCandidate.id);
         }
+        const selectedName = normalizePersonName(selectionStage.selectedCandidate?.person?.name || "");
+        if (selectedName) usedNamesOnDay.add(selectedName);
       }
 
       if (shift.assignedPersons.length < need) {
@@ -307,8 +318,13 @@ function logSlotDebug({
   }
 }
 
-function buildRawStaffPoolForSlot(staff = [], usedOnDay = new Set()) {
-  return (Array.isArray(staff) ? staff : []).filter((person) => !usedOnDay.has(person.id));
+function buildRawStaffPoolForSlot(staff = [], usedOnDay = new Set(), usedNamesOnDay = new Set()) {
+  return (Array.isArray(staff) ? staff : []).filter((person) => {
+    if (usedOnDay.has(person.id)) return false;
+    const personName = normalizePersonName(person?.name || person?.fullName || "");
+    if (personName && usedNamesOnDay.has(personName)) return false;
+    return true;
+  });
 }
 
 function buildEligiblePoolForSlot({ rawStaffPool = [], day = null, shift = null, context = null, slotIndex = 0 } = {}) {

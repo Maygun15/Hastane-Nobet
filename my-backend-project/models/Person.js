@@ -7,7 +7,6 @@ const personSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Hospital',
     default: null,
-    index: true,
   },
   serviceId: { type: String, required: true, index: true },
 

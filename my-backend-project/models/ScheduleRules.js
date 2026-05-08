@@ -4,7 +4,7 @@ const { applyHospitalScope } = require('./plugins/hospitalScope');
 
 const ScheduleRulesSchema = new mongoose.Schema(
   {
-    hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null, index: true },
+    hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null },
     sectionId: { type: String, required: true, trim: true },
     serviceId: { type: String, default: '', trim: true },
     role: { type: String, default: '', trim: true },

@@ -124,6 +124,80 @@ function sanitizeSupervisorAssignments(assignments = [], holidayKindByDate = {},
     .filter(Boolean);
 }
 
+function buildGeneralSlotKey(item = {}, defs = []) {
+  const defsList = Array.isArray(defs) ? defs : [];
+  const date = String(item?.date || item?.day || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+
+  const rawShiftId = String(item?.shiftId || item?.rowId || '').trim();
+  const rawShiftCode = normalizeCode(item?.shiftCode || item?.shift || item?.code || '');
+  const rawLabel = normalizeText(item?.roleLabel || item?.label || item?.area || '');
+
+  if (rawShiftId) {
+    return `${date}|id:${rawShiftId}`;
+  }
+
+  const matchedDef = defsList.find((row) => {
+    const rowCode = normalizeCode(row?.shiftCode || row?.code || '');
+    const rowLabel = normalizeText(row?.label || row?.area || row?.name || '');
+    return rawShiftCode === rowCode && rawLabel === rowLabel;
+  });
+
+  if (matchedDef?.id != null) {
+    return `${date}|id:${String(matchedDef.id).trim()}`;
+  }
+
+  if (rawShiftCode || rawLabel) {
+    return `${date}|pair:${rawLabel}|${rawShiftCode}`;
+  }
+
+  return null;
+}
+
+function trimDuplicateSlotAssignments(assignments = [], defs = []) {
+  const grouped = new Map();
+  for (const item of assignments || []) {
+    const slotKey = buildGeneralSlotKey(item, defs);
+    if (!slotKey) continue;
+    if (!grouped.has(slotKey)) grouped.set(slotKey, []);
+    grouped.get(slotKey).push(item);
+  }
+
+  if (!grouped.size) {
+    return { assignments: Array.isArray(assignments) ? assignments.slice() : [], issues: [] };
+  }
+
+  const keep = new Set();
+  const issues = [];
+
+  for (const items of grouped.values()) {
+    if (!Array.isArray(items) || !items.length) continue;
+    const ranked = [...items].sort((a, b) => {
+      const aPinned = a?.pinned ? 1 : 0;
+      const bPinned = b?.pinned ? 1 : 0;
+      if (bPinned !== aPinned) return bPinned - aPinned;
+      return 0;
+    });
+    keep.add(ranked[0]);
+    ranked.slice(1).forEach((item) => {
+      issues.push({
+        date: String(item?.date || item?.day || '').slice(0, 10) || null,
+        shiftId: item?.shiftId || item?.shiftCode || item?.rowId || '',
+        reason: 'SLOT_CAPACITY_EXCEEDED',
+        personName: item?.personName || item?.name || '',
+      });
+    });
+  }
+
+  const filtered = (assignments || []).filter((item) => {
+    const slotKey = buildGeneralSlotKey(item, defs);
+    if (!slotKey) return true;
+    return keep.has(item);
+  });
+
+  return { assignments: filtered, issues };
+}
+
 function buildStaffMaps(staff = []) {
   const idSet = new Set();
   const nameToId = new Map();
@@ -239,9 +313,14 @@ function validateAssignments({
   // Post-run cleanup only: assignment-time authority remains in candidateBuilder
   // and constraints/runtime guard layers.
   const sanitizedAssignments = sanitizeSupervisorAssignments(assignments, holidayKindByDate, shiftMetaByCode, defs);
-  const assigneeGuard = sanitizeAssignees(sanitizedAssignments, staff);
+  const slotGuard = trimDuplicateSlotAssignments(sanitizedAssignments, defs);
+  const assigneeGuard = sanitizeAssignees(slotGuard.assignments, staff);
   const hard = applyHardConstraints(assigneeGuard.assignments, leavesByPerson);
-  const issues = [...(assigneeGuard.issues || []), ...(hard.issues || [])];
+  const issues = [
+    ...(slotGuard.issues || []),
+    ...(assigneeGuard.issues || []),
+    ...(hard.issues || []),
+  ];
   return {
     assignments: hard.assignments || [],
     issues,

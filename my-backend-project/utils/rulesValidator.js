@@ -1,6 +1,8 @@
 // utils/rulesValidator.js
+// All built-in rules are "soft" — an admin can override them with force:true.
+// The response includes canForce:true so the client knows to offer an override option.
 function validateAssignment(rules, assignment, existingAssignments) {
-  if (!rules || !rules.enabled) return { valid: true, errors: [] };
+  if (!rules || !rules.enabled) return { valid: true, errors: [], canForce: false };
 
   const errors = [];
   const { personId, personName, date } = assignment || {};
@@ -80,7 +82,7 @@ function validateAssignment(rules, assignment, existingAssignments) {
     }
   }
 
-  return { valid: errors.length === 0, errors };
+  return { valid: errors.length === 0, errors, canForce: errors.length > 0 };
 }
 
 module.exports = { validateAssignment };

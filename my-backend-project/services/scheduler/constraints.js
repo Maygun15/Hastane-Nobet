@@ -75,6 +75,33 @@ const getPersonAreas = (person) => {
   return [];
 };
 
+const getPersonSupervisorSignals = (person) => {
+  const values = [
+    ...(Array.isArray(person?.meta?.skills) ? person.meta.skills : []),
+    ...(Array.isArray(person?.meta?.tags) ? person.meta.tags : []),
+    ...(Array.isArray(person?.meta?.duties) ? person.meta.duties : []),
+    ...(Array.isArray(person?.meta?.areas) ? person.meta.areas : []),
+    ...(Array.isArray(person?.areas) ? person.areas : []),
+    person?.role,
+    person?.title,
+    person?.meta?.role,
+    person?.meta?.title,
+    person?.meta?.unvan,
+  ];
+  return values.map(normalizeArea).filter(Boolean);
+};
+
+const hasServiceSupervisorEligibility = (person) => {
+  const signals = getPersonSupervisorSignals(person);
+  if (!signals.length) return false;
+  return signals.some((value) =>
+    value.includes("servis sorumlu") ||
+    value.includes("supervisor") ||
+    value.includes("supervizor") ||
+    value === "sorumlu"
+  );
+};
+
 const getPersonShiftCodes = (person) => {
   const raw = person?.meta?.shiftCodes || person?.shiftCodes || person?.meta?.shifts || person?.shifts || [];
   if (Array.isArray(raw)) return raw.map(normalizeCode).filter(Boolean);
@@ -84,6 +111,7 @@ const getPersonShiftCodes = (person) => {
 
 const getShiftArea = (shift) => normalizeArea(shift?.area || shift?.label || shift?.name || "");
 const getShiftKey = (shift) => normalizeCode(shift?.id || shift?.code || shift?.label || shift?.name || "");
+const isServiceSupervisorLabel = (label = "") => normalizeArea(label).includes("servis sorumlu");
 
 function areaMatches(personAreas, shiftArea) {
   if (!shiftArea) return true;
@@ -140,8 +168,15 @@ function explainAvailability(person, day, context, shift) {
   }
 
   if (shift) {
-    const areas = getPersonAreas(person);
     const shiftArea = getShiftArea(shift);
+    if (isServiceSupervisorLabel(shiftArea) && !hasServiceSupervisorEligibility(person)) {
+      return { allowed: false, reason: "SERVICE_SUPERVISOR_ONLY" };
+    }
+
+    const areas = getPersonAreas(person);
+    if (shiftArea && areas.length === 0) {
+      return { allowed: false, reason: "AREA_PROFILE_MISSING" };
+    }
     if (areas.length > 0 && shiftArea && !areaMatches(areas, shiftArea)) {
       return { allowed: false, reason: "AREA_NOT_ALLOWED" };
     }

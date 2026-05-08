@@ -3,11 +3,17 @@ const express = require('express');
 const router = express.Router();
 
 const MonthlySchedule = require('../models/MonthlySchedule');
+const Assignment = require('../models/Assignment');
 const ScheduleRules = require('../models/ScheduleRules');
 const { listHolidays } = require('../services/holidayService');
 const { sendShiftChanged } = require('../services/notificationService');
 const { validateAssignment } = require('../utils/rulesValidator');
 const { checkSameDayConflict, checkLeaveConflict } = require('../services/conflictService');
+const {
+  replaceAssignmentsForSchedule,
+  upsertAssignment,
+  removeAssignment,
+} = require('../services/assignmentSyncService');
 const { requireAuth, sameServiceOrAdmin, requireRole } = require('../middleware/authz');
 const { assignShiftSchema, validate } = require('../middleware/validate');
 const ExcelJS = require('exceljs');
@@ -30,6 +36,7 @@ function parseIntSafe(val, def = null) {
 
 const HALF_DAY_A_HOURS = 4;
 const SERVICE_SUPERVISOR_LABEL = 'SERVİS SORUMLUSU';
+const DEFAULT_FALLBACK_SHIFT_CAPACITY = 1;
 const normalizeText = (s = '') =>
   String(s || '')
     .normalize('NFD')
@@ -171,6 +178,15 @@ function buildTokens(...values) {
     .filter(Boolean);
 }
 
+function hasAnyDirectIdMatch(targetTokens = [], ...values) {
+  if (!targetTokens.length) return false;
+  const targetSet = new Set(targetTokens);
+  return values.some((value) => {
+    const token = normalizeShiftToken(value);
+    return token && targetSet.has(token);
+  });
+}
+
 function hasAnyTokenOverlap(a = [], b = []) {
   if (!a.length || !b.length) return false;
   const setA = new Set(a);
@@ -201,6 +217,12 @@ function getDailyDefRequiredCount(defs = [], targetTokens = [], dateParts = null
       (Number.isFinite(rowDay) && rowDay === dateParts.day);
     if (!dateMatches || !Array.isArray(row?.shifts)) continue;
     for (const sh of row.shifts) {
+      const directIdMatch = hasAnyDirectIdMatch(
+        targetTokens,
+        sh?.id,
+        sh?.rowId,
+        sh?.shiftId
+      );
       const shiftTokens = buildTokens(
         sh?.id,
         sh?.rowId,
@@ -208,7 +230,7 @@ function getDailyDefRequiredCount(defs = [], targetTokens = [], dateParts = null
         sh?.code,
         sh?.shiftCode
       );
-      if (!hasAnyTokenOverlap(targetTokens, shiftTokens)) continue;
+      if (!directIdMatch && !hasAnyTokenOverlap(targetTokens, shiftTokens)) continue;
       const need = Number(sh?.requiredCount ?? sh?.count ?? sh?.need ?? sh?.required ?? sh?.qty ?? 0);
       return Number.isFinite(need) ? Math.max(0, need) : 0;
     }
@@ -219,13 +241,18 @@ function getDailyDefRequiredCount(defs = [], targetTokens = [], dateParts = null
 function getPatternDefRequiredCount(defs = [], overrides = {}, targetTokens = [], dateParts = null) {
   if (!targetTokens.length || !dateParts) return null;
   for (const row of defs || []) {
+    const directIdMatch = hasAnyDirectIdMatch(
+      targetTokens,
+      row?.id,
+      row?.rowId
+    );
     const rowTokens = buildTokens(
       row?.id,
       row?.rowId,
       row?.shiftCode,
       row?.code
     );
-    if (!hasAnyTokenOverlap(targetTokens, rowTokens)) continue;
+    if (!directIdMatch && !hasAnyTokenOverlap(targetTokens, rowTokens)) continue;
 
     const rowId = String(row?.id || row?.rowId || '').trim();
     let value = undefined;
@@ -248,18 +275,20 @@ function getPatternDefRequiredCount(defs = [], overrides = {}, targetTokens = []
 
 function getShiftCapacityForDate({ defs = [], overrides = {}, dateStr = '', shiftLike = {} }) {
   const dateParts = toDateParts(dateStr);
-  if (!dateParts) return null;
+  if (!dateParts) return DEFAULT_FALLBACK_SHIFT_CAPACITY;
   const targetTokens = buildTokens(
     shiftLike?.shiftId,
     shiftLike?.shiftCode,
     shiftLike?.shift,
     shiftLike?.code
   );
-  if (!targetTokens.length) return null;
+  if (!targetTokens.length) return DEFAULT_FALLBACK_SHIFT_CAPACITY;
 
   const fromDaily = getDailyDefRequiredCount(defs, targetTokens, dateParts);
   if (fromDaily != null) return fromDaily;
-  return getPatternDefRequiredCount(defs, overrides, targetTokens, dateParts);
+  const fromPattern = getPatternDefRequiredCount(defs, overrides, targetTokens, dateParts);
+  if (fromPattern != null) return fromPattern;
+  return DEFAULT_FALLBACK_SHIFT_CAPACITY;
 }
 
 function slotKey(item = {}) {
@@ -816,6 +845,21 @@ async function upsertMonthly(req, res) {
       { new: true, upsert: true, setDefaultsOnInsert: true }
     ).lean();
 
+    try {
+      await replaceAssignmentsForSchedule({
+        scope: {
+          ...query,
+          sourceScheduleId: doc?._id || null,
+        },
+        payload: doc?.data || payload || {},
+        createdBy: doc?.createdBy || req.user?.uid || null,
+        updatedBy: req.user?.uid || null,
+        source: 'monthlySchedule',
+      });
+    } catch (syncErr) {
+      console.error('[assignmentSync][upsertMonthly] ERR:', syncErr);
+    }
+
     return res.json({
       ok: true,
       schedule: {
@@ -977,11 +1021,17 @@ router.post('/assign',
       const validationBase = nextAssignments.filter((a) => assignmentKey(a) !== key);
       const validation = validateAssignment(req.scheduleRules, payload, validationBase);
       if (!validation.valid) {
-        return res.status(400).json({
-          ok: false,
-          message: 'Nöbet yazma kuralı ihlali',
-          errors: validation.errors,
-        });
+        if (!req.body?.force) {
+          return res.status(409).json({
+            ok: false,
+            message: 'Nöbet yazma kuralı ihlali',
+            errors: validation.errors,
+            canForce: validation.canForce,
+            conflictType: 'RULE_VIOLATION',
+          });
+        }
+        // force:true — admin rule override; log for audit trail
+        console.warn('[assign] force override kural ihlali:', validation.errors, { personId: payload.personId, date: payload.date });
       }
 
       // Aynı gün çakışma — bu kişi başka bir vardiyaya zaten atanmış mı?
@@ -1070,6 +1120,21 @@ router.post('/assign',
         update,
         { new: true, upsert: true, setDefaultsOnInsert: true }
       ).lean();
+
+      try {
+        await upsertAssignment({
+          scope: {
+            ...query,
+            sourceScheduleId: saved?._id || null,
+          },
+          assignment: idx === -1 ? payload : (nextAssignments[idx] || payload),
+          createdBy: existingAssignment?.createdBy || req.user?.uid || null,
+          updatedBy: req.user?.uid || null,
+          source: 'manualAssign',
+        });
+      } catch (syncErr) {
+        console.error('[assignmentSync][assign] ERR:', syncErr);
+      }
 
       const outAssignments = Array.isArray(saved?.data?.assignments)
         ? saved.data.assignments
@@ -1176,6 +1241,17 @@ router.delete('/assign',
         const res1 = await attemptRemove(doc, query);
         if (res1.removed) {
           const removedItem = res1.removedAssignment || null;
+          try {
+            await removeAssignment({
+              scope: {
+                ...query,
+                sourceScheduleId: doc?._id || null,
+              },
+              assignment: removedItem || req.assignPayload,
+            });
+          } catch (syncErr) {
+            console.error('[assignmentSync][unassign-primary] ERR:', syncErr);
+          }
           const { removedAssignment: _ignoredRemovedAssignment1, ...resPayload1 } = res1;
           const changedByName = req.user?.name || req.user?.email || 'Yetkili';
           void sendShiftChanged({
@@ -1201,6 +1277,19 @@ router.delete('/assign',
         const res2 = await attemptRemove(d, { _id: d._id });
         if (res2.removed) {
           const removedItem = res2.removedAssignment || null;
+          try {
+            await removeAssignment({
+              scope: {
+                sectionId: String(d?.sectionId || base.sectionId || '').trim(),
+                serviceId: d?.serviceId != null ? String(d.serviceId).trim() : '',
+                role: d?.role != null ? String(d.role).trim() : '',
+                sourceScheduleId: d?._id || null,
+              },
+              assignment: removedItem || req.assignPayload,
+            });
+          } catch (syncErr) {
+            console.error('[assignmentSync][unassign-fallback] ERR:', syncErr);
+          }
           const { removedAssignment: _ignoredRemovedAssignment2, ...resPayload2 } = res2;
           const changedByName = req.user?.name || req.user?.email || 'Yetkili';
           void sendShiftChanged({
@@ -1477,6 +1566,139 @@ router.get('/export/excel', requireAuth, requireRole('admin', 'authorized'), asy
     return res.status(500).json({ ok: false, message: err?.message || 'Excel oluşturma hatası' });
   }
 });
+
+/* =========================================================
+   GET /api/schedules/assignments
+   Assignment koleksiyonundan aylık atama listesi döner.
+   Tüm ekranlar için SSOT okuma ucu. scheduleRowsV2/generatedRosterFlat
+   localStorage kaynaklarının yerini alır.
+========================================================= */
+/* =========================================================
+   POST /api/schedules/validate-batch
+   Pre-save validation for bulk schedule payloads (DutyRowsEditor).
+   Body: { sectionId, serviceId?, role?, year, month, assignments: [...] }
+   Returns: { ok, violations: [{ personId?, personName, date, errors: string[] }], canForce }
+========================================================= */
+router.post('/validate-batch',
+  requireAuth,
+  async (req, res) => {
+    try {
+      const { sectionId, serviceId, role, year, month, assignments } = req.body || {};
+      if (!sectionId || !year || !month || !Array.isArray(assignments)) {
+        return res.status(400).json({ ok: false, message: 'sectionId, year, month, assignments zorunlu' });
+      }
+
+      const rulesDoc = await ScheduleRules.findOne({
+        sectionId: String(sectionId).trim(),
+        ...(serviceId != null ? { serviceId: String(serviceId).trim() } : {}),
+      }).lean();
+      const rules = rulesDoc || {};
+
+      if (!rules.enabled) {
+        return res.json({ ok: true, violations: [], canForce: false });
+      }
+
+      const violations = [];
+      for (const assg of assignments) {
+        if (!assg || typeof assg !== 'object') continue;
+        const existing = assignments.filter(
+          (a) => a !== assg && (String(a?.personId || '') === String(assg.personId || '') || String(a?.personName || '') === String(assg.personName || ''))
+        );
+        const result = validateAssignment(rules, assg, existing);
+        if (!result.valid) {
+          violations.push({
+            personId: assg.personId || '',
+            personName: assg.personName || '',
+            date: assg.date || assg.day || '',
+            errors: result.errors,
+          });
+        }
+      }
+
+      return res.json({
+        ok: true,
+        violations,
+        canForce: violations.length > 0,
+        violationCount: violations.length,
+      });
+    } catch (err) {
+      return res.status(500).json({ ok: false, message: safeMessage(err, 'Hata') });
+    }
+  }
+);
+
+router.get('/assignments',
+  requireAuth,
+  async (req, res) => {
+    try {
+      const { sectionId, serviceId, role, year, month } = req.query;
+      if (!sectionId || !year || !month) {
+        return res.status(400).json({ ok: false, message: 'sectionId, year, month zorunlu' });
+      }
+      const query = {
+        sectionId: String(sectionId).trim(),
+        serviceId: serviceId != null ? String(serviceId).trim() : '',
+        year: Number(year),
+        month: Number(month),
+      };
+      if (role != null && String(role).trim()) query.role = String(role).trim();
+      if (req.hospitalId) query.hospitalId = req.hospitalId;
+      const assignments = await Assignment.find(query).lean();
+      return res.json({ ok: true, assignments, count: assignments.length });
+    } catch (err) {
+      return res.status(500).json({ ok: false, message: safeMessage(err, 'Hata') });
+    }
+  }
+);
+
+/* =========================================================
+   GET /api/schedules/person-calendar
+   Read-model: all assignments for a single person in a month.
+   Query: personId (required), sectionId, year, month, serviceId?, role?
+========================================================= */
+router.get('/person-calendar',
+  requireAuth,
+  async (req, res) => {
+    try {
+      const { personId, sectionId, year, month, serviceId, role } = req.query;
+      if (!personId || !year || !month) {
+        return res.status(400).json({ ok: false, message: 'personId, year, month zorunlu' });
+      }
+      const query = {
+        personId: String(personId).trim(),
+        year: Number(year),
+        month: Number(month),
+      };
+      if (sectionId) query.sectionId = String(sectionId).trim();
+      if (serviceId != null && String(serviceId).trim()) query.serviceId = String(serviceId).trim();
+      if (role != null && String(role).trim()) query.role = String(role).trim();
+      if (req.hospitalId) query.hospitalId = req.hospitalId;
+
+      const assignments = await Assignment.find(query)
+        .sort({ date: 1 })
+        .lean();
+
+      const calendar = assignments.map((a) => ({
+        id: String(a._id),
+        date: String(a.date || '').slice(0, 10),
+        shiftCode: a.shiftCode || '',
+        shiftId: a.shiftId || a.shiftCode || '',
+        roleLabel: a.roleLabel || '',
+        hours: a.hours || 0,
+        pinned: !!a.pinned,
+        note: a.note || '',
+        overrideReason: a.overrideReason || '',
+        sectionId: a.sectionId || '',
+        serviceId: a.serviceId || '',
+        role: a.role || '',
+      }));
+
+      return res.json({ ok: true, personId: String(personId).trim(), year: Number(year), month: Number(month), assignments: calendar, count: calendar.length });
+    } catch (err) {
+      return res.status(500).json({ ok: false, message: safeMessage(err, 'Hata') });
+    }
+  }
+);
 
 module.exports = router;
 

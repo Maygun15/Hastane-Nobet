@@ -6,7 +6,7 @@ const { applyHospitalScope } = require('./plugins/hospitalScope');
 // editable roster input + assignment snapshot for existing calendar/editor flows.
 const MonthlyScheduleSchema = new mongoose.Schema(
   {
-    hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null, index: true },
+    hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null },
     sectionId: { type: String, required: true, trim: true }, // ör: calisma-cizelgesi
     serviceId: { type: String, default: '', trim: true },     // boş => tüm servisler
     role: { type: String, default: '', trim: true },           // Nurse | Doctor vb.

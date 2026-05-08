@@ -7,13 +7,11 @@ const WorkingHoursSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Hospital',
     default: null,
-    index: true,
   },
   name: {
     type: String,
     required: true,
-    trim: true,
-    index: true
+    trim: true
   },
   description: {
     type: String,
@@ -33,8 +31,7 @@ const WorkingHoursSchema = new mongoose.Schema({
   },
   workAreaId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'WorkArea',
-    index: true
+    ref: 'WorkArea'
   },
   isDefault: {
     type: Boolean,
@@ -56,7 +53,6 @@ const WorkingHoursSchema = new mongoose.Schema({
 
 // Index for faster queries
 WorkingHoursSchema.index({ name: 1 });
-WorkingHoursSchema.index({ workAreaId: 1 });
 WorkingHoursSchema.index({ status: 1 });
 applyHospitalScope(WorkingHoursSchema);
 

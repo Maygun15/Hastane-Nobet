@@ -5,7 +5,7 @@ const { applyHospitalScope } = require('./plugins/hospitalScope');
 // stores the full generated output and explainability authority for a month.
 const GeneratedScheduleSchema = new mongoose.Schema(
   {
-    hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null, index: true },
+    hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null },
     sectionId: { type: String, required: true, trim: true, index: true },
     serviceId: { type: String, default: '', trim: true, index: true },
     role: { type: String, default: '', trim: true, index: true },

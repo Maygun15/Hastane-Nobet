@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 // Personel bazlı AI öğrenme verisi — AI'ın çizelge üretirken kullandığı tercihler
 const AIPreferenceSchema = new mongoose.Schema({
-  hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null, index: true },
+  hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null },
   personId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Person', required: true },
   userId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 

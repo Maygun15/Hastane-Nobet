@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 // Her AI çağrısını loglar — maliyet takibi ve debug için kritik
 const AILogSchema = new mongoose.Schema({
-  hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null, index: true },
+  hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null },
   userId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 
   // Çağrı kaynağı

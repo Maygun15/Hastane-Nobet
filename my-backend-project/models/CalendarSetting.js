@@ -7,7 +7,6 @@ const CalendarSettingSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Hospital',
     default: null,
-    index: true,
   },
   name: {
     type: String,
@@ -20,8 +19,7 @@ const CalendarSettingSchema = new mongoose.Schema({
   },
   year: {
     type: Number,
-    required: true,
-    index: true
+    required: true
   },
   month: {
     type: Number,
@@ -34,8 +32,7 @@ const CalendarSettingSchema = new mongoose.Schema({
   },
   date: {
     type: Date,
-    required: true,
-    index: true
+    required: true
   },
   isHoliday: {
     type: Boolean,

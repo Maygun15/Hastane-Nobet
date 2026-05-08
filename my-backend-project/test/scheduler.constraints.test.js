@@ -171,6 +171,44 @@ describe('MAX_SHIFTS_PER_WEEK constraint', () => {
   });
 });
 
+// ── SERVICE_SUPERVISOR_ONLY ───────────────────────────────────────────────────
+
+describe('SERVICE_SUPERVISOR_ONLY constraint', () => {
+  test('blocks person without supervisor card signals for service supervisor task', () => {
+    const person = makePerson({
+      areas: ['acil'],
+      meta: { areas: ['acil'], role: 'hemsire' },
+    });
+    const day = makeDay('2025-06-10');
+    const shift = { code: 'M', area: 'SERVİS SORUMLUSU' };
+    const result = explainAvailability(person, day, makeContext({}), shift);
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toBe('SERVICE_SUPERVISOR_ONLY');
+  });
+
+  test('allows explicit supervisor candidate for service supervisor task', () => {
+    const person = makePerson({
+      areas: ['servis sorumlusu'],
+      meta: { areas: ['servis sorumlusu'], role: 'sorumlu hemsire' },
+    });
+    const day = makeDay('2025-06-10');
+    const shift = { code: 'M', area: 'SERVİS SORUMLUSU' };
+    const result = explainAvailability(person, day, makeContext({}), shift);
+    expect(result.allowed).toBe(true);
+  });
+});
+
+describe('AREA_PROFILE_MISSING constraint', () => {
+  test('blocks person when task area exists but person card has no area mapping', () => {
+    const person = makePerson({ areas: [], meta: {} });
+    const day = makeDay('2025-06-10');
+    const shift = { code: 'N', area: 'RESÜSİTASYON' };
+    const result = explainAvailability(person, day, makeContext({}), shift);
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toBe('AREA_PROFILE_MISSING');
+  });
+});
+
 // ── INVALID INPUT GUARDS ──────────────────────────────────────────────────────
 
 describe('invalid input guards', () => {
@@ -219,8 +257,7 @@ describe('areaMatches', () => {
     expect(areaMatches(['acil'], '')).toBe(true);
   });
 
-  test('returns false when personAreas is empty — constraint engine skips check separately', () => {
-    // areaMatches() itself finds no match data; the engine skips area check when areas.length===0.
+  test('returns false when personAreas is empty', () => {
     expect(areaMatches([], 'acil')).toBe(false);
   });
 

@@ -8,7 +8,6 @@ const DutyRuleSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Hospital',
       default: null,
-      index: true,
     },
     // Departman bilgileri
     departman: {

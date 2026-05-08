@@ -2,6 +2,7 @@
 const MonthlySchedule = require('../models/MonthlySchedule');
 const Setting         = require('../models/Setting');
 const Person          = require('../models/Person');
+const { upsertAssignment, removeAssignment } = require('./assignmentSyncService');
 
 // Kişi adı veya ID ile Person kaydını bul
 async function resolvePerson(nameOrId) {
@@ -171,6 +172,29 @@ async function execAssignShift({ entities }) {
   });
 
   await MonthlySchedule.findByIdAndUpdate(doc._id, { $set: { 'data.assignments': assignments } });
+  try {
+    await upsertAssignment({
+      scope: {
+        sectionId: String(doc.sectionId || 'calisma-cizelgesi').trim(),
+        serviceId: doc.serviceId != null ? String(doc.serviceId).trim() : serviceId,
+        role: doc.role != null ? String(doc.role).trim() : '',
+        year: ym.year,
+        month: ym.month,
+        sourceScheduleId: doc._id,
+      },
+      assignment: {
+        personId: pid,
+        personName: resolvedPerson.name,
+        date,
+        shiftId: shiftCode,
+        shiftCode,
+        roleLabel: shiftLabel || shiftCode,
+      },
+      source: 'aiExecutor',
+    });
+  } catch (syncErr) {
+    console.error('[assignmentSync][ai-assign] ERR:', syncErr?.message || syncErr);
+  }
   return { ok: true, humanReadable: `${resolvedPerson.name} için ${date} tarihine ${shiftCode} vardiyası atandı` };
 }
 
@@ -208,6 +232,25 @@ async function execRemoveShift({ entities }) {
   }
 
   await MonthlySchedule.findByIdAndUpdate(doc._id, { $set: { 'data.assignments': filtered } });
+  try {
+    await removeAssignment({
+      scope: {
+        sectionId: String(doc.sectionId || 'calisma-cizelgesi').trim(),
+        serviceId: doc.serviceId != null ? String(doc.serviceId).trim() : serviceId,
+        role: doc.role != null ? String(doc.role).trim() : '',
+        sourceScheduleId: doc._id,
+      },
+      assignment: {
+        personId: pid,
+        personName: resolvedPerson.name,
+        date,
+        shiftId: shiftCode || '',
+        shiftCode: shiftCode || '',
+      },
+    });
+  } catch (syncErr) {
+    console.error('[assignmentSync][ai-remove] ERR:', syncErr?.message || syncErr);
+  }
   return { ok: true, humanReadable: `${resolvedPerson.name} için ${date} tarihindeki vardiya silindi` };
 }
 

@@ -3,6 +3,7 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const MonthlySchedule = require('../models/MonthlySchedule');
+const { replaceAssignmentsForSchedule } = require('../services/assignmentSyncService');
 
 function parseArgs(argv) {
   const out = {
@@ -88,6 +89,17 @@ function buildAssignmentsFromNamed({ year, month, defs = [], namedAssignments = 
   return out;
 }
 
+function isMalformedAssignment(item = {}) {
+  const shiftCode = String(item?.shiftCode || item?.shiftId || '').trim();
+  const roleLabel = String(item?.roleLabel || item?.rowLabel || item?.label || '').trim();
+  const hours = Number(item?.hours || 0);
+  if (!shiftCode) return true;
+  if (/^\d{10,}$/.test(shiftCode)) return true;
+  if (!roleLabel) return true;
+  if (!(hours > 0)) return true;
+  return false;
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   if (!Number.isFinite(args.year) || !Number.isFinite(args.month)) {
@@ -121,10 +133,17 @@ async function main() {
     if (!named) continue;
 
     const assignmentCount = Array.isArray(data.assignments) ? data.assignments.length : 0;
+    const malformedCount = Array.isArray(data.assignments)
+      ? data.assignments.filter(isMalformedAssignment).length
+      : 0;
     const namedCount = countNamedAssignments(named);
     if (!namedCount) continue;
 
-    const looksCorrupted = args.force || assignmentCount === 0 || assignmentCount < Math.ceil(namedCount * 0.2);
+    const looksCorrupted =
+      args.force ||
+      assignmentCount === 0 ||
+      assignmentCount < Math.ceil(namedCount * 0.2) ||
+      malformedCount > 0;
     if (!looksCorrupted) continue;
 
     const rebuilt = buildAssignmentsFromNamed({
@@ -133,11 +152,30 @@ async function main() {
       defs,
       namedAssignments: named,
     });
-    if (!rebuilt.length || rebuilt.length <= assignmentCount) continue;
+    if (!rebuilt.length) continue;
 
-    console.log(`[repair] ${doc._id} ${doc.serviceId || '(all)'} ${doc.role || '(all)'} ${assignmentCount} -> ${rebuilt.length}`);
+    console.log(
+      `[repair] ${doc._id} ${doc.serviceId || '(all)'} ${doc.role || '(all)'} `
+      + `${assignmentCount} -> ${rebuilt.length} (malformed=${malformedCount})`
+    );
     if (!args.dryRun) {
       await MonthlySchedule.updateOne({ _id: doc._id }, { $set: { 'data.assignments': rebuilt } });
+      await replaceAssignmentsForSchedule({
+        scope: {
+          sectionId: doc.sectionId,
+          serviceId: doc.serviceId || '',
+          role: doc.role || '',
+          year: doc.year,
+          month: doc.month,
+          sourceScheduleId: doc._id,
+        },
+        payload: {
+          ...(data || {}),
+          defs,
+          assignments: rebuilt,
+        },
+        source: 'repair-monthly',
+      });
     }
     changed += 1;
   }

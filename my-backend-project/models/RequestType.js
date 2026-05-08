@@ -7,13 +7,11 @@ const RequestTypeSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Hospital',
     default: null,
-    index: true,
   },
   name: {
     type: String,
     required: true,
-    trim: true,
-    index: true
+    trim: true
   },
   description: {
     type: String,
@@ -78,7 +76,6 @@ const RequestTypeSchema = new mongoose.Schema({
 
 // Index for faster queries
 RequestTypeSchema.index({ name: 1 });
-RequestTypeSchema.index({ code: 1 });
 RequestTypeSchema.index({ category: 1 });
 RequestTypeSchema.index({ isActive: 1 });
 applyHospitalScope(RequestTypeSchema);
