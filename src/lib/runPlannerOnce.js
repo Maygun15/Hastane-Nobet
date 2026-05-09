@@ -280,7 +280,17 @@ function repairAfterCap({
     const k = `${a.day}|${a.personId}`;
     dayPersonCount.set(k, (dayPersonCount.get(k)||0)+1);
   }
-  const isNight = (label) => norm(label)==="GECE";
+  // Label "GECE" VEYA shiftIndex'e göre gece yarısı taşıyan vardiya
+  const isNightShift = (shiftCode) => {
+    const def = shiftIndex?.[norm(shiftCode)];
+    if (!def) return false;
+    if (def.night === true) return true;
+    if (def.night === false) return false;
+    const s = timeToMin(def.start); const e = timeToMin(def.end);
+    if (s === null || e === null) return false;
+    return e < s; // gece yarısı geçen → gece vardiyası
+  };
+  const isNight = (label, shiftCode) => norm(label) === "GECE" || isNightShift(shiftCode);
   const days = Array.from(new Set([...needByKey.keys()].map(k=>k.split("|")[0]))).sort();
 
   for (const day of days) {
@@ -340,16 +350,18 @@ function repairAfterCap({
         }
         if (blocked) continue;
 
-        if (isNight(tl.label) && (rules?.maxConsecutiveNights ?? 2) >= 0) {
+        if (isNight(tl.label, tl.shiftCode) && (rules?.maxConsecutiveNights ?? 1) >= 0) {
           const daysSorted = [...days].sort();
           const idx = daysSorted.indexOf(day);
           let consec = 1;
           for (let i=idx-1; i>=0; i--) {
             const dPrev = daysSorted[i];
-            const hadPrevNight = assignments.some(a=>String(a.personId)===pid && a.day===dPrev && isNight(a.roleLabel));
+            const hadPrevNight = assignments.some(
+              a => String(a.personId)===pid && a.day===dPrev && isNight(a.roleLabel, a.shiftCode)
+            );
             if (hadPrevNight) consec++; else break;
           }
-          if (consec > (rules?.maxConsecutiveNights ?? 2)) continue;
+          if (consec > (rules?.maxConsecutiveNights ?? 1)) continue;
         }
 
         assignments.push({ day, roleLabel: tl.label, shiftCode: tl.shiftCode, personId: pid, hours: slotH });
@@ -740,7 +752,13 @@ export async function runPlannerOnce({
       canonById,
     },
   });
-  if (!res) throw new Error("Uygun çözüm bulunamadı. Görev satırlarını/alan uygunluklarını kontrol edin.");
+  if (!res?.assignments?.length || res.failure) {
+    const f = res?.failure;
+    const detail = f
+      ? ` (${f.roleLabel} / ${f.shiftCode} — ${f.day}: ${f.reason})`
+      : "";
+    throw new Error(`Uygun çözüm bulunamadı.${detail} Görev satırlarını/alan uygunluklarını kontrol edin.`);
+  }
 
   // Dinlenme → Cap → Repair
   const rest = enforceNextDayRest(res.assignments, codeIndex);

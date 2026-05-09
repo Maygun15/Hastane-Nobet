@@ -36,6 +36,9 @@ export const DEFAULT_RULES = {
 
   // yeni: aynı saat çakışması yasağı (true/false) — pratikte hep true
   distinctTasksSameHour: true,
+
+  // M4 vardiyası haftasonu yasak (false yapılırsa kural devre dışı)
+  blockM4OnWeekend: true,
 };
 
 // Soft-constraint ağırlıkları — daha yüksek = daha öncelikli
@@ -74,6 +77,10 @@ function getActiveDutyRules() {
       map.distinctTasksSameHour === undefined
         ? DEFAULT_RULES.distinctTasksSameHour
         : Boolean(map.distinctTasksSameHour),
+    blockM4OnWeekend:
+      map.blockM4OnWeekend === undefined
+        ? DEFAULT_RULES.blockM4OnWeekend
+        : Boolean(map.blockM4OnWeekend),
   };
 }
 
@@ -553,19 +560,14 @@ export function solveHourBalanced({
       return "Saat çakışması";
     }
 
-    // Haftasonu M4 yasak (örnek sert kural)
-    if (shiftCode === "M4" && isWeekendYmd(day)) return "Haftasonu M4 yasak";
+    // Haftasonu M4 yasak (kurallar üzerinden kapatılabilir)
+    if (rules.blockM4OnWeekend && shiftCode === "M4" && isWeekendYmd(day)) return "Haftasonu M4 yasak";
 
     // Haftalık saat limiti
     if (rules.weeklyHourLimit && rules.weeklyHourLimit > 0) {
       const mon = dayToMonday.get(day);
-      if (mon) {
-        const current = weeklyHoursCache.get(`${pidStr}|${mon}`) || 0;
-        if (current + slotH > rules.weeklyHourLimit) return "Haftalık saat limiti";
-      } else {
-        const wHrs = weeklyHoursWith(assignments, pidStr, day, slotH);
-        if (wHrs > rules.weeklyHourLimit) return "Haftalık saat limiti";
-      }
+      const current = mon ? (weeklyHoursCache.get(`${pidStr}|${mon}`) || 0) : 0;
+      if (current + slotH > rules.weeklyHourLimit) return "Haftalık saat limiti";
     }
 
     // Önceki gün etkileri: dinlenme / nextDayAllowed / ardışık gece
@@ -590,9 +592,7 @@ export function solveHourBalanced({
     if (isNightish(shiftCode, shiftIndex)) {
       const already = countConsecutiveNightsBefore(assignments, pidStr, day, shiftIndex);
       const maxN = Number(rules?.maxConsecutiveNights ?? 1);
-      if (already >= (maxN - 1)) {
-        if (already + 1 > maxN) return "Ardışık gece sınırı";
-      }
+      if (already + 1 > maxN) return "Ardışık gece sınırı";
     }
 
     // Yeşil Alan kotası sert (bu projede böyle kalsın)
@@ -640,21 +640,20 @@ export function solveHourBalanced({
 
     const eligAll = (eligibleByLabel?.[roleLabel] || [])
       .filter((pid) => !unavail.has(`${pid}|${day}`))
-      .filter((pid) => !hasRequestAvoid(String(pid), day, shiftCode));
+      .filter((pid) => !hasRequestAvoid(String(pid), day, shiftCode))
+      // KN başka vardiyada zorunlu → bu slotta kullanma (kendine sakla)
+      .filter((pid) => {
+        const lv = getLeave(String(pid), day);
+        if (lv?.code !== "KN" || !lv.shiftCode) return true;
+        return norm(lv.shiftCode) === norm(shiftCode);
+      });
 
     // KN (Kesin Nöbet) önceliği — sadece aynı vardiya için zorunlu tut
-    const knCandidates = [];
-    for (const pid of eligAll) {
+    const knCandidates = eligAll.filter((pid) => {
       const lv = getLeave(String(pid), day);
-      if (lv?.code === "KN") {
-        if (!lv.shiftCode || norm(lv.shiftCode) === norm(shiftCode)) {
-          knCandidates.push(pid);
-        }
-      }
-    }
-    const baseElig = (knCandidates.length ? knCandidates : eligAll).filter(
-      (pid) => !hasRequestAvoid(String(pid), day, shiftCode)
-    );
+      return lv?.code === "KN" && (!lv.shiftCode || norm(lv.shiftCode) === norm(shiftCode));
+    });
+    const baseElig = knCandidates.length ? knCandidates : eligAll;
 
     // 2 PAS mantığı
     const passes = [
