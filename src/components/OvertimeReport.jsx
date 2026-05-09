@@ -519,7 +519,7 @@ export default function OvertimeTab() {
       </div>
 
       {/* üst bilgi */}
-      <div className="flex items-center justify-between p-3 rounded-2xl border bg-white sticky top-0 z-20">
+      <div className="flex items-center justify-between p-3 rounded-2xl border bg-white sticky top-0 z-30">
         <div className="text-lg font-semibold">{cfg.department}</div>
         <div className="text-sm opacity-70">
           AYLIK ÇALIŞMA SAATİ (kişi başı): <span className="font-semibold">{computed.stdMonthly}</span>
@@ -529,12 +529,12 @@ export default function OvertimeTab() {
       </div>
 
       {/* tablo */}
-      <div className="rounded-2xl border overflow-auto">
+      <div className="rounded-2xl border overflow-auto max-h-[calc(100vh-18rem)]">
         <table className="min-w-full text-xs md:text-sm">
           <thead>
             <tr className="bg-slate-100 text-slate-700 text-sm sticky top-0 z-10">
-              <th className="p-2 text-left sticky left-0 z-20 bg-white">Unvan</th>
-              <th className="p-2 text-left sticky left-[160px] z-20 bg-white">Adı Soyadı</th>
+              <th className="p-2 text-left sticky left-0 z-20 bg-slate-100">Unvan</th>
+              <th className="p-2 text-left sticky left-[160px] z-20 bg-slate-100">Adı Soyadı</th>
               <th className="p-2 text-left">Servis</th>
               {Array.from({ length: dcount }, (_, i) => (
                 <th key={i} className="p-2 text-center w-12 font-mono tabular-nums border-l border-slate-200">{i + 1}</th>

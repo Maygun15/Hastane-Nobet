@@ -810,7 +810,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({
         />
       )}
 
-      <div className="sticky top-0 z-20 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="sticky top-0 z-30 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -873,12 +873,12 @@ const OvertimeTab = forwardRef(function OvertimeTab({
         </div>
       )}
 
-      <div className="rounded-[22px] border border-slate-200 bg-white shadow-sm overflow-auto">
+      <div className="rounded-[22px] border border-slate-200 bg-white shadow-sm overflow-auto max-h-[calc(100vh-22rem)]">
         <table className="min-w-full text-xs md:text-sm">
           <thead>
             <tr className="bg-slate-100 text-slate-700 text-sm sticky top-0 z-10">
-              <th className="p-2 text-left sticky left-0 z-20 bg-white">Unvan</th>
-              <th className="p-2 text-left sticky left-[160px] z-20 bg-white">Adı Soyadı</th>
+              <th className="p-2 text-left sticky left-0 z-20 bg-slate-100">Unvan</th>
+              <th className="p-2 text-left sticky left-[160px] z-20 bg-slate-100">Adı Soyadı</th>
               {Array.from({ length: dcount }, (_, i) => (
                 <th key={i} className={`p-2 text-center w-[3.5rem] md:w-[3.75rem] font-mono tabular-nums border-l border-slate-200 ${isWeekend(year, month, i + 1) ? "bg-blue-50 text-blue-600" : ""}`}>
                   {i + 1}
