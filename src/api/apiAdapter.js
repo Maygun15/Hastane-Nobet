@@ -95,6 +95,24 @@ function normalizeSwapSuggestionPayload(payload = {}) {
         eligible: item?.eligible !== false,
         warnings: Array.isArray(item?.warnings) ? item.warnings : [],
       }));
+  const recommendedCandidates = Array.isArray(payload?.recommendedCandidates)
+    ? payload.recommendedCandidates
+    : candidates.filter((item) => item?.eligible !== false);
+  const samePositionAlternatives = Array.isArray(payload?.samePositionAlternatives)
+    ? payload.samePositionAlternatives
+    : candidates.filter((item) => item?.recommendationTier === "same_position_blocked");
+
+  const normalizeCandidate = (item = {}) => ({
+    id: String(item?.id || item?.personId || "").trim(),
+    name: String(item?.name || item?.personName || "").trim(),
+    title: String(item?.title || "").trim(),
+    service: String(item?.service || item?.serviceId || "").trim(),
+    monthlyShiftCount: Number(item?.monthlyShiftCount ?? item?.shiftCount ?? 0) || 0,
+    eligible: item?.eligible !== false,
+    warnings: Array.isArray(item?.warnings) ? item.warnings : [],
+    recommendationTier: String(item?.recommendationTier || (item?.eligible === false ? "mismatch" : "recommended")).trim(),
+    samePositionFit: item?.samePositionFit !== false,
+  });
 
   return {
     ok: payload?.ok !== false,
@@ -109,15 +127,11 @@ function normalizeSwapSuggestionPayload(payload = {}) {
       id: String(currentPerson?.id || "").trim(),
       name: String(currentPerson?.name || "").trim(),
     },
-    candidates: candidates.map((item) => ({
-      id: String(item?.id || item?.personId || "").trim(),
-      name: String(item?.name || item?.personName || "").trim(),
-      title: String(item?.title || "").trim(),
-      service: String(item?.service || item?.serviceId || "").trim(),
-      monthlyShiftCount: Number(item?.monthlyShiftCount ?? item?.shiftCount ?? 0) || 0,
-      eligible: item?.eligible !== false,
-      warnings: Array.isArray(item?.warnings) ? item.warnings : [],
-    })),
+    candidates: candidates.map(normalizeCandidate),
+    recommendedCandidates: recommendedCandidates.map(normalizeCandidate),
+    samePositionAlternatives: samePositionAlternatives.map(normalizeCandidate),
+    recommendationText: String(payload?.recommendationText || "").trim(),
+    message: String(payload?.message || "").trim(),
   };
 }
 
@@ -280,11 +294,11 @@ const TR_RELIGIOUS_HOLIDAYS = {
     { date: "2026-03-19", kind: "full",  name: "Ramazan Bayramı 1. Gün" },
     { date: "2026-03-20", kind: "full",  name: "Ramazan Bayramı 2. Gün" },
     { date: "2026-03-21", kind: "full",  name: "Ramazan Bayramı 3. Gün" },
-    { date: "2026-05-25", kind: "arife", name: "Kurban Bayramı Arifesi" },
-    { date: "2026-05-26", kind: "full",  name: "Kurban Bayramı 1. Gün" },
-    { date: "2026-05-27", kind: "full",  name: "Kurban Bayramı 2. Gün" },
-    { date: "2026-05-28", kind: "full",  name: "Kurban Bayramı 3. Gün" },
-    { date: "2026-05-29", kind: "full",  name: "Kurban Bayramı 4. Gün" },
+    { date: "2026-05-26", kind: "arife", name: "Kurban Bayramı Arifesi" },
+    { date: "2026-05-27", kind: "full",  name: "Kurban Bayramı 1. Gün" },
+    { date: "2026-05-28", kind: "full",  name: "Kurban Bayramı 2. Gün" },
+    { date: "2026-05-29", kind: "full",  name: "Kurban Bayramı 3. Gün" },
+    { date: "2026-05-30", kind: "full",  name: "Kurban Bayramı 4. Gün" },
   ],
   2027: [
     { date: "2027-03-07", kind: "arife", name: "Ramazan Bayramı Arifesi" },
@@ -650,11 +664,14 @@ export async function getPersonCalendar({ personId, sectionId, year, month, serv
 }
 
 export async function getSwapSuggestions({ personId, currentPersonName, date, shiftId, roleLabel, serviceId, role, sectionId, limit } = {}) {
-  if (!personId || !date || !shiftId) throw new Error("personId, date, shiftId gerekli");
+  if ((!personId && !currentPersonName) || !date || !shiftId) {
+    throw new Error("personId/currentPersonName, date, shiftId gerekli");
+  }
   const payload = await httpRequest("/api/scheduler/swap-suggestions", {
     method: "POST",
     body: {
-      personId, date, shiftId,
+      ...(personId ? { personId } : {}),
+      date, shiftId,
       ...(currentPersonName ? { currentPersonName } : {}),
       ...(roleLabel ? { roleLabel } : {}),
       ...(serviceId ? { serviceId } : {}),
