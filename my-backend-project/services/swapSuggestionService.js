@@ -56,6 +56,13 @@ function matchesArea(workAreas = [], roleLabel = '') {
   return areas.some((area) => area === target || area.includes(target) || target.includes(area));
 }
 
+function isNurseLike(text) {
+  return /(hemsire|hemşire|ebe|att|s\.?\s*memuru|nurse)/.test(text);
+}
+function isDoctorLike(text) {
+  return /(doktor|doctor|hekim|tabip|\bdr\b)/.test(text);
+}
+
 function matchesScheduleRole(candidate, scheduleRole = '') {
   const target = String(scheduleRole || '').trim().toLowerCase();
   if (!target) return true;
@@ -64,13 +71,16 @@ function matchesScheduleRole(candidate, scheduleRole = '') {
       candidate?.meta?.role,
       candidate?.meta?.roles,
       candidate?.meta?.title,
+      candidate?.meta?.unvan,
       candidate?.role,
       candidate?.title
     )
   );
   if (!roleText) return true;
-  if (target === 'nurse') return /(hemsire|hemşire|ebe|att|s\. memuru|s memuru)/.test(roleText);
-  if (target === 'doctor') return /(doktor|doctor|hekim|hekim|tabip|dr)/.test(roleText);
+  const targetIsNurse = target === 'nurse' || isNurseLike(target);
+  const targetIsDoctor = target === 'doctor' || isDoctorLike(target);
+  if (targetIsNurse) return isNurseLike(roleText) || roleText === 'nurse';
+  if (targetIsDoctor) return isDoctorLike(roleText) || roleText === 'doctor';
   return roleText.includes(target);
 }
 
@@ -241,6 +251,7 @@ async function suggestSwaps({
 }) {
   const ym = parseYM(date);
   if (!ym) return { ok: false, message: 'Geçersiz tarih formatı' };
+  const requesterNameCanon = canonName(currentPersonName);
 
   const scheduleDoc = sectionId
     ? await findScheduleReadModel({
@@ -281,14 +292,20 @@ async function suggestSwaps({
   const assignedOnDateByPerson = new Set();
   for (const a of monthAssignments) {
     const pid = String(a.personId || '');
+    const pname = canonName(a.personName || a.fullName || a.name || '');
     if (!pid) continue;
     assignCountByPerson[pid] = (assignCountByPerson[pid] || 0) + 1;
     if (String(a.date || '').slice(0, 10) === date) {
       assignedOnDateByPerson.add(pid);
     }
+    if (!personId && requesterNameCanon && pname === requesterNameCanon) {
+      assignCountByPerson.__requesterByName = (assignCountByPerson.__requesterByName || 0) + 1;
+    }
   }
 
-  const ownCount = assignCountByPerson[String(personId)] || 0;
+  const ownCount = personId
+    ? (assignCountByPerson[String(personId)] || 0)
+    : (assignCountByPerson.__requesterByName || 0);
 
   // Leaves: fetch for service
   const leaveDocs = await Setting.find({
@@ -304,30 +321,75 @@ async function suggestSwaps({
   const monthKey = date.slice(0, 7);
 
   const suggestions = [];
+  const samePositionBlocked = [];
+  const otherBlocked = [];
+  const blocked = [];
   for (const c of candidates) {
     const cid = String(c._id);
+    const candidateNameCanon = canonName(c.name || '');
+    if (!personId && requesterNameCanon && candidateNameCanon && candidateNameCanon === requesterNameCanon) continue;
+    const warnings = [];
+    const assignedSameDay = assignedOnDateByPerson.has(cid);
+    const onLeave = !!leaveValue[cid]?.[monthKey]?.[dayNum];
+    const roleMatch = matchesScheduleRole(c, role);
+    const areaShiftMatch = isShiftEligible(c, effectiveShiftCode, effectiveTaskLabel);
+    const samePositionFit = roleMatch && areaShiftMatch;
 
-    if (assignedOnDateByPerson.has(cid)) continue;
-    if (leaveValue[cid]?.[monthKey]?.[dayNum]) continue;
-    if (!matchesScheduleRole(c, role)) continue;
-    if (!isShiftEligible(c, effectiveShiftCode, effectiveTaskLabel)) continue;
+    if (assignedSameDay) warnings.push('Aynı gün başka nöbeti var');
+    if (onLeave) warnings.push('İzinli');
+    if (!roleMatch) warnings.push('Rol uyumsuz');
+    if (!areaShiftMatch) warnings.push('Alan/vardiya uyumsuz');
 
     const shiftCount = assignCountByPerson[cid] || 0;
     const delta = ownCount - shiftCount;
-
-    suggestions.push({
+    const recommendationTier = warnings.length === 0
+      ? 'recommended'
+      : samePositionFit
+        ? 'same_position_blocked'
+        : 'mismatch';
+    const candidateInfo = {
       id: cid,
       name: c.name || cid,
       title: resolvePersonTitle(c),
       service: resolvePersonService(c),
       monthlyShiftCount: shiftCount,
-      eligible: true,
-      warnings: [],
+      eligible: warnings.length === 0,
+      warnings,
       delta,
-    });
+      recommendationTier,
+      samePositionFit,
+    };
+    if (warnings.length === 0) suggestions.push(candidateInfo);
+    else if (samePositionFit) samePositionBlocked.push(candidateInfo);
+    else otherBlocked.push(candidateInfo);
+    blocked.push(candidateInfo);
   }
 
   suggestions.sort((a, b) => b.delta - a.delta || (a.name > b.name ? 1 : -1));
+  samePositionBlocked.sort((a, b) => b.delta - a.delta || (a.name > b.name ? 1 : -1));
+  otherBlocked.sort((a, b) => {
+    if (a.samePositionFit !== b.samePositionFit) return a.samePositionFit ? -1 : 1;
+    return b.delta - a.delta || (a.name > b.name ? 1 : -1);
+  });
+  blocked.sort((a, b) => {
+    const order = { recommended: 0, same_position_blocked: 1, mismatch: 2 };
+    const tierCmp = (order[a.recommendationTier] ?? 9) - (order[b.recommendationTier] ?? 9);
+    if (tierCmp !== 0) return tierCmp;
+    return b.delta - a.delta || (a.name > b.name ? 1 : -1);
+  });
+
+  const orderedCandidates = [...suggestions, ...samePositionBlocked, ...otherBlocked];
+  const candidateList = orderedCandidates.slice(0, Math.max(1, Number(limit) || 100));
+  const recommendedNames = suggestions.slice(0, 3).map((item) => item.name).filter(Boolean);
+  const alternativeNames = samePositionBlocked.slice(0, 3).map((item) => item.name).filter(Boolean);
+  let recommendationText = '';
+  if (recommendedNames.length > 0) {
+    recommendationText = `Bu slot için öncelikle şunları yazabilirsiniz: ${recommendedNames.join(', ')}.`;
+  } else if (alternativeNames.length > 0) {
+    recommendationText = `Tam uygun aday yok. Aynı pozisyona en yakın alternatifler: ${alternativeNames.join(', ')}. Kural uyarılarını inceleyin.`;
+  } else if (candidateList.length > 0) {
+    recommendationText = 'Tam uygun aday yok. Aşağıda, nedenleriyle birlikte tüm değerlendirilebilir adaylar gösteriliyor.';
+  }
 
   return {
     ok: true,
@@ -342,12 +404,20 @@ async function suggestSwaps({
       id: slotMeta?.currentPerson?.id || String(personId || '').trim(),
       name: slotMeta?.currentPerson?.name || String(currentPersonName || '').trim(),
     },
-    candidates: suggestions.slice(0, limit).map(({ delta: _delta, ...item }) => item),
+    candidates: candidateList.map(({ delta: _delta, ...item }) => item),
+    recommendedCandidates: suggestions.slice(0, Math.max(1, Number(limit) || 100)).map(({ delta: _delta, ...item }) => item),
+    samePositionAlternatives: samePositionBlocked.slice(0, Math.max(1, Number(limit) || 100)).map(({ delta: _delta, ...item }) => item),
+    recommendationText,
+    message: suggestions.length > 0
+      ? ''
+      : samePositionBlocked.length > 0
+        ? 'Bu slot için tamamen uygun aday bulunamadı. Aynı pozisyona yakın alternatifler gösteriliyor.'
+        : 'Bu slot için tamamen uygun aday bulunamadı. Aşağıda nedenleriyle birlikte tüm değerlendirilebilir adaylar gösteriliyor.',
     // Backward-compatible fields
     requesterShiftCount: ownCount,
     date,
     shiftId: effectiveShiftCode,
-    suggestions: suggestions.slice(0, limit).map((item) => ({
+    suggestions: candidateList.map((item) => ({
       personId: item.id,
       personName: item.name,
       serviceId: item.service,

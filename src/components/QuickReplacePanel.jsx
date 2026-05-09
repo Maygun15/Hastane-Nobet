@@ -13,6 +13,12 @@ function slotKeyOf(slot = {}) {
   return String(slot?.key || slot?.rowId || slot?.shiftId || `${slot?.taskLabel || ""}::${slot?.shiftCode || ""}`);
 }
 
+function personOptionKey(person = {}) {
+  const id = String(person?.id || "").trim();
+  const name = String(person?.name || "").trim();
+  return id || (name ? `name:${name}` : "");
+}
+
 function buildSlotGroups(assignments = [], defs = [], selectedDate = "") {
   if (!selectedDate) return [];
   const defMap = new Map(
@@ -58,7 +64,7 @@ function buildSlotGroups(assignments = [], defs = [], selectedDate = "") {
     .map((slot) => ({
       ...slot,
       people: slot.people
-        .filter((person) => person.id && person.name)
+        .filter((person) => person.name)
         .sort((a, b) => a.name.localeCompare(b.name, "tr", { sensitivity: "base" })),
     }))
     .filter((slot) => slot.taskLabel || slot.shiftCode)
@@ -79,6 +85,8 @@ export default function QuickReplacePanel({
   month,
   onAssigned,
   initialSelection = null,
+  preferredPerson = null,
+  preferredAssignments = [],
 }) {
   const month0 = Math.max(0, Math.min(11, Number(month) - 1 || 0));
   const totalDays = daysInMonth(year, month0 + 1);
@@ -95,6 +103,9 @@ export default function QuickReplacePanel({
   const [resultSlot, setResultSlot] = useState(null);
   const [resultCurrentPerson, setResultCurrentPerson] = useState(null);
   const [candidates, setCandidates] = useState([]);
+  const [recommendedCandidates, setRecommendedCandidates] = useState([]);
+  const [samePositionAlternatives, setSamePositionAlternatives] = useState([]);
+  const [recommendationText, setRecommendationText] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
 
@@ -111,6 +122,9 @@ export default function QuickReplacePanel({
     setResultSlot(null);
     setResultCurrentPerson(null);
     setCandidates([]);
+    setRecommendedCandidates([]);
+    setSamePositionAlternatives([]);
+    setRecommendationText("");
     setSearchError("");
     setAssignError("");
     setAssignedIds(new Set());
@@ -176,9 +190,41 @@ export default function QuickReplacePanel({
     [slotOptions, selectedSlotKey]
   );
 
-  const departingPeople = useMemo(() => selectedSlot?.people || [], [selectedSlot]);
+  const fallbackPreferredPeople = useMemo(() => {
+    if (!selectedDate || !selectedSlot) return [];
+    const wantedTask = String(selectedSlot?.taskLabel || selectedTaskLabel || "").trim();
+    const wantedShift = String(selectedSlot?.shiftCode || "").trim().toUpperCase();
+    const matched = (Array.isArray(preferredAssignments) ? preferredAssignments : []).filter((item) => {
+      const itemDate = String(item?.date || item?.day || "").slice(0, 10);
+      if (itemDate !== selectedDate) return false;
+      const itemTask = String(item?.roleLabel || item?.rowLabel || item?.label || item?.area || "").trim();
+      const itemShift = String(item?.shiftCode || item?.shift || item?.code || "").trim().toUpperCase();
+      if (wantedTask && itemTask !== wantedTask) return false;
+      if (wantedShift && itemShift !== wantedShift) return false;
+      return true;
+    });
+    const seen = new Set();
+    return matched
+      .map((item) => ({
+        id: String(item?.personId || preferredPerson?.id || "").trim(),
+        name: String(item?.personName || item?.name || preferredPerson?.name || "").trim(),
+      }))
+      .filter((person) => person.name)
+      .filter((person) => {
+        const key = personOptionKey(person);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }, [preferredAssignments, preferredPerson, selectedDate, selectedSlot, selectedTaskLabel]);
+
+  const departingPeople = useMemo(() => {
+    const slotPeople = Array.isArray(selectedSlot?.people) ? selectedSlot.people : [];
+    if (slotPeople.length > 0) return slotPeople;
+    return fallbackPreferredPeople;
+  }, [selectedSlot, fallbackPreferredPeople]);
   const departingPerson = useMemo(
-    () => departingPeople.find((person) => person.id === departingPersonId) || null,
+    () => departingPeople.find((person) => personOptionKey(person) === departingPersonId) || null,
     [departingPeople, departingPersonId]
   );
 
@@ -223,7 +269,7 @@ export default function QuickReplacePanel({
       if (wantedPersonName && person.name === wantedPersonName) return true;
       return false;
     });
-    if (match) setDepartingPersonId(match.id);
+    if (match) setDepartingPersonId(personOptionKey(match));
   }, [open, initialSelection, departingPeople, departingPersonId]);
 
   const handleSearch = async () => {
@@ -233,9 +279,12 @@ export default function QuickReplacePanel({
     setAssignError("");
     setAssignedIds(new Set());
     setCandidates([]);
+    setRecommendedCandidates([]);
+    setSamePositionAlternatives([]);
+    setRecommendationText("");
     try {
       const result = await getSwapSuggestions({
-        personId: departingPerson.id,
+        personId: String(departingPerson.id || "").trim() || undefined,
         currentPersonName: departingPerson.name,
         date: selectedDate,
         shiftId: selectedSlot.rowId || selectedSlot.shiftId || selectedSlot.shiftCode,
@@ -243,12 +292,17 @@ export default function QuickReplacePanel({
         serviceId: selectedSlot.serviceId || serviceId || undefined,
         role: scheduleRole || undefined,
         sectionId,
-        limit: 12,
+        limit: 100,
       });
       setResultSlot(result?.slot || null);
       setResultCurrentPerson(result?.currentPerson || null);
       setCandidates(Array.isArray(result?.candidates) ? result.candidates : []);
-      if (!result?.candidates?.length) {
+      setRecommendedCandidates(Array.isArray(result?.recommendedCandidates) ? result.recommendedCandidates : []);
+      setSamePositionAlternatives(Array.isArray(result?.samePositionAlternatives) ? result.samePositionAlternatives : []);
+      setRecommendationText(String(result?.recommendationText || "").trim());
+      if (result?.message) {
+        setSearchError(result.message);
+      } else if (!result?.candidates?.length) {
         setSearchError("Bu slot için uygun aday bulunamadı.");
       }
     } catch (err) {
@@ -263,6 +317,27 @@ export default function QuickReplacePanel({
     if (!canSearch || searchLoading || candidates.length > 0 || searchError) return;
     handleSearch();
   }, [open, initialSelection, canSearch, searchLoading, candidates.length, searchError]);
+
+  const groupedCandidates = useMemo(() => {
+    const recommendedIds = new Set(
+      (Array.isArray(recommendedCandidates) ? recommendedCandidates : [])
+        .map((item) => item.id)
+        .filter(Boolean)
+    );
+    const samePositionIds = new Set(
+      (Array.isArray(samePositionAlternatives) ? samePositionAlternatives : [])
+        .map((item) => item.id)
+        .filter(Boolean)
+    );
+    const others = (Array.isArray(candidates) ? candidates : []).filter(
+      (item) => !recommendedIds.has(item.id) && !samePositionIds.has(item.id)
+    );
+    return {
+      recommended: Array.isArray(recommendedCandidates) ? recommendedCandidates : [],
+      samePosition: Array.isArray(samePositionAlternatives) ? samePositionAlternatives : [],
+      others,
+    };
+  }, [candidates, recommendedCandidates, samePositionAlternatives]);
 
   const handleAssign = async (candidate) => {
     if (!selectedDate || !selectedSlot || !departingPerson) return;
@@ -314,6 +389,8 @@ export default function QuickReplacePanel({
 
   if (!open) return null;
 
+  const isInitialLoading = !!initialSelection?.autoSearch && (truthLoading || !canSearch) && !searchError && candidates.length === 0;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl mx-4 overflow-hidden flex flex-col max-h-[90vh]">
@@ -327,7 +404,14 @@ export default function QuickReplacePanel({
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-4 overflow-y-auto flex-1">
+        {isInitialLoading && (
+          <div className="flex flex-col items-center justify-center gap-3 py-12 text-slate-500">
+            <Loader2 size={28} className="animate-spin text-blue-400" />
+            <span className="text-sm">Adaylar yükleniyor…</span>
+          </div>
+        )}
+
+        <div className={`px-5 py-4 space-y-4 overflow-y-auto flex-1 ${isInitialLoading ? "hidden" : ""}`}>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Tarih</label>
@@ -419,7 +503,7 @@ export default function QuickReplacePanel({
               >
                 <option value="">— kişi seçin —</option>
                 {departingPeople.map((person) => (
-                  <option key={person.id} value={person.id}>
+                  <option key={personOptionKey(person)} value={personOptionKey(person)}>
                     {person.name}
                   </option>
                 ))}
@@ -443,6 +527,12 @@ export default function QuickReplacePanel({
             </div>
           )}
 
+          {recommendationText ? (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+              {recommendationText}
+            </div>
+          ) : null}
+
           {resultSlot && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
               <div><span className="font-medium">Tarih:</span> {resultSlot.date}</div>
@@ -453,48 +543,62 @@ export default function QuickReplacePanel({
           )}
 
           {candidates.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Uygun Adaylar</p>
-              {candidates.map((candidate) => {
-                const done = assignedIds.has(candidate.id);
-                return (
-                  <div
-                    key={candidate.id}
-                    className={`flex items-center justify-between rounded-lg px-3 py-3 text-sm border ${
-                      done ? "bg-green-50 border-green-200" : "bg-white border-slate-200 hover:bg-slate-50"
-                    } transition-colors`}
-                  >
-                    <div className="min-w-0">
-                      <div className="font-medium text-slate-800 truncate">{candidate.name}</div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        {candidate.title ? <span>{candidate.title}</span> : null}
-                        {candidate.service ? <span>{candidate.service}</span> : null}
-                        <span>Bu ay {candidate.monthlyShiftCount} nöbet</span>
-                      </div>
-                      {Array.isArray(candidate.warnings) && candidate.warnings.length > 0 ? (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {candidate.warnings.map((warning) => (
-                            <span key={warning} className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                              {warning}
+            <div className="space-y-4">
+              {[
+                { key: "recommended", title: "Önerilenler", items: groupedCandidates.recommended },
+                { key: "same-position", title: "Aynı Pozisyon İçin Yakın Alternatifler", items: groupedCandidates.samePosition },
+                { key: "others", title: "Diğer Değerlendirilebilir Adaylar", items: groupedCandidates.others },
+              ].map((group) => (
+                group.items.length > 0 ? (
+                  <div key={group.key} className="space-y-2">
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{group.title}</p>
+                    {group.items.map((candidate) => {
+                      const done = assignedIds.has(candidate.id);
+                      return (
+                        <div
+                          key={candidate.id}
+                          className={`flex items-center justify-between rounded-lg px-3 py-3 text-sm border ${
+                            done ? "bg-green-50 border-green-200" : "bg-white border-slate-200 hover:bg-slate-50"
+                          } transition-colors`}
+                        >
+                          <div className="min-w-0">
+                            <div className="font-medium text-slate-800 truncate">{candidate.name}</div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                              {candidate.title ? <span>{candidate.title}</span> : null}
+                              {candidate.service ? <span>{candidate.service}</span> : null}
+                              <span>Bu ay {candidate.monthlyShiftCount} nöbet</span>
+                            </div>
+                            {Array.isArray(candidate.warnings) && candidate.warnings.length > 0 ? (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {candidate.warnings.map((warning) => (
+                                  <span key={warning} className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                                    {warning}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                          {done ? (
+                            <span className="text-xs text-green-600 font-medium">Atandı ✓</span>
+                          ) : candidate.eligible === false ? (
+                            <span className="text-xs text-amber-700 font-medium">
+                              {candidate.recommendationTier === "same_position_blocked" ? "Yakın alternatif" : "Uygun değil"}
                             </span>
-                          ))}
+                          ) : (
+                            <button
+                              className="ml-3 px-3 py-1 text-xs rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40 transition-colors"
+                              onClick={() => handleAssign(candidate)}
+                              disabled={assigning === candidate.id || candidate.eligible === false}
+                            >
+                              {assigning === candidate.id ? <Loader2 size={11} className="animate-spin" /> : "Ata"}
+                            </button>
+                          )}
                         </div>
-                      ) : null}
-                    </div>
-                    {done ? (
-                      <span className="text-xs text-green-600 font-medium">Atandı ✓</span>
-                    ) : (
-                      <button
-                        className="ml-3 px-3 py-1 text-xs rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40 transition-colors"
-                        onClick={() => handleAssign(candidate)}
-                        disabled={assigning === candidate.id}
-                      >
-                        {assigning === candidate.id ? <Loader2 size={11} className="animate-spin" /> : "Ata"}
-                      </button>
-                    )}
+                      );
+                    })}
                   </div>
-                );
-              })}
+                ) : null
+              ))}
             </div>
           )}
 
