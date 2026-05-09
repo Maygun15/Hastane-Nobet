@@ -27,7 +27,7 @@ export default function Modal({
         <div className="px-4 sm:px-5 py-3 border-b flex items-center justify-between">
           <div className="text-base sm:text-lg font-semibold">{title}</div>
           <button
-            className="px-2 py-1 rounded-md hover:bg-gray-100"
+            className="px-2 py-1 rounded-md hover:bg-slate-100"
             onClick={onClose}
             aria-label="Kapat"
           >
@@ -36,7 +36,7 @@ export default function Modal({
         </div>
         <div className="p-4 sm:p-5 max-h-[70vh] overflow-auto">{children}</div>
         {footer ? (
-          <div className="px-4 sm:px-5 py-3 border-t bg-gray-50 rounded-b-2xl">
+          <div className="px-4 sm:px-5 py-3 border-t bg-slate-50 rounded-b-2xl">
             {footer}
           </div>
         ) : null}

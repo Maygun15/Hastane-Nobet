@@ -279,7 +279,7 @@ export default function RequestBoxTab({ people: peopleProp, requests, setRequest
         </select>
 
         <div className="flex flex-wrap items-center gap-2">
-          <label className="text-xs text-gray-500">Kişi:</label>
+          <label className="text-xs text-slate-500">Kişi:</label>
           {people.length ? (
             <>
               <select
@@ -317,7 +317,7 @@ export default function RequestBoxTab({ people: peopleProp, requests, setRequest
               </select>
             </>
           ) : (
-            <span className="text-xs text-gray-400">Kişi listesi boş</span>
+            <span className="text-xs text-slate-400">Kişi listesi boş</span>
           )}
         </div>
 
@@ -337,7 +337,7 @@ export default function RequestBoxTab({ people: peopleProp, requests, setRequest
           onKeyDown={(e) => e.key === "Enter" && add()}
         />
 
-        <button onClick={add} className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50">
+        <button onClick={add} className="px-3 py-2 rounded-xl border bg-white hover:bg-slate-50">
           Ekle
         </button>
       </div>
@@ -349,7 +349,7 @@ export default function RequestBoxTab({ people: peopleProp, requests, setRequest
           <div className="font-semibold mb-2">Kişi</div>
           <div className="bg-white border rounded-2xl p-3">
             {people.length === 0 ? (
-              <div className="text-sm text-gray-500">
+              <div className="text-sm text-slate-500">
                 Kişi listesi boş. People tab’ından ekleyebilir veya
                 <code className="mx-1">peopleV1</code>/<code>personsV1</code> ya da
                 <code className="mx-1">bulkLeavesV1</code> anahtarını doldurabilirsiniz.
@@ -369,7 +369,7 @@ export default function RequestBoxTab({ people: peopleProp, requests, setRequest
                 ))}
               </select>
             )}
-            <div className="mt-2 text-xs text-gray-500">
+            <div className="mt-2 text-xs text-slate-500">
               İpucu: Listeden bir kişi seçildiğinde üst formda otomatik kullanılır.
             </div>
           </div>
@@ -379,13 +379,13 @@ export default function RequestBoxTab({ people: peopleProp, requests, setRequest
         <div className="md:col-span-3">
           <div className="font-semibold mb-2">Kayıtlar</div>
           <div className="border rounded-2xl overflow-hidden">
-            {!list.length && <div className="p-4 text-gray-500">Henüz kayıt yok.</div>}
+            {!list.length && <div className="p-4 text-slate-500">Henüz kayıt yok.</div>}
             {list.map((it, i) => (
               <div key={it.id} className="p-4 border-b last:border-b-0 flex items-start gap-3">
                 <div className="w-6 text-right text-xs font-semibold mt-1">{i + 1}.</div>
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded border bg-gray-50 text-gray-700 border-gray-200">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded border bg-slate-50 text-slate-700 border-slate-200">
                       {it.type}
                     </span>
                     {it.personName && (
@@ -409,7 +409,7 @@ export default function RequestBoxTab({ people: peopleProp, requests, setRequest
                     </span>
                   </div>
 
-                  {it.text && <div className="mt-1 text-gray-800 break-words">{it.text}</div>}
+                  {it.text && <div className="mt-1 text-slate-800 break-words">{it.text}</div>}
 
                   {Array.isArray(it.analysis?.segments) && it.analysis?.segments.length > 0 && (
                     <div className="mt-2 text-xs text-slate-600 space-y-1">
@@ -427,7 +427,7 @@ export default function RequestBoxTab({ people: peopleProp, requests, setRequest
                   <div className="flex items-center gap-2 mt-2">
                     <button
                       onClick={() => toggle(it.id)}
-                      className="px-2 py-1 text-xs rounded-lg border bg-white hover:bg-gray-50"
+                      className="px-2 py-1 text-xs rounded-lg border bg-white hover:bg-slate-50"
                     >
                       {it.active ? "Pasifleştir" : "Etkinleştir"}
                     </button>
@@ -439,13 +439,13 @@ export default function RequestBoxTab({ people: peopleProp, requests, setRequest
                     </button>
                     <button
                       onClick={() => move(i, "up")}
-                      className="px-2 py-1 text-xs rounded-lg border bg-white hover:bg-gray-50"
+                      className="px-2 py-1 text-xs rounded-lg border bg-white hover:bg-slate-50"
                     >
                       ↑
                     </button>
                     <button
                       onClick={() => move(i, "down")}
-                      className="px-2 py-1 text-xs rounded-lg border bg-white hover:bg-gray-50"
+                      className="px-2 py-1 text-xs rounded-lg border bg-white hover:bg-slate-50"
                     >
                       ↓
                     </button>
@@ -455,7 +455,7 @@ export default function RequestBoxTab({ people: peopleProp, requests, setRequest
             ))}
           </div>
 
-          <div className="text-xs text-gray-500 mt-2">
+          <div className="text-xs text-slate-500 mt-2">
             Not: Kişi ve tarih alanları opsiyoneldir; yalnızca metinle de kayıt oluşturabilirsiniz.
           </div>
         </div>

@@ -1028,6 +1028,7 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
                   setYear={setYear}
                   setMonth={setMonth}
                   onBuild={canManage ? handleRunPlanner : undefined}
+                  building={plannerStatus === "loading"}
                   role={canManage ? activeRole : undefined}
                   onRoleChange={canManage ? setActiveRole : undefined}
                 />
@@ -1290,9 +1291,19 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
       </section>
 
       {isStandardUser && !matchedPerson && !fallbackPerson && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 shadow-sm">
-          Kullanıcı bilgilerinizle eşleşen bir personel kaydı bulunamadı. Personel listesinde kimlik bilgilerinizi
-          güncelledikten sonra tekrar deneyin.
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 shadow-sm flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-800">Personel kaydı eşleşmedi</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Kullanıcı bilgilerinizle eşleşen bir personel kaydı bulunamadı. Yöneticinizden personel listesinde kimlik bilgilerinizi güncellemesini isteyin.
+            </p>
+          </div>
+          <button
+            onClick={() => navigateTo("/personel")}
+            className="shrink-0 rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 transition-colors"
+          >
+            Personel Sekmesine Git →
+          </button>
         </div>
       )}
 

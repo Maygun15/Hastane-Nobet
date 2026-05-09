@@ -22,7 +22,7 @@ export default function Modal({ open, title, children, onClose, maxWidth = "max-
       <div className={`absolute left-1/2 top-10 -translate-x-1/2 ${maxWidth} w-[92vw] bg-white rounded-2xl shadow-xl`}>
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <div className="font-semibold">{title}</div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100"><X size={18} /></button>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100"><X size={18} /></button>
         </div>
         <div className="p-4">{children}</div>
       </div>

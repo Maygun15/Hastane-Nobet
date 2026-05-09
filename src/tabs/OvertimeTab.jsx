@@ -1,5 +1,6 @@
 // src/tabs/OvertimeTab.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from "react";
+import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import {
   FileSpreadsheet, Upload, RotateCcw, Search, ListChecks, Building2, Users, Clock3, TrendingUp, Trash2
@@ -174,11 +175,11 @@ function buildDerivedOvertimeRows({ assignments = [], people = [], dcount = 31, 
 
 
 const INPUT =
-  "outline-none text-center px-1.5 py-1 rounded-md border border-gray-300 bg-white " +
+  "outline-none text-center px-1.5 py-1 rounded-md border border-slate-300 bg-white " +
   "text-[14px] md:text-sm font-semibold font-mono tabular-nums leading-tight " +
   "focus:border-blue-500 focus:ring-2 focus:ring-blue-200 [appearance:textfield] [-moz-appearance:textfield]";
 const TXT =
-  "w-full outline-none px-2 py-1.5 rounded-md border border-gray-300 bg-white " +
+  "w-full outline-none px-2 py-1.5 rounded-md border border-slate-300 bg-white " +
   "text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200";
 
 /* ================ LS & Model ================ */
@@ -595,7 +596,9 @@ const OvertimeTab = forwardRef(function OvertimeTab({
     try {
       const newRows = await loadTruthRowsFromRoster();
       if (!newRows.length) {
-        alert("Aktarılacak görev ataması bulunamadı. Önce Çalışma Çizelgesi'ni doldurup kaydedin.");
+        toast.warning("Çizelge henüz oluşturulmamış", {
+          description: "Önce Planlama Kontrol Merkezi'nden çalışma çizelgesi oluşturun.",
+        });
         return;
       }
       setRows(newRows);
@@ -604,7 +607,9 @@ const OvertimeTab = forwardRef(function OvertimeTab({
         (sum, row) => sum + (row.days || []).filter((h) => Number(h) > 0).length,
         0
       );
-      alert(`Çalışma çizelgesinden ${newRows.length} personel için ${assignedDays} atama aktarıldı.`);
+      toast.success(`${newRows.length} personel aktarıldı`, {
+        description: `${assignedDays} gün ataması çalışma çizelgesinden yüklendi.`,
+      });
     } finally { setImporting(false); }
   }
 
@@ -706,11 +711,17 @@ const OvertimeTab = forwardRef(function OvertimeTab({
         const ws = wb.Sheets[wb.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
         const headerIdx = data.findIndex((row) => row.some((c) => /unvan|adı soyad/i.test(String(c || ""))));
-        if (headerIdx < 0) { alert("Excel formatı tanınamadı."); return; }
+        if (headerIdx < 0) {
+          toast.error("Excel formatı tanınamadı", { description: "Başlık satırı 'Unvan' ve 'Adı Soyadı' sütunlarını içermelidir." });
+          return;
+        }
         const header = data[headerIdx].map((c) => String(c || "").trim());
         const titleCol = header.findIndex((c) => /unvan/i.test(c));
         const nameCol = header.findIndex((c) => /adı soyad/i.test(c));
-        if (titleCol < 0 || nameCol < 0) { alert("Excel formatı hatalı."); return; }
+        if (titleCol < 0 || nameCol < 0) {
+          toast.error("Sütun bulunamadı", { description: "Excel'de 'Unvan' ve 'Adı Soyadı' sütunları olmalıdır." });
+          return;
+        }
         const newRows = [];
         for (let i = headerIdx + 1; i < data.length; i++) {
           const row = data[i];
@@ -728,10 +739,13 @@ const OvertimeTab = forwardRef(function OvertimeTab({
           });
           newRows.push({ id: crypto.randomUUID(), personId: "", person, title: String(row[titleCol] || "").trim(), service: "", editedDays, days });
         }
-        if (!newRows.length) { alert("Aktarılacak satır bulunamadı."); return; }
+        if (!newRows.length) {
+          toast.warning("Aktarılacak satır bulunamadı", { description: "Excel dosyası veri satırı içermiyor." });
+          return;
+        }
         setRows(newRows);
-        alert(`${newRows.length} personel satırı Excel'den aktarıldı.`);
-      } catch (err) { console.error("Excel import err:", err); alert("Excel okunurken hata oluştu."); }
+        toast.success(`${newRows.length} personel Excel'den aktarıldı`);
+      } catch (err) { console.error("Excel import err:", err); toast.error("Excel okunamadı", { description: "Dosya bozuk veya desteklenmeyen formatta." }); }
     };
     reader.readAsArrayBuffer(file);
     e.target.value = "";
@@ -759,7 +773,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({
           title="Fazla Mesai Takip Formu"
           leftExtras={
             <>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-50 border text-sm text-slate-700">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border text-sm text-slate-700">
                 <Building2 size={16} className="opacity-70" />
                 <span>{summaryLabel}</span>
               </div>
@@ -820,12 +834,12 @@ const OvertimeTab = forwardRef(function OvertimeTab({
                 />
               </label>
               <div className="text-xs text-slate-500">
-                Liste, üst çubuktaki <span className="font-semibold text-slate-700">Liste Oluştur</span> aksiyonuyla doğrudan çalışma çizelgesinden beslenir.
+                Liste, üst çubuktaki <span className="font-semibold text-slate-700">Çizelgeden Doldur</span> butonuyla doğrudan çalışma çizelgesinden beslenir.
               </div>
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[520px]">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:min-w-[520px]">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">
                 <Clock3 className="h-3.5 w-3.5 text-amber-600" />
@@ -866,7 +880,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({
               <th className="p-2 text-left sticky left-0 z-20 bg-white">Unvan</th>
               <th className="p-2 text-left sticky left-[160px] z-20 bg-white">Adı Soyadı</th>
               {Array.from({ length: dcount }, (_, i) => (
-                <th key={i} className={`p-2 text-center w-[3.5rem] md:w-[3.75rem] font-mono tabular-nums border-l border-gray-200 ${isWeekend(year, month, i + 1) ? "bg-blue-50 text-blue-600" : ""}`}>
+                <th key={i} className={`p-2 text-center w-[3.5rem] md:w-[3.75rem] font-mono tabular-nums border-l border-slate-200 ${isWeekend(year, month, i + 1) ? "bg-blue-50 text-blue-600" : ""}`}>
                   {i + 1}
                 </th>
               ))}
@@ -879,13 +893,13 @@ const OvertimeTab = forwardRef(function OvertimeTab({
           </thead>
           <tbody>
             {filteredRows.length === 0 ? (
-              <tr><td colSpan={dcount + 9} className="p-6 text-center text-gray-500">Kayıt yok. Personel seçin veya satır ekleyin.</td></tr>
+              <tr><td colSpan={dcount + 9} className="p-6 text-center text-slate-500">Kayıt yok. Personel seçin veya satır ekleyin.</td></tr>
             ) : (
               filteredRows.map((r) => {
                 const rec = computed.perRow.find((x) => x.id === r.id) || { work: 0, credited: 0, required: 0, overtime: 0 };
-                const otColor = rec.overtime === 0 ? "text-gray-400" : rec.overtime <= 8 ? "text-amber-600" : "text-rose-600";
+                const otColor = rec.overtime === 0 ? "text-slate-400" : rec.overtime <= 8 ? "text-amber-600" : "text-rose-600";
                 return (
-                  <tr key={r.id} className="odd:bg-white even:bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <tr key={r.id} className="odd:bg-white even:bg-slate-50 hover:bg-slate-100 transition-colors">
                     <td className="p-1 min-w-[160px] sticky left-0 z-10 bg-white shadow-[inset_-1px_0_0_0_rgba(0,0,0,0.06)]">
                       <input className={TXT} value={r.title} onChange={(e) => updateField(r.id, "title", e.target.value)} placeholder="Unvan" />
                     </td>
@@ -904,6 +918,8 @@ const OvertimeTab = forwardRef(function OvertimeTab({
                           value={v === "" ? "" : v}
                           placeholder="-"
                           inputMode="decimal"
+                          title="Çalışılan saat (örn: 8 veya 8,5)"
+                          aria-label={`${i + 1}. gün çalışma saati`}
                           onChange={(e) => updateDay(r.id, i, e.target.value)}
                         />
                       </td>
@@ -933,7 +949,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({
                 <td className="p-2 text-right tabular-nums font-mono">{computed.grandWork.toFixed(2)}</td>
                 <td className="p-2"></td>
                 <td className="p-2"></td>
-                <td className={`p-2 text-right tabular-nums font-mono ${computed.grandOT > 0 ? "text-rose-600" : "text-gray-400"}`}>
+                <td className={`p-2 text-right tabular-nums font-mono ${computed.grandOT > 0 ? "text-rose-600" : "text-slate-400"}`}>
                   {computed.grandOT.toFixed(2)}
                 </td>
                 <td className="p-2"></td>
@@ -990,7 +1006,7 @@ function PersonSelect({ value, people, onChange, displayValue }) {
   return (
     <div className="relative" ref={containerRef}>
       <input
-        className="w-full outline-none px-2 py-1.5 rounded-md border border-gray-300 bg-white text-sm"
+        className="w-full outline-none px-2 py-1.5 rounded-md border border-slate-300 bg-white text-sm"
         value={open ? q : (displayValue || "")}
         onFocus={() => { setOpen(true); setQ(""); }}
         onChange={(e) => setQ(e.target.value)}
@@ -999,7 +1015,7 @@ function PersonSelect({ value, people, onChange, displayValue }) {
       {open && (
         <div className="absolute z-20 mt-1 w-full max-h-56 overflow-auto bg-white border rounded-md shadow">
           {list.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-gray-500">Sonuç yok</div>
+            <div className="px-3 py-2 text-sm text-slate-500">Sonuç yok</div>
           ) : (
             list.map((p) => (
               <div key={p.id}

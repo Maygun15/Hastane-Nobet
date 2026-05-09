@@ -1,5 +1,6 @@
 // src/tabs/SchedulesTab.jsx
 import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import {
   CalendarClock,
@@ -421,7 +422,7 @@ function SectionContent({
   const fileInputRef = useRef(null); // Toplu İzin içe aktar
   const handleBuild = useCallback(() => {
     if (editorRef.current?.build) return editorRef.current.build();
-    alert("Sunucu planlaması hazır değil. Lütfen sayfayı yenileyin.");
+    toast.error("Çizelge bileşeni yüklenemedi", { description: "Sayfayı yenileyin ve tekrar deneyin." });
   }, []);
 
   // Toplu İzin export (gerçek)
@@ -458,7 +459,7 @@ function SectionContent({
     if (!file) return;
     try {
       const { header, rows } = await readTableFile(file);
-      if (!header.length) return alert("Dosya boş veya hatalı.");
+      if (!header.length) { toast.error("Dosya okunamadı", { description: "Beklenen format: .xlsx veya .csv, ilk satır başlık (personId, name, 1..31)." }); return; }
 
       const daysInMonth = new Date(year, month1, 0).getDate();
 
@@ -475,7 +476,7 @@ function SectionContent({
       for (const [d, i] of dayCols.sort((a, b) => a[0] - b[0])) {
         if (!seen.has(d)) { dayColsClean.push([d, i]); seen.add(d); }
       }
-      if (!dayColsClean.length) return alert("Gün sütunları (1..31) bulunamadı.");
+      if (!dayColsClean.length) { toast.error("Gün sütunları bulunamadı", { description: "Excel'de 1–31 arası sayısal başlıklı sütunlar olmalıdır." }); return; }
 
       const peopleByName = Object.fromEntries(
         (peopleAll || []).map((p) => [(p.fullName || p.name || "").trim().toLowerCase(), p])
@@ -544,19 +545,17 @@ function SectionContent({
       });
 
       if (conflictLog.length) {
-        alert(
-          `İçe aktarma tamamlandı. Güncellenen hücre: ${updates}\n\n` +
-          `⚠️ ${conflictLog.length} çakışma tespit edildi:\n` +
-          conflictLog.slice(0, 10).join("\n") +
-          (conflictLog.length > 10 ? `\n... ve ${conflictLog.length - 10} tane daha` : "")
-        );
+        toast.warning(`${updates} hücre güncellendi, ${conflictLog.length} çakışma var`, {
+          description: conflictLog.slice(0, 3).join(" · ") + (conflictLog.length > 3 ? ` · +${conflictLog.length - 3} daha` : ""),
+          duration: 6000,
+        });
       } else {
-        alert(`İçe aktarma tamamlandı. Güncellenen hücre: ${updates}`);
+        toast.success("İçe aktarma tamamlandı", { description: `${updates} hücre güncellendi.` });
       }
       try { window.dispatchEvent(new Event("leaves:changed")); } catch {}
     } catch (e) {
       console.error(e);
-      alert("Dosya okunurken hata oluştu.");
+      toast.error("Dosya okunamadı", { description: "Dosya bozuk veya desteklenmeyen formatta." });
     } finally {
       ev.target.value = "";
     }
@@ -582,7 +581,7 @@ function SectionContent({
       input.value = "";
       input.click();
     } else if (editorRef.current?.importTemplate) {
-      alert("Dosya seçici açılamadı.");
+      toast.error("Dosya seçici açılamadı", { description: "Sayfayı yenileyin ve tekrar deneyin." });
     }
   }, []);
 
@@ -594,7 +593,7 @@ function SectionContent({
         if (editorRef.current?.importTemplate) {
           await editorRef.current.importTemplate(file);
         } else {
-          alert("İçe aktarım desteklenmiyor.");
+          toast.error("İçe aktarım desteklenmiyor", { description: "Bu sekme için şablon içe aktarımı mevcut değil." });
         }
       } finally {
         ev.target.value = "";

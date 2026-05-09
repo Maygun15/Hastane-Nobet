@@ -696,6 +696,7 @@ export default function PersonScheduleCalendar({
   const [assignError, setAssignError] = useState("");
   const [overrideDialog, setOverrideDialog] = useState({ open: false, errors: [], pending: null });
   const [quickReplaceOpen, setQuickReplaceOpen] = useState(false);
+  const [quickReplaceSelection, setQuickReplaceSelection] = useState(null);
   const [settingsRevision, setSettingsRevision] = useState(0);
 
   // Tatil verisi: { "YYYY-MM-DD": { kind: "full"|"arife"|"half", name: string } }
@@ -1122,16 +1123,38 @@ export default function PersonScheduleCalendar({
             {assg.roleLabel ? <span className="ml-1 truncate">{assg.roleLabel}</span> : null}
           </span>
           {isEditable && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRemoveShift(assg);
-              }}
-              className="opacity-0 group-hover:opacity-100 text-blue-500 hover:text-red-600 transition-opacity"
-              title="Sil"
-            >
-              ✕
-            </button>
+            <span className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setQuickReplaceSelection({
+                    date: String(assg?.day || assg?.date || "").slice(0, 10),
+                    taskLabel: String(assg?.roleLabel || assg?.label || "").trim(),
+                    shiftCode: String(assg?.shiftCode || assg?.code || "").trim(),
+                    rowId: String(assg?.rowId || assg?.shiftId || "").trim(),
+                    shiftId: String(assg?.shiftId || assg?.rowId || assg?.shiftCode || "").trim(),
+                    personId: String(assg?.personId || selectedPerson?.id || "").trim(),
+                    personName: String(assg?.personName || selectedPerson?.name || "").trim(),
+                    autoSearch: true,
+                  });
+                  setQuickReplaceOpen(true);
+                }}
+                className="text-blue-500 hover:text-blue-700 transition-colors"
+                title="Alternatif personel bul"
+              >
+                ↺
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRemoveShift(assg);
+                }}
+                className="text-blue-500 hover:text-red-600 transition-colors"
+                title="Sil"
+              >
+                ✕
+              </button>
+            </span>
           )}
         </div>
       );
@@ -1328,7 +1351,10 @@ export default function PersonScheduleCalendar({
         </button>
         {canManage && (
           <button
-            onClick={() => setQuickReplaceOpen(true)}
+            onClick={() => {
+              setQuickReplaceSelection(null);
+              setQuickReplaceOpen(true);
+            }}
             className="px-3 py-2 rounded-lg text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
           >
             Hızlı Yerine Atama
@@ -1580,14 +1606,17 @@ export default function PersonScheduleCalendar({
 
       <QuickReplacePanel
         open={quickReplaceOpen}
-        onClose={() => setQuickReplaceOpen(false)}
+        onClose={() => {
+          setQuickReplaceOpen(false);
+          setQuickReplaceSelection(null);
+        }}
         sectionId={sectionId}
         serviceId={effectiveServiceId}
         scheduleRole={scheduleRole}
         year={year}
         month={month0 + 1}
-        people={options}
         onAssigned={refreshRemote}
+        initialSelection={quickReplaceSelection}
       />
     </div>
   );

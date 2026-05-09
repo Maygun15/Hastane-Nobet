@@ -246,14 +246,14 @@ export default function DutyRulesTab({ rules, setRules }) {
         <div className="flex items-center gap-2 text-sm">
           <button
             onClick={loadDefaults}
-            className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50"
+            className="px-3 py-2 rounded-xl border bg-white hover:bg-slate-50"
             title="Örnek kural setini ekler (mevcut isimlerle çakışmazsa)."
           >
             Varsayılanları Ekle
           </button>
           <button
             onClick={exportToExcel}
-            className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50"
+            className="px-3 py-2 rounded-xl border bg-white hover:bg-slate-50"
             title="Mevcut kuralları .xlsx olarak dışa aktar."
           >
             Excele Aktar
@@ -261,7 +261,7 @@ export default function DutyRulesTab({ rules, setRules }) {
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onImportFile} />
           <button
             onClick={onImportClick}
-            className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50"
+            className="px-3 py-2 rounded-xl border bg-white hover:bg-slate-50"
             title="Excel dosyasından kuralları içe aktar."
           >
             Excelden Yükle
@@ -284,10 +284,10 @@ export default function DutyRulesTab({ rules, setRules }) {
           <div className="font-semibold mb-2">Mevcut Kurallar</div>
           <div className="border rounded-2xl overflow-hidden">
             {!ordered.length && (
-              <div className="p-3 text-sm text-gray-500">Henüz kural yok.</div>
+              <div className="p-3 text-sm text-slate-500">Henüz kural yok.</div>
             )}
             {ordered.map((it, i) => (
-              <div key={it.id} className="p-3 flex items-center gap-3 border-b last:border-b-0 hover:bg-gray-50">
+              <div key={it.id} className="p-3 flex items-center gap-3 border-b last:border-b-0 hover:bg-slate-50">
                 <div className="w-6 text-right text-xs font-semibold">{i + 1}.</div>
                 <button onClick={() => edit(it)} className="flex-1 text-left" title="Düzenlemek için tıklayın">
                   {(() => {
@@ -297,7 +297,7 @@ export default function DutyRulesTab({ rules, setRules }) {
                   <div className="flex items-center gap-2">
                     <span>{displayMeta.title}</span>
                     {it.value !== null && it.value !== undefined && it.value !== "" && (
-                      <span className="text-xs text-gray-600">= {it.value}</span>
+                      <span className="text-xs text-slate-600">= {it.value}</span>
                     )}
                     {displayMeta.locked && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
@@ -373,7 +373,7 @@ export default function DutyRulesTab({ rules, setRules }) {
               )}
             </div>
 
-            <div className="text-xs text-gray-500 pt-2">
+            <div className="text-xs text-slate-500 pt-2">
               Not: Bu ekran şablon amaçlıdır. Planlayıcı entegrasyonunda anahtarları (örn. <code>maxPerDayPerPerson</code>) haritalayacağız.
             </div>
           </form>

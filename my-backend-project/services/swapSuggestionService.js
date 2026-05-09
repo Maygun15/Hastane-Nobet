@@ -1,11 +1,189 @@
 // services/swapSuggestionService.js — Find best swap partners for a given assignment
-const Assignment      = require('../models/Assignment');
-const Setting         = require('../models/Setting');
-const Person          = require('../models/Person');
+const Assignment = require('../models/Assignment');
+const Setting = require('../models/Setting');
+const Person = require('../models/Person');
+const MonthlySchedule = require('../models/MonthlySchedule');
 
 function parseYM(dateStr) {
   const m = String(dateStr || '').slice(0, 7).match(/^(\d{4})-(\d{2})$/);
   return m ? { year: Number(m[1]), month: Number(m[2]) } : null;
+}
+
+function normalizeText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function canonName(value) {
+  return normalizeText(value);
+}
+
+function looksObjectId(value) {
+  return /^[a-f0-9]{24}$/i.test(String(value || '').trim());
+}
+
+function pickFirstString(...values) {
+  for (const value of values) {
+    const str = String(value || '').trim();
+    if (str) return str;
+  }
+  return '';
+}
+
+function toStringArray(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => (typeof item === 'string' ? item.split(/[,;]/) : [item]))
+      .map((item) => String(item || '').trim())
+      .filter(Boolean);
+  }
+  return String(value)
+    .split(/[,;]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function matchesArea(workAreas = [], roleLabel = '') {
+  const target = normalizeText(roleLabel);
+  if (!target) return true;
+  const areas = toStringArray(workAreas).map(normalizeText).filter(Boolean);
+  if (!areas.length) return true;
+  return areas.some((area) => area === target || area.includes(target) || target.includes(area));
+}
+
+function matchesScheduleRole(candidate, scheduleRole = '') {
+  const target = String(scheduleRole || '').trim().toLowerCase();
+  if (!target) return true;
+  const roleText = normalizeText(
+    pickFirstString(
+      candidate?.meta?.role,
+      candidate?.meta?.roles,
+      candidate?.meta?.title,
+      candidate?.role,
+      candidate?.title
+    )
+  );
+  if (!roleText) return true;
+  if (target === 'nurse') return /(hemsire|hemşire|ebe|att|s\. memuru|s memuru)/.test(roleText);
+  if (target === 'doctor') return /(doktor|doctor|hekim|hekim|tabip|dr)/.test(roleText);
+  return roleText.includes(target);
+}
+
+function resolvePersonTitle(candidate = {}) {
+  return pickFirstString(
+    candidate?.meta?.title,
+    candidate?.meta?.unvan,
+    candidate?.meta?.role,
+    candidate?.title,
+    candidate?.role
+  );
+}
+
+function resolvePersonService(candidate = {}) {
+  const label = pickFirstString(
+    candidate?.meta?.serviceName,
+    candidate?.meta?.serviceLabel,
+    candidate?.meta?.service,
+    candidate?.meta?.department,
+    candidate?.service,
+    candidate?.department
+  );
+  if (label) return label;
+  const fallbackId = pickFirstString(candidate?.serviceId);
+  return looksObjectId(fallbackId) ? '' : fallbackId;
+}
+
+function findMatchingDef(defs = [], target = {}) {
+  const wantedShiftId = String(target?.shiftId || target?.rowId || '').trim();
+  const wantedShiftCode = String(target?.shiftCode || '').trim().toUpperCase();
+  return (Array.isArray(defs) ? defs : []).find((def) => {
+    const defId = String(def?.id || def?.rowId || '').trim();
+    const defCode = String(def?.shiftCode || def?.code || '').trim().toUpperCase();
+    if (wantedShiftId && defId && defId === wantedShiftId) return true;
+    if (wantedShiftCode && defCode && defCode === wantedShiftCode) return true;
+    return false;
+  }) || null;
+}
+
+async function findScheduleReadModel({ sectionId, serviceId, role, year, month, hospitalId }) {
+  const candidates = [
+    { sectionId, serviceId, role, year, month },
+    { sectionId, serviceId, role: '', year, month },
+    { sectionId, serviceId: '', role, year, month },
+    { sectionId, serviceId: '', role: '', year, month },
+  ];
+  for (const base of candidates) {
+    const query = { ...base };
+    if (hospitalId) query.hospitalId = hospitalId;
+    const doc = await MonthlySchedule.findOne(query).lean();
+    if (doc) return doc;
+  }
+  return null;
+}
+
+function findSlotFromReadModel(scheduleDoc, { date, shiftId, personId, currentPersonName }) {
+  const data = scheduleDoc?.data && typeof scheduleDoc.data === 'object' ? scheduleDoc.data : {};
+  const defs = Array.isArray(data?.defs) ? data.defs : Array.isArray(data?.rows) ? data.rows : [];
+  const assignments = Array.isArray(data?.assignments) ? data.assignments : [];
+  const targetName = canonName(currentPersonName);
+  const match = assignments.find((item) => {
+    const itemDate = String(item?.date || item?.day || '').slice(0, 10);
+    if (itemDate !== date) return false;
+    const itemShiftId = String(item?.shiftId || item?.rowId || '').trim();
+    const itemShiftCode = String(item?.shiftCode || item?.shift || item?.code || '').trim().toUpperCase();
+    const wantedShiftId = String(shiftId || '').trim();
+    if (wantedShiftId && itemShiftId !== wantedShiftId && itemShiftCode !== wantedShiftId.toUpperCase()) return false;
+    const itemPersonId = String(item?.personId || '').trim();
+    const itemPersonName = canonName(item?.personName || item?.name || '');
+    if (personId && itemPersonId) return itemPersonId === String(personId).trim();
+    if (targetName && itemPersonName) return itemPersonName === targetName;
+    return true;
+  }) || null;
+
+  const def = findMatchingDef(defs, {
+    shiftId: match?.shiftId || match?.rowId || shiftId,
+    rowId: match?.rowId || shiftId,
+    shiftCode: match?.shiftCode || shiftId,
+  });
+
+  const taskLabel = pickFirstString(
+    match?.roleLabel,
+    def?.label,
+    def?.roleLabel
+  );
+  const resolvedShiftCode = pickFirstString(
+    match?.shiftCode,
+    def?.shiftCode,
+    def?.code,
+    shiftId
+  );
+  const resolvedRowId = pickFirstString(
+    match?.rowId,
+    def?.rowId,
+    def?.id,
+    shiftId
+  );
+  const currentName = pickFirstString(match?.personName, currentPersonName);
+  const currentId = pickFirstString(match?.personId, personId);
+
+  return {
+    slot: {
+      date,
+      taskLabel,
+      shiftCode: resolvedShiftCode,
+      rowId: resolvedRowId,
+      serviceId: pickFirstString(scheduleDoc?.serviceId),
+    },
+    currentPerson: {
+      id: currentId,
+      name: currentName,
+    },
+  };
 }
 
 /**
@@ -31,39 +209,73 @@ function isShiftEligible(candidate, shiftId, roleLabel) {
   const code = String(shiftId || '').trim().toUpperCase();
 
   // Gate 1: eligibleShiftCodes — explicit shift whitelist
-  const eligibleCodes = candidate?.meta?.eligibleShiftCodes;
-  if (Array.isArray(eligibleCodes) && eligibleCodes.length > 0) {
+  const eligibleCodes = toStringArray(candidate?.meta?.eligibleShiftCodes);
+  if (eligibleCodes.length > 0) {
     if (!eligibleCodes.some((s) => String(s || '').trim().toUpperCase() === code)) return false;
   }
 
   // Gate 2: workAreas — area/role whitelist (match against roleLabel if provided)
-  if (roleLabel) {
-    const workAreas = candidate?.meta?.workAreas;
-    if (Array.isArray(workAreas) && workAreas.length > 0) {
-      const norm = (s) => String(s || '').trim().toLowerCase();
-      const labelNorm = norm(roleLabel);
-      if (!workAreas.some((a) => norm(a) === labelNorm)) return false;
-    }
+  const workAreas = []
+    .concat(toStringArray(candidate?.meta?.workAreas))
+    .concat(toStringArray(candidate?.meta?.areas))
+    .concat(toStringArray(candidate?.workAreas))
+    .concat(toStringArray(candidate?.areas));
+  if (!matchesArea(workAreas, roleLabel)) {
+    return false;
   }
 
   return true;
 }
 
-async function suggestSwaps({ personId, date, shiftId, roleLabel, serviceId, hospitalId, limit = 5 }) {
+async function suggestSwaps({
+  personId,
+  currentPersonName,
+  date,
+  shiftId,
+  roleLabel,
+  serviceId,
+  role,
+  sectionId,
+  hospitalId,
+  limit = 5,
+}) {
   const ym = parseYM(date);
   if (!ym) return { ok: false, message: 'Geçersiz tarih formatı' };
+
+  const scheduleDoc = sectionId
+    ? await findScheduleReadModel({
+        sectionId: String(sectionId || '').trim(),
+        serviceId: String(serviceId || '').trim(),
+        role: String(role || '').trim(),
+        year: ym.year,
+        month: ym.month,
+        hospitalId,
+      })
+    : null;
+  const slotMeta = findSlotFromReadModel(scheduleDoc, {
+    date,
+    shiftId,
+    personId,
+    currentPersonName,
+  });
+  const effectiveTaskLabel = pickFirstString(slotMeta?.slot?.taskLabel, roleLabel);
+  const effectiveShiftCode = pickFirstString(slotMeta?.slot?.shiftCode, shiftId);
 
   const personQuery = { active: { $ne: false } };
   if (serviceId) personQuery.serviceId = serviceId;
   if (hospitalId) personQuery.hospitalId = hospitalId;
   if (personId) personQuery._id = { $ne: personId };
 
-  const candidates = await Person.find(personQuery).select('_id name serviceId meta').lean();
+  const candidates = await Person.find(personQuery)
+    .select('_id name serviceId meta')
+    .lean();
 
   // SSOT: use Assignment collection for counting and conflict detection
   const assignQuery = { year: ym.year, month: ym.month };
   if (hospitalId) assignQuery.hospitalId = hospitalId;
-  const monthAssignments = await Assignment.find(assignQuery).select('personId date').lean();
+  const monthAssignments = await Assignment.find(assignQuery)
+    .select('personId date')
+    .lean();
 
   const assignCountByPerson = {};
   const assignedOnDateByPerson = new Set();
@@ -79,8 +291,15 @@ async function suggestSwaps({ personId, date, shiftId, roleLabel, serviceId, hos
   const ownCount = assignCountByPerson[String(personId)] || 0;
 
   // Leaves: fetch for service
-  const leaveDoc = await Setting.findOne({ key: 'leavesV2', serviceId: String(serviceId || '') }).lean();
-  const leaveValue = leaveDoc?.value || {};
+  const leaveDocs = await Setting.find({
+    key: 'leavesV2',
+    serviceId: { $in: Array.from(new Set([String(serviceId || ''), ''])) },
+    ...(hospitalId ? { hospitalId } : {}),
+  }).lean();
+  const leaveValue = leaveDocs.reduce((acc, doc) => {
+    const value = doc?.value && typeof doc.value === 'object' ? doc.value : {};
+    return { ...acc, ...value };
+  }, {});
   const dayNum = String(parseInt(date.slice(8, 10), 10));
   const monthKey = date.slice(0, 7);
 
@@ -90,29 +309,52 @@ async function suggestSwaps({ personId, date, shiftId, roleLabel, serviceId, hos
 
     if (assignedOnDateByPerson.has(cid)) continue;
     if (leaveValue[cid]?.[monthKey]?.[dayNum]) continue;
-    if (!isShiftEligible(c, shiftId, roleLabel)) continue;
+    if (!matchesScheduleRole(c, role)) continue;
+    if (!isShiftEligible(c, effectiveShiftCode, effectiveTaskLabel)) continue;
 
     const shiftCount = assignCountByPerson[cid] || 0;
     const delta = ownCount - shiftCount;
 
     suggestions.push({
-      personId:   cid,
-      personName: c.name || cid,
-      serviceId:  c.serviceId || '',
-      shiftCount,
-      delta,
+      id: cid,
+      name: c.name || cid,
+      title: resolvePersonTitle(c),
+      service: resolvePersonService(c),
+      monthlyShiftCount: shiftCount,
       eligible: true,
+      warnings: [],
+      delta,
     });
   }
 
-  suggestions.sort((a, b) => b.delta - a.delta || (a.personName > b.personName ? 1 : -1));
+  suggestions.sort((a, b) => b.delta - a.delta || (a.name > b.name ? 1 : -1));
 
   return {
     ok: true,
+    slot: {
+      date,
+      taskLabel: effectiveTaskLabel,
+      shiftCode: effectiveShiftCode,
+      rowId: slotMeta?.slot?.rowId || String(shiftId || '').trim(),
+      serviceId: slotMeta?.slot?.serviceId || String(serviceId || '').trim(),
+    },
+    currentPerson: {
+      id: slotMeta?.currentPerson?.id || String(personId || '').trim(),
+      name: slotMeta?.currentPerson?.name || String(currentPersonName || '').trim(),
+    },
+    candidates: suggestions.slice(0, limit).map(({ delta: _delta, ...item }) => item),
+    // Backward-compatible fields
     requesterShiftCount: ownCount,
     date,
-    shiftId,
-    suggestions: suggestions.slice(0, limit),
+    shiftId: effectiveShiftCode,
+    suggestions: suggestions.slice(0, limit).map((item) => ({
+      personId: item.id,
+      personName: item.name,
+      serviceId: item.service,
+      shiftCount: item.monthlyShiftCount,
+      eligible: item.eligible,
+      warnings: item.warnings,
+    })),
   };
 }
 

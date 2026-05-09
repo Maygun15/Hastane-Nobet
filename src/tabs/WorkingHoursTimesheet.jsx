@@ -262,7 +262,7 @@ export default function WorkingHoursTimesheet({
       <div className="overflow-auto rounded border">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-gray-50">
+            <tr className="bg-slate-50">
               <th className="px-2 py-2">sıra no</th>
               <th className="px-2 py-2">Ünvan</th>
               <th className="px-2 py-2">T.C. Kimlik Numarası</th>
@@ -278,7 +278,7 @@ export default function WorkingHoursTimesheet({
             {rows.length === 0 ? (
               <tr>
                 <td
-                  className="px-2 py-3 text-center text-gray-500"
+                  className="px-2 py-3 text-center text-slate-500"
                   colSpan={4 + days.length}
                 >
                   “Liste Oluştur” ile vardiya kodlarını doldurabilirsiniz.

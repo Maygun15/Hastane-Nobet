@@ -12,14 +12,14 @@ export default function Modal({ open, title, onClose, children, footer }) {
             <div className="text-lg font-semibold">{title}</div>
             <button
               onClick={onClose}
-              className="px-3 py-1.5 text-sm rounded-md border hover:bg-gray-50"
+              className="px-3 py-1.5 text-sm rounded-md border hover:bg-slate-50"
             >
               Kapat
             </button>
           </div>
           <div className="p-5 max-h-[70vh] overflow-auto">{children}</div>
           {footer ? (
-            <div className="px-5 py-4 border-t bg-gray-50 rounded-b-2xl flex items-center justify-end gap-2">
+            <div className="px-5 py-4 border-t bg-slate-50 rounded-b-2xl flex items-center justify-end gap-2">
               {footer}
             </div>
           ) : null}

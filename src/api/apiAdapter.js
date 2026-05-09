@@ -55,6 +55,72 @@ async function httpRequest(pathAndQuery, { method = "GET", body, token, headers 
   return data;
 }
 
+function buildScheduleMutationDetail({ sectionId, serviceId = "", role = "", date = "", year, month }) {
+  const resolvedYear = Number.isFinite(Number(year)) ? Number(year) : parseInt(String(date || "").slice(0, 4), 10);
+  const resolvedMonth = Number.isFinite(Number(month)) ? Number(month) : parseInt(String(date || "").slice(5, 7), 10);
+  return {
+    sectionId: String(sectionId || "").trim(),
+    serviceId: String(serviceId || "").trim(),
+    role: String(role || "").trim(),
+    year: Number.isFinite(resolvedYear) ? resolvedYear : null,
+    month: Number.isFinite(resolvedMonth) ? resolvedMonth : null,
+    ts: Date.now(),
+  };
+}
+
+function emitScheduleMutation(detail) {
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(new CustomEvent("schedule:saved", { detail }));
+    window.dispatchEvent(new Event("planner:changed"));
+    localStorage.setItem("scheduleLastSaved", JSON.stringify(detail));
+  } catch {}
+}
+
+function normalizeSwapSuggestionPayload(payload = {}) {
+  const slot = payload?.slot && typeof payload.slot === "object" ? payload.slot : {};
+  const currentPerson =
+    payload?.currentPerson && typeof payload.currentPerson === "object"
+      ? payload.currentPerson
+      : {};
+  const legacySuggestions = Array.isArray(payload?.suggestions) ? payload.suggestions : [];
+  const candidates = Array.isArray(payload?.candidates)
+    ? payload.candidates
+    : legacySuggestions.map((item) => ({
+        id: String(item?.personId || "").trim(),
+        name: String(item?.personName || "").trim(),
+        title: "",
+        service: "",
+        monthlyShiftCount: Number(item?.shiftCount || 0) || 0,
+        eligible: item?.eligible !== false,
+        warnings: Array.isArray(item?.warnings) ? item.warnings : [],
+      }));
+
+  return {
+    ok: payload?.ok !== false,
+    slot: {
+      date: String(slot?.date || payload?.date || "").slice(0, 10),
+      taskLabel: String(slot?.taskLabel || "").trim(),
+      shiftCode: String(slot?.shiftCode || payload?.shiftId || "").trim(),
+      rowId: String(slot?.rowId || "").trim(),
+      serviceId: String(slot?.serviceId || "").trim(),
+    },
+    currentPerson: {
+      id: String(currentPerson?.id || "").trim(),
+      name: String(currentPerson?.name || "").trim(),
+    },
+    candidates: candidates.map((item) => ({
+      id: String(item?.id || item?.personId || "").trim(),
+      name: String(item?.name || item?.personName || "").trim(),
+      title: String(item?.title || "").trim(),
+      service: String(item?.service || item?.serviceId || "").trim(),
+      monthlyShiftCount: Number(item?.monthlyShiftCount ?? item?.shiftCount ?? 0) || 0,
+      eligible: item?.eligible !== false,
+      warnings: Array.isArray(item?.warnings) ? item.warnings : [],
+    })),
+  };
+}
+
 /* ================= Personnel ================= */
 export async function fetchPersonnel({
   unitId,
@@ -446,13 +512,9 @@ export async function assignSchedule({
     ...(force ? { force: true, overrideReason: overrideReason || "" } : {}),
   };
   const result = await httpRequest("/api/schedules/assign", { method: "POST", body });
-  if (date && year == null) {
-    const y = parseInt(date.slice(0, 4), 10);
-    const m = parseInt(date.slice(5, 7), 10);
-    if (y && m) invalidateScheduleCache(y, m);
-  } else if (year && month) {
-    invalidateScheduleCache(year, month);
-  }
+  const detail = buildScheduleMutationDetail({ sectionId, serviceId, role, date });
+  if (detail.year && detail.month) invalidateScheduleCache(detail.year, detail.month);
+  emitScheduleMutation(detail);
   return result;
 }
 
@@ -481,11 +543,9 @@ export async function unassignSchedule({
     ...(personName ? { personName } : {}),
   };
   const result = await httpRequest("/api/schedules/assign", { method: "DELETE", body });
-  if (date) {
-    const y = parseInt(date.slice(0, 4), 10);
-    const m = parseInt(date.slice(5, 7), 10);
-    if (y && m) invalidateScheduleCache(y, m);
-  }
+  const detail = buildScheduleMutationDetail({ sectionId, serviceId, role, date });
+  if (detail.year && detail.month) invalidateScheduleCache(detail.year, detail.month);
+  emitScheduleMutation(detail);
   return result;
 }
 
@@ -589,17 +649,21 @@ export async function getPersonCalendar({ personId, sectionId, year, month, serv
   return payload?.assignments || [];
 }
 
-export async function getSwapSuggestions({ personId, date, shiftId, roleLabel, serviceId, limit } = {}) {
+export async function getSwapSuggestions({ personId, currentPersonName, date, shiftId, roleLabel, serviceId, role, sectionId, limit } = {}) {
   if (!personId || !date || !shiftId) throw new Error("personId, date, shiftId gerekli");
-  return httpRequest("/api/scheduler/swap-suggestions", {
+  const payload = await httpRequest("/api/scheduler/swap-suggestions", {
     method: "POST",
     body: {
       personId, date, shiftId,
+      ...(currentPersonName ? { currentPersonName } : {}),
       ...(roleLabel ? { roleLabel } : {}),
       ...(serviceId ? { serviceId } : {}),
+      ...(role ? { role } : {}),
+      ...(sectionId ? { sectionId } : {}),
       ...(limit ? { limit } : {}),
     },
   });
+  return normalizeSwapSuggestionPayload(payload);
 }
 
 // ===== REQUESTS =====

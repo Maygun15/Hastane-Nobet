@@ -794,7 +794,7 @@ export default function HospitalRosterApp() {
                       <DropdownItem onSelect={() => goPersonnel()}>
                         Personel sayfasını aç
                       </DropdownItem>
-                      <div className="px-3 py-2 text-xs text-gray-500">
+                      <div className="px-3 py-2 text-xs text-slate-500">
                         Alt sekmeleri <b>Personel</b> içinde <i>Ekle / Düzenle / Sil</i> ile yönetebilirsiniz.
                       </div>
                     </div>
@@ -817,7 +817,12 @@ export default function HospitalRosterApp() {
                     <summary
                       className={`${navBase} ${activeTab === "schedules" ? navActive : navIdle}`}
                       aria-haspopup="menu"
-                      aria-expanded={activeTab === "schedules" ? "true" : "false"}
+                      aria-expanded={schedulesDdRef.current?.hasAttribute("open") ? "true" : "false"}
+                      onClick={() => {
+                        setActiveTab("schedules");
+                        const open = schedulesDdRef.current?.hasAttribute("open");
+                        schedulesDdRef.current?.setAttribute("aria-expanded", String(!open));
+                      }}
                     >
                       <CalendarIcon className="h-4 w-4" />
                       Çizelgeler
@@ -829,7 +834,7 @@ export default function HospitalRosterApp() {
                       <DropdownItem onSelect={() => goSchedules("fazla-mesai-takip")}>Fazla Mesai Takip Formu</DropdownItem>
                       <DropdownItem onSelect={() => goSchedules("toplu-izin-listesi")}>Toplu İzin Listesi</DropdownItem>
                       <div className="border-t my-1" />
-                      <div className="px-3 py-2 text-xs text-gray-500">
+                      <div className="px-3 py-2 text-xs text-slate-500">
                         Sekmeleri <b>Çizelgeler</b> sayfasında <i>Ekle / Düzenle / Sil</i> ile yönetebilirsiniz.
                       </div>
                     </div>
@@ -852,7 +857,12 @@ export default function HospitalRosterApp() {
                     <summary
                       className={`${navBase} ${activeTab === "parameters" ? navActive : navIdle}`}
                       aria-haspopup="menu"
-                      aria-expanded={activeTab === "parameters" ? "true" : "false"}
+                      aria-expanded={paramsDdRef.current?.hasAttribute("open") ? "true" : "false"}
+                      onClick={() => {
+                        setActiveTab("parameters");
+                        const open = paramsDdRef.current?.hasAttribute("open");
+                        paramsDdRef.current?.setAttribute("aria-expanded", String(!open));
+                      }}
                     >
                       <Settings2 className="h-4 w-4" />
                       Parametreler
@@ -867,7 +877,7 @@ export default function HospitalRosterApp() {
                       <DropdownItem onSelect={() => goParams("nobet-kurallari")}>Nöbet Kuralları</DropdownItem>
                       <DropdownItem onSelect={() => goParams("istek")}>İstek</DropdownItem>
                       <div className="border-t my-1" />
-                      <div className="px-3 py-2 text-xs text-gray-500">Alt sayfalar <b>Parametreler</b> içinde sekmeli olarak açılır.</div>
+                      <div className="px-3 py-2 text-xs text-slate-500">Alt sayfalar <b>Parametreler</b> içinde sekmeli olarak açılır.</div>
                     </div>
                   </details>
                 </div>

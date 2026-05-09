@@ -54,6 +54,14 @@ const RosterTable = forwardRef(function RosterTable({
     setEditError("");
   }, [selectedCell]);
 
+  // ESC tuşu ile modal kapatma
+  useEffect(() => {
+    if (!selectedCell) return;
+    const handleKey = (e) => { if (e.key === "Escape") setSelectedCell(null); };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [selectedCell]);
+
   const handleContextMenu = (e, cellData) => {
     e.preventDefault();
     if (!cellData.personName) return;
@@ -361,7 +369,7 @@ const RosterTable = forwardRef(function RosterTable({
     return rows;
   }, [taskLines, days]); // days değişince (filtre) satır sayısı da yeniden hesaplansın
 
-  if (!year || !month) return <div className="p-4 text-gray-500 text-sm">Tarih bilgisi eksik.</div>;
+  if (!year || !month) return <div className="p-4 text-slate-500 text-sm">Tarih bilgisi eksik.</div>;
   if (!days.length) return null;
 
   return (
@@ -516,8 +524,22 @@ const RosterTable = forwardRef(function RosterTable({
           })}
           {!renderRows.length && (
             <tr>
-              <td colSpan={days.length + 1} className="p-8 text-center text-slate-400">
-                Gösterilecek görev satırı bulunamadı.
+              <td colSpan={days.length + 1} className="p-10 text-center">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                    <Calendar size={22} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-600">Henüz çizelge oluşturulmamış</p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {!people.length
+                        ? "Önce personel ekleyin, ardından planlama çalıştırın."
+                        : !taskLines.length
+                        ? "Parametreler'den görev satırları tanımlayın."
+                        : "Planlama Kontrol Merkezi'nden çizelge oluşturun."}
+                    </p>
+                  </div>
+                </div>
               </td>
             </tr>
           )}
@@ -530,9 +552,12 @@ const RosterTable = forwardRef(function RosterTable({
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
             <div className="bg-slate-50 px-4 py-3 border-b flex items-center justify-between">
               <h3 className="font-semibold text-slate-800">Vardiya Detayı</h3>
-              <button onClick={() => setSelectedCell(null)} className="text-slate-400 hover:text-slate-600">
-                <X size={18} />
-              </button>
+              <div className="flex items-center gap-2">
+                <kbd className="hidden sm:inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-400 font-mono">ESC</kbd>
+                <button onClick={() => setSelectedCell(null)} className="text-slate-400 hover:text-slate-600 transition-colors" aria-label="Kapat" title="Kapat (ESC)">
+                  <X size={18} />
+                </button>
+              </div>
             </div>
             <div className="p-4 space-y-3">
               <div className="flex items-center justify-between">

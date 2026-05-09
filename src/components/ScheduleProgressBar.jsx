@@ -63,12 +63,12 @@ const ScheduleProgressBar = ({ taskId, onComplete, onError }) => {
     };
 
     return (
-        <div className="w-full max-w-lg mx-auto mt-4 p-4 border border-gray-200 rounded-lg shadow-sm bg-white">
+        <div className="w-full max-w-lg mx-auto mt-4 p-4 border border-slate-200 rounded-lg shadow-sm bg-white">
             <div className="flex justify-between mb-2">
-                <span className="text-sm font-medium text-gray-700">{message}</span>
-                <span className="text-sm font-medium text-gray-700">{progress}%</span>
+                <span className="text-sm font-medium text-slate-700">{message}</span>
+                <span className="text-sm font-medium text-slate-700">{progress}%</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-3">
+            <div className="w-full bg-slate-200 rounded-full h-3">
                 <div
                     className={`h-3 rounded-full transition-all duration-500 ease-out ${getBarColor()}`}
                     style={{ width: `${progress}%` }}

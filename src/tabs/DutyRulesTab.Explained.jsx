@@ -536,11 +536,11 @@ function InlineNumber({ value, onChange, placeholder = "değer" }) {
     return (
       <button
         type="button"
-        className="text-[11px] px-2 py-0.5 rounded border bg-white hover:bg-gray-50"
+        className="text-[11px] px-2 py-0.5 rounded border bg-white hover:bg-slate-50"
         onClick={() => setEditing(true)}
         title="Değeri düzenle"
       >
-        {value ?? <span className="text-gray-400">{placeholder}</span>}
+        {value ?? <span className="text-slate-400">{placeholder}</span>}
       </button>
     );
   }
@@ -760,7 +760,7 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
       <div className="bg-white rounded-2xl shadow-sm p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h2 className="text-xl md:text-2xl font-semibold tracking-tight">Nöbet Kuralları</h2>
-          <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 border border-gray-200">
+          <span className="px-2 py-0.5 rounded-full text-xs bg-slate-100 border border-slate-200">
             {ordered.length} kural
           </span>
         </div>
@@ -777,31 +777,31 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
               resetForm();
               setShowEditor(true);
             }}
-            className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50"
+            className="px-3 py-2 rounded-xl border bg-white hover:bg-slate-50"
             title="Yeni kural ekle"
           >
             Yeni
           </button>
           <button
             onClick={() => setShowQuick(true)}
-            className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50"
+            className="px-3 py-2 rounded-xl border bg-white hover:bg-slate-50"
           >
             Hızlı Ekle
           </button>
           <button
             onClick={() => setShowTextImport(true)}
-            className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50"
+            className="px-3 py-2 rounded-xl border bg-white hover:bg-slate-50"
           >
             Metinden Yükle
           </button>
-          <button onClick={loadDefaults} className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50">
+          <button onClick={loadDefaults} className="px-3 py-2 rounded-xl border bg-white hover:bg-slate-50">
             Varsayılanları Ekle
           </button>
-          <button onClick={exportToExcel} className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50">
+          <button onClick={exportToExcel} className="px-3 py-2 rounded-xl border bg-white hover:bg-slate-50">
             Excele Aktar
           </button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onImportFile} />
-          <button onClick={onImportClick} className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50">
+          <button onClick={onImportClick} className="px-3 py-2 rounded-xl border bg-white hover:bg-slate-50">
             Excelden Yükle
           </button>
           <button
@@ -819,7 +819,7 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
         <button
           onClick={() => setCat("all")}
           className={`px-3 py-1.5 rounded-xl border ${
-            cat === "all" ? "bg-black text-white" : "bg-white hover:bg-gray-50"
+            cat === "all" ? "bg-black text-white" : "bg-white hover:bg-slate-50"
           }`}
         >
           Tümü
@@ -829,7 +829,7 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
             key={c.id}
             onClick={() => setCat(c.id)}
             className={`px-3 py-1.5 rounded-xl border ${
-              cat === c.id ? "bg-black text-white" : "bg-white hover:bg-gray-50"
+              cat === c.id ? "bg-black text-white" : "bg-white hover:bg-slate-50"
             }`}
           >
             {c.label}
@@ -871,7 +871,7 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
 
       {/* liste */}
       <div className="border rounded-2xl overflow-hidden">
-        {!filtered.length && <div className="p-4 text-gray-500">Seçili kategoride kural yok.</div>}
+        {!filtered.length && <div className="p-4 text-slate-500">Seçili kategoride kural yok.</div>}
         {filtered.map((it, i) => {
           const meta = RULE_LIBRARY[it.id] || {};
           const inferredCat = meta.cat || it.cat || null;
@@ -902,17 +902,17 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
                         Sistem Kuralı
                       </span>
                     )}
-                    <span className="text-[10px] px-1.5 py-0.5 rounded border bg-gray-50 text-gray-500 border-gray-200">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded border bg-slate-50 text-slate-500 border-slate-200">
                       {it.id}
                     </span>
                     {badgeFor(it)}
                     {!RULE_LIBRARY[it.id] && it.priority && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded border bg-gray-50 text-gray-600 border-gray-200">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded border bg-slate-50 text-slate-600 border-slate-200">
                         {PRIORITY_LABEL[it.priority] || it.priority}
                       </span>
                     )}
                     {(displayMeta.category || inferredCat) && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded border bg-gray-50 text-gray-700 border-gray-200">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded border bg-slate-50 text-slate-700 border-slate-200">
                         {displayMeta.category || CATS.find((c) => c.id === inferredCat)?.label}
                       </span>
                     )}
@@ -939,14 +939,14 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
                     />
                   </div>
 
-                  <div className="text-gray-700 mt-1">
+                  <div className="text-slate-700 mt-1">
                     {displayMeta.description || "Kural açıklaması"}
                   </div>
 
                   <div className="flex items-center gap-2 mt-2">
                     <button
                       onClick={() => setExpanded((e) => ({ ...e, [it.id]: !isOpen }))}
-                      className="px-2 py-1 text-xs rounded-lg border bg-white hover:bg-gray-50"
+                      className="px-2 py-1 text-xs rounded-lg border bg-white hover:bg-slate-50"
                     >
                       {isOpen ? "Kapat" : "Neden?"}
                     </button>
@@ -955,7 +955,7 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
                         edit(it);
                         setShowEditor(true);
                       }}
-                      className="px-2 py-1 text-xs rounded-lg border bg-white hover:bg-gray-50"
+                      className="px-2 py-1 text-xs rounded-lg border bg-white hover:bg-slate-50"
                     >
                       Düzenle
                     </button>
@@ -965,30 +965,30 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
                     >
                       Sil
                     </button>
-                    <button onClick={() => move(it.id, "up")} className="px-2 py-1 text-xs rounded-lg border bg-white hover:bg-gray-50">
+                    <button onClick={() => move(it.id, "up")} className="px-2 py-1 text-xs rounded-lg border bg-white hover:bg-slate-50">
                       ↑
                     </button>
-                    <button onClick={() => move(it.id, "down")} className="px-2 py-1 text-xs rounded-lg border bg-white hover:bg-gray-50">
+                    <button onClick={() => move(it.id, "down")} className="px-2 py-1 text-xs rounded-lg border bg-white hover:bg-slate-50">
                       ↓
                     </button>
                   </div>
 
                   {isOpen && (
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
-                      <div className="bg-gray-50 border rounded-xl p-3">
+                      <div className="bg-slate-50 border rounded-xl p-3">
                         <div className="text-xs font-semibold mb-1">Neden var?</div>
-                        <div className="text-sm text-gray-700">
+                        <div className="text-sm text-slate-700">
                           {meta.why || "Kaynak dokümandaki güvenlik, mevzuat ve adalet gereksinimleri."}
                         </div>
                       </div>
-                      <div className="bg-gray-50 border rounded-xl p-3">
+                      <div className="bg-slate-50 border rounded-xl p-3">
                         <div className="text-xs font-semibold mb-1">Örnek</div>
-                        <div className="text-sm text-gray-700">
+                        <div className="text-sm text-slate-700">
                           {meta.example || "Uygulama örneği kurum pratiklerine göre şekillenir."}
                         </div>
                       </div>
                       {meta.suggestedParams && (
-                        <div className="md:col-span-2 bg-gray-50 border rounded-xl p-3">
+                        <div className="md:col-span-2 bg-slate-50 border rounded-xl p-3">
                           <div className="text-xs font-semibold mb-1">Önerilen parametreler</div>
                           <pre className="text-xs whitespace-pre-wrap break-words">
                             {JSON.stringify(meta.suggestedParams, null, 2)}
@@ -1071,11 +1071,11 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
                 return (
                   <div className="mt-4 space-y-2 text-sm">
                     <div className="font-semibold">Açıklama</div>
-                    <div className="text-gray-700">{meta.desc || "—"}</div>
+                    <div className="text-slate-700">{meta.desc || "—"}</div>
                     {meta.suggestedParams && (
                       <>
                         <div className="font-semibold mt-2">Önerilen parametreler</div>
-                        <pre className="text-xs bg-gray-50 border rounded p-2">
+                        <pre className="text-xs bg-slate-50 border rounded p-2">
                           {JSON.stringify(meta.suggestedParams, null, 2)}
                         </pre>
                       </>
@@ -1116,7 +1116,7 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
                 return (
                   <div key={id} className="border rounded-xl p-3">
                     <div className="font-medium">{meta?.desc || id}</div>
-                    <div className="text-xs text-gray-600 mt-1">
+                    <div className="text-xs text-slate-600 mt-1">
                       {CATS.find((c) => c.id === meta?.cat)?.label}
                     </div>
                     <div className="mt-2 flex gap-2">
@@ -1189,7 +1189,7 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
               {/* canlı önizleme */}
               <div className="mt-1 border rounded-xl p-3 max-h-56 overflow-auto text-sm">
                 {preview.length === 0 ? (
-                  <div className="text-gray-500">
+                  <div className="text-slate-500">
                     Önizleme için RULE blokları veya numaralı maddeler içeren metin yapıştırın.
                   </div>
                 ) : (
@@ -1201,7 +1201,7 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
                         className="flex items-center justify-between py-1 border-b last:border-b-0"
                       >
                         <div className="truncate space-x-1">
-                          <span className="text-gray-500 mr-2">{i + 1}.</span>
+                          <span className="text-slate-500 mr-2">{i + 1}.</span>
                           <span className="font-medium">{displayMeta.title}</span>
                           {displayMeta.locked && (
                             <span className="text-[10px] px-1 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
@@ -1209,7 +1209,7 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
                             </span>
                           )}
                           {r.priority && (
-                            <span className="text-[10px] px-1 py-0.5 rounded border bg-gray-50 text-gray-600 border-gray-200">
+                            <span className="text-[10px] px-1 py-0.5 rounded border bg-slate-50 text-slate-600 border-slate-200">
                               {PRIORITY_LABEL[r.priority] || r.priority}
                             </span>
                           )}
@@ -1219,12 +1219,12 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
                             </span>
                           )}
                           {(displayMeta.category || r.cat) && (
-                            <span className="text-[10px] px-1 py-0.5 rounded border bg-gray-50 text-gray-600 border-gray-200">
+                            <span className="text-[10px] px-1 py-0.5 rounded border bg-slate-50 text-slate-600 border-slate-200">
                               {displayMeta.category || CATS.find((c) => c.id === r.cat)?.label || r.cat}
                             </span>
                           )}
                           {r.value != null && (
-                            <span className="text-xs text-gray-600">({r.value})</span>
+                            <span className="text-xs text-slate-600">({r.value})</span>
                           )}
                         </div>
                         {/* çakışma rozeti */}
@@ -1241,7 +1241,7 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
 
               <div className="flex items-center gap-2">
                 <button
-                  className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50"
+                  className="px-3 py-2 rounded-xl border bg-white hover:bg-slate-50"
                   onClick={() => {
                     const sample = `
 RULE REST_AFTER_N:
@@ -1308,7 +1308,7 @@ Resmi tatil nöbetlerinin eşit dağılımı
                 >
                   Ayrıştır ve Ekle
                 </button>
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-slate-500">
                   İpucu: Sayı içeren cümlelerde (80, 24, 6, 11 gibi) değer alanı otomatik dolar.
                 </div>
               </div>

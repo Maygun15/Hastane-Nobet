@@ -1132,7 +1132,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
       {/* Tablo */}
       <div className="rounded-xl border bg-white overflow-auto">
         <table className="min-w-full text-[13px]">
-          <thead className="bg-gray-50">
+          <thead className="bg-slate-50">
             <tr>
               {(HEADER_STATIC_LEFT||[]).map((h)=>(
                 <th key={h.key} style={{ minWidth: h.width*8, border:"1px solid #e5e7eb", padding:4 }}>{h.title}</th>
@@ -1199,7 +1199,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
 
           {/* Alt toplam (tfoot) */}
           <tfoot>
-            <tr className="bg-gray-100 font-semibold">
+            <tr className="bg-slate-100 font-semibold">
               <td style={{ border:"1px solid #e5e7eb", padding:4 }} colSpan={4}>TOPLAM</td>
               {(days||[]).map((d)=>(
                 <td key={d.ymd} style={{ border:"1px solid #e5e7eb", padding:4, textAlign:"right" }}>{fmt(colTotals.perDay[d.ymd])}</td>
@@ -1219,7 +1219,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
       <div className="flex items-center gap-2">
         <button className="h-9 rounded-lg border bg-white px-3" onClick={addRow}>+ Satır Ekle</button>
         <button className="h-9 rounded-lg border bg-rose-50 text-rose-800 px-3" onClick={reset}>Sıfırla</button>
-        <div className="text-xs text-gray-500">Hafta sonu hücreleri görsel olarak işaretlidir.</div>
+        <div className="text-xs text-slate-500">Hafta sonu hücreleri görsel olarak işaretlidir.</div>
       </div>
     </div>
   );

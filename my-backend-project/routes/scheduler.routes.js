@@ -180,7 +180,7 @@ Neden bu kişi bu vardiyaya atandı? Kısa ve anlaşılır Türkçe bir açıkla
    ───────────────────────────────────────────────────────────────── */
 router.post('/swap-suggestions', requireAuth, async (req, res) => {
   try {
-    const { personId, date, shiftId, roleLabel, serviceId, limit } = req.body || {};
+    const { personId, currentPersonName, date, shiftId, roleLabel, serviceId, role, sectionId, limit } = req.body || {};
     if (!personId || !date || !shiftId) {
       return res.status(400).json({ ok: false, message: 'personId, date, shiftId zorunlu' });
     }
@@ -190,10 +190,13 @@ router.post('/swap-suggestions', requireAuth, async (req, res) => {
 
     const result = await suggestSwaps({
       personId,
+      currentPersonName: currentPersonName || null,
       date,
       shiftId,
       roleLabel: roleLabel || null,
       serviceId: serviceId || null,
+      role: role || null,
+      sectionId: sectionId || null,
       hospitalId: req.hospitalId || null,
       limit: limit ? Math.min(Number(limit), 20) : 5,
     });

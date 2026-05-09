@@ -297,7 +297,7 @@ export default function MonthlyLeavesMatrixGeneric({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={1 + days.length} className="px-3 py-6 text-center text-gray-500">
+                <td colSpan={1 + days.length} className="px-3 py-6 text-center text-slate-500">
                   Kişi bulunamadı. (Personel listesi veya filtreyi kontrol edin.)
                 </td>
               </tr>

@@ -312,9 +312,9 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
                     </li>
                   );
                 })}
-                {displayAreas.length === 0 && <li className="text-sm text-gray-500">Henüz alan yok.</li>}
+                {displayAreas.length === 0 && <li className="text-sm text-slate-500">Henüz alan yok.</li>}
                 {displayAreas.length > 0 && filteredDisplayAreas.length === 0 && (
-                  <li className="text-sm text-gray-500">Arama ile eşleşen alan bulunamadı.</li>
+                  <li className="text-sm text-slate-500">Arama ile eşleşen alan bulunamadı.</li>
                 )}
               </ol>
             </div>
@@ -333,7 +333,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
                 Ekle
               </button>
             </div>
-            <div className="text-xs text-gray-500 mt-2">
+            <div className="text-xs text-slate-500 mt-2">
               Not: Excel içe/dışa aktarma için başlık <b>ALAN</b> kullanılır. İlk sütun değerleri alan adı olarak okunur.
             </div>
           </div>
@@ -428,7 +428,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
                   </div>
                 )
               ) : (
-                <div className="text-sm text-gray-500">Henüz seçili alan yok.</div>
+                <div className="text-sm text-slate-500">Henüz seçili alan yok.</div>
               )}
             </div>
           </div>

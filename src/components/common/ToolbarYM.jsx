@@ -16,16 +16,16 @@ export default function ToolbarYM({
   return (
     <div className={`${sticky ? "sticky top-0 z-30" : ""} flex items-center justify-between gap-2 p-2 rounded-2xl border bg-white`}>
       <div className="flex items-center gap-2 flex-wrap">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-50 border">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border">
           <CalendarIcon size={16} />
           <span className="font-semibold">{title || "Takvim"}</span>
         </div>
 
-        <button onClick={gotoPrev} className="p-2 rounded-xl hover:bg-gray-100" title="Önceki Ay">
+        <button onClick={gotoPrev} className="p-2 rounded-xl hover:bg-slate-100" title="Önceki Ay">
           <ChevronLeft size={18} />
         </button>
 
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-50 border">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border">
           <input
             type="number"
             className="w-20 outline-none bg-transparent"
@@ -44,11 +44,11 @@ export default function ToolbarYM({
           </select>
         </div>
 
-        <button onClick={gotoNext} className="p-2 rounded-xl hover:bg-gray-100" title="Sonraki Ay">
+        <button onClick={gotoNext} className="p-2 rounded-xl hover:bg-slate-100" title="Sonraki Ay">
           <ChevronRight size={18} />
         </button>
 
-        <button onClick={gotoToday} className="px-3 py-1.5 rounded-xl border hover:bg-gray-50">
+        <button onClick={gotoToday} className="px-3 py-1.5 rounded-xl border hover:bg-slate-50">
           Bugün
         </button>
 

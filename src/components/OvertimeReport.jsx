@@ -78,11 +78,11 @@ function remapOvertimeRowsWithPeople(rows = [], people = []) {
 }
 
 const INPUT =
-  "w-full outline-none text-center px-1.5 py-1 rounded-md border border-gray-300 bg-white " +
+  "w-full outline-none text-center px-1.5 py-1 rounded-md border border-slate-300 bg-white " +
   "text-[14px] md:text-sm font-semibold font-mono tabular-nums leading-tight " +
   "focus:border-blue-500 focus:ring-2 focus:ring-blue-200 [appearance:textfield] [-moz-appearance:textfield]";
 const TXT =
-  "w-full outline-none px-2 py-1.5 rounded-md border border-gray-300 bg-white " +
+  "w-full outline-none px-2 py-1.5 rounded-md border border-slate-300 bg-white " +
   "text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200";
 
 /* ================ LS & Model ================ */
@@ -433,8 +433,8 @@ export default function OvertimeTab() {
       {/* toolbar */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={gotoPrev} className="p-2 rounded-xl hover:bg-gray-100"><ChevronLeft size={18} /></button>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-50 border">
+          <button onClick={gotoPrev} className="p-2 rounded-xl hover:bg-slate-100"><ChevronLeft size={18} /></button>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border">
             <CalendarIcon size={16} />
             <input
               type="number"
@@ -450,7 +450,7 @@ export default function OvertimeTab() {
               onChange={(e) => setMonth(clamp(parseInt(e.target.value || "0", 10) || month, 1, 12))}
             />
           </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-50 border">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border">
             <Settings size={16} className="opacity-70" />
             <label className="text-sm">Birim:</label>
             <input className="w-48 outline-none bg-transparent" value={cfg.department} onChange={(e) => setCfg((c) => ({ ...c, department: e.target.value }))} />
@@ -514,7 +514,7 @@ export default function OvertimeTab() {
             }
           }} className="hidden" />
           <button onClick={exportExcel} className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"><FileSpreadsheet size={16} /> .xlsx Dışa Aktar</button>
-          <button onClick={gotoNext} className="p-2 rounded-xl hover:bg-gray-100"><ChevronRight size={18} /></button>
+          <button onClick={gotoNext} className="p-2 rounded-xl hover:bg-slate-100"><ChevronRight size={18} /></button>
         </div>
       </div>
 
@@ -532,12 +532,12 @@ export default function OvertimeTab() {
       <div className="rounded-2xl border overflow-auto">
         <table className="min-w-full text-xs md:text-sm">
           <thead>
-            <tr className="bg-gray-100 text-gray-700 text-sm sticky top-0 z-10">
+            <tr className="bg-slate-100 text-slate-700 text-sm sticky top-0 z-10">
               <th className="p-2 text-left sticky left-0 z-20 bg-white">Unvan</th>
               <th className="p-2 text-left sticky left-[160px] z-20 bg-white">Adı Soyadı</th>
               <th className="p-2 text-left">Servis</th>
               {Array.from({ length: dcount }, (_, i) => (
-                <th key={i} className="p-2 text-center w-12 font-mono tabular-nums border-l border-gray-200">{i + 1}</th>
+                <th key={i} className="p-2 text-center w-12 font-mono tabular-nums border-l border-slate-200">{i + 1}</th>
               ))}
               <th className="p-2 text-right">Çalışma</th>
               <th className="p-2 text-right">İzin (ÇS)</th>
@@ -548,12 +548,12 @@ export default function OvertimeTab() {
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <tr><td colSpan={dcount + 9} className="p-6 text-center text-gray-500">Kayıt yok. Personel seçin veya satır ekleyin.</td></tr>
+              <tr><td colSpan={dcount + 9} className="p-6 text-center text-slate-500">Kayıt yok. Personel seçin veya satır ekleyin.</td></tr>
             ) : (
               rows.map((r) => {
                 const rec = computed.perRow.find((x) => x.id === r.id) || { work: 0, credited: 0, required: 0, overtime: 0 };
                 return (
-                  <tr key={r.id} className="odd:bg-white even:bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <tr key={r.id} className="odd:bg-white even:bg-slate-50 hover:bg-slate-100 transition-colors">
                     <td className="p-1 min-w-[160px] sticky left-0 z-10 bg-white shadow-[inset_-1px_0_0_0_rgba(0,0,0,0.06)]">
                       <input className={TXT} value={r.title} onChange={(e) => updateField(r.id, "title", e.target.value)} placeholder="Unvan" />
                     </td>
@@ -622,7 +622,7 @@ function PersonSelect({ value, people, onChange, displayValue }) {
   return (
     <div className="relative">
       <input
-        className="w-full outline-none px-2 py-1.5 rounded-md border border-gray-300 bg-white text-sm"
+        className="w-full outline-none px-2 py-1.5 rounded-md border border-slate-300 bg-white text-sm"
         value={displayValue || ""}
         onFocus={() => setOpen(true)}
         onChange={(e) => setQ(e.target.value)}
@@ -631,7 +631,7 @@ function PersonSelect({ value, people, onChange, displayValue }) {
       {open && (
         <div className="absolute z-20 mt-1 w-full max-h-56 overflow-auto bg-white border rounded-md shadow">
           {list.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-gray-500">Sonuç yok</div>
+            <div className="px-3 py-2 text-sm text-slate-500">Sonuç yok</div>
           ) : (
             list.map((p) => (
               <div
