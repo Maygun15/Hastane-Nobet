@@ -108,6 +108,7 @@ export default function QuickReplacePanel({
   const [recommendationText, setRecommendationText] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const [pendingAutoSearch, setPendingAutoSearch] = useState(false);
 
   const [assigning, setAssigning] = useState("");
   const [assignError, setAssignError] = useState("");
@@ -128,6 +129,7 @@ export default function QuickReplacePanel({
     setSearchError("");
     setAssignError("");
     setAssignedIds(new Set());
+    setPendingAutoSearch(false);
   }, [open]);
 
   useEffect(() => {
@@ -219,10 +221,22 @@ export default function QuickReplacePanel({
   }, [preferredAssignments, preferredPerson, selectedDate, selectedSlot, selectedTaskLabel]);
 
   const departingPeople = useMemo(() => {
+    if (initialSelection?.autoSearch) {
+      const person = initialSelection?.personName
+        ? { id: String(initialSelection.personId || ""), name: String(initialSelection.personName) }
+        : preferredPerson?.name
+        ? { id: String(preferredPerson.id || ""), name: String(preferredPerson.name) }
+        : null;
+      if (person) return [person];
+    }
     const slotPeople = Array.isArray(selectedSlot?.people) ? selectedSlot.people : [];
     if (slotPeople.length > 0) return slotPeople;
-    return fallbackPreferredPeople;
-  }, [selectedSlot, fallbackPreferredPeople]);
+    if (fallbackPreferredPeople.length > 0) return fallbackPreferredPeople;
+    if (selectedSlot && preferredPerson?.name) {
+      return [{ id: String(preferredPerson.id || ""), name: String(preferredPerson.name) }];
+    }
+    return [];
+  }, [selectedSlot, fallbackPreferredPeople, initialSelection, preferredPerson]);
   const departingPerson = useMemo(
     () => departingPeople.find((person) => personOptionKey(person) === departingPersonId) || null,
     [departingPeople, departingPersonId]
@@ -269,8 +283,27 @@ export default function QuickReplacePanel({
       if (wantedPersonName && person.name === wantedPersonName) return true;
       return false;
     });
-    if (match) setDepartingPersonId(personOptionKey(match));
+    if (match) {
+      setDepartingPersonId(personOptionKey(match));
+    } else if (departingPeople.length === 1) {
+      setDepartingPersonId(personOptionKey(departingPeople[0]));
+    }
   }, [open, initialSelection, departingPeople, departingPersonId]);
+
+  useEffect(() => {
+    if (!open || initialSelection || !departingPeople.length || departingPersonId) return;
+    const preferredId = String(preferredPerson?.id || "").trim();
+    const preferredName = String(preferredPerson?.name || "").trim();
+    const exact = departingPeople.find((person) => {
+      if (preferredId && person.id && person.id === preferredId) return true;
+      if (preferredName && person.name === preferredName) return true;
+      return false;
+    });
+    const picked = exact || (departingPeople.length === 1 ? departingPeople[0] : null);
+    if (!picked) return;
+    setDepartingPersonId(personOptionKey(picked));
+    setPendingAutoSearch(true);
+  }, [open, initialSelection, departingPeople, departingPersonId, preferredPerson]);
 
   const handleSearch = async () => {
     if (!canSearch || !selectedSlot || !departingPerson) return;
@@ -317,6 +350,13 @@ export default function QuickReplacePanel({
     if (!canSearch || searchLoading || candidates.length > 0 || searchError) return;
     handleSearch();
   }, [open, initialSelection, canSearch, searchLoading, candidates.length, searchError]);
+
+  useEffect(() => {
+    if (!open || !pendingAutoSearch) return;
+    if (!canSearch || searchLoading || candidates.length > 0 || searchError) return;
+    setPendingAutoSearch(false);
+    handleSearch();
+  }, [open, pendingAutoSearch, canSearch, searchLoading, candidates.length, searchError]);
 
   const groupedCandidates = useMemo(() => {
     const recommendedIds = new Set(
