@@ -181,8 +181,8 @@ Neden bu kişi bu vardiyaya atandı? Kısa ve anlaşılır Türkçe bir açıkla
 router.post('/swap-suggestions', requireAuth, async (req, res) => {
   try {
     const { personId, currentPersonName, date, shiftId, roleLabel, serviceId, role, sectionId, limit } = req.body || {};
-    if (!personId || !date || !shiftId) {
-      return res.status(400).json({ ok: false, message: 'personId, date, shiftId zorunlu' });
+    if ((!personId && !currentPersonName) || !date || !shiftId) {
+      return res.status(400).json({ ok: false, message: 'personId/currentPersonName, date, shiftId zorunlu' });
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return res.status(400).json({ ok: false, message: 'date YYYY-MM-DD formatında olmalı' });
@@ -198,7 +198,7 @@ router.post('/swap-suggestions', requireAuth, async (req, res) => {
       role: role || null,
       sectionId: sectionId || null,
       hospitalId: req.hospitalId || null,
-      limit: limit ? Math.min(Number(limit), 20) : 5,
+      limit: limit ? Math.min(Number(limit), 200) : 50,
     });
 
     return res.json(result);

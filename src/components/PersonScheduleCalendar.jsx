@@ -1617,6 +1617,8 @@ export default function PersonScheduleCalendar({
         month={month0 + 1}
         onAssigned={refreshRemote}
         initialSelection={quickReplaceSelection}
+        preferredPerson={selectedPerson ? { id: selectedPerson.id, name: selectedPerson.name } : null}
+        preferredAssignments={displaySummaryAssignments}
       />
     </div>
   );

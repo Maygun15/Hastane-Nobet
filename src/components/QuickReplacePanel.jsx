@@ -389,7 +389,7 @@ export default function QuickReplacePanel({
 
   if (!open) return null;
 
-  const isInitialLoading = !!initialSelection?.autoSearch && (truthLoading || !canSearch) && !searchError && candidates.length === 0;
+  const isInitialLoading = !!initialSelection?.autoSearch && truthLoading && !searchError && candidates.length === 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
