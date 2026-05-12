@@ -53,7 +53,7 @@ const RESET_ADMIN_PW  = ['1','true','yes'].includes(String(process.env.RESET_ADM
 const DEV_LOGIN_IDENTIFIER = String(process.env.DEV_LOGIN_IDENTIFIER || ADMIN_EMAIL || '').toLowerCase().trim();
 const BODY_LIMIT      = String(process.env.BODY_LIMIT || '256kb');
 const API_RATE_WINDOW_MS = Number(process.env.API_RATE_WINDOW_MS || 15 * 60 * 1000);
-const API_RATE_MAX = Number(process.env.API_RATE_MAX || 300);
+const API_RATE_MAX = Number(process.env.API_RATE_MAX || 1000);
 const ENABLED_VALUES = new Set(['1', 'true', 'yes', 'on']);
 const NOTIFICATIONS_ENABLED = ENABLED_VALUES.has(String(process.env.NOTIFICATIONS_ENABLED || '').toLowerCase());
 
@@ -117,10 +117,10 @@ app.use(auditLogger);
 const corsOptions = {
   origin(origin, cb) {
     if (!origin) return cb(null, true); // Postman/cURL
+    if (!IS_PROD && /^https?:\/\/localhost(:\d+)?$/.test(normalizeOrigin(origin))) return cb(null, true);
     const ok = ALLOWED_ORIGINS.has(normalizeOrigin(origin));
     if (ok) return cb(null, true);
     console.warn('[CORS] blocked origin:', origin);
-    // Error fırlatmak yerine sessizce reddet; 500 üretmesin
     return cb(null, false);
   },
   credentials: true,
@@ -200,6 +200,7 @@ const globalApiLimiter = rateLimit({
   max: API_RATE_MAX,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => !IS_PROD,
   message: { message: 'Çok fazla istek, lütfen daha sonra tekrar deneyin' },
 });
 app.use('/api', globalApiLimiter);

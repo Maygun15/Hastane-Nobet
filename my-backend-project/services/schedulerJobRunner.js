@@ -1,13 +1,15 @@
 // services/schedulerJobRunner.js — fire-and-forget background schedule generation
+const mongoose = require('mongoose');
 const SchedulerJob = require('../models/SchedulerJob');
 const { generateSchedule } = require('./schedulerService');
 
 // Simple in-process queue: queue a job and return its id immediately.
 // The actual work runs after the current event-loop tick.
 async function enqueueScheduleJob({ sectionId, serviceId = '', role = '', year, month, dryRun = false, userId, payload = {}, hospitalId = null }) {
+  const safeUserId = mongoose.isValidObjectId(userId) ? userId : null;
   const job = await SchedulerJob.create({
     hospitalId: hospitalId || null,
-    createdBy:  userId   || null,
+    createdBy:  safeUserId,
     status: 'queued',
     params: { sectionId, serviceId, role, year, month, dryRun },
   });
