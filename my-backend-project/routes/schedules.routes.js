@@ -671,6 +671,37 @@ async function loadRules(req, res, next) {
   }
 }
 
+// Root GET — eski frontend kodları /api/schedules?year=&month= çağırıyordu, /monthly'ye yönlendir
+router.get('/',
+  requireAuth,
+  (req, _res, next) => {
+    if (!req.query.sectionId) req.query.sectionId = 'calisma-cizelgesi';
+    next();
+  },
+  (req, res, next) => {
+    try {
+      const query = buildQuery(req);
+      req.scheduleQuery = query;
+      req.targetServiceId = query.serviceId;
+      next();
+    } catch (err) {
+      return res.status(400).json({ ok: false, message: err.message });
+    }
+  },
+  allowMonthlyRead,
+  async (req, res) => {
+    try {
+      const query = req.scheduleQuery;
+      const doc = await MonthlySchedule.findOne(query).lean();
+      const assignments = doc?.assignments || [];
+      const issues = doc?.issues || [];
+      return res.json({ ok: true, data: { assignments, issues }, assignments, issues });
+    } catch (err) {
+      return res.status(500).json({ ok: false, message: err.message });
+    }
+  }
+);
+
 // MonthlySchedule GET is the operational monthly read model.
 // It serves assignment snapshot + editable monthly schedule data for existing UI paths.
 router.get('/monthly',
