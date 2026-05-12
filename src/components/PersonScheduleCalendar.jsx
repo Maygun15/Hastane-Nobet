@@ -697,6 +697,7 @@ export default function PersonScheduleCalendar({
   const [overrideDialog, setOverrideDialog] = useState({ open: false, errors: [], pending: null });
   const [quickReplaceOpen, setQuickReplaceOpen] = useState(false);
   const [quickReplaceSelection, setQuickReplaceSelection] = useState(null);
+  const [swappedDates, setSwappedDates] = useState(new Set());
   const [settingsRevision, setSettingsRevision] = useState(0);
 
   // Tatil verisi: { "YYYY-MM-DD": { kind: "full"|"arife"|"half", name: string } }
@@ -1432,26 +1433,36 @@ export default function PersonScheduleCalendar({
           const isWeekend = dt.getDay() === 0 || dt.getDay() === 6;
           const dateStr = `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`;
           const holiday = holidayMap[dateStr] || null;
+          const wasSwapped = swappedDates.has(dateStr);
 
           return (
-            <DayCard
-              key={`day-${dayNum}`}
-              dayNum={dayNum}
-              dateObj={dt}
-              leaveCode={leaveCode}
-              assignments={assignments}
-              isWeekend={isWeekend}
-              requiredCount={0}
-              showCoverageStatus={false}
-              renderLeave={renderLeave}
-              renderAssignments={renderAssignments}
-              onAddShift={canManage ? () => openAssignModal(dayNum) : null}
-              onRemoveShift={canManage ? (assg) => handleRemoveShift(assg, dayNum) : null}
-              onEditShift={null}
-              hasConflict={hasConflict}
-              conflictLeaveCode={hasConflict ? leaveFormatted : ""}
-              holiday={holiday}
-            />
+            <div key={`day-${dayNum}`} className="relative">
+              {wasSwapped && (
+                <span
+                  title="Bu gün Hızlı Yerine Atama ile değiştirildi"
+                  className="absolute top-1 right-1 z-10 text-[9px] bg-amber-100 text-amber-700 border border-amber-300 rounded px-1 leading-4 font-semibold pointer-events-none select-none"
+                >
+                  ↺
+                </span>
+              )}
+              <DayCard
+                dayNum={dayNum}
+                dateObj={dt}
+                leaveCode={leaveCode}
+                assignments={assignments}
+                isWeekend={isWeekend}
+                requiredCount={0}
+                showCoverageStatus={false}
+                renderLeave={renderLeave}
+                renderAssignments={renderAssignments}
+                onAddShift={canManage ? () => openAssignModal(dayNum) : null}
+                onRemoveShift={canManage ? (assg) => handleRemoveShift(assg, dayNum) : null}
+                onEditShift={null}
+                hasConflict={hasConflict}
+                conflictLeaveCode={hasConflict ? leaveFormatted : ""}
+                holiday={holiday}
+              />
+            </div>
           );
         })}
       </div>
@@ -1615,7 +1626,12 @@ export default function PersonScheduleCalendar({
         scheduleRole={scheduleRole}
         year={year}
         month={month0 + 1}
-        onAssigned={refreshRemote}
+        onAssigned={() => {
+          if (quickReplaceSelection?.date) {
+            setSwappedDates((prev) => new Set([...prev, quickReplaceSelection.date]));
+          }
+          refreshRemote();
+        }}
         initialSelection={quickReplaceSelection}
         preferredPerson={selectedPerson ? { id: selectedPerson.id, name: selectedPerson.name } : null}
         preferredAssignments={displaySummaryAssignments}

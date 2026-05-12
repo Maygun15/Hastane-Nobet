@@ -359,6 +359,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({
   const [truthRows, setTruthRows] = useState([]);
   const [holidays, setHolidays] = useState([]);
   const [search, setSearch] = useState("");
+  const [scheduleChangedBanner, setScheduleChangedBanner] = useState(false);
   const fileRef = useRef(null);
   const dcount = daysInMonth(year, month);
   const [importing, setImporting] = useState(false);
@@ -526,6 +527,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({
         }),
       }));
       const changed = JSON.stringify(next) !== JSON.stringify(prev);
+      if (changed) setScheduleChangedBanner(true);
       return changed ? next : prev;
     });
   }, [truthRows, dcount]);
@@ -836,6 +838,9 @@ const OvertimeTab = forwardRef(function OvertimeTab({
               <div className="text-xs text-slate-500">
                 Liste, üst çubuktaki <span className="font-semibold text-slate-700">Çizelgeden Doldur</span> butonuyla doğrudan çalışma çizelgesinden beslenir.
               </div>
+              <div className="text-xs text-slate-400 mt-1">
+                Saat girişi: virgül veya nokta kullanabilirsiniz — ör: <span className="font-mono text-slate-500">8</span>, <span className="font-mono text-slate-500">8,5</span>, <span className="font-mono text-slate-500">8.5</span>
+              </div>
             </div>
           </div>
 
@@ -870,6 +875,18 @@ const OvertimeTab = forwardRef(function OvertimeTab({
           İzinli günlere yazılmış çalışma saatleri hesap dışı bırakıldı.{" "}
           {computed.conflicts.slice(0, 3).map((item) => `${item.person || "Personel"} (${item.days.join(",")})`).join(" • ")}
           {computed.conflicts.length > 3 ? ` • +${computed.conflicts.length - 3} kişi daha` : ""}
+        </div>
+      )}
+
+      {scheduleChangedBanner && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-amber-800">
+            <span className="text-amber-500">⚡</span>
+            Çizelgede değişiklik yapıldı — aylık saat toplamları güncellendi.
+          </div>
+          <button onClick={() => setScheduleChangedBanner(false)} className="text-amber-600 hover:text-amber-800 text-xs font-medium transition-colors">
+            Tamam
+          </button>
         </div>
       )}
 
