@@ -278,7 +278,7 @@ async function createAdmin() {
 async function auth(req, res, next) {
   try {
     const h = req.headers.authorization || '';
-    const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+    const token = (h.startsWith('Bearer ') ? h.slice(7) : null) || req.query?.token || null;
     if (!token) return res.status(401).json({ message: 'Yetkisiz' });
     const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }); // { uid }
     if (!decoded?.uid) return res.status(401).json({ message: 'Yetkisiz' });
