@@ -32,6 +32,7 @@ const personSchema = new mongoose.Schema({
     sparse: true,
   },
 
+  annualLeaveDays: { type: Number, default: 15, min: 0 },
   createdBy: { type: String }
 }, { timestamps: true });
 

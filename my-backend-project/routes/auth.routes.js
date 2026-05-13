@@ -109,7 +109,8 @@ const makeAccessToken = (userOrId) => {
 
 const makeRefreshToken = (userOrId) => {
   const uid = typeof userOrId === 'string' ? userOrId : String(userOrId?._id || userOrId?.id || '');
-  return jwt.sign({ uid, type: 'refresh' }, JWT_REFRESH_SECRET, { expiresIn: '7d' });
+  const tv = typeof userOrId === 'object' ? (Number(userOrId?.tokenVersion) || 0) : 0;
+  return jwt.sign({ uid, type: 'refresh', tv }, JWT_REFRESH_SECRET, { expiresIn: '7d' });
 };
 
 // Frontend bazen "identifier", bazen "kimlik", bazen "tc" gönderiyor olabilir
@@ -369,6 +370,11 @@ router.post('/refresh', async (req, res) => {
       return res.status(401).json({ message: 'Kullanıcı bulunamadı veya pasif' });
     }
 
+    // tokenVersion kontrolü — logout sonrası eski refresh token'lar geçersiz
+    if (decoded.tv !== undefined && (user.tokenVersion || 0) !== decoded.tv) {
+      return res.status(401).json({ message: 'Oturum süresi doldu, lütfen tekrar giriş yapın' });
+    }
+
     return res.json({ accessToken: makeAccessToken(user) });
   } catch (err) {
     console.error('REFRESH ERR:', err);
@@ -609,6 +615,25 @@ router.get('/me', async (req, res) => {
     });
   } catch {
     res.status(401).json({ message: 'Yetkisiz' });
+  }
+});
+
+/* ============= LOGOUT ============= */
+router.post('/logout', async (req, res) => {
+  try {
+    const h = req.headers.authorization || '';
+    const token = (h.startsWith('Bearer ') ? h.slice(7) : null) || req.query?.token || null;
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+        if (decoded?.uid) {
+          await User.findByIdAndUpdate(decoded.uid, { $inc: { tokenVersion: 1 } });
+        }
+      } catch {}
+    }
+    return res.json({ ok: true });
+  } catch {
+    return res.json({ ok: true });
   }
 });
 

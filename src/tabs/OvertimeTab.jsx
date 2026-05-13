@@ -31,6 +31,7 @@ import {
 } from "../utils/overtimePlanTruth.js";
 import { fetchMergedScheduleTruth } from "../utils/scheduleTruth.js";
 import { buildPersonDayHoursMapFromAssignments } from "../utils/planWorkCalculator.js";
+import { matchesServiceSelection } from "../utils/serviceMatching.js";
 
 /* ================ Helpers ================ */
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -345,6 +346,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({
   selectedServiceId = "",
   selectedServiceName = "",
   activeRole = "Nurse",
+  servicesById = null,
 }, ref) {
   const { ym } = useActiveYM();
   const { year, month } = ym;
@@ -369,7 +371,9 @@ const OvertimeTab = forwardRef(function OvertimeTab({
   );
   const people = useMemo(() => {
     const raw = Array.isArray(peopleProp) ? peopleProp : [];
-    const normalized = raw
+    const svc = String(selectedServiceId || "").trim();
+    const filtered = svc ? raw.filter((p) => matchesServiceSelection({ row: p, serviceId: svc, servicesById })) : raw;
+    const normalized = filtered
       .map((p, idx) => ({
         id: String(p?.id ?? p?.personId ?? p?.pid ?? `p-${idx}`),
         fullName: p?.fullName || p?.name || [p?.firstName, p?.lastName].filter(Boolean).join(" ").trim(),
@@ -377,17 +381,15 @@ const OvertimeTab = forwardRef(function OvertimeTab({
         service: p?.serviceId || p?.service || p?.department || "",
       }))
       .filter((p) => p.fullName);
-    const svc = String(selectedServiceId || "").trim();
-    const byService = !svc ? normalized : normalized.filter((p) => String(p.service || "").trim() === svc);
     const roleKey = String(activeRole || "").toLowerCase();
     if (roleKey === "doctor") {
-      return byService.filter((p) => looksDoctor(p?.title || p?.role || ""));
+      return normalized.filter((p) => looksDoctor(p.title || ""));
     }
     if (roleKey === "nurse") {
-      return byService.filter((p) => !looksDoctor(p?.title || p?.role || ""));
+      return normalized.filter((p) => !looksDoctor(p.title || ""));
     }
-    return byService;
-  }, [peopleProp, selectedServiceId, activeRole]);
+    return normalized;
+  }, [peopleProp, selectedServiceId, activeRole, servicesById]);
   const truthRoles = useMemo(
     () => (String(activeRole || "").toLowerCase() === "doctor" ? ["Doctor"] : String(activeRole || "").toLowerCase() === "nurse" ? ["Nurse"] : ["Nurse", "Doctor"]),
     [activeRole]

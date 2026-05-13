@@ -240,7 +240,21 @@ export async function apiLogin({ identifier, password }) {
 
 // /me → backend doğrudan user döndürüyor (wrapper yok)
 export const apiMe     = () => req(`/api/auth/me`);
-export const apiLogout = () => { setToken(''); setRefreshToken(''); return Promise.resolve({ ok: true }); };
+export const apiLogout = async () => {
+  const token = getToken();
+  if (token) {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: getRefreshToken() }),
+      });
+    } catch {}
+  }
+  setToken('');
+  setRefreshToken('');
+  return { ok: true };
+};
 export const apiRefreshToken = () => req('/api/auth/refresh', { method: 'POST', body: { refreshToken: getRefreshToken() } });
 
 /* ========= PASSWORD RESET ========= */

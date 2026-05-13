@@ -689,6 +689,7 @@ function SectionContent({
               selectedServiceId={selectedServiceId}
               selectedServiceName={selectedServiceName}
               activeRole={activeRole}
+              servicesById={scope.servicesById instanceof Map ? scope.servicesById : null}
             />
           </div>
         </div>

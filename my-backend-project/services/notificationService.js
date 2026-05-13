@@ -1,6 +1,8 @@
 const { sendMail, isConfigured } = require('../utils/mailer');
 const User = require('../models/User');
 const Person = require('../models/Person');
+const Notification = require('../models/Notification');
+const { broadcast } = require('./sseService');
 
 const ENABLED_VALUES = new Set(['1', 'true', 'yes', 'on']);
 
@@ -156,14 +158,47 @@ async function dispatchMail({ to, subject, html, text }) {
   return sendMail({ to, subject, html, text });
 }
 
+async function saveAndBroadcast({ userId, hospitalId, type, title, message, data } = {}) {
+  if (!userId || !message) return;
+  try {
+    const notif = await Notification.create({
+      userId: String(userId),
+      hospitalId: String(hospitalId || ''),
+      type: type || 'info',
+      title: title || '',
+      message,
+      data: data || null,
+    });
+    broadcast(String(userId), 'notification', {
+      id: String(notif._id),
+      type: notif.type,
+      title: notif.title,
+      message: notif.message,
+      ts: Date.now(),
+    });
+  } catch (err) {
+    console.error('[saveAndBroadcast]', err?.message || err);
+  }
+}
+
 async function sendLeaveApproved({ request, actorName }) {
   const recipient = await resolveRecipient({
     userId: request?.fromUserId,
     personId: request?.fromPersonId,
     fallbackName: request?.fromName,
   });
-  if (!recipient?.email) return { ok: false, skipped: true, reason: 'recipient not found' };
 
+  // SSE + DB — email'den bağımsız her zaman tetiklenir
+  void saveAndBroadcast({
+    userId: request?.fromUserId,
+    hospitalId: request?.hospitalId,
+    type: 'success',
+    title: 'İzin Onaylandı',
+    message: `${leaveDateText(request)} tarihli izin talebiniz onaylandı.`,
+    data: { requestId: request?._id },
+  });
+
+  if (!recipient?.email) return { ok: false, skipped: true, reason: 'recipient not found' };
   const html = leaveApprovedTemplate({ name: recipient.name, request, actorName });
   return dispatchMail({
     to: recipient.email,
@@ -179,8 +214,17 @@ async function sendLeaveRejected({ request, actorName }) {
     personId: request?.fromPersonId,
     fallbackName: request?.fromName,
   });
-  if (!recipient?.email) return { ok: false, skipped: true, reason: 'recipient not found' };
 
+  void saveAndBroadcast({
+    userId: request?.fromUserId,
+    hospitalId: request?.hospitalId,
+    type: 'error',
+    title: 'İzin Reddedildi',
+    message: `${leaveDateText(request)} tarihli izin talebiniz reddedildi.`,
+    data: { requestId: request?._id },
+  });
+
+  if (!recipient?.email) return { ok: false, skipped: true, reason: 'recipient not found' };
   const html = leaveRejectedTemplate({ name: recipient.name, request, actorName });
   return dispatchMail({
     to: recipient.email,
@@ -202,6 +246,7 @@ async function sendShiftChanged({
   note,
   changedByName,
   action = 'updated',
+  hospitalId,
 }) {
   const recipient = await resolveRecipient({
     userId,
@@ -209,6 +254,20 @@ async function sendShiftChanged({
     fallbackName: personName,
     fallbackEmail: email,
   });
+
+  const actionText = action === 'removed' ? 'silindi' : 'güncellendi';
+  const resolvedUserId = userId || recipient?.userId;
+  if (resolvedUserId) {
+    void saveAndBroadcast({
+      userId: resolvedUserId,
+      hospitalId,
+      type: action === 'removed' ? 'warning' : 'info',
+      title: `Vardiya ${actionText === 'silindi' ? 'Silindi' : 'Güncellendi'}`,
+      message: `${date || '-'} tarihli vardiya kaydınız ${actionText}.`,
+      data: { date, previousShift, newShift },
+    });
+  }
+
   if (!recipient?.email) return { ok: false, skipped: true, reason: 'recipient not found' };
 
   const html = shiftChangedTemplate({
@@ -236,4 +295,5 @@ module.exports = {
   sendLeaveApproved,
   sendLeaveRejected,
   sendShiftChanged,
+  saveAndBroadcast,
 };

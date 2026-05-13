@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UI/UX İyileştirme Önerileri — Hastane Nöbet</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: #0f172a; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; }
+  .section-title { font-size: 1.5rem; font-weight: 700; color: #f8fafc; margin-bottom: 1rem; border-left: 4px solid #6366f1; padding-left: 1rem; }
+  .label-before { background: #7f1d1d; color: #fca5a5; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.1em; display: inline-block; margin-bottom: 8px; }
+  .label-after  { background: #14532d; color: #86efac; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.1em; display: inline-block; margin-bottom: 8px; }
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; }
+  .card-before { background: #1e293b; border: 1px solid #7f1d1d; border-radius: 12px; padding: 20px; }
+  .card-after  { background: #1e293b; border: 1px solid #14532d; border-radius: 12px; padding: 20px; }
+  .arrow { font-size: 2rem; color: #6366f1; display: flex; align-items: center; justify-content: center; }
+  .issue-badge { background: #312e81; color: #a5b4fc; font-size: 0.72rem; padding: 3px 10px; border-radius: 20px; font-weight: 600; }
+  .issue-badge-orange { background: #431407; color: #fdba74; font-size: 0.72rem; padding: 3px 10px; border-radius: 20px; font-weight: 600; }
+  .issue-badge-green { background: #052e16; color: #86efac; font-size: 0.72rem; padding: 3px 10px; border-radius: 20px; font-weight: 600; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { animation: spin 0.8s linear infinite; display: inline-block; }
+  .pulse-dot { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+</style>
+</head>
+<body class="min-h-screen p-8">
+
+<div class="max-w-6xl mx-auto">
+
+  <!-- Başlık -->
+  <div class="text-center mb-12">
+    <h1 class="text-4xl font-bold text-white mb-3">UI / UX İyileştirme Önerileri</h1>
+    <p class="text-slate-400 text-lg">Hastane Nöbet Çizelgesi — Önce / Sonra Karşılaştırması</p>
+    <div class="flex justify-center gap-4 mt-4">
+      <span class="flex items-center gap-2 text-sm"><span class="w-3 h-3 bg-red-500 rounded-full inline-block"></span> Kritik</span>
+      <span class="flex items-center gap-2 text-sm"><span class="w-3 h-3 bg-orange-400 rounded-full inline-block"></span> Önemli</span>
+      <span class="flex items-center gap-2 text-sm"><span class="w-3 h-3 bg-yellow-400 rounded-full inline-block"></span> Orta</span>
+    </div>
+  </div>
+
+  <!-- ======= 1. PLANLAMA LOADING STATE ======= -->
+  <div class="mb-14">
+    <div class="section-title">1. Planlama Butonu — Loading State</div>
+    <span class="issue-badge mb-4 inline-block">🔴 Kritik · PlanTab.jsx:519</span>
+    <p class="text-slate-400 text-sm mb-6">Kullanıcı butona tıkladığında hiçbir şey olmuyormuş gibi görünüyor. Defalarca tıklayıp birden fazla planlama çalıştırıyor.</p>
+    <div class="grid grid-cols-1 md:grid-cols-[1fr_60px_1fr] gap-4 items-center">
+      <!-- ÖNCE -->
+      <div class="card-before">
+        <div class="label-before">ÖNCE</div>
+        <div class="bg-slate-900 rounded-lg p-4 space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-700 pb-3">
+            <h3 class="font-semibold text-white text-sm">Çizelge Oluştur</h3>
+            <span class="text-xs text-slate-500">Mayıs 2026</span>
+          </div>
+          <div class="flex gap-2">
+            <select class="flex-1 bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded px-2 py-1.5"><option>Hemşire</option></select>
+            <select class="flex-1 bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded px-2 py-1.5"><option>Dahiliye</option></select>
+          </div>
+          <!-- Buton aktif ama loading yok -->
+          <button class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold py-2 rounded-lg transition">
+            Planlamayı Çalıştır
+          </button>
+          <!-- Hiçbir feedback yok -->
+          <div class="h-4"></div>
+          <p class="text-xs text-slate-600 italic text-center">← kullanıcı "oldu mu?" diye 3 kez daha tıkladı</p>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <!-- SONRA -->
+      <div class="card-after">
+        <div class="label-after">SONRA</div>
+        <div class="bg-slate-900 rounded-lg p-4 space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-700 pb-3">
+            <h3 class="font-semibold text-white text-sm">Çizelge Oluştur</h3>
+            <span class="text-xs text-slate-500">Mayıs 2026</span>
+          </div>
+          <div class="flex gap-2">
+            <select class="flex-1 bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded px-2 py-1.5"><option>Hemşire</option></select>
+            <select class="flex-1 bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded px-2 py-1.5"><option>Dahiliye</option></select>
+          </div>
+          <!-- Disabled + spinner -->
+          <button disabled class="w-full bg-indigo-700 text-indigo-300 text-sm font-semibold py-2 rounded-lg cursor-not-allowed flex items-center justify-center gap-2">
+            <svg class="spinner w-4 h-4" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-dasharray="30 70" stroke-linecap="round"/></svg>
+            Planlama çalışıyor...
+          </button>
+          <!-- Progress bar -->
+          <div class="relative h-1.5 bg-slate-700 rounded-full overflow-hidden">
+            <div class="absolute left-0 top-0 h-full bg-indigo-500 rounded-full animate-pulse" style="width:60%"></div>
+          </div>
+          <p class="text-xs text-indigo-400 text-center">Kısıtlar hesaplanıyor… 18/31 gün</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= 2. MODAL ESC + OVERLAY ======= -->
+  <div class="mb-14">
+    <div class="section-title">2. Modal Kapatma — ESC + Overlay</div>
+    <span class="issue-badge mb-4 inline-block">🔴 Kritik · RosterTable.jsx:529</span>
+    <p class="text-slate-400 text-sm mb-6">Modal açıkken ESC tuşu çalışmıyor. Kapatmak için mutlaka "Kapat" butonunu bulmak gerekiyor.</p>
+    <div class="grid grid-cols-1 md:grid-cols-[1fr_60px_1fr] gap-4 items-center">
+      <div class="card-before">
+        <div class="label-before">ÖNCE</div>
+        <div class="relative bg-slate-900 rounded-lg overflow-hidden" style="height:200px">
+          <div class="absolute inset-0 bg-black/40 flex items-center justify-center">
+            <div class="bg-slate-800 rounded-xl p-4 w-56 border border-slate-600 shadow-2xl">
+              <h4 class="text-white font-semibold text-sm mb-2">Vardiya Düzenle</h4>
+              <p class="text-slate-400 text-xs mb-3">2 Mayıs — Ayşe Kaya</p>
+              <div class="flex justify-end">
+                <button class="bg-slate-700 text-slate-300 text-xs px-3 py-1.5 rounded">Kapat</button>
+              </div>
+            </div>
+          </div>
+          <p class="absolute bottom-2 left-0 right-0 text-center text-xs text-red-400">ESC çalışmıyor · Overlay tıklaması yok</p>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="card-after">
+        <div class="label-after">SONRA</div>
+        <div class="relative bg-slate-900 rounded-lg overflow-hidden" style="height:200px">
+          <div class="absolute inset-0 bg-black/60 flex items-center justify-center cursor-pointer">
+            <div class="bg-slate-800 rounded-xl p-4 w-56 border border-slate-600 shadow-2xl" onclick="event.stopPropagation()">
+              <div class="flex items-center justify-between mb-2">
+                <h4 class="text-white font-semibold text-sm">Vardiya Düzenle</h4>
+                <!-- X butonu sağ üst -->
+                <button class="text-slate-400 hover:text-white w-6 h-6 flex items-center justify-center rounded hover:bg-slate-700 text-lg leading-none">&times;</button>
+              </div>
+              <p class="text-slate-400 text-xs mb-3">2 Mayıs — Ayşe Kaya</p>
+              <div class="flex justify-between items-center">
+                <span class="text-xs text-slate-500 bg-slate-700 px-2 py-1 rounded">ESC ile kapat</span>
+                <button class="bg-indigo-600 text-white text-xs px-3 py-1.5 rounded">Kaydet</button>
+              </div>
+            </div>
+          </div>
+          <p class="absolute bottom-2 left-0 right-0 text-center text-xs text-green-400">ESC · Overlay tıkla · × butonu</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= 3. BOŞ STATE ======= -->
+  <div class="mb-14">
+    <div class="section-title">3. Boş State — Yönlendirici Mesaj</div>
+    <span class="issue-badge-orange mb-4 inline-block">🟠 Önemli · RosterTable.jsx:517 · PersonnelTab.jsx:239</span>
+    <p class="text-slate-400 text-sm mb-6">Veri olmadığında jargon dolu veya açıklamasız mesaj gösteriliyor. Kullanıcı ne yapacağını bilemiyor.</p>
+    <div class="grid grid-cols-1 md:grid-cols-[1fr_60px_1fr] gap-4 items-center">
+      <div class="card-before">
+        <div class="label-before">ÖNCE</div>
+        <div class="bg-slate-900 rounded-lg p-6 flex flex-col items-center justify-center min-h-[160px] space-y-2">
+          <svg class="w-10 h-10 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-6h6v6m-3-6V5"/></svg>
+          <p class="text-slate-500 text-sm text-center">Gösterilecek görev satırı bulunamadı.</p>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="card-after">
+        <div class="label-after">SONRA</div>
+        <div class="bg-slate-900 rounded-lg p-6 flex flex-col items-center justify-center min-h-[160px] space-y-3">
+          <div class="w-14 h-14 bg-indigo-900/40 rounded-full flex items-center justify-center">
+            <svg class="w-7 h-7 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          </div>
+          <p class="text-white text-sm font-medium text-center">Henüz personel eklenmemiş</p>
+          <p class="text-slate-400 text-xs text-center max-w-xs">Çizelge oluşturmak için önce personel listesini doldurmanız gerekiyor.</p>
+          <button class="mt-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-lg flex items-center gap-2 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2h5"/></svg>
+            Personel Sekmesine Git →
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= 4. HATA MESAJLARI ======= -->
+  <div class="mb-14">
+    <div class="section-title">4. Hata Mesajları — Anlaşılır Dil</div>
+    <span class="issue-badge-orange mb-4 inline-block">🟠 Önemli · OvertimeTab.jsx:598 · SchedulesTab.jsx:461</span>
+    <p class="text-slate-400 text-sm mb-6">Teknik jargon içeren hata mesajları kullanıcının ne yapacağını anlamamasına yol açıyor.</p>
+    <div class="space-y-4">
+      <!-- Hata 1 -->
+      <div class="grid grid-cols-1 md:grid-cols-[1fr_60px_1fr] gap-4 items-center">
+        <div class="card-before">
+          <div class="label-before">ÖNCE</div>
+          <div class="bg-red-950/50 border border-red-800 rounded-lg p-3 flex items-start gap-2">
+            <svg class="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-3a1 1 0 100-2 1 1 0 000 2zm1-8a1 1 0 00-2 0v3a1 1 0 002 0V7z"/></svg>
+            <p class="text-red-300 text-xs">Aktarılacak görev ataması bulunamadı. Önce Çalışma Çizelgesi'ni doldurup kaydedin.</p>
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="card-after">
+          <div class="label-after">SONRA</div>
+          <div class="bg-amber-950/40 border border-amber-700 rounded-lg p-3">
+            <div class="flex items-start gap-2 mb-2">
+              <svg class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-3a1 1 0 01-1-1V7a1 1 0 012 0v2a1 1 0 01-1 1z"/></svg>
+              <p class="text-amber-300 text-xs font-medium">Çizelge henüz oluşturulmamış</p>
+            </div>
+            <p class="text-amber-200/70 text-xs mb-2">Fazla mesai hesabı yapabilmek için önce aylık çizelgeyi oluşturmanız gerekiyor.</p>
+            <button class="bg-amber-700/50 hover:bg-amber-700 text-amber-100 text-xs px-3 py-1.5 rounded transition">Çizelge Oluştur →</button>
+          </div>
+        </div>
+      </div>
+      <!-- Hata 2 -->
+      <div class="grid grid-cols-1 md:grid-cols-[1fr_60px_1fr] gap-4 items-center">
+        <div class="card-before">
+          <div class="label-before">ÖNCE</div>
+          <div class="bg-red-950/50 border border-red-800 rounded-lg p-3">
+            <p class="text-red-300 text-xs">Dosya boş veya hatalı.</p>
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="card-after">
+          <div class="label-after">SONRA</div>
+          <div class="bg-red-950/40 border border-red-700 rounded-lg p-3 space-y-2">
+            <p class="text-red-300 text-xs font-medium">Dosya okunamadı veya desteklenmiyor.</p>
+            <p class="text-red-200/60 text-xs">Beklenen format: <code class="bg-slate-800 px-1 rounded text-indigo-300">.xlsx</code> veya <code class="bg-slate-800 px-1 rounded text-indigo-300">.csv</code></p>
+            <p class="text-red-200/60 text-xs">İlk satır başlık olmalı: <code class="bg-slate-800 px-1 rounded text-indigo-300">Ad, TC, Rol, Servis</code></p>
+            <a href="#" class="text-indigo-400 text-xs underline">Örnek şablonu indir</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= 5. INPUT FORMAT ======= -->
+  <div class="mb-14">
+    <div class="section-title">5. Input Alanları — Format Rehberi</div>
+    <span class="issue-badge-orange mb-4 inline-block">🟠 Önemli · OvertimeTab.jsx:902</span>
+    <p class="text-slate-400 text-sm mb-6">Saat girişleri virgül mi, nokta mı kabul ediyor? Kullanıcı bilmiyor ve yanlış giriyor.</p>
+    <div class="grid grid-cols-1 md:grid-cols-[1fr_60px_1fr] gap-4 items-center">
+      <div class="card-before">
+        <div class="label-before">ÖNCE</div>
+        <div class="bg-slate-900 rounded-lg p-4 space-y-3">
+          <div>
+            <input type="text" placeholder="saat" class="w-full bg-slate-800 border border-slate-600 text-slate-300 text-sm rounded px-3 py-2 outline-none">
+          </div>
+          <div>
+            <input type="text" placeholder="fazla mesai" class="w-full bg-slate-800 border border-slate-600 text-slate-300 text-sm rounded px-3 py-2 outline-none">
+          </div>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="card-after">
+        <div class="label-after">SONRA</div>
+        <div class="bg-slate-900 rounded-lg p-4 space-y-3">
+          <div>
+            <label class="text-xs text-slate-400 mb-1 block">Çalışılan Saat</label>
+            <div class="relative">
+              <input type="text" placeholder="ör: 8,5 veya 8.5" class="w-full bg-slate-800 border border-indigo-500 text-slate-300 text-sm rounded px-3 py-2 outline-none">
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">sa</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">Virgül veya nokta kullanabilirsiniz</p>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 mb-1 block">Fazla Mesai</label>
+            <div class="relative">
+              <input type="text" placeholder="ör: 2 veya 2,5" class="w-full bg-slate-800 border border-slate-600 text-slate-300 text-sm rounded px-3 py-2 outline-none focus:border-indigo-500 transition">
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">sa</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= 6. RENk TUTARSIZLIĞI ======= -->
+  <div class="mb-14">
+    <div class="section-title">6. Renk & Button Tutarsızlığı</div>
+    <span class="issue-badge" style="background:#1c1917;color:#d6d3d1" class="mb-4 inline-block">🟡 Orta · Tüm dosyalar</span>
+    <p class="text-slate-400 text-sm mb-6">gray-* ve slate-* arasında karışıklık. Button stilleri her dosyada farklı hardcoded.</p>
+    <div class="grid grid-cols-1 md:grid-cols-[1fr_60px_1fr] gap-4 items-center">
+      <div class="card-before">
+        <div class="label-before">ÖNCE — Tutarsız</div>
+        <div class="bg-slate-900 rounded-lg p-4 space-y-2">
+          <div class="flex gap-2 flex-wrap">
+            <button class="bg-slate-700 text-slate-300 text-xs px-3 py-1.5 rounded border border-slate-900">Kaydet</button>
+            <button class="bg-gray-800 text-gray-300 text-xs px-3 py-1.5 rounded">İptal</button>
+            <button class="bg-zinc-700 text-zinc-200 text-xs px-3 py-1.5 rounded-lg border border-zinc-600">Düzenle</button>
+          </div>
+          <div class="flex gap-2 flex-wrap">
+            <span class="text-gray-400 text-xs">Gri ton 1</span>
+            <span class="text-slate-400 text-xs">Gri ton 2</span>
+            <span class="text-zinc-400 text-xs">Gri ton 3</span>
+          </div>
+          <p class="text-xs text-red-400 mt-2">3 farklı gri ton sistemi kullanılıyor</p>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="card-after">
+        <div class="label-after">SONRA — Tutarlı (slate)</div>
+        <div class="bg-slate-900 rounded-lg p-4 space-y-2">
+          <div class="flex gap-2 flex-wrap">
+            <!-- Primary -->
+            <button class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium transition">Kaydet</button>
+            <!-- Secondary -->
+            <button class="bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs px-3 py-1.5 rounded-lg transition">İptal</button>
+            <!-- Ghost -->
+            <button class="border border-slate-600 hover:border-slate-400 text-slate-400 hover:text-slate-200 text-xs px-3 py-1.5 rounded-lg transition">Düzenle</button>
+            <!-- Danger -->
+            <button class="bg-red-900/50 hover:bg-red-800 text-red-300 text-xs px-3 py-1.5 rounded-lg transition">Sil</button>
+          </div>
+          <p class="text-xs text-green-400 mt-2">4 variant, 1 renk sistemi (indigo+slate)</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= 7. RESPONSIVE KARTLAR ======= -->
+  <div class="mb-14">
+    <div class="section-title">7. Responsive — Özet Kartlar</div>
+    <span class="issue-badge" style="background:#1c1917;color:#d6d3d1">🟡 Orta · OvertimeTab.jsx:828</span>
+    <p class="text-slate-400 text-sm mb-6 mt-4">3 kart mobilde yan yana sıkışıyor, metin taşıyor.</p>
+    <div class="grid grid-cols-1 md:grid-cols-[1fr_60px_1fr] gap-4 items-start">
+      <div class="card-before">
+        <div class="label-before">ÖNCE (mobil görünüm)</div>
+        <!-- Zorunlu 3 kolon, dar ekranda sıkışma -->
+        <div class="grid grid-cols-3 gap-1 mt-2">
+          <div class="bg-slate-800 rounded p-2 border border-slate-700">
+            <p class="text-indigo-400 text-xs font-bold truncate">Toplam Mesai</p>
+            <p class="text-white text-base font-bold">142.5</p>
+            <p class="text-slate-500" style="font-size:9px">sa · 12 personel</p>
+          </div>
+          <div class="bg-slate-800 rounded p-2 border border-slate-700">
+            <p class="text-green-400 text-xs font-bold truncate">Ort./Kişi</p>
+            <p class="text-white text-base font-bold">11.9</p>
+            <p class="text-slate-500" style="font-size:9px">saat/ay</p>
+          </div>
+          <div class="bg-slate-800 rounded p-2 border border-slate-700">
+            <p class="text-amber-400 text-xs font-bold truncate">En Yüksek</p>
+            <p class="text-white text-base font-bold">24.0</p>
+            <p class="text-slate-500" style="font-size:9px">Ayşe K.</p>
+          </div>
+        </div>
+        <p class="text-xs text-red-400 mt-2 text-center">Metinler sıkışıyor ve kırılıyor</p>
+      </div>
+      <div class="arrow">→</div>
+      <div class="card-after">
+        <div class="label-after">SONRA (grid-cols-1 sm:grid-cols-3)</div>
+        <!-- Dikey stack, geniş ekranda yatay -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
+          <div class="bg-slate-800 rounded-lg p-3 border border-slate-700">
+            <p class="text-indigo-400 text-xs font-semibold mb-1">Toplam Mesai</p>
+            <p class="text-white text-xl font-bold">142.5 <span class="text-sm font-normal text-slate-400">sa</span></p>
+            <p class="text-slate-500 text-xs">12 personel</p>
+          </div>
+          <div class="bg-slate-800 rounded-lg p-3 border border-slate-700">
+            <p class="text-green-400 text-xs font-semibold mb-1">Kişi Başı Ort.</p>
+            <p class="text-white text-xl font-bold">11.9 <span class="text-sm font-normal text-slate-400">sa</span></p>
+            <p class="text-slate-500 text-xs">aylık</p>
+          </div>
+          <div class="bg-slate-800 rounded-lg p-3 border border-slate-700">
+            <p class="text-amber-400 text-xs font-semibold mb-1">En Yüksek</p>
+            <p class="text-white text-xl font-bold">24.0 <span class="text-sm font-normal text-slate-400">sa</span></p>
+            <p class="text-slate-500 text-xs">Ayşe Kaya</p>
+          </div>
+        </div>
+        <p class="text-xs text-green-400 mt-2 text-center">Mobilde dikey, masaüstünde yatay</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= 8. TOOLTIP / DROPDOWN ======= -->
+  <div class="mb-14">
+    <div class="section-title">8. Dropdown — Touch Desteği</div>
+    <span class="issue-badge mb-4 inline-block">🔴 Kritik · HospitalRosterApp.jsx:732</span>
+    <p class="text-slate-400 text-sm mb-6">Menüler sadece hover ile açılıyor. Tablet ve telefonda erişilemiyor.</p>
+    <div class="grid grid-cols-1 md:grid-cols-[1fr_60px_1fr] gap-4 items-start">
+      <div class="card-before">
+        <div class="label-before">ÖNCE — hover-only</div>
+        <div class="bg-slate-900 rounded-lg p-4">
+          <div class="flex items-center gap-2 bg-slate-800 px-3 py-2 rounded-lg w-fit">
+            <span class="text-slate-300 text-sm">Raporlar</span>
+            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </div>
+          <div class="mt-1 ml-0 bg-slate-800 border border-slate-700 rounded-lg p-2 w-40 opacity-50">
+            <p class="text-slate-400 text-xs px-2 py-1">Fazla Mesai</p>
+            <p class="text-slate-400 text-xs px-2 py-1">Aylık Özet</p>
+            <p class="text-slate-400 text-xs px-2 py-1">PDF İndir</p>
+          </div>
+          <p class="text-red-400 text-xs mt-2">Sadece hover'da açılıyor (touch = ❌)</p>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="card-after">
+        <div class="label-after">SONRA — click toggle</div>
+        <div class="bg-slate-900 rounded-lg p-4">
+          <button class="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg w-fit transition">
+            <span class="text-slate-200 text-sm">Raporlar</span>
+            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div class="mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl w-44 overflow-hidden">
+            <button class="w-full text-left text-slate-300 text-xs px-3 py-2 hover:bg-slate-700 flex items-center gap-2 transition">
+              <span class="text-indigo-400">📊</span> Fazla Mesai
+            </button>
+            <button class="w-full text-left text-slate-300 text-xs px-3 py-2 hover:bg-slate-700 flex items-center gap-2 transition">
+              <span class="text-green-400">📅</span> Aylık Özet
+            </button>
+            <button class="w-full text-left text-slate-300 text-xs px-3 py-2 hover:bg-slate-700 flex items-center gap-2 transition">
+              <span class="text-amber-400">📄</span> PDF İndir
+            </button>
+          </div>
+          <p class="text-green-400 text-xs mt-2">onClick toggle → touch desteği ✓</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= 9. ACCESSIBILITY ======= -->
+  <div class="mb-14">
+    <div class="section-title">9. Accessibility — Label & ARIA</div>
+    <span class="issue-badge" style="background:#1c1917;color:#d6d3d1">🟡 Orta · RosterTable.jsx:557 · OvertimeTab.jsx:814</span>
+    <p class="text-slate-400 text-sm mb-6 mt-4">Select ve input elementlerinde label yok. Screen reader kullanıcılar için erişilemiyor.</p>
+    <div class="grid grid-cols-1 md:grid-cols-[1fr_60px_1fr] gap-4 items-start">
+      <div class="card-before">
+        <div class="label-before">ÖNCE</div>
+        <div class="bg-slate-900 rounded-lg p-4 space-y-3">
+          <select class="w-full bg-slate-800 border border-slate-600 text-slate-300 text-sm rounded px-3 py-2">
+            <option>Hemşire seçin...</option>
+          </select>
+          <select class="w-full bg-slate-800 border border-slate-600 text-slate-300 text-sm rounded px-3 py-2">
+            <option>Vardiya seçin...</option>
+          </select>
+          <input placeholder="Personel ara..." class="w-full bg-slate-800 border border-slate-600 text-slate-300 text-sm rounded px-3 py-2 outline-none">
+          <p class="text-red-400 text-xs">&lt;label&gt; yok · aria-label yok</p>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="card-after">
+        <div class="label-after">SONRA</div>
+        <div class="bg-slate-900 rounded-lg p-4 space-y-3">
+          <div>
+            <label for="sel-nurse" class="block text-xs text-slate-400 mb-1">Personel <span class="text-red-400">*</span></label>
+            <select id="sel-nurse" aria-required="true" class="w-full bg-slate-800 border border-slate-600 text-slate-300 text-sm rounded px-3 py-2 focus:border-indigo-500 outline-none transition">
+              <option value="">Seçiniz…</option>
+              <option>Hemşire Ayşe Kaya</option>
+            </select>
+          </div>
+          <div>
+            <label for="sel-shift" class="block text-xs text-slate-400 mb-1">Vardiya</label>
+            <select id="sel-shift" class="w-full bg-slate-800 border border-slate-600 text-slate-300 text-sm rounded px-3 py-2 focus:border-indigo-500 outline-none transition">
+              <option>Gündüz (08:00–16:00)</option>
+            </select>
+          </div>
+          <div>
+            <label for="inp-search" class="sr-only">Personel ara</label>
+            <input id="inp-search" type="search" placeholder="Personel ara…" aria-label="Personel ara" class="w-full bg-slate-800 border border-slate-600 text-slate-300 text-sm rounded px-3 py-2 focus:border-indigo-500 outline-none transition">
+          </div>
+          <p class="text-green-400 text-xs">&lt;label htmlFor&gt; · aria-required · sr-only ✓</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= 10. İSİM TUTARSIZLIĞI ======= -->
+  <div class="mb-14">
+    <div class="section-title">10. İsim Tutarsızlığı — Sabit Dosyası</div>
+    <span class="issue-badge" style="background:#1c1917;color:#d6d3d1">🟡 Orta · Tüm sekmeler</span>
+    <p class="text-slate-400 text-sm mb-6 mt-4">Aynı kavram 3-4 farklı isimle kullanılıyor. Kullanıcı ve geliştirici için kafa karışıklığı.</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="card-before">
+        <div class="label-before">ÖNCE — Dağınık</div>
+        <div class="bg-slate-900 rounded-lg p-4 mt-2 space-y-2 text-xs font-mono">
+          <div class="flex gap-2"><span class="text-slate-500">PlanTab:</span><span class="text-red-400">"Doktor Planı" / "Hemşire Planı"</span></div>
+          <div class="flex gap-2"><span class="text-slate-500">SchedulesTab:</span><span class="text-orange-400">"Doktor" / "Hemşire"</span></div>
+          <div class="flex gap-2"><span class="text-slate-500">PersonnelTab:</span><span class="text-yellow-400">"Doktor Grupları"</span></div>
+          <div class="flex gap-2"><span class="text-slate-500">HospitalApp:</span><span class="text-red-400">"Talepler"</span></div>
+          <div class="flex gap-2"><span class="text-slate-500">PlanTab:</span><span class="text-orange-400">"Talep"</span></div>
+          <div class="flex gap-2"><span class="text-slate-500">routes.jsx:</span><span class="text-yellow-400">"requests"</span></div>
+        </div>
+      </div>
+      <div class="card-after">
+        <div class="label-after">SONRA — constants.js</div>
+        <div class="bg-slate-900 rounded-lg p-4 mt-2 text-xs font-mono space-y-1.5">
+          <p class="text-slate-500 mb-2">// src/lib/constants.js</p>
+          <p><span class="text-purple-400">export const</span> <span class="text-indigo-300">ROLE_LABELS</span> <span class="text-slate-400">= {</span></p>
+          <p class="pl-4"><span class="text-green-400">Doctor</span><span class="text-slate-400">: </span><span class="text-amber-300">"Doktor"</span><span class="text-slate-400">,</span></p>
+          <p class="pl-4"><span class="text-green-400">Nurse</span><span class="text-slate-400">:  </span><span class="text-amber-300">"Hemşire"</span></p>
+          <p><span class="text-slate-400">};</span></p>
+          <p class="mt-2"><span class="text-purple-400">export const</span> <span class="text-indigo-300">NAV_LABELS</span> <span class="text-slate-400">= {</span></p>
+          <p class="pl-4"><span class="text-green-400">requests</span><span class="text-slate-400">: </span><span class="text-amber-300">"İstekler"</span><span class="text-slate-400">,</span></p>
+          <p class="pl-4"><span class="text-green-400">plan</span><span class="text-slate-400">:     </span><span class="text-amber-300">"Çizelge"</span></p>
+          <p><span class="text-slate-400">};</span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= Öncelik Özeti ======= -->
+  <div class="mb-8">
+    <div class="section-title">Öncelik Sıralaması</div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="bg-red-950/30 border border-red-800/50 rounded-xl p-4">
+        <h3 class="text-red-400 font-bold mb-3 flex items-center gap-2">
+          <span class="w-5 h-5 bg-red-600 rounded-full flex items-center justify-center text-white text-xs">!</span>
+          Hemen (1–2 saat)
+        </h3>
+        <ul class="space-y-2 text-sm text-slate-300">
+          <li class="flex items-start gap-2"><span class="text-red-400 mt-0.5">→</span>ESC ile modal kapatma</li>
+          <li class="flex items-start gap-2"><span class="text-red-400 mt-0.5">→</span>Planlama butonu loading disable</li>
+          <li class="flex items-start gap-2"><span class="text-red-400 mt-0.5">→</span>OvertimeTab buton adı düzelt</li>
+          <li class="flex items-start gap-2"><span class="text-red-400 mt-0.5">→</span>Input placeholder format bilgisi</li>
+          <li class="flex items-start gap-2"><span class="text-red-400 mt-0.5">→</span>Dropdown click-toggle</li>
+        </ul>
+      </div>
+      <div class="bg-amber-950/30 border border-amber-800/50 rounded-xl p-4">
+        <h3 class="text-amber-400 font-bold mb-3 flex items-center gap-2">
+          <span class="w-5 h-5 bg-amber-600 rounded-full flex items-center justify-center text-white text-xs">2</span>
+          Sonraki Sprint
+        </h3>
+        <ul class="space-y-2 text-sm text-slate-300">
+          <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">→</span>Boş state yönlendirici mesaj</li>
+          <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">→</span>Hata mesajları kullanıcı dostu</li>
+          <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">→</span>Responsive kart grid</li>
+          <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">→</span>label / aria-label ekle</li>
+          <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">→</span>Renk sistemi slate'e çek</li>
+        </ul>
+      </div>
+      <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+        <h3 class="text-slate-300 font-bold mb-3 flex items-center gap-2">
+          <span class="w-5 h-5 bg-slate-600 rounded-full flex items-center justify-center text-white text-xs">3</span>
+          Orta Vadeli
+        </h3>
+        <ul class="space-y-2 text-sm text-slate-300">
+          <li class="flex items-start gap-2"><span class="text-slate-400 mt-0.5">→</span>constants.js — isim standartları</li>
+          <li class="flex items-start gap-2"><span class="text-slate-400 mt-0.5">→</span>Ortak Button component</li>
+          <li class="flex items-start gap-2"><span class="text-slate-400 mt-0.5">→</span>PlanTab alt bileşenlere böl</li>
+          <li class="flex items-start gap-2"><span class="text-slate-400 mt-0.5">→</span>ChangePasswordModal ayrı dosya</li>
+          <li class="flex items-start gap-2"><span class="text-slate-400 mt-0.5">→</span>Loading skeleton'ları</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="text-center text-slate-600 text-xs pb-8">
+    Hastane Nöbet Çizelgesi · UI/UX İyileştirme Raporu · 2026-05-09
+  </div>
+
+</div>
+</body>
+</html>

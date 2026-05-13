@@ -95,6 +95,7 @@ const userSchema = new mongoose.Schema({
     ref: 'Person',
     default: null,
   },
+  tokenVersion: { type: Number, default: 0 },
 }, { timestamps: true });
 
 /* =========================

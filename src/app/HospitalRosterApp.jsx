@@ -33,6 +33,7 @@ import { PERMISSIONS } from "../constants/roles.js";
 
 // Sayfalar
 import UsersTab from "../tabs/UsersTab.jsx";
+import AuditLogTab from "../tabs/AuditLogTab.jsx";
 import MyRequestsTab from "../tabs/MyRequestsTab.jsx";
 import RequestsManagementTab from "../tabs/RequestsManagementTab.jsx";
 import UserProfile from "../components/UserProfile.jsx";
@@ -727,8 +728,8 @@ export default function HospitalRosterApp() {
                   </div>
                 </div>
 
-                <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-2">
-                  <nav className="flex flex-wrap gap-2">
+                <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-2 overflow-x-auto">
+                  <nav className="flex flex-nowrap sm:flex-wrap gap-2 min-w-max sm:min-w-0">
               {/* DASHBOARD — Admin + Yetkili */}
               {canSeeDashboard && (
                 <div style={{ order: navOrder.indexOf("dashboard") !== -1 ? navOrder.indexOf("dashboard") : 0 }} draggable onDragStart={(e) => handleDragStart(e, "dashboard")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "dashboard")}><NavBtn active={activeTab === "dashboard"}
@@ -892,6 +893,18 @@ export default function HospitalRosterApp() {
                   Kullanıcılar</NavBtn></div>
               )}
 
+              {/* İŞLEM GÜNLÜĞÜ — yalnız Admin */}
+              {canSeeUsersTab && (
+                <div style={{ order: navOrder.indexOf("auditlog") !== -1 ? navOrder.indexOf("auditlog") : 5 }}>
+                  <NavBtn active={activeTab === "auditlog"}
+                    onClick={() => { setActiveTab("auditlog"); pushUrl("/islem-gunlugu"); }}
+                    icon={() => <span style={{ fontSize: 14 }}>📋</span>}
+                  >
+                    İşlem Günlüğü
+                  </NavBtn>
+                </div>
+              )}
+
               {/* AI ASİSTAN — Admin + Yetkili */}
               {canSeeAI && (
                 <div style={{ order: navOrder.indexOf("ai") !== -1 ? navOrder.indexOf("ai") : 6 }}><NavBtn active={activeTab === "ai"}
@@ -1048,6 +1061,10 @@ export default function HospitalRosterApp() {
 
           {activeTab === "users" && (
             canSeeUsersTab ? <UsersTab /> : <NeedAdmin />
+          )}
+
+          {activeTab === "auditlog" && (
+            canSeeUsersTab ? <AuditLogTab /> : <NeedAdmin />
           )}
 
           {activeTab === "myRequests" && <MyRequestsTab />}

@@ -170,6 +170,7 @@ export default function PeopleTab({
     tc: "",
     phone: "",
     mail: "",
+    annualLeaveDays: 15,
     workAreaIds: [], // id listesi (WA’ya göre)
     shiftCodes: [],
   };
@@ -188,6 +189,13 @@ export default function PeopleTab({
       setForm((f) => ({ ...f, service: defaultServiceId }));
     }
   }, [defaultServiceId, form.service]);
+
+  useEffect(() => {
+    if (!editOpen) return;
+    const handleKey = (e) => { if (e.key === "Escape") setEditOpen(false); };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [editOpen]);
 
   const toggleArea = (areaId) =>
     setForm((f) => {
@@ -232,6 +240,7 @@ export default function PeopleTab({
       const payload = {
         name: row.name || "",
         serviceId: row.service || "",
+        annualLeaveDays: Number(row.annualLeaveDays) >= 0 ? Number(row.annualLeaveDays) : 15,
         meta: {
           role: row.role || "",
           title: row.title || "",
@@ -334,6 +343,7 @@ export default function PeopleTab({
     setForm({
       ...empty,
       ...p,
+      annualLeaveDays: p.annualLeaveDays ?? 15,
       workAreaIds: existingIds,
     });
   };
@@ -722,6 +732,18 @@ export default function PeopleTab({
                   <input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} className={fieldClass} placeholder="Unvan" />
                 </div>
                 <div>
+                  <label className="text-xs font-medium text-slate-500">Yıllık İzin Hakkı (gün)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="365"
+                    value={form.annualLeaveDays ?? 15}
+                    onChange={(e) => setForm((f) => ({ ...f, annualLeaveDays: Math.max(0, Number(e.target.value) || 0) }))}
+                    className={fieldClass}
+                    placeholder="15"
+                  />
+                </div>
+                <div>
                   <label className="text-xs font-medium text-slate-500">T.C. Kimlik No</label>
                   <div className="relative">
                     <input
@@ -902,8 +924,14 @@ export default function PeopleTab({
             />
           ))}
           {people.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm text-slate-500">
-              Henüz kayıt yok.
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-10 flex flex-col items-center gap-3 text-center">
+              <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
+                <UserPlus2 className="h-6 w-6 text-slate-400" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-700">Henüz personel eklenmemiş</p>
+                <p className="text-xs text-slate-400 mt-1 max-w-xs">Soldaki formu doldurup Kaydet'e basın veya Excel'den toplu yükleyin.</p>
+              </div>
             </div>
           )}
         </div>
@@ -911,8 +939,8 @@ export default function PeopleTab({
 
       {/* Düzenle modal */}
       {editOpen && (
-        <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
-          <div className="w-full max-w-xl rounded-2xl bg-white shadow-xl">
+        <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4" onClick={() => setEditOpen(false)}>
+          <div className="w-full max-w-xl rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-4 border-b flex items-center justify-between">
               <div className="font-semibold">Kişi Düzenle</div>
               <button
@@ -1020,6 +1048,12 @@ function PersonCard({ person: p, serviceOptions, onEdit, onDelete }) {
         </div>
       </div>
       <IDCard person={p} serviceNames={svcName ? [svcName] : []} />
+      {p.annualLeaveDays !== undefined && (
+        <div className="mt-1.5 flex items-center gap-1.5 rounded-lg bg-emerald-50 border border-emerald-100 px-2 py-1">
+          <span className="text-[10px] text-emerald-700 font-medium">Yıllık İzin Hakkı:</span>
+          <span className="text-[10px] text-emerald-900 font-semibold">{p.annualLeaveDays} gün</span>
+        </div>
+      )}
       {hasToken && (
         <button
           onClick={handleCreateUser}
