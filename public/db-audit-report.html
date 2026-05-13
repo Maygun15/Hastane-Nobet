@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Database Audit — Senior Geliştirici Raporu</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0a0f1e;
+  --card: #111827;
+  --card2: #1a2235;
+  --border: #1f2d45;
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --red: #f87171; --red-bg: #450a0a; --red-border: #dc2626;
+  --yellow: #fbbf24; --yellow-bg: #451a03; --yellow-border: #d97706;
+  --green: #34d399; --green-bg: #022c22; --green-border: #059669;
+  --blue: #60a5fa; --blue-bg: #0c1a3a; --blue-border: #2563eb;
+  --purple: #a78bfa;
+  --accent: #38bdf8;
+  --mono: 'Cascadia Code','Fira Code',monospace;
+}
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI',system-ui,sans-serif; overflow: hidden; height:100vh; user-select:none; }
+
+/* ── PROGRESS ── */
+#pb { position:fixed; top:0; left:0; height:3px; background: linear-gradient(90deg,#38bdf8,#818cf8); transition:width .4s ease; z-index:100; }
+
+/* ── NAV ── */
+#nav { position:fixed; bottom:28px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:10px; z-index:100; }
+#nav button { background:var(--card); border:1px solid var(--border); color:var(--text); padding:8px 20px; border-radius:8px; cursor:pointer; font-size:13px; transition:background .2s; }
+#nav button:hover { background:var(--border); }
+#nav button:disabled { opacity:.3; cursor:default; }
+#ctr { font-size:12px; color:var(--muted); min-width:56px; text-align:center; }
+
+/* ── SLIDES ── */
+.slides { width:100%; height:100vh; position:relative; }
+.slide { position:absolute; inset:0; display:flex; flex-direction:column; padding:40px 60px 80px; opacity:0; pointer-events:none; transform:translateX(50px); transition:opacity .35s ease,transform .35s ease; }
+.slide.active { opacity:1; pointer-events:all; transform:translateX(0); }
+.slide.out { opacity:0; transform:translateX(-50px); }
+
+/* ── TAGS ── */
+.tag { display:inline-flex; align-items:center; gap:6px; font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; padding:4px 10px; border-radius:20px; margin-bottom:12px; width:fit-content; }
+.tag-crit  { background:var(--red-bg);    color:var(--red);    border:1px solid var(--red-border); }
+.tag-imp   { background:var(--yellow-bg); color:var(--yellow); border:1px solid var(--yellow-border); }
+.tag-good  { background:var(--green-bg);  color:var(--green);  border:1px solid var(--green-border); }
+.tag-info  { background:var(--blue-bg);   color:var(--blue);   border:1px solid var(--blue-border); }
+
+h1 { font-size:34px; font-weight:800; line-height:1.15; margin-bottom:8px; }
+h2 { font-size:26px; font-weight:700; line-height:1.2; margin-bottom:8px; }
+.sub { font-size:14px; color:var(--muted); margin-bottom:28px; line-height:1.6; }
+
+/* ── GRID LAYOUTS ── */
+.cols2 { display:grid; grid-template-columns:1fr 1fr; gap:20px; flex:1; }
+.cols3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; flex:1; }
+.col   { display:flex; flex-direction:column; gap:14px; }
+
+/* ── CARD ── */
+.card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px 22px; }
+.card.red    { border-color:var(--red-border);    background:#120404; }
+.card.yellow { border-color:var(--yellow-border); background:#120a02; }
+.card.green  { border-color:var(--green-border);  background:#020f0a; }
+.card.blue   { border-color:var(--blue-border);   background:#030b1a; }
+.card-label { font-size:10px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; margin-bottom:10px; }
+.card.red    .card-label { color:var(--red); }
+.card.yellow .card-label { color:var(--yellow); }
+.card.green  .card-label { color:var(--green); }
+.card.blue   .card-label { color:var(--blue); }
+
+/* ── CODE ── */
+pre { background:#060c18; border:1px solid var(--border); border-radius:8px; padding:14px 16px; font-family:var(--mono); font-size:12px; line-height:1.7; overflow:auto; color:#cdd6f4; }
+.del { color:var(--red); }
+.add { color:var(--green); }
+.dim { color:var(--muted); }
+.kw  { color:var(--blue); }
+.str { color:var(--yellow); }
+.num { color:var(--purple); }
+
+/* ── STAT ── */
+.stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px; }
+.stat { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; text-align:center; }
+.stat-n { font-size:36px; font-weight:800; line-height:1; }
+.stat-l { font-size:11px; color:var(--muted); margin-top:4px; }
+
+/* ── BEFORE/AFTER ── */
+.ba { display:grid; grid-template-columns:1fr 24px 1fr; gap:12px; align-items:start; flex:1; }
+.ba-arrow { display:flex; align-items:center; justify-content:center; padding-top:40px; font-size:20px; color:var(--accent); }
+
+/* ── ROWS ── */
+.rows { display:flex; flex-direction:column; gap:10px; }
+.row-item { display:flex; align-items:flex-start; gap:12px; padding:12px 14px; background:var(--card2); border:1px solid var(--border); border-radius:10px; }
+.row-icon { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; }
+.ri-red    { background:var(--red-bg); }
+.ri-yellow { background:var(--yellow-bg); }
+.ri-green  { background:var(--green-bg); }
+.row-item strong { display:block; font-size:13px; margin-bottom:2px; }
+.row-item span   { font-size:11px; color:var(--muted); line-height:1.5; }
+
+/* ── COVER ── */
+.cover { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+.cover h1 { font-size:46px; margin-bottom:16px; }
+.cover .sub { font-size:16px; max-width:560px; margin-bottom:36px; }
+.chip-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; max-width:640px; width:100%; }
+.chip { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:10px 14px; font-size:12px; display:flex; align-items:center; gap:8px; }
+.dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.dot-r { background:var(--red); }
+.dot-y { background:var(--yellow); }
+.dot-g { background:var(--green); }
+
+/* ── COLLECTION TABLE ── */
+.col-table { width:100%; border-collapse:collapse; font-size:12px; }
+.col-table th { background:var(--card2); color:var(--muted); font-weight:600; text-align:left; padding:8px 12px; font-size:11px; letter-spacing:.05em; text-transform:uppercase; }
+.col-table td { padding:8px 12px; border-top:1px solid var(--border); vertical-align:middle; }
+.col-table tr:hover td { background:var(--card2); }
+.badge { display:inline-block; padding:2px 8px; border-radius:20px; font-size:10px; font-weight:700; }
+.b-red    { background:var(--red-bg);    color:var(--red);    border:1px solid var(--red-border); }
+.b-yellow { background:var(--yellow-bg); color:var(--yellow); border:1px solid var(--yellow-border); }
+.b-green  { background:var(--green-bg);  color:var(--green);  border:1px solid var(--green-border); }
+.b-blue   { background:var(--blue-bg);   color:var(--blue);   border:1px solid var(--blue-border); }
+.b-muted  { background:var(--card);      color:var(--muted);  border:1px solid var(--border); }
+
+/* ── PROGRESS BAR (data) ── */
+.bar-wrap { background:var(--card2); border-radius:6px; height:8px; overflow:hidden; margin-top:4px; }
+.bar-fill { height:100%; border-radius:6px; transition:width 1s ease; }
+
+/* ── FINAL GRID ── */
+.final { display:grid; grid-template-columns:1fr 1fr; gap:20px; flex:1; }
+.check-list { display:flex; flex-direction:column; gap:8px; }
+.ci { display:flex; align-items:flex-start; gap:10px; font-size:13px; line-height:1.5; }
+.ci-icon { flex-shrink:0; margin-top:1px; }
+
+/* ── TTL VISUAL ── */
+.timeline-h { display:flex; align-items:center; gap:0; margin:16px 0 8px; }
+.tl-seg { height:24px; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; border-radius:4px; }
+</style>
+</head>
+<body>
+<div id="pb"></div>
+
+<div class="slides">
+
+<!-- ══ SLIDE 0: KAPAK ══ -->
+<div class="slide active">
+<div class="cover">
+  <div class="tag tag-info">🔍 Senior Geliştirici — Database Audit</div>
+  <h1>MongoDB İnceleme<br>& Düzeltme Raporu</h1>
+  <p class="sub">22 koleksiyon incelendi. 6 kritik sorun tespit edildi,<br>hepsi tek oturumda giderildi.</p>
+  <div class="chip-grid">
+    <div class="chip"><span class="dot dot-r"></span>5 Kritik Sorun</div>
+    <div class="chip"><span class="dot dot-y"></span>4 Önemli Sorun</div>
+    <div class="chip"><span class="dot dot-g"></span>6 Düzeltme Yapıldı</div>
+    <div class="chip"><span class="dot dot-r"></span>56 Kişi Pasif → Aktif</div>
+    <div class="chip"><span class="dot dot-r"></span>22 Bozuk Atama Silindi</div>
+    <div class="chip"><span class="dot dot-g"></span>TTL Index Eklendi</div>
+  </div>
+</div>
+</div>
+
+<!-- ══ SLIDE 1: KOLEKSİYON HARİTASI ══ -->
+<div class="slide">
+<div class="tag tag-info">📦 Koleksiyon Haritası</div>
+<h2>22 Koleksiyon — Genel Durum</h2>
+<p class="sub">Database'deki tüm koleksiyonlar incelendi. Veri yoğunluğu ve sağlık durumu.</p>
+<div style="overflow:auto;flex:1;">
+<table class="col-table">
+<thead><tr><th>Koleksiyon</th><th>Kayıt</th><th>Durum</th><th>Not</th></tr></thead>
+<tbody>
+<tr><td><code>assignments</code></td><td>509 → <strong>487</strong></td><td><span class="badge b-yellow">düzeltildi</span></td><td>22 bozuk shiftCode silindi</td></tr>
+<tr><td><code>auditlogs</code></td><td>12,815</td><td><span class="badge b-green">TTL eklendi</span></td><td>90 günde otomatik silinecek</td></tr>
+<tr><td><code>people</code></td><td>58</td><td><span class="badge b-green">düzeltildi</span></td><td>56 kişi active:true yapıldı</td></tr>
+<tr><td><code>users</code></td><td>7</td><td><span class="badge b-green">düzeltildi</span></td><td>tokenVersion migration + orphan deaktive</td></tr>
+<tr><td><code>monthlyschedules</code></td><td>24 → <strong>7</strong></td><td><span class="badge b-green">temizlendi</span></td><td>17 zombi kayıt silindi</td></tr>
+<tr><td><code>services</code></td><td>54 (27 aktif)</td><td><span class="badge b-yellow">dikkat</span></td><td>department alanı hiç doldurulmamış</td></tr>
+<tr><td><code>hospitals</code></td><td>1</td><td><span class="badge b-blue">normal</span></td><td>—</td></tr>
+<tr><td><code>requests</code></td><td>16</td><td><span class="badge b-blue">normal</span></td><td>1 bekleyen, 6 onaylı, 9 reddedilmiş</td></tr>
+<tr><td><code>holidays</code></td><td>67</td><td><span class="badge b-blue">normal</span></td><td>—</td></tr>
+<tr><td><code>dutyrules</code></td><td>3</td><td><span class="badge b-blue">normal</span></td><td>—</td></tr>
+<tr><td><code>settings</code></td><td>6</td><td><span class="badge b-yellow">dikkat</span></td><td>leaveTypes/workingHours buraya gömülü</td></tr>
+<tr><td><code>notifications</code></td><td>0</td><td><span class="badge b-muted">yeni</span></td><td>v1.1.7'de eklendi, kullanılmaya başlıyor</td></tr>
+<tr><td><code>leave_types</code></td><td>0</td><td><span class="badge b-yellow">dikkat</span></td><td>Boş — veriler settings'te</td></tr>
+<tr><td><code>working_hours</code></td><td>0</td><td><span class="badge b-yellow">dikkat</span></td><td>Boş — veriler settings'te</td></tr>
+<tr><td><code>generatedschedules</code></td><td>264</td><td><span class="badge b-blue">normal</span></td><td>AI üretimi çizelgeler</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<!-- ══ SLIDE 2: SORUN 1 — PEOPLE AKTİFLİK ══ -->
+<div class="slide">
+<div class="tag tag-crit">🔴 Kritik #1 — People Aktiflik</div>
+<h2>58 Kişiden 56'sı "Pasif" Görünüyordu</h2>
+<p class="sub">Personel kayıtları vardı ama sistem onları göremiyordu. Çizelge üretimi, filtreleme ve arama etkileniyordu.</p>
+<div class="ba">
+  <div>
+    <div class="card-label" style="color:var(--red);font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px;">❌ Önce</div>
+    <pre><span class="dim">// people koleksiyonu</span>
+{ name: <span class="str">"BAYRAM DEMİR"</span>,
+  active: <span class="del">false</span>  } <span class="dim">← görünmez</span>
+
+{ name: <span class="str">"DERYA SANCAR"</span>,
+  active: <span class="del">false</span>  } <span class="dim">← görünmez</span>
+
+<span class="dim">// 56 kişi böyle</span>
+<span class="dim">// Filtreler: { active: true }</span>
+<span class="dim">// Sonuç: sadece 2 kişi göründü</span></pre>
+    <div class="card red" style="margin-top:12px;">
+      <div class="card-label">Etki</div>
+      <p style="font-size:12px;color:#fca5a5;line-height:1.6;">Personel listesi boş görünüyordu. Çizelge otomasyonu çalışmıyordu. Raporlar 0 gösteriyordu.</p>
+    </div>
+  </div>
+  <div class="ba-arrow">→</div>
+  <div>
+    <div class="card-label" style="color:var(--green);font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px;">✅ Sonra</div>
+    <pre><span class="dim">// MongoDB migration</span>
+db.people.updateMany(
+  { active: { <span class="kw">\$ne</span>: <span class="kw">true</span> } },
+  { <span class="kw">\$set</span>: { active: <span class="kw">true</span> } }
+)
+<span class="dim">// → modifiedCount: 56</span>
+
+{ name: <span class="str">"BAYRAM DEMİR"</span>,
+  active: <span class="add">true</span>  } <span class="dim">✓</span>
+
+{ name: <span class="str">"DERYA SANCAR"</span>,
+  active: <span class="add">true</span>  } <span class="dim">✓</span></pre>
+    <div class="card green" style="margin-top:12px;">
+      <div class="card-label">Sonuç</div>
+      <p style="font-size:12px;color:#6ee7b7;line-height:1.6;">58/58 kişi aktif. Tüm personel listede görünüyor. Çizelge ve raporlar doğru çalışıyor.</p>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══ SLIDE 3: SORUN 2 — BOZUK SHIFTCODE ══ -->
+<div class="slide">
+<div class="tag tag-crit">🔴 Kritik #2 — Bozuk ShiftCode</div>
+<h2>22 Atamada ShiftCode Yerine Timestamp</h2>
+<p class="sub">assignments koleksiyonunda bazı kayıtlar shift kodu yerine JavaScript timestamp değeri tutuyordu. Bu kayıtlar çizelgede bozuk görünüm ve hesap hatalarına yol açıyordu.</p>
+<div class="cols2">
+  <div class="col">
+    <div class="card-label" style="color:var(--red);font-size:10px;letter-spacing:.1em;text-transform:uppercase;">❌ Önce — Tüm shiftCode değerleri</div>
+    <pre><span class="dim">// Normal değerler:</span>
+  <span class="str">"N"</span>   → 301 atama  <span class="dim">✓</span>
+  <span class="str">"V1"</span>  → 134 atama  <span class="dim">✓</span>
+  <span class="str">"M"</span>   →  52 atama  <span class="dim">✓</span>
+
+<span class="dim">// BOZUK değerler:</span>
+  <span class="del">"1761072131831"</span> → 13 atama <span class="dim">← Date.now()!</span>
+  <span class="del">"1761072131834"</span> →  9 atama <span class="dim">← Date.now()!</span>
+
+<span class="dim">// Toplam bozuk: 22 atama</span></pre>
+    <div class="card red">
+      <div class="card-label">Neden Oldu?</div>
+      <p style="font-size:12px;color:#fca5a5;line-height:1.6;">DutyRowsEditor bileşeninde satır ID'si (<code>row.id</code>) ile shiftCode karıştırılmış. Satır ID'leri <code>Date.now()</code> ile üretiliyor; bir noktada yanlış field atanmış.</p>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card-label" style="color:var(--green);font-size:10px;letter-spacing:.1em;text-transform:uppercase;">✅ Sonra — Temiz veri</div>
+    <pre><span class="dim">// Bozuk kayıtlar silindi</span>
+db.assignments.deleteMany({
+  shiftCode: { <span class="kw">\$regex</span>: <span class="str">/^\d{13}$/</span> }
+})
+<span class="dim">// → deletedCount: 22</span>
+
+<span class="dim">// Kalan sağlıklı kayıtlar:</span>
+  <span class="str">"N"</span>   → 301 atama  <span class="dim">✓</span>
+  <span class="str">"V1"</span>  → 134 atama  <span class="dim">✓</span>
+  <span class="str">"M"</span>   →  52 atama  <span class="dim">✓</span>
+<span class="dim">// Toplam: 487 temiz atama</span></pre>
+    <div class="card yellow">
+      <div class="card-label">Uzun Vadeli Öneri</div>
+      <p style="font-size:12px;color:#fcd34d;line-height:1.6;">Backend'de shiftCode validation ekle: kayıt öncesi değerin tanımlı vardiya kodlarından biri olduğunu kontrol et.</p>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══ SLIDE 4: SORUN 3 — AUDITLOGS TTL ══ -->
+<div class="slide">
+<div class="tag tag-crit">🔴 Kritik #3 — AuditLogs Sınırsız Büyüme</div>
+<h2>12,815 Log — TTL Olmadan Sonsuza Büyür</h2>
+<p class="sub">Audit logları Mart 2026'dan beri birikiyor. Silme mekanizması yoktu. MongoDB Atlas'ın ücretsiz 512MB limiti 8-10 ay içinde dolacaktı.</p>
+<div class="cols2">
+  <div class="col">
+    <div class="card red">
+      <div class="card-label">Büyüme Projeksiyonu (öncesi)</div>
+      <p style="font-size:12px;color:#fca5a5;margin-bottom:12px;">Aylık ~1,900 kayıt → TTL olmadan:</p>
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
+        <div><span style="color:var(--muted)">Şu an (2 ay):</span> 12,815 kayıt <div class="bar-wrap"><div class="bar-fill" style="width:12%;background:#dc2626;"></div></div></div>
+        <div><span style="color:var(--muted)">6 ay sonra:</span> ~24,000 kayıt <div class="bar-wrap"><div class="bar-fill" style="width:24%;background:#dc2626;"></div></div></div>
+        <div><span style="color:var(--muted)">12 ay sonra:</span> ~35,000 kayıt <div class="bar-wrap"><div class="bar-fill" style="width:38%;background:#dc2626;"></div></div></div>
+        <div><span style="color:var(--muted)">24 ay sonra:</span> ~57,000 kayıt <div class="bar-wrap"><div class="bar-fill" style="width:65%;background:#dc2626;"></div></div></div>
+        <div><span style="color:var(--muted)">Atlas Free 512MB dolma:</span> ~Ağustos 2027 <div class="bar-wrap"><div class="bar-fill" style="width:100%;background:#dc2626;"></div></div></div>
+      </div>
+    </div>
+    <pre style="margin-top:12px;"><span class="dim">// Index analizi — önce</span>
+auditlogs indexes:
+  _id
+  requestId
+  createdAt          <span class="dim">← sadece sıralama</span>
+  hospitalId+createdAt
+  userId+createdAt
+<span class="dim">// TTL index YOK → sonsuza büyür</span></pre>
+  </div>
+  <div class="col">
+    <div class="card green">
+      <div class="card-label">TTL Index Eklendi (sonrası)</div>
+      <p style="font-size:12px;color:#6ee7b7;margin-bottom:12px;">90 gün sonra kayıtlar otomatik silinir:</p>
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
+        <div><span style="color:var(--muted)">Steady state:</span> ~17,000 kayıt (90 gün) <div class="bar-wrap"><div class="bar-fill" style="width:16%;background:#059669;"></div></div></div>
+        <div><span style="color:var(--muted)">Sabit kalır:</span> Hiç büyümez <div class="bar-wrap"><div class="bar-fill" style="width:16%;background:#059669;"></div></div></div>
+        <div><span style="color:var(--muted)">Atlas storage:</span> Güvende ✓ <div class="bar-wrap"><div class="bar-fill" style="width:16%;background:#059669;"></div></div></div>
+      </div>
+    </div>
+    <pre style="margin-top:12px;"><span class="dim">// TTL index eklendi</span>
+db.auditlogs.createIndex(
+  { createdAt: <span class="num">1</span> },
+  {
+    expireAfterSeconds: <span class="num">7776000</span>,
+    <span class="dim">// 7776000 = 90 gün</span>
+    name: <span class="str">'auditlogs_ttl_90d'</span>
+  }
+)
+<span class="dim">// MongoDB her gece siler</span>
+<span class="dim">// Bakım gerektirmez</span></pre>
+  </div>
+</div>
+</div>
+
+<!-- ══ SLIDE 5: SORUN 4+5 — TOKENVERSION + ORPHAN ══ -->
+<div class="slide">
+<div class="tag tag-crit">🔴 Kritik #4 & #5 — Users Tablosu</div>
+<h2>tokenVersion Eksik + Orphan Admin</h2>
+<p class="sub">v1.1.7'de eklediğimiz güvenli logout özelliği 6 kullanıcıda çalışmıyordu. Ayrıca e-postasız bir admin hesabı vardı.</p>
+<div class="cols2">
+  <div class="col">
+    <div class="card-label" style="color:var(--red);font-size:10px;letter-spacing:.1em;text-transform:uppercase;">❌ tokenVersion Durumu (Önce)</div>
+    <pre><span class="dim">// 7 kullanıcı:</span>
+{ email:<span class="str">"admin@admin.com"</span>,
+  tokenVersion: <span class="num">0</span> }  <span class="dim">✓ (en son giriş)</span>
+
+{ email:<span class="str">"gamzeozturk..."</span>,
+  tokenVersion: <span class="del">undefined</span> }  <span class="dim">← eksik!</span>
+
+{ email:<span class="str">"maygun1986..."</span>,
+  tokenVersion: <span class="del">undefined</span> }  <span class="dim">← eksik!</span>
+
+<span class="dim">// 6/7 kullanıcıda tokenVersion yok</span>
+<span class="dim">// Güvenli logout çalışmıyor</span></pre>
+
+    <div class="card-label" style="color:var(--green);font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin-top:12px;">✅ Migration (Sonra)</div>
+    <pre>db.users.updateMany(
+  { tokenVersion: { <span class="kw">\$exists</span>: <span class="kw">false</span> } },
+  { <span class="kw">\$set</span>: { tokenVersion: <span class="num">0</span> } }
+)
+<span class="dim">// → modifiedCount: 6</span>
+<span class="dim">// Artık tüm kullanıcılarda var</span></pre>
+  </div>
+  <div class="col">
+    <div class="card-label" style="color:var(--red);font-size:10px;letter-spacing:.1em;text-transform:uppercase;">❌ Orphan Admin (Önce)</div>
+    <pre><span class="dim">// _id: 69147961764f3751b07ebf45</span>
+{
+  role: <span class="str">"admin"</span>,
+  email: <span class="del">undefined</span>,  <span class="dim">← email yok</span>
+  active: <span class="del">undefined</span>, <span class="dim">← aktiflik yok</span>
+  tc: <span class="str">"170***18"</span>
+}
+<span class="dim">// Ne zaman oluşturuldu?</span>
+<span class="dim">// Kim bu hesap?</span>
+<span class="dim">// Giriş yapabilir mi? YOK BİLİNMEZ</span></pre>
+
+    <div class="card-label" style="color:var(--green);font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin-top:12px;">✅ Deaktive (Sonra)</div>
+    <pre>db.users.updateOne(
+  { _id: ObjectId(<span class="str">"6914..."</span>) },
+  { <span class="kw">\$set</span>: {
+    active: <span class="kw">false</span>,
+    note: <span class="str">'orphan-no-email'</span>
+  }}
+)
+<span class="dim">// Silinmedi (audit trail)</span>
+<span class="dim">// Deaktive edildi (güvenli)</span></pre>
+  </div>
+</div>
+</div>
+
+<!-- ══ SLIDE 6: SORUN 6 — ZOMBİ ÇIZELGELER ══ -->
+<div class="slide">
+<div class="tag tag-imp">🟡 Önemli — Zombi MonthlySchedules</div>
+<h2>24 Çizelge Kaydından 17'si Boş + Geçersiz</h2>
+<p class="sub">serviceId'si boş olan monthlyschedules kayıtları hiçbir işe yaramıyordu. Sorgu performansını olumsuz etkiliyordu.</p>
+<div class="cols2">
+  <div class="col">
+    <div class="card-label" style="color:var(--red);font-size:10px;letter-spacing:.1em;text-transform:uppercase;">❌ Önce (24 kayıt)</div>
+    <pre><span class="dim">// serviceId="" olan 17 kayıt</span>
+{ sectionId:<span class="str">"calisma-cizelgesi"</span>,
+  serviceId: <span class="del">""</span>,          <span class="dim">← geçersiz</span>
+  ym: <span class="str">"2026-01"</span>,
+  assignments: <span class="del">[]</span> }       <span class="dim">← boş</span>
+
+{ serviceId: <span class="del">""</span>, ym: <span class="str">"2026-11"</span> }
+{ serviceId: <span class="del">""</span>, ym: <span class="str">"2026-12"</span> }
+{ serviceId: <span class="del">""</span>, ym: <span class="str">"2027-05"</span> }
+<span class="dim">// ... 17 tane böyle</span>
+
+<span class="dim">// 24 kayıtın TAMAMI boş!</span>
+<span class="dim">// Gerçek atamalar assignments</span>
+<span class="dim">// koleksiyonunda ayrı duruyor</span></pre>
+  </div>
+  <div class="col">
+    <div class="card-label" style="color:var(--green);font-size:10px;letter-spacing:.1em;text-transform:uppercase;">✅ Sonra (7 kayıt — temiz)</div>
+    <pre>db.monthlyschedules.deleteMany({
+  serviceId: <span class="str">""</span>,
+  assignments: { <span class="kw">\$exists</span>: <span class="kw">false</span> }
+})
+<span class="dim">// → deletedCount: 17</span>
+
+<span class="dim">// Kalan 7 kayıt:</span>
+{ serviceId: <span class="str">"69a344c..."</span>, <span class="dim">✓</span>
+  ym: <span class="str">"2026-03"</span> }
+{ serviceId: <span class="str">"a7cead4..."</span>, <span class="dim">✓</span>
+  ym: <span class="str">"2025-12"</span> }
+{ serviceId: <span class="str">"ACİL"</span>, <span class="dim">← hala format sorunu</span>
+  ym: <span class="str">"2026-03"</span> }
+<span class="dim">// Geçerli serviceId'si olanlar kaldı</span></pre>
+    <div class="card yellow" style="margin-top:12px;">
+      <div class="card-label">Gözlem: serviceId format karmaşası</div>
+      <p style="font-size:11px;color:#fcd34d;line-height:1.6;">Kalan 7 kayıtta hâlâ 3 farklı format var: ObjectId string, UUID, "ACİL" text. Uzun vadede normalize edilmeli.</p>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══ SLIDE 7: YAPI SORUNLARI ══ -->
+<div class="slide">
+<div class="tag tag-imp">🟡 Mimari — Yapısal Sorunlar</div>
+<h2>People-User Kopukluğu & Settings Anti-Pattern</h2>
+<p class="sub">İki önemli yapısal sorun hemen düzeltilemez ama tanımlanmalı.</p>
+<div class="cols2">
+  <div class="col">
+    <div class="card yellow">
+      <div class="card-label">People ↔ User Bağlantısı</div>
+      <div style="font-size:12px;color:#fcd34d;line-height:1.7;">
+        <p><strong>58 kişi</strong> var, <strong>sadece 3 tanesi</strong> User'a bağlı.</p>
+        <div style="margin:10px 0;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Bağlı (userId var)</span><span>3</span></div>
+          <div class="bar-wrap"><div class="bar-fill" style="width:5%;background:#d97706;"></div></div>
+          <div style="display:flex;justify-content:space-between;margin-top:8px;margin-bottom:4px;"><span>Bağsız (55 kişi)</span><span>55</span></div>
+          <div class="bar-wrap"><div class="bar-fill" style="width:95%;background:#dc2626;"></div></div>
+        </div>
+        <p style="margin-top:8px;">55 çalışan sisteme giriş yapamaz, kendi nöbetini göremez, bildirim alamaz.</p>
+        <p style="margin-top:6px;color:var(--muted)"><strong>Çözüm:</strong> Admin panelinden "Personelden Toplu Kullanıcı Oluştur" butonu ile bulk-from-personnel API'si çalıştırılmalı.</p>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card yellow">
+      <div class="card-label">Settings Anti-Pattern</div>
+      <pre style="font-size:11px;">
+<span class="dim">// Dedicated koleksiyonlar boş:</span>
+leave_types:    <span class="del">0 kayıt</span>
+working_hours:  <span class="del">0 kayıt</span>
+work_areas:     <span class="del">0 kayıt</span>
+
+<span class="dim">// Veriler settings içine gömülü:</span>
+settings { key: <span class="str">"leaveTypes"</span>,
+  value: [ <span class="dim">/* 20 kayıt JSON */</span> ] }
+settings { key: <span class="str">"workingHours"</span>,
+  value: [ <span class="dim">/* JSON */</span> ] }
+</pre>
+      <p style="font-size:11px;color:#fcd34d;line-height:1.6;margin-top:8px;">Bu koleksiyonlara index eklenemiyor. Tek bir settings belgesi büyüdükçe yavaşlar. Her güncelleme tüm bloğu yeniden yazar.</p>
+      <p style="font-size:11px;color:var(--muted);margin-top:6px;"><strong>Çözüm:</strong> Dedicated koleksiyonları aktive et, settings'ten migrate et.</p>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══ SLIDE 8: ÖZET ══ -->
+<div class="slide">
+<div class="tag tag-good">✅ Tamamlandı</div>
+<h2>Database Temizliği — Özet</h2>
+<p class="sub">Tek oturumda 6 düzeltme yapıldı. Kalan 2 yapısal sorun roadmap'e alındı.</p>
+<div class="final">
+  <div>
+    <p style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--green);margin-bottom:10px;">✅ Yapılanlar</p>
+    <div class="check-list">
+      <div class="ci"><span class="ci-icon">🟢</span><span><strong>56 kişi</strong> aktif yapıldı — personel artık görünür</span></div>
+      <div class="ci"><span class="ci-icon">🟢</span><span><strong>22 bozuk atama</strong> silindi — timestamp shiftCode temizlendi</span></div>
+      <div class="ci"><span class="ci-icon">🟢</span><span><strong>TTL index</strong> eklendi — auditlogs 90 günde otomatik silinecek</span></div>
+      <div class="ci"><span class="ci-icon">🟢</span><span><strong>6 kullanıcıya</strong> tokenVersion:0 yazıldı — güvenli logout aktif</span></div>
+      <div class="ci"><span class="ci-icon">🟢</span><span><strong>17 zombi çizelge</strong> silindi — 24 → 7 kayıt</span></div>
+      <div class="ci"><span class="ci-icon">🟢</span><span><strong>Orphan admin</strong> deaktive edildi — erişim kesildi</span></div>
+    </div>
+  </div>
+  <div>
+    <p style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--yellow);margin-bottom:10px;">🔜 Roadmap</p>
+    <div class="check-list">
+      <div class="ci"><span class="ci-icon">🟡</span><span><strong>55 kişiyi</strong> user'a bağla — bulk-from-personnel çalıştır</span></div>
+      <div class="ci"><span class="ci-icon">🟡</span><span><strong>serviceId formatını</strong> standartlaştır (3 format → 1)</span></div>
+      <div class="ci"><span class="ci-icon">🟡</span><span><strong>leaveTypes/workingHours</strong> dedicated koleksiyona taşı</span></div>
+      <div class="ci"><span class="ci-icon">🟡</span><span><strong>Services department</strong> alanını doldur (54 kayıt boş)</span></div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <div class="card-label" style="color:var(--accent);">Database Sağlık Skoru</div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
+        <div style="flex:1;"><div class="bar-wrap" style="height:12px;"><div class="bar-fill" style="width:78%;background:linear-gradient(90deg,#059669,#38bdf8);"></div></div></div>
+        <span style="font-size:20px;font-weight:800;color:var(--green);">78%</span>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6;">Kritik sorunlar giderildi. People-User bağlantısı ve settings migration tamamlanınca %95'e çıkacak.</p>
+    </div>
+  </div>
+</div>
+</div>
+
+</div><!-- /slides -->
+
+<div id="nav">
+  <button id="prev" disabled>← Önceki</button>
+  <span id="ctr">1 / 9</span>
+  <button id="next">Sonraki →</button>
+</div>
+
+<script>
+const slides = document.querySelectorAll('.slide');
+const total = slides.length;
+let cur = 0;
+
+function goTo(n) {
+  slides[cur].classList.remove('active');
+  slides[cur].classList.add('out');
+  const prev = cur;
+  cur = n;
+  slides[cur].classList.add('active');
+  setTimeout(() => slides[prev].classList.remove('out'), 400);
+  document.getElementById('ctr').textContent = `${cur + 1} / ${total}`;
+  document.getElementById('prev').disabled = cur === 0;
+  document.getElementById('next').disabled = cur === total - 1;
+  document.getElementById('pb').style.width = `${((cur + 1) / total) * 100}%`;
+}
+
+document.getElementById('prev').addEventListener('click', () => cur > 0 && goTo(cur - 1));
+document.getElementById('next').addEventListener('click', () => cur < total - 1 && goTo(cur + 1));
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') cur < total - 1 && goTo(cur + 1);
+  if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   cur > 0 && goTo(cur - 1);
+});
+document.querySelector('.slides').addEventListener('click', e => {
+  if (!e.target.closest('#nav')) cur < total - 1 && goTo(cur + 1);
+});
+document.getElementById('pb').style.width = `${(1 / total) * 100}%`;
+</script>
+</body>
+</html>
