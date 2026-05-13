@@ -624,13 +624,14 @@ function matchesByPersonAndDay(item, payload, query) {
   return false;
 }
 
-function buildQuery(req) {
-  const { sectionId, serviceId = '', role = '' } = req.method === 'GET'
-    ? req.query
-    : req.body;
+function buildQuery(req, defaults = {}) {
+  const src = req.method === 'GET' ? req.query : req.body;
+  // Express 5: req.query getter yeni obje döndürür — kopyaya al
+  const { serviceId = '', role = '' } = src;
+  const sectionId = src.sectionId || defaults.sectionId || '';
 
-  const year = parseIntSafe(req.method === 'GET' ? req.query.year : req.body.year);
-  const month = parseIntSafe(req.method === 'GET' ? req.query.month : req.body.month);
+  const year = parseIntSafe(src.year);
+  const month = parseIntSafe(src.month);
 
   if (!sectionId) throw new Error('sectionId gerekli');
   if (!year || year < 2000) throw new Error('year geçersiz');
@@ -674,13 +675,11 @@ async function loadRules(req, res, next) {
 // Root GET — eski frontend kodları /api/schedules?year=&month= çağırıyordu, /monthly'ye yönlendir
 router.get('/',
   requireAuth,
-  (req, _res, next) => {
-    if (!req.query.sectionId) req.query.sectionId = 'calisma-cizelgesi';
-    next();
-  },
   (req, res, next) => {
     try {
-      const query = buildQuery(req);
+      // Express 5: req.query getter yeni obje döndürür, mutasyon çalışmaz
+      // Bu yüzden buildQuery'e default olarak geçiyoruz
+      const query = buildQuery(req, { sectionId: 'calisma-cizelgesi' });
       req.scheduleQuery = query;
       req.targetServiceId = query.serviceId;
       next();
