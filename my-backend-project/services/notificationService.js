@@ -282,7 +282,6 @@ async function sendShiftChanged({
     action,
   });
 
-  const actionText = action === 'removed' ? 'silindi' : 'güncellendi';
   return dispatchMail({
     to: recipient.email,
     subject: `Vardiya Kaydınız ${actionText === 'silindi' ? 'Silindi' : 'Güncellendi'}`,
