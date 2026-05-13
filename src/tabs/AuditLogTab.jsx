@@ -1,7 +1,7 @@
 // src/tabs/AuditLogTab.jsx — admin audit log görüntüleyici
 import React, { useCallback, useEffect, useState } from "react";
 import { RefreshCw, Search, CheckCircle, XCircle, Clock } from "lucide-react";
-import { apiFetch } from "../lib/api.js";
+import { http } from "../lib/api.js";
 
 const METHOD_COLOR = {
   GET:    "bg-sky-100 text-sky-700",
@@ -27,7 +27,7 @@ export default function AuditLogTab() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiFetch(`/api/admin/audit-logs?limit=200`);
+      const data = await http.get(`/api/admin/audit-logs?limit=200`);
       const items = Array.isArray(data?.logs || data?.items || data)
         ? (data?.logs || data?.items || data)
         : [];
