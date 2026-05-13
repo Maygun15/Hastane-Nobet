@@ -559,7 +559,9 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
   /* Sadece yüklendikten sonra kaydet */
   useEffect(() => {
     if (!loaded) return;
-    const toSave = normalizeRows(rows, { sort:false, renumber:false, filterEmpty:true });
+    const normalized = normalizeRows(rows, { sort:false, renumber:false, filterEmpty:true });
+    // KVKK: TC kimlik numarası localStorage'a yazılmaz, sadece bellekte tutulur
+    const toSave = normalized.map(({ tckn: _tc, ...rest }) => rest);
     LS.set(storageKey, toSave);
     LS.set(latestKey, { ym: {year, month: month1}, rows: toSave });
   }, [loaded, storageKey, latestKey, rows, year, month1]);

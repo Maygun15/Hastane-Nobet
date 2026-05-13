@@ -34,11 +34,16 @@ export function AuthProvider({ children }) {
   const [status, setStatus] = useState("idle"); // ilk yüklenme
   const isAuthenticated = !!user;
 
-  // user bilgisini LS'de tut (prod yazma kısıtı için)
+  // user bilgisini LS'de tut — TC/şifre alanları hariç (KVKK)
   useEffect(() => {
     try {
-      if (user) localStorage.setItem("authUser", JSON.stringify(user));
-      else localStorage.removeItem("authUser");
+      if (user) {
+        // eslint-disable-next-line no-unused-vars
+        const { tc, password, passwordHash, nationalId, ...safe } = user;
+        localStorage.setItem("authUser", JSON.stringify(safe));
+      } else {
+        localStorage.removeItem("authUser");
+      }
     } catch {}
   }, [user]);
 

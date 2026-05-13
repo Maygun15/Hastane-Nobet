@@ -116,7 +116,7 @@ async function req(path, { method = 'GET', body, headers, timeoutMs, retries } =
   const base = getApiBase().replace(/\/+$/, "");
   assertProdWriteAllowed(path, method);
   const url = `${base}${path}`;
-  const isAuthPath = path.includes('/auth/refresh') || path.includes('/auth/login');
+  const isAuthPath = path.includes('/auth/refresh') || path.includes('/auth/login') || path.includes('/auth/me');
 
   function buildOpts() {
     return {

@@ -121,7 +121,7 @@ export default function DashboardPage({ activeYM, peopleAll = [], onGoSchedules,
     setLoadingStats(true);
     try {
       const [schedRes, reqRes] = await Promise.allSettled([
-        http.get(`/api/schedules?year=${year}&month=${month}&size=1`),
+        http.get(`/api/schedules?sectionId=calisma-cizelgesi&year=${year}&month=${month}&size=1`),
         http.get(`/api/requests?status=pending&size=5`),
       ]);
 

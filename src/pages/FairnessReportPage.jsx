@@ -79,7 +79,7 @@ export default function FairnessReportPage({ activeYM }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await http.get(`/api/schedules?year=${year}&month=${month}&size=1`);
+      const res = await http.get(`/api/schedules?sectionId=calisma-cizelgesi&year=${year}&month=${month}&size=1`);
       const assignments = res?.data?.assignments || res?.assignments || [];
       const issues = res?.data?.issues || res?.issues || [];
 

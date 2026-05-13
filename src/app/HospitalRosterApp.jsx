@@ -20,7 +20,10 @@ import PlanTab from "../tabs/PlanTab.jsx";
 import SchedulesTab from "../tabs/SchedulesTab.jsx";
 import ParametersTab from "../tabs/ParametersTab.jsx";
 import PersonnelTab from "../tabs/PersonnelTab.jsx";
-import { LS } from "../utils/storage.js";
+import { LS, pruneOldMonthlySheets } from "../utils/storage.js";
+
+// Başlangıçta 3 aydan eski çizelge verilerini temizle (KVKK + localStorage şişmesi)
+pruneOldMonthlySheets(3);
 
 // Auth
 import { useAuth } from "../auth/AuthContext.jsx";
@@ -225,9 +228,7 @@ export default function HospitalRosterApp() {
   }, [workingHours]);
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
-    LS.set("leaveTypes", leaveTypes);
     LS.set("leaveTypesV2", leaveTypes);
-    LS.set("izinTurleri", leaveTypes);
     try { window.dispatchEvent(new Event("leaveTypes:changed")); } catch {}
   }, [leaveTypes]);
   useEffect(() => {

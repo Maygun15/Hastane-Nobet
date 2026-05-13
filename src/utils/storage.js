@@ -33,6 +33,27 @@ export function writeActiveYM(year, month) {
   }
 }
 
+/**
+ * 3 aydan eski monthlyHoursSheet verilerini localStorage'dan temizler.
+ * Uygulama başlangıcında bir kez çağrılır.
+ */
+export function pruneOldMonthlySheets(keepMonths = 3) {
+  try {
+    const now = new Date();
+    const cutoff = new Date(now.getFullYear(), now.getMonth() - keepMonths, 1);
+    const toRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      const match = key.match(/^monthlyHoursSheet\/(\d{4})-(\d{2})$/);
+      if (!match) continue;
+      const keyDate = new Date(Number(match[1]), Number(match[2]) - 1, 1);
+      if (keyDate < cutoff) toRemove.push(key);
+    }
+    toRemove.forEach((k) => localStorage.removeItem(k));
+  } catch { /* no-op */ }
+}
+
 /* İsteğe bağlı: proje genelinde kullanışlı tek bir LS wrapper */
 export const LS = {
   get(key, def = null) {
