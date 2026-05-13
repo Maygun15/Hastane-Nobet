@@ -655,3 +655,30 @@ if (SKIP_DB) {
   server.headersTimeout = 70000;
   setInterval(() => {}, 1 << 30);
 }
+
+/* ============== GRACEFUL SHUTDOWN ============== */
+function gracefulShutdown(signal) {
+  console.log(`[SHUTDOWN] ${signal} alındı — sunucu kapatılıyor…`);
+  server.close(async () => {
+    console.log('[SHUTDOWN] HTTP sunucusu kapandı');
+    try {
+      await mongoose.connection.close(false);
+      console.log('[SHUTDOWN] MongoDB bağlantısı kapandı');
+    } catch (e) {
+      console.error('[SHUTDOWN] MongoDB kapatma hatası:', e?.message);
+    }
+    if (Sentry) {
+      try { await Sentry.close(2000); } catch {}
+    }
+    process.exit(0);
+  });
+
+  // 15 saniye içinde kapanmazsa zorla çık
+  setTimeout(() => {
+    console.error('[SHUTDOWN] Zaman aşımı — zorla çıkılıyor');
+    process.exit(1);
+  }, 15_000).unref();
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT',  () => gracefulShutdown('SIGINT'));

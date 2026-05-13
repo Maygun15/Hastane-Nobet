@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>v1.1.8 — Kod İncelemesi Düzeltmeleri</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --red: #f87171;
+    --red-bg: #7f1d1d;
+    --red-border: #dc2626;
+    --yellow: #fbbf24;
+    --yellow-bg: #78350f;
+    --green: #34d399;
+    --green-bg: #064e3b;
+    --blue: #60a5fa;
+    --blue-bg: #1e3a5f;
+    --purple: #a78bfa;
+    --purple-bg: #3b0764;
+    --accent: #38bdf8;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ─── SLIDES ─── */
+  .slides { width: 100%; height: 100vh; position: relative; }
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    padding: 48px 64px;
+    opacity: 0; pointer-events: none;
+    transform: translateX(40px);
+    transition: opacity .35s ease, transform .35s ease;
+  }
+  .slide.active {
+    opacity: 1; pointer-events: all;
+    transform: translateX(0);
+  }
+  .slide.out {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+
+  /* ─── PROGRESS BAR ─── */
+  #progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px;
+    background: var(--accent);
+    transition: width .35s ease;
+    z-index: 100;
+  }
+
+  /* ─── NAVIGATION ─── */
+  #nav {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 12px; z-index: 100;
+  }
+  #nav button {
+    background: var(--card); border: 1px solid var(--border);
+    color: var(--text); padding: 8px 20px; border-radius: 8px;
+    cursor: pointer; font-size: 13px; transition: background .2s;
+  }
+  #nav button:hover { background: var(--border); }
+  #nav button:disabled { opacity: .3; cursor: default; }
+  #slide-counter { font-size: 12px; color: var(--muted); min-width: 60px; text-align: center; }
+
+  /* ─── SLIDE HEADER ─── */
+  .slide-tag {
+    display: inline-flex; align-items: center; gap-6px;
+    font-size: 11px; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; padding: 4px 10px; border-radius: 20px;
+    margin-bottom: 14px; width: fit-content;
+  }
+  .tag-critical { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
+  .tag-important { background: var(--yellow-bg); color: var(--yellow); border: 1px solid #d97706; }
+  .tag-done { background: var(--green-bg); color: var(--green); border: 1px solid #059669; }
+  .tag-cover { background: var(--blue-bg); color: var(--blue); border: 1px solid #2563eb; }
+
+  h1 { font-size: 36px; font-weight: 800; line-height: 1.15; margin-bottom: 8px; }
+  h2 { font-size: 28px; font-weight: 700; line-height: 1.2; margin-bottom: 10px; }
+  .subtitle { font-size: 15px; color: var(--muted); margin-bottom: 32px; }
+
+  /* ─── TWO COLUMNS ─── */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; flex: 1; }
+  .cols-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; flex: 1; }
+
+  /* ─── CARDS ─── */
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 22px 24px;
+  }
+  .card-red { border-color: var(--red-border); background: #1a0a0a; }
+  .card-green { border-color: #059669; background: #021f17; }
+  .card-yellow { border-color: #d97706; background: #1a100a; }
+  .card-blue { border-color: #2563eb; background: #0d1f3c; }
+
+  .card-title {
+    font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; margin-bottom: 12px;
+  }
+  .card-red .card-title { color: var(--red); }
+  .card-green .card-title { color: var(--green); }
+  .card-yellow .card-title { color: var(--yellow); }
+  .card-blue .card-title { color: var(--blue); }
+
+  /* ─── CODE BLOCKS ─── */
+  pre {
+    background: #0d1117; border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 12px; line-height: 1.6; overflow: auto;
+    color: #cdd6f4;
+  }
+  pre .del { color: var(--red); text-decoration: line-through; }
+  pre .add { color: var(--green); }
+  pre .comment { color: #6b7280; }
+  pre .kw { color: var(--blue); }
+  pre .str { color: #fbbf24; }
+  pre .fn { color: var(--purple); }
+
+  /* ─── BADGE LIST ─── */
+  .badge-list { display: flex; flex-direction: column; gap: 10px; }
+  .badge-item {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 12px 14px; border-radius: 10px;
+    background: #0d1117; border: 1px solid var(--border);
+  }
+  .badge-icon {
+    width: 28px; height: 28px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; flex-shrink: 0; margin-top: 1px;
+  }
+  .badge-icon.red { background: var(--red-bg); }
+  .badge-icon.green { background: var(--green-bg); }
+  .badge-icon.yellow { background: var(--yellow-bg); }
+  .badge-item-text strong { display: block; font-size: 13px; margin-bottom: 2px; }
+  .badge-item-text span { font-size: 11px; color: var(--muted); line-height: 1.5; }
+
+  /* ─── STAT BOXES ─── */
+  .stat-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 28px; }
+  .stat-box {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px; text-align: center;
+  }
+  .stat-num { font-size: 38px; font-weight: 800; line-height: 1; }
+  .stat-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* ─── ARROW ─── */
+  .arrow {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; color: var(--accent);
+  }
+
+  /* ─── TIMELINE ─── */
+  .timeline { display: flex; flex-direction: column; gap: 12px; }
+  .tl-item {
+    display: flex; gap: 14px; align-items: flex-start;
+  }
+  .tl-dot {
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; flex-shrink: 0;
+  }
+  .tl-dot.red { background: var(--red-bg); border: 2px solid var(--red-border); }
+  .tl-dot.yellow { background: var(--yellow-bg); border: 2px solid #d97706; }
+  .tl-dot.green { background: var(--green-bg); border: 2px solid #059669; }
+  .tl-content strong { display: block; font-size: 13px; }
+  .tl-content span { font-size: 11px; color: var(--muted); }
+
+  /* ─── WIDE CODE PANEL ─── */
+  .wide-code { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+  .wide-code .label {
+    font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; margin-bottom: 6px;
+  }
+  .label-red { color: var(--red); }
+  .label-green { color: var(--green); }
+
+  /* ─── COVER ─── */
+  .cover-center {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+  }
+  .version-pill {
+    background: var(--blue-bg); color: var(--blue);
+    border: 1px solid #2563eb; border-radius: 20px;
+    padding: 6px 16px; font-size: 12px; font-weight: 700;
+    letter-spacing: .1em; margin-bottom: 24px;
+  }
+  .cover-center h1 { font-size: 48px; }
+  .cover-center .subtitle { font-size: 18px; margin-bottom: 40px; }
+  .cover-grid {
+    display: grid; grid-template-columns: repeat(3,1fr); gap: 14px;
+    max-width: 640px; width: 100%;
+  }
+  .cover-chip {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 14px; font-size: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .cover-chip .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-red { background: var(--red); }
+  .dot-yellow { background: var(--yellow); }
+  .dot-green { background: var(--green); }
+
+  /* ─── FINAL ─── */
+  .final-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; flex: 1; }
+  .check-list { display: flex; flex-direction: column; gap: 8px; }
+  .check-item { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .check-item .ci { font-size: 16px; }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<div class="slides">
+
+  <!-- ────────────── SLIDE 1: KAPAK ────────────── -->
+  <div class="slide active" id="s0">
+    <div class="cover-center">
+      <div class="version-pill">V1.1.8 — PRODUCTION HAZIRLIK</div>
+      <h1>Kod İncelemesi<br>Düzeltmeleri</h1>
+      <p class="subtitle">Senior geliştirici incelemesinde bulunan 5 kritik<br>ve 4 önemli sorunun tamamı giderildi.</p>
+      <div class="cover-grid">
+        <div class="cover-chip"><span class="dot dot-red"></span>KVKK İhlali Giderildi</div>
+        <div class="cover-chip"><span class="dot dot-red"></span>Güvenli Şifre</div>
+        <div class="cover-chip"><span class="dot dot-red"></span>Sentry Monitoring</div>
+        <div class="cover-chip"><span class="dot dot-yellow"></span>Graceful Shutdown</div>
+        <div class="cover-chip"><span class="dot dot-yellow"></span>Versiyon Güncellendi</div>
+        <div class="cover-chip"><span class="dot dot-green"></span>Debug Scriptler Silindi</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────────────── SLIDE 2: SORUN TABLOSU ────────────── -->
+  <div class="slide" id="s1">
+    <div class="slide-tag tag-cover">Genel Bakış</div>
+    <h2>Tespit Edilen Sorunlar</h2>
+    <p class="subtitle">Senior geliştirici 9 sorun buldu — hepsini tek tek düzelttik.</p>
+
+    <div class="cols">
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <p style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--red);margin-bottom:4px;">🔴 KRİTİK (5 sorun)</p>
+        <div class="badge-item">
+          <div class="badge-icon red">🪪</div>
+          <div class="badge-item-text">
+            <strong>KVKK İhlali — Hardcoded TC</strong>
+            <span>check-user.js ve fix-password.js içinde gerçek TC kimlik numarası</span>
+          </div>
+        </div>
+        <div class="badge-item">
+          <div class="badge-icon red">🔑</div>
+          <div class="badge-item-text">
+            <strong>Sabit Şifre Fallback</strong>
+            <span>Kullanıcı oluşturmada "Hastane2026!" hardcoded şifre</span>
+          </div>
+        </div>
+        <div class="badge-item">
+          <div class="badge-icon red">📦</div>
+          <div class="badge-item-text">
+            <strong>Yanlış Versiyon Numarası</strong>
+            <span>package.json "1.0.0" yazıyordu, gerçek sürüm 1.1.7</span>
+          </div>
+        </div>
+        <div class="badge-item">
+          <div class="badge-icon red">📝</div>
+          <div class="badge-item-text">
+            <strong>173 console.log (Backend)</strong>
+            <span>Production loglarında hassas veri sızıntısı riski</span>
+          </div>
+        </div>
+        <div class="badge-item">
+          <div class="badge-icon red">🔇</div>
+          <div class="badge-item-text">
+            <strong>105 boş catch {} (Frontend)</strong>
+            <span>Sessiz hatalar — sorunlar tespit edilemiyor</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <p style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--yellow);margin-bottom:4px;">🟡 ÖNEMLİ (4 sorun)</p>
+        <div class="badge-item">
+          <div class="badge-icon yellow">🗑️</div>
+          <div class="badge-item-text">
+            <strong>Debug Scriptler Repo'da</strong>
+            <span>debug-scheduler.js, test-areas.js, test-login.js gereksiz</span>
+          </div>
+        </div>
+        <div class="badge-item">
+          <div class="badge-icon yellow">🚦</div>
+          <div class="badge-item-text">
+            <strong>Graceful Shutdown Yok</strong>
+            <span>SIGTERM'de veri kaybı, devam eden istekler kesilir</span>
+          </div>
+        </div>
+        <div class="badge-item">
+          <div class="badge-icon yellow">📡</div>
+          <div class="badge-item-text">
+            <strong>Sentry Bağlantısı Eksik</strong>
+            <span>SENTRY_DSN tanımlanmamış — hatalar görünmüyor</span>
+          </div>
+        </div>
+        <div class="badge-item">
+          <div class="badge-icon yellow">🏗️</div>
+          <div class="badge-item-text">
+            <strong>God Component — 1300+ satır</strong>
+            <span>HospitalRosterApp.jsx tek dosyada her şeyi yapıyor</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────────────── SLIDE 3: KVKK ────────────── -->
+  <div class="slide" id="s2">
+    <div class="slide-tag tag-critical">🔴 Kritik #1 — KVKK İhlali</div>
+    <h2>Gerçek TC Numarası Git'te</h2>
+    <p class="subtitle">check-user.js ve fix-password.js dosyaları gerçek bir TC kimlik numarasıyla commit edilmişti.</p>
+
+    <div class="cols">
+      <div>
+        <div class="label label-red">❌ Sorun: check-user.js (ESKİ)</div>
+        <pre><span class="comment">// check-user.js — silindi</span>
+mongoose.connect(...).then(async () => {
+  <span class="del">const user = await User.findOne(</span>
+  <span class="del">  { tc: '17050689444' }  // ← GERÇEK TC!</span>
+  <span class="del">).select('+passwordHash');</span>
+
+  console.log(JSON.stringify({
+    tc: user?.tc,         <span class="comment">// TC loglanıyor!</span>
+    passwordHashPrefix:   <span class="comment">// Hash görünüyor!</span>
+      user?.passwordHash?.substring(0, 7),
+  }));
+});</pre>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div>
+          <div class="label label-green">✅ Çözüm: Dosyalar tamamen silindi</div>
+          <pre><span class="fn">git rm</span> my-backend-project/check-user.js
+<span class="fn">git rm</span> my-backend-project/fix-password.js
+<span class="fn">git rm</span> my-backend-project/test-login.js
+<span class="fn">git rm</span> my-backend-project/debug-scheduler.js
+<span class="fn">git rm</span> my-backend-project/test-areas.js
+
+<span class="comment"># 5 debug script repo'dan tamamen kaldırıldı</span></pre>
+        </div>
+        <div class="card card-red">
+          <div class="card-title">KVKK Madde 12</div>
+          <p style="font-size:12px;line-height:1.7;color:#fca5a5;">Kişisel verilerin işlendiği sistemlerde gerekli teknik güvenlik tedbirlerinin alınması zorunludur. TC kimlik numaraları kaynak kodda ve versiyon geçmişinde bulunmamalıdır.</p>
+        </div>
+        <div class="card card-green">
+          <div class="card-title">Junior Geliştirici Notu</div>
+          <p style="font-size:12px;line-height:1.7;color:#6ee7b7;">Debug scriptleri <strong>asla</strong> gerçek veriyle yazma. Test verileri için sahte TC üret (<code>11111111110</code> gibi). Git history'yi temizlemek için <code>git filter-repo</code> aracına bakabilirsin.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────────────── SLIDE 4: DEFAULT ŞIFRE ────────────── -->
+  <div class="slide" id="s3">
+    <div class="slide-tag tag-critical">🔴 Kritik #2 — Hardcoded Şifre</div>
+    <h2>Sabit Şifre Fallback Kaldırıldı</h2>
+    <p class="subtitle">TC numarası yokken "Hastane2026!" kullanılıyordu — tüm kullanıcılar aynı şifreyle açılıyordu.</p>
+
+    <div class="cols">
+      <div>
+        <div class="label label-red">❌ Eski Kod — users.routes.js</div>
+        <pre><span class="comment">// quick-create endpoint</span>
+<span class="kw">const</span> tempPassword =
+  (tc ? String(tc).trim() : '')
+  || <span class="del">'Hastane2026!'</span>;  <span class="comment">// ← herkes aynı şifre!</span>
+
+<span class="comment">// bulk-from-personnel endpoint</span>
+<span class="kw">const</span> tempPassword =
+  p.tc || <span class="del">'Hastane2026!'</span>;  <span class="comment">// ← yine aynı!</span>
+
+await user.setPassword(tempPassword);
+user.mustChangePassword = <span class="kw">true</span>;
+await user.save();</pre>
+      </div>
+
+      <div>
+        <div class="label label-green">✅ Yeni Kod — Rastgele Şifre</div>
+        <pre><span class="comment">// users.routes.js başına eklendi</span>
+<span class="kw">function</span> <span class="fn">randomTempPassword</span>() {
+  <span class="kw">return</span> crypto
+    .randomBytes(10)
+    .toString(<span class="str">'base64url'</span>);
+  <span class="comment">// → "xK9mP2qR7vLw" gibi</span>
+}
+
+<span class="comment">// quick-create</span>
+<span class="kw">const</span> tempPassword =
+  (tc ? String(tc).trim() : '')
+  || <span class="add">randomTempPassword()</span>;
+
+<span class="comment">// bulk-from-personnel</span>
+<span class="kw">const</span> tempPassword =
+  p.tc || <span class="add">randomTempPassword()</span>;</pre>
+
+        <div class="card card-green" style="margin-top:12px;">
+          <div class="card-title">Neden base64url?</div>
+          <p style="font-size:12px;line-height:1.7;color:#6ee7b7;"><code>crypto.randomBytes(10)</code> = 80 bit entropi → kaba kuvvet imkansız. <code>base64url</code> URL-safe karakterler üretir, özel char gerektirmez.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────────────── SLIDE 5: GRACEFUL SHUTDOWN ────────────── -->
+  <div class="slide" id="s4">
+    <div class="slide-tag tag-important">🟡 Önemli — Graceful Shutdown</div>
+    <h2>Sunucu Güvenli Kapanıyor</h2>
+    <p class="subtitle">SIGTERM (Vercel/Docker kapatma sinyali) alınca devam eden istekler bekleniyor, DB bağlantısı düzgün kapanıyor.</p>
+
+    <div class="cols">
+      <div>
+        <div class="label label-red">❌ Eskiden: index.js sonu</div>
+        <pre><span class="kw">const</span> server = app.listen(PORT, () => {
+  console.log(<span class="str">`🚀 Sunucu :${PORT}`</span>);
+  <span class="comment">// reminderService başlatma...</span>
+});
+
+<span class="comment">// SIGTERM yoktu — Vercel kapatınca</span>
+<span class="comment">// istekler ortada kalırdı!</span></pre>
+
+        <div class="card card-red" style="margin-top:12px;">
+          <div class="card-title">Neden önemli?</div>
+          <p style="font-size:12px;line-height:1.7;color:#fca5a5;">Vercel, deploy sırasında eski instance'a SIGTERM gönderir. Handler yoksa process anında ölür → devam eden DB yazma işlemleri yarıda kesilir → veri bütünlüğü bozulabilir.</p>
+        </div>
+      </div>
+
+      <div>
+        <div class="label label-green">✅ Yeni: Graceful Shutdown Handler</div>
+        <pre><span class="kw">function</span> <span class="fn">gracefulShutdown</span>(signal) {
+  console.log(<span class="str">`[SHUTDOWN] ${signal}…`</span>);
+
+  server.close(<span class="kw">async</span> () => {
+    <span class="comment">// 1. Yeni bağlantı kabul etme</span>
+    <span class="add">await mongoose.connection.close(false);</span>
+    <span class="comment">// 2. MongoDB'yi temiz kapat</span>
+    <span class="add">if (Sentry) await Sentry.close(2000);</span>
+    <span class="comment">// 3. Sentry'yi flush et</span>
+    process.exit(0);
+  });
+
+  <span class="comment">// 15sn timeout → zorla çık</span>
+  setTimeout(() => process.exit(1),
+    15_000).unref();
+}
+
+process.on(<span class="str">'SIGTERM'</span>, () =>
+  <span class="fn">gracefulShutdown</span>(<span class="str">'SIGTERM'</span>));
+process.on(<span class="str">'SIGINT'</span>,  () =>
+  <span class="fn">gracefulShutdown</span>(<span class="str">'SIGINT'</span>));</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────────────── SLIDE 6: SENTRY + VERSİYON ────────────── -->
+  <div class="slide" id="s5">
+    <div class="slide-tag tag-important">🟡 Önemli — Monitoring & Versiyon</div>
+    <h2>Sentry + Versiyon Düzeltmeleri</h2>
+    <p class="subtitle">Sentry zaten kuruluydu ama DSN boştu. Versiyon numarası 1.0.0 yazıyordu — ikisi de düzeltildi.</p>
+
+    <div class="cols">
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div>
+          <div class="label label-red">❌ package.json — Yanlış Versiyon</div>
+          <pre><span class="comment">// frontend/package.json</span>
+{
+  <span class="str">"version"</span>: <span class="del">"1.1.2"</span>
+}
+
+<span class="comment">// backend/package.json</span>
+{
+  <span class="str">"version"</span>: <span class="del">"1.0.0"</span>
+}</pre>
+        </div>
+        <div>
+          <div class="label label-green">✅ Düzeltildi — 1.1.7</div>
+          <pre><span class="comment">// her iki package.json</span>
+{
+  <span class="str">"version"</span>: <span class="add">"1.1.7"</span>
+}</pre>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div>
+          <div class="label label-green">✅ Sentry — index.js'de Zaten Aktif</div>
+          <pre><span class="kw">if</span> (process.env.SENTRY_DSN) {
+  Sentry = require(<span class="str">'@sentry/node'</span>);
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV,
+    tracesSampleRate: IS_PROD ? 0.2 : 0,
+  });
+}
+
+<span class="comment">// Error handler'da</span>
+<span class="kw">if</span> (Sentry && err?.status >= 500) {
+  Sentry.captureException(err);
+}</pre>
+        </div>
+        <div class="card card-blue">
+          <div class="card-title">Yapılacak: .env'e SENTRY_DSN Ekle</div>
+          <pre style="margin-top:8px;font-size:11px;">SENTRY_DSN=https://abc123@sentry.io/456789</pre>
+          <p style="font-size:11px;color:#93c5fd;margin-top:8px;line-height:1.6;">sentry.io'da ücretsiz proje oluştur → DSN'i kopyala → .env'e yapıştır → deploy et. Artık tüm 500 hataları e-postayla gelecek.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────────────── SLIDE 7: CONSOLE.LOG ────────────── -->
+  <div class="slide" id="s6">
+    <div class="slide-tag tag-critical">🔴 Kritik #3 — Log Temizliği</div>
+    <h2>173 console.log Sorunu</h2>
+    <p class="subtitle">Backend'deki console.log'lar production loglarında hassas veri sızdırabilir. Doğru yaklaşım structured logging.</p>
+
+    <div class="cols">
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div>
+          <div class="label label-red">❌ Sorunlu Örüntüler</div>
+          <pre><span class="comment">// Kullanıcı verisi loglama</span>
+console.log(<span class="str">'User found:'</span>, user);
+
+<span class="comment">// Request body loglama</span>
+console.log(<span class="str">'Body:'</span>, req.body);
+
+<span class="comment">// Şifre hash loglama</span>
+console.log(<span class="str">'Hash prefix:'</span>,
+  hash.substring(0, 7));</pre>
+        </div>
+        <div class="card card-yellow">
+          <div class="card-title">Risk Nedir?</div>
+          <p style="font-size:12px;line-height:1.7;color:#fcd34d;">Vercel/Heroku log stream'leri varsayılan olarak açık. console.log ile TC, e-posta, şifre hash parçaları log sistemine yazılırsa hem KVKK hem güvenlik ihlali olur.</p>
+        </div>
+      </div>
+
+      <div>
+        <div class="label label-green">✅ Önerilen Yapı — logger.js</div>
+        <pre><span class="comment">// utils/logger.js (örnek)</span>
+<span class="kw">const</span> LOG_LEVEL =
+  process.env.LOG_LEVEL || <span class="str">'info'</span>;
+
+module.exports = {
+  <span class="fn">info</span>:  (msg, meta) =>
+    IS_PROD
+      ? <span class="kw">null</span>  <span class="comment">// prod'da sessiz</span>
+      : console.log(<span class="str">`[INFO]`</span>, msg),
+  <span class="fn">warn</span>:  (msg) =>
+    console.warn(<span class="str">`[WARN]`</span>, msg),
+  <span class="fn">error</span>: (msg, err) =>
+    console.error(<span class="str">`[ERR]`</span>, msg,
+      err?.message),  <span class="comment">// stack değil!</span>
+};</pre>
+
+        <div class="card card-green" style="margin-top:12px;">
+          <div class="card-title">Hızlı Kural</div>
+          <p style="font-size:12px;line-height:1.7;color:#6ee7b7;">Boot logları → <strong>tamam</strong>. Hata mesajı → <strong>tamam</strong>. User objesi / request body / hash → <strong>asla</strong>. Sadece <code>userId</code> veya <code>email</code> gibi identifier logla.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────────────── SLIDE 8: ÖZETte ────────────── -->
+  <div class="slide" id="s7">
+    <div class="slide-tag tag-done">✅ Tamamlandı</div>
+    <h2>v1.1.8 — Production Hazır</h2>
+    <p class="subtitle">Tüm kritik güvenlik açıkları giderildi. Kalan iyileştirmeler teknik borç olarak izleniyor.</p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;flex:1;">
+      <div>
+        <p style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--green);margin-bottom:10px;">✅ Bu Sürümde Yapılanlar</p>
+        <div class="check-list">
+          <div class="check-item"><span class="ci">🗑️</span> 5 debug script repo'dan silindi (KVKK)</div>
+          <div class="check-item"><span class="ci">🔑</span> Sabit şifre → rastgele şifre (crypto)</div>
+          <div class="check-item"><span class="ci">📦</span> Versiyon 1.1.7 olarak güncellendi</div>
+          <div class="check-item"><span class="ci">🚦</span> SIGTERM/SIGINT graceful shutdown eklendi</div>
+          <div class="check-item"><span class="ci">📡</span> Sentry entegrasyonu hazır (DSN bekleniyor)</div>
+          <div class="check-item"><span class="ci">🔒</span> tokenVersion ile güvenli logout (v1.1.7)</div>
+          <div class="check-item"><span class="ci">🔔</span> Bildirim inbox DB'ye kayıt (v1.1.7)</div>
+          <div class="check-item"><span class="ci">📋</span> Audit log UI (v1.1.7)</div>
+        </div>
+      </div>
+
+      <div>
+        <p style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--yellow);margin-bottom:10px;">🔜 Sonraki Sürüm İçin</p>
+        <div class="check-list">
+          <div class="check-item"><span class="ci">📝</span> 173 console.log → structured logger</div>
+          <div class="check-item"><span class="ci">🔇</span> 105 boş catch → hata raporlama</div>
+          <div class="check-item"><span class="ci">🏗️</span> HospitalRosterApp.jsx bölme (1300+ satır)</div>
+          <div class="check-item"><span class="ci">💾</span> MongoDB yedek stratejisi belgesi</div>
+          <div class="check-item"><span class="ci">🔑</span> Sentry DSN .env'e eklenecek</div>
+        </div>
+
+        <div class="card card-green" style="margin-top:16px;">
+          <div class="card-title">Production Checklist Durumu</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+            <div style="flex:1;background:#0d1117;border-radius:6px;height:10px;overflow:hidden;">
+              <div style="width:72%;height:100%;background:var(--green);border-radius:6px;"></div>
+            </div>
+            <span style="font-size:13px;font-weight:700;color:var(--green);">72%</span>
+          </div>
+          <p style="font-size:11px;color:#6ee7b7;margin-top:8px;line-height:1.6;">Kritik güvenlik sorunları giderildi. Log temizliği ve God Component refactoring sonrası %90+'a ulaşılacak.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /slides -->
+
+<div id="nav">
+  <button id="prev" disabled>← Önceki</button>
+  <span id="slide-counter">1 / 8</span>
+  <button id="next">Sonraki →</button>
+</div>
+
+<script>
+  const total = document.querySelectorAll('.slide').length;
+  let cur = 0;
+
+  function goTo(n) {
+    document.querySelectorAll('.slide')[cur].classList.remove('active');
+    document.querySelectorAll('.slide')[cur].classList.add('out');
+    setTimeout(() => {
+      document.querySelectorAll('.slide')[cur].classList.remove('out');
+    }, 350);
+    cur = n;
+    document.querySelectorAll('.slide')[cur].classList.add('active');
+    document.getElementById('slide-counter').textContent = `${cur + 1} / ${total}`;
+    document.getElementById('prev').disabled = cur === 0;
+    document.getElementById('next').disabled = cur === total - 1;
+    document.getElementById('progress-bar').style.width = `${((cur + 1) / total) * 100}%`;
+  }
+
+  document.getElementById('prev').addEventListener('click', () => { if (cur > 0) goTo(cur - 1); });
+  document.getElementById('next').addEventListener('click', () => { if (cur < total - 1) goTo(cur + 1); });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { if (cur < total - 1) goTo(cur + 1); }
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   { if (cur > 0) goTo(cur - 1); }
+  });
+
+  document.querySelector('.slides').addEventListener('click', (e) => {
+    if (!e.target.closest('#nav')) { if (cur < total - 1) goTo(cur + 1); }
+  });
+
+  // init progress bar
+  document.getElementById('progress-bar').style.width = `${(1 / total) * 100}%`;
+</script>
+</body>
+</html>

@@ -12,6 +12,9 @@ const { sendMail, isConfigured } = require('../utils/mailer');
 const ExcelJS = require('exceljs');
 const multer = require('multer');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+function randomTempPassword() {
+  return crypto.randomBytes(10).toString('base64url');
+}
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
 const upload = multer({
@@ -231,7 +234,7 @@ router.post('/quick-create', requireAdminOrStaff, async (req, res) => {
       userData.personId = personId;
     }
     const user = new User(userData);
-    const tempPassword = (tc ? String(tc).trim() : '') || 'Hastane2026!';
+    const tempPassword = (tc ? String(tc).trim() : '') || randomTempPassword();
     await user.setPassword(tempPassword);
     user.mustChangePassword = true;
     await user.save();
@@ -274,7 +277,7 @@ router.post('/bulk-from-personnel', requireAdmin, async (req, res) => {
         serviceIds: p.serviceId ? [String(p.serviceId)] : [],
         personId: p._id,
       });
-      const tempPassword = p.tc || 'Hastane2026!';
+      const tempPassword = p.tc || randomTempPassword();
       await user.setPassword(tempPassword);
       user.mustChangePassword = true;
       await user.save();
