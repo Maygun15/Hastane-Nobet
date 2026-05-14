@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>v1.1.7 — Yeni Özellikler Sunumu</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --blue: #2563eb;
+    --green: #059669;
+    --amber: #d97706;
+    --rose: #e11d48;
+    --slate: #334155;
+    --slate-light: #f8fafc;
+    --slide-bg: #0f172a;
+  }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--slide-bg);
+    color: #e2e8f0;
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ── Slayt kapsayıcı ── */
+  .deck { width: 100vw; height: 100vh; position: relative; }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    padding: 48px 64px;
+    opacity: 0; pointer-events: none;
+    transition: opacity .35s ease;
+  }
+  .slide.active { opacity: 1; pointer-events: all; }
+
+  /* ── Genel tipografi ── */
+  .tag {
+    font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
+    padding: 4px 12px; border-radius: 999px; margin-bottom: 16px;
+    display: inline-block;
+  }
+  .tag.blue   { background: #1d4ed8; color: #bfdbfe; }
+  .tag.green  { background: #065f46; color: #a7f3d0; }
+  .tag.amber  { background: #92400e; color: #fde68a; }
+  .tag.rose   { background: #9f1239; color: #fecdd3; }
+  .tag.purple { background: #5b21b6; color: #ddd6fe; }
+  .tag.slate  { background: #1e293b; color: #94a3b8; }
+
+  h1 { font-size: clamp(28px, 4vw, 52px); font-weight: 800; line-height: 1.1; text-align: center; }
+  h2 { font-size: clamp(22px, 3vw, 38px); font-weight: 700; line-height: 1.2; text-align: center; }
+  .sub { font-size: clamp(14px, 1.8vw, 20px); color: #94a3b8; text-align: center; margin-top: 12px; }
+
+  /* ── Kartlar ── */
+  .cards { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; margin-top: 32px; width: 100%; max-width: 1100px; }
+  .card {
+    background: #1e293b; border: 1px solid #334155;
+    border-radius: 16px; padding: 24px 28px;
+    flex: 1 1 280px; max-width: 340px;
+  }
+  .card-icon { font-size: 32px; margin-bottom: 12px; }
+  .card h3 { font-size: 17px; font-weight: 700; margin-bottom: 6px; color: #f1f5f9; }
+  .card p  { font-size: 13px; color: #94a3b8; line-height: 1.6; }
+
+  /* ── Before/After ── */
+  .ba-wrap {
+    display: flex; gap: 32px; margin-top: 32px; width: 100%; max-width: 1000px;
+    align-items: flex-start; justify-content: center;
+  }
+  .ba-col { flex: 1; max-width: 440px; }
+  .ba-label {
+    font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+  }
+  .ba-label.before { color: #f87171; }
+  .ba-label.after  { color: #34d399; }
+  .ba-label::before { content: ''; display: block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+  .mockup {
+    background: #0f172a; border: 1px solid #334155; border-radius: 12px;
+    padding: 16px 18px; font-family: 'Courier New', monospace; font-size: 12px;
+    line-height: 1.8; color: #94a3b8;
+  }
+  .mockup .hl  { color: #38bdf8; }
+  .mockup .ok  { color: #34d399; }
+  .mockup .err { color: #f87171; }
+  .mockup .dim { color: #475569; }
+  .mockup .box {
+    border: 1px solid #334155; border-radius: 8px;
+    padding: 10px 14px; margin-top: 8px; background: #1e293b;
+  }
+  .mockup .row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #1e293b; }
+  .mockup .row:last-child { border-bottom: none; }
+  .arrow { font-size: 28px; color: #475569; align-self: center; flex-shrink: 0; }
+
+  /* ── Diagram ── */
+  .diagram {
+    background: #1e293b; border: 1px solid #334155; border-radius: 14px;
+    padding: 20px 24px; margin-top: 24px; width: 100%; max-width: 800px;
+    font-size: 14px;
+  }
+  .flow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .node {
+    padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  }
+  .node.blue   { background: #1d4ed8; color: #bfdbfe; }
+  .node.green  { background: #065f46; color: #a7f3d0; }
+  .node.amber  { background: #92400e; color: #fde68a; }
+  .node.gray   { background: #334155; color: #94a3b8; }
+  .flow-arrow  { color: #475569; font-size: 20px; }
+
+  /* ── Progress bar & nav ── */
+  .progress {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    height: 3px; background: #1e293b;
+  }
+  .progress-fill {
+    height: 100%; background: linear-gradient(90deg, #2563eb, #7c3aed);
+    transition: width .35s ease;
+  }
+
+  .controls {
+    position: fixed; bottom: 16px; right: 24px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .ctrl-btn {
+    background: #1e293b; border: 1px solid #334155; color: #94a3b8;
+    width: 40px; height: 40px; border-radius: 10px; cursor: pointer;
+    font-size: 18px; display: flex; align-items: center; justify-content: center;
+    transition: background .15s;
+  }
+  .ctrl-btn:hover { background: #334155; color: #f1f5f9; }
+  .slide-count { font-size: 12px; color: #475569; min-width: 50px; text-align: center; }
+
+  /* ── Kapak dekorasyon ── */
+  .cover-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: #1e293b; border: 1px solid #334155;
+    border-radius: 999px; padding: 6px 18px; margin-bottom: 24px;
+    font-size: 13px; color: #64748b;
+  }
+  .cover-badge span { background: #2563eb; color: white; border-radius: 999px; padding: 2px 10px; font-size: 11px; font-weight: 700; }
+
+  .version-pill {
+    font-size: clamp(48px, 7vw, 90px); font-weight: 900;
+    background: linear-gradient(135deg, #2563eb, #7c3aed, #db2777);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+  }
+
+  .feature-list {
+    display: flex; flex-direction: column; gap: 10px;
+    margin-top: 24px; width: 100%; max-width: 700px;
+  }
+  .feature-item {
+    display: flex; align-items: center; gap: 14px;
+    background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+    padding: 14px 18px;
+  }
+  .feature-num {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: #2563eb; color: white; font-size: 13px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .feature-item strong { font-size: 14px; color: #f1f5f9; }
+  .feature-item span   { font-size: 12px; color: #64748b; margin-left: 6px; }
+
+  /* ── Son slayt ── */
+  .summary-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+    margin-top: 28px; width: 100%; max-width: 900px;
+  }
+  .summary-card {
+    background: #1e293b; border: 1px solid #334155; border-radius: 14px;
+    padding: 18px 20px; text-align: center;
+  }
+  .summary-card .icon { font-size: 28px; margin-bottom: 8px; }
+  .summary-card h4 { font-size: 14px; font-weight: 700; color: #f1f5f9; margin-bottom: 4px; }
+  .summary-card p  { font-size: 11px; color: #64748b; }
+
+  /* keyboard hint */
+  .hint { position: fixed; bottom: 20px; left: 24px; font-size: 11px; color: #334155; }
+</style>
+</head>
+<body>
+
+<div class="deck" id="deck">
+
+  <!-- ══ SLAYT 0: KAPAK ══ -->
+  <div class="slide active" id="s0">
+    <div class="cover-badge">Hastane Nöbet Sistemi <span>v1.1.7</span></div>
+    <div class="version-pill">6 Eksik</div>
+    <h1 style="margin-top:16px">Tamamlandı</h1>
+    <p class="sub" style="max-width:560px; margin-top:16px">
+      Bildirim geçmişi · Güvenli logout · İzin bakiyesi · Audit log · Mobil uyumluluk · Servis filtresi
+    </p>
+    <div class="feature-list">
+      <div class="feature-item"><div class="feature-num">1</div><strong>🔔 Bildirim Geçmişi</strong><span>Zil ikonu + dropdown panel</span></div>
+      <div class="feature-item"><div class="feature-num">2</div><strong>🔐 Güvenli Logout</strong><span>Token geçersizleştirme</span></div>
+      <div class="feature-item"><div class="feature-num">3</div><strong>📅 İzin Bakiyesi</strong><span>Yıllık gün hakkı takibi</span></div>
+      <div class="feature-item"><div class="feature-num">4</div><strong>📋 Audit Log</strong><span>Kim ne zaman ne yaptı</span></div>
+      <div class="feature-item"><div class="feature-num">5</div><strong>📱 Mobil Uyumluluk</strong><span>Yatay scroll + responsive nav</span></div>
+      <div class="feature-item"><div class="feature-num">6</div><strong>🔍 Servis Filtresi</strong><span>Alias tabanlı eşleşme</span></div>
+    </div>
+  </div>
+
+  <!-- ══ SLAYT 1: BİLDİRİM GEÇMİŞİ ══ -->
+  <div class="slide" id="s1">
+    <div class="tag blue">Özellik 1 / 6</div>
+    <h2>🔔 Bildirim Geçmişi</h2>
+    <p class="sub">Bildirimleri artık kaçırmak mümkün değil</p>
+    <div class="ba-wrap">
+      <div class="ba-col">
+        <div class="ba-label before">Önce</div>
+        <div class="mockup">
+          <span class="dim">TopBar:</span><br/>
+          <span>[🏥 Hastane]</span> <span class="dim">···</span> <span>[Çıkış]</span>
+          <br/><br/>
+          <span class="err">✗ Bildirim geldi → toast 3sn →</span><br/>
+          <span class="err">  KAYBOLDU. Kaçırdıysan yok.</span><br/><br/>
+          <span class="err">✗ DB'de kayıt yok</span><br/>
+          <span class="err">✗ Geçmiş yok</span>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="ba-col">
+        <div class="ba-label after">Sonra</div>
+        <div class="mockup">
+          <span class="dim">TopBar:</span><br/>
+          <span>[🏥 Hastane]</span> <span class="hl">[🔔 <b>3</b>]</span> <span>[Çıkış]</span>
+          <div class="box">
+            <div style="color:#34d399;font-weight:700;font-size:11px;margin-bottom:6px">Bildirimler &nbsp;<span style="background:#e11d48;color:white;border-radius:4px;padding:1px 6px">3</span></div>
+            <div class="row"><span class="ok">🟢 İzin Onaylandı</span><span class="dim">14:32</span></div>
+            <div class="row"><span class="hl">🔵 Vardiya Güncellendi</span><span class="dim">09:10</span></div>
+            <div class="row"><span style="color:#fb923c">🟠 İzin Reddedildi</span><span class="dim">dün</span></div>
+          </div>
+          <span class="dim" style="font-size:11px">← DB'de kalıcı · tıkla → okundu ✓</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLAYT 2: GÜVENLI LOGOUT ══ -->
+  <div class="slide" id="s2">
+    <div class="tag rose">Özellik 2 / 6</div>
+    <h2>🔐 Güvenli Logout</h2>
+    <p class="sub">Oturum kapanınca token gerçekten geçersizleşiyor</p>
+    <div class="ba-wrap">
+      <div class="ba-col">
+        <div class="ba-label before">Önce — Sahte Logout</div>
+        <div class="mockup">
+          Çıkış tıklandı<br/>
+          &nbsp;&nbsp;↓<br/>
+          <span class="err">localStorage silindi</span><br/>
+          <span class="dim">← tek yapılan bu!</span><br/><br/>
+          <span class="err">Refresh token hâlâ geçerli</span><br/>
+          <span class="err">Çalınan token → sisteme giriş ✓</span>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="ba-col">
+        <div class="ba-label after">Sonra — Gerçek Logout</div>
+        <div class="mockup">
+          Çıkış tıklandı<br/>
+          &nbsp;&nbsp;↓<br/>
+          <span class="hl">POST /api/auth/logout</span><br/>
+          &nbsp;&nbsp;↓<br/>
+          <span class="ok">user.tokenVersion → +1</span><br/>
+          &nbsp;&nbsp;↓<br/>
+          <span class="ok">localStorage silindi</span><br/><br/>
+          Eski token ile /refresh denenirse:<br/>
+          <span class="dim">JWT.tv = 3  ≠  DB.tv = 4</span><br/>
+          <span class="err">→ 401 Yetkisiz ✗</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLAYT 3: İZİN BAKİYESİ ══ -->
+  <div class="slide" id="s3">
+    <div class="tag green">Özellik 3 / 6</div>
+    <h2>📅 İzin Bakiyesi</h2>
+    <p class="sub">Her personelin yıllık izin hakkı artık takip ediliyor</p>
+    <div class="ba-wrap">
+      <div class="ba-col">
+        <div class="ba-label before">Önce</div>
+        <div class="mockup">
+          <div class="box">
+            <div style="font-weight:700;color:#f1f5f9;margin-bottom:6px">AHMET YILMAZ</div>
+            <div class="row"><span>TC: ••••</span><span>Tel: ••••</span></div>
+            <div class="row" style="margin-top:4px"><span style="background:#1e293b;border-radius:4px;padding:2px 8px">Düzenle</span> <span style="background:#1e293b;border-radius:4px;padding:2px 8px">Sil</span></div>
+          </div>
+          <span class="err" style="font-size:11px">İzin hakkı: bilinmiyor 🤷</span>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="ba-col">
+        <div class="ba-label after">Sonra</div>
+        <div class="mockup">
+          <div style="color:#94a3b8;font-size:11px;margin-bottom:4px">Personel Formu:</div>
+          <span class="dim">Unvan: </span><span>Hemşire</span><br/>
+          <span class="hl">Yıllık İzin Hakkı: </span><span class="ok">[15] gün</span>
+          <div class="box" style="margin-top:10px">
+            <div style="font-weight:700;color:#f1f5f9;margin-bottom:6px">AHMET YILMAZ</div>
+            <div class="row"><span>TC: ••••</span><span>Tel: ••••</span></div>
+            <div style="margin-top:6px;background:#064e3b;border-radius:6px;padding:4px 8px;color:#34d399;font-size:11px">
+              🟢 Yıllık İzin Hakkı: <b>15 gün</b>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLAYT 4: AUDIT LOG ══ -->
+  <div class="slide" id="s4">
+    <div class="tag amber">Özellik 4 / 6</div>
+    <h2>📋 Audit Log Görüntüleyici</h2>
+    <p class="sub">Admin artık "kim ne zaman ne yaptı" sorusunu yanıtlayabilir</p>
+    <div style="margin-top:28px; width:100%; max-width:900px;">
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:4px 12px;font-size:12px">Genel Bakış</div>
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:4px 12px;font-size:12px">Personel</div>
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:4px 12px;font-size:12px">Kullanıcılar</div>
+        <div style="background:#1d4ed8;border-radius:8px;padding:4px 12px;font-size:12px;color:#bfdbfe;font-weight:700">📋 İşlem Günlüğü ←</div>
+      </div>
+      <div class="mockup" style="font-size:11px">
+        <div style="display:grid;grid-template-columns:120px 100px 60px 1fr 60px 70px;gap:4px;padding:6px 0;border-bottom:1px solid #334155;color:#64748b;font-weight:700">
+          <span>Tarih</span><span>Kullanıcı</span><span>Metod</span><span>Endpoint</span><span>Durum</span><span>Süre</span>
+        </div>
+        <div style="display:grid;grid-template-columns:120px 100px 60px 1fr 60px 70px;gap:4px;padding:5px 0;border-bottom:1px solid #1e293b">
+          <span class="dim">13.05 14:22</span><span style="color:#38bdf8">68a1fc…</span><span style="background:#065f46;color:#a7f3d0;border-radius:4px;padding:1px 6px;font-weight:700">PUT</span><span>/api/personnel/…</span><span class="ok">✅ 200</span><span class="dim">43ms</span>
+        </div>
+        <div style="display:grid;grid-template-columns:120px 100px 60px 1fr 60px 70px;gap:4px;padding:5px 0;border-bottom:1px solid #1e293b">
+          <span class="dim">13.05 14:20</span><span style="color:#38bdf8">68a1fc…</span><span style="background:#9f1239;color:#fecdd3;border-radius:4px;padding:1px 6px;font-weight:700">DELETE</span><span>/api/requests/…</span><span class="ok">✅ 200</span><span class="dim">28ms</span>
+        </div>
+        <div style="display:grid;grid-template-columns:120px 100px 60px 1fr 60px 70px;gap:4px;padding:5px 0">
+          <span class="dim">13.05 13:55</span><span style="color:#64748b;font-style:italic">anonim</span><span style="background:#1d4ed8;color:#bfdbfe;border-radius:4px;padding:1px 6px;font-weight:700">POST</span><span>/api/auth/login</span><span class="err">❌ 401</span><span class="dim">12ms</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLAYT 5: MOBİL ══ -->
+  <div class="slide" id="s5">
+    <div class="tag purple">Özellik 5 / 6</div>
+    <h2>📱 Mobil Uyumluluk</h2>
+    <p class="sub">Küçük ekranlarda artık kullanılabilir</p>
+    <div class="ba-wrap">
+      <div class="ba-col">
+        <div class="ba-label before">Önce — Taşıyor</div>
+        <div class="mockup">
+          <span class="dim">NavBar (mobil):</span><br/>
+          <span class="err">[Genel Bakış][Personel][Çizelgeler]</span><br/>
+          <span class="err">[Parametreler][Kullanıcılar][AI]</span><br/>
+          <span class="err">→ butonlar ezilir, taşar</span><br/><br/>
+          <span class="dim">TopBar:</span><br/>
+          <span class="err">[🏥 Hastane Nöbet Sistemi]</span><br/>
+          <span class="err">[Ahmet Yılmaz / admin] [Çıkış]</span><br/>
+          <span class="err">→ ekran dışına taşar</span>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="ba-col">
+        <div class="ba-label after">Sonra — Scroll</div>
+        <div class="mockup">
+          <span class="dim">NavBar (mobil):</span><br/>
+          <span class="ok">[Genel Bakış][Personel] →→ kaydır</span><br/>
+          <span class="dim">← overflow-x-auto</span><br/>
+          <span class="dim">   flex-nowrap → kaymaz, gizlenmez</span><br/><br/>
+          <span class="dim">TopBar:</span><br/>
+          <span class="ok">[🏥 Nöbet] [🔔³] [Çıkış]</span><br/>
+          <span class="dim">← ad küçük ekranda gizlendi</span><br/>
+          <span class="dim">← zil ikonu eklendi</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLAYT 6: SERVİS FİLTRESİ ══ -->
+  <div class="slide" id="s6">
+    <div class="tag slate">Özellik 6 / 6</div>
+    <h2>🔍 Servis Filtresi — Alias Eşleşme</h2>
+    <p class="sub">Personel servisi farklı formatlarda saklanmış olsa bile doğru filtrelenir</p>
+    <div class="ba-wrap">
+      <div class="ba-col">
+        <div class="ba-label before">Önce — Kırılgan</div>
+        <div class="mockup">
+          <span class="dim">Seçilen servis ID: </span><span class="hl">"svc-acil"</span><br/>
+          <span class="dim">Kişi.service: </span><span class="err">"Acil Servis"</span><br/><br/>
+          <span style="font-size:18px">p.service === selectedId</span><br/>
+          <span class="err">"Acil Servis" === "svc-acil"</span><br/>
+          <span class="err">→ false → kişi görünmez! ✗</span><br/><br/>
+          <span class="err">Sonuç: "Görünen personel: 1"</span>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="ba-col">
+        <div class="ba-label after">Sonra — Alias Tabanlı</div>
+        <div class="mockup">
+          <span class="dim">serviceMatching.js devreye girer:</span><br/><br/>
+          <span class="dim">Kişinin alias seti:</span><br/>
+          <span class="ok">{ "ACİL SERVİS", "ACIL", "svc-acil" }</span><br/><br/>
+          <span class="dim">Beklenen alias seti (servicesById):</span><br/>
+          <span class="ok">{ "svc-acil", "ACIL", "ACİL SERVİS" }</span><br/><br/>
+          <span class="ok">→ Kesişim var → eşleşti ✓</span><br/>
+          <span class="ok">Tüm personel görünür ✓</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLAYT 7: ÖZET ══ -->
+  <div class="slide" id="s7">
+    <div class="tag green">Özet</div>
+    <h2>v1.1.7 — Tüm Eksikler Kapatıldı</h2>
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="icon">🔔</div>
+        <h4>Bildirim Geçmişi</h4>
+        <p>Zil ikonu · DB kayıt · Okunmamış sayaç · Panelden geçmişe bak</p>
+      </div>
+      <div class="summary-card">
+        <div class="icon">📧</div>
+        <h4>Email + SSE</h4>
+        <p>İzin onay/red artık SSE ile anlık iletiliyor, DB'de kalıcı</p>
+      </div>
+      <div class="summary-card">
+        <div class="icon">🔐</div>
+        <h4>Güvenli Logout</h4>
+        <p>tokenVersion ile refresh token sunucu tarafında iptal ediliyor</p>
+      </div>
+      <div class="summary-card">
+        <div class="icon">📅</div>
+        <h4>İzin Bakiyesi</h4>
+        <p>Her personelde yıllık izin gün hakkı · Form + kart görünümü</p>
+      </div>
+      <div class="summary-card">
+        <div class="icon">📋</div>
+        <h4>Audit Log</h4>
+        <p>Admin panelinde "İşlem Günlüğü" · Arama · Sayfalama</p>
+      </div>
+      <div class="summary-card">
+        <div class="icon">📱</div>
+        <h4>Mobil + Filtre</h4>
+        <p>Nav scroll · TopBar responsive · Servis alias eşleşmesi</p>
+      </div>
+    </div>
+    <p class="sub" style="margin-top:28px;font-size:13px">
+      16 dosya değişti · 1282 satır eklendi · GitHub: vercel-preview-stabilizasyon
+    </p>
+  </div>
+
+</div><!-- /deck -->
+
+<!-- Progress & Controls -->
+<div class="progress"><div class="progress-fill" id="progress"></div></div>
+<div class="controls">
+  <button class="ctrl-btn" id="prev" title="Önceki (←)">‹</button>
+  <span class="slide-count" id="count"></span>
+  <button class="ctrl-btn" id="next" title="Sonraki (→)">›</button>
+</div>
+<div class="hint">← → klavye · tıkla ileri</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const total = slides.length;
+  let cur = 0;
+
+  function go(n) {
+    slides[cur].classList.remove('active');
+    cur = Math.max(0, Math.min(total - 1, n));
+    slides[cur].classList.add('active');
+    document.getElementById('progress').style.width = ((cur / (total - 1)) * 100) + '%';
+    document.getElementById('count').textContent = (cur + 1) + ' / ' + total;
+  }
+
+  document.getElementById('next').onclick = () => go(cur + 1);
+  document.getElementById('prev').onclick = () => go(cur - 1);
+  document.querySelector('.deck').onclick = (e) => {
+    if (!e.target.closest('button')) go(cur + 1);
+  };
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ') go(cur + 1);
+    if (e.key === 'ArrowLeft')  go(cur - 1);
+    if (e.key === 'Home') go(0);
+    if (e.key === 'End')  go(total - 1);
+  });
+
+  go(0);
+</script>
+</body>
+</html>
