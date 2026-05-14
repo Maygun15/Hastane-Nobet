@@ -466,10 +466,17 @@ export default function PeopleTab({
     if (!f) return;
     const r = new FileReader();
     r.onload = (evt) => {
-      const data = new Uint8Array(evt.target.result);
-      const wb = XLSX.read(data, { type: "array" });
-      const sh = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sh, { defval: "" });
+      let wb, sh, rows;
+      try {
+        const data = new Uint8Array(evt.target.result);
+        wb = XLSX.read(data, { type: "array" });
+        sh = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(sh, { defval: "" });
+      } catch (parseErr) {
+        alert("Excel dosyası okunamadı: " + (parseErr?.message || "Geçersiz format"));
+        if (importRef.current) importRef.current.value = "";
+        return;
+      }
       const parsed = rows
         .map((r, idx) => {
           const rrole = (r["ROL"] || role).toString().trim();
