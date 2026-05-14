@@ -7,10 +7,11 @@ const { withHospitalFilter } = require('../middleware/hospital');
 
 // Inline schema — ayrı model dosyası açmak istemedik
 const serviceSchema = new mongoose.Schema({
-  hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null, index: true },
-  name:   { type: String, required: true, trim: true },
-  code:   { type: String, required: true, trim: true, uppercase: true },
-  active: { type: Boolean, default: true },
+  hospitalId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null, index: true },
+  name:        { type: String, required: true, trim: true },
+  code:        { type: String, required: true, trim: true, uppercase: true },
+  department:  { type: String, default: '', trim: true, index: true },
+  active:      { type: Boolean, default: true },
 }, { timestamps: true });
 serviceSchema.index({ hospitalId: 1, code: 1 }, { unique: true });
 applyHospitalScope(serviceSchema);
@@ -35,9 +36,9 @@ router.post('/', async (req, res) => {
   if (!['admin', 'authorized', 'staff'].includes(role))
     return res.status(403).json({ ok: false, error: 'Yetersiz yetki' });
   try {
-    const { name, code, active } = req.body;
+    const { name, code, active, department } = req.body;
     if (!name || !code) return res.status(400).json({ ok: false, error: 'name ve code zorunlu' });
-    const item = await Service.create(withHospitalFilter(req, { name, code: String(code).toUpperCase(), active: active !== false }));
+    const item = await Service.create(withHospitalFilter(req, { name, code: String(code).toUpperCase(), active: active !== false, department: department || '' }));
     res.status(201).json({ ok: true, data: item });
   } catch (e) {
     if (e.code === 11000) return res.status(409).json({ ok: false, error: 'Bu kod zaten var' });
@@ -52,9 +53,10 @@ router.patch('/:id', async (req, res) => {
     return res.status(403).json({ ok: false, error: 'Yetersiz yetki' });
   try {
     const patch = {};
-    if (req.body.name  !== undefined) patch.name   = req.body.name;
-    if (req.body.code  !== undefined) patch.code   = String(req.body.code).toUpperCase();
-    if (req.body.active !== undefined) patch.active = req.body.active;
+    if (req.body.name       !== undefined) patch.name       = req.body.name;
+    if (req.body.code       !== undefined) patch.code       = String(req.body.code).toUpperCase();
+    if (req.body.active     !== undefined) patch.active     = req.body.active;
+    if (req.body.department !== undefined) patch.department = req.body.department;
     const item = await Service.findOneAndUpdate(withHospitalFilter(req, { _id: req.params.id }), patch, { new: true }).lean();
     if (!item) return res.status(404).json({ ok: false, error: 'Bulunamadı' });
     res.json({ ok: true, data: item });
