@@ -28,3 +28,8 @@ dist-ssr
 
 # Claude Code session data
 .claude/
+
+# Kişisel veri içerebilecek dosyalar (KVKK)
+my-backend-project/audit-input.json
+my-backend-project/kullanicilar.xlsx
+request.json
