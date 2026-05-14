@@ -591,7 +591,7 @@ app.use('/api/holidays', ...secureTenant, holidayRoutes);
 /* ============== NOTIFICATIONS (SSE) ============== */
 try {
   const notificationsRoutes = require('./routes/notifications.routes.js');
-  app.use('/api/notifications', notificationsRoutes); // requireAuth kendi içinde
+  app.use('/api/notifications', auth, ensureActive, notificationsRoutes);
 } catch (e) { console.warn('[BOOT] notifications route yüklenemedi:', e?.message); }
 
 /* ============ ADMIN ÖRNEĞİ ============ */
