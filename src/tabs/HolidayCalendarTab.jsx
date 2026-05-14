@@ -165,14 +165,22 @@ export default function HolidayCalendarTab() {
       form.kind === "half" ? "half" :
       "full";
     const name = norm(form.name);
-    await http.post(`/api/holidays`, { date, kind, name });
-    await loadYear(year);
-    setForm({ date: "", kind: "full", name: "" });
+    try {
+      await http.post(`/api/holidays`, { date, kind, name });
+      await loadYear(year);
+      setForm({ date: "", kind: "full", name: "" });
+    } catch (err) {
+      alert("Kayıt hatası: " + (err?.message || "Sunucu hatası"));
+    }
   };
 
   const del = async (date) => {
-    await http.req(`/api/holidays/${date}`, { method: "DELETE" });
-    await loadYear(year);
+    try {
+      await http.req(`/api/holidays/${date}`, { method: "DELETE" });
+      await loadYear(year);
+    } catch (err) {
+      alert("Silme hatası: " + (err?.message || "Sunucu hatası"));
+    }
   };
 
   const clearAll = async () => {

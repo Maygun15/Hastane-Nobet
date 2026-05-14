@@ -1,6 +1,6 @@
 const AuditLog = require('../models/AuditLog');
 
-const SENSITIVE_KEYS = new Set(['password', 'token', 'secret', 'accessToken', 'refreshToken', 'authorization']);
+const SENSITIVE_KEYS = new Set(['password', 'token', 'secret', 'accessToken', 'refreshToken', 'authorization', 'tc', 'tckn', 'nationalId', 'passwordHash']);
 
 function sanitizeBody(body) {
   if (!body || typeof body !== 'object') return undefined;

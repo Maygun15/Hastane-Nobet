@@ -15,5 +15,6 @@ const schema = new mongoose.Schema({
 
 schema.index({ userId: 1, createdAt: -1 });
 schema.index({ userId: 1, read: 1 });
+schema.index({ createdAt: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 }); // 30 gün TTL
 
 module.exports = mongoose.models.Notification || mongoose.model('Notification', schema);

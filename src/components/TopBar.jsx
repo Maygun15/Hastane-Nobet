@@ -155,7 +155,7 @@ export default function TopBar() {
           🏥 <span className="hidden sm:inline">Hastane Nöbet Sistemi</span>
           <span className="sm:hidden">Nöbet</span>
         </div>
-        <Badge tone="blue">v1.1.8</Badge>
+        <Badge tone="blue">v1.2.0</Badge>
       </div>
 
       <div className="flex items-center gap-2">

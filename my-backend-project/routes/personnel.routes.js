@@ -249,6 +249,9 @@ router.post('/bulk',
       if (!Array.isArray(items)) {
         return res.status(400).json({ error: 'Array expected (body: [] veya { items: [] })' });
       }
+      if (items.length > 500) {
+        return res.status(400).json({ error: 'En fazla 500 kayıt gönderilebilir' });
+      }
 
       const mapped = items.map((it) => {
         const name = String(it?.name || it?.fullName || '').trim();

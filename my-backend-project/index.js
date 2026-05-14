@@ -600,11 +600,12 @@ app.get('/api/admin/ping', ...secureTenant, requireRole('admin'),
 );
 app.get('/api/admin/audit-logs', ...secureTenant, requireRole('admin'), async (req, res) => {
   try {
+    const limit = Math.min(Number(req.query.limit) || 200, 500);
     const logs = await AuditLog.find(withHospitalFilter(req, {}))
       .sort({ createdAt: -1 })
-      .limit(50)
+      .limit(limit)
       .lean();
-    res.json(logs);
+    res.json({ logs, total: logs.length });
   } catch (e) {
     res.status(500).json({ message: e.message });
   }
@@ -682,3 +683,14 @@ function gracefulShutdown(signal) {
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
+
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] uncaughtException:', err);
+  if (Sentry) { try { Sentry.captureException(err); } catch {} }
+  gracefulShutdown('uncaughtException');
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[WARN] unhandledRejection:', reason);
+  if (Sentry) { try { Sentry.captureException(reason); } catch {} }
+});

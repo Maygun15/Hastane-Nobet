@@ -27,6 +27,9 @@ async function applyLeaveRange(request) {
   const start = new Date(`${String(targetDate).slice(0, 10)}T00:00:00`);
   const end   = new Date(`${String(targetDateEnd || targetDate).slice(0, 10)}T00:00:00`);
   if (isNaN(start) || isNaN(end) || end < start) return;
+  const MAX_LEAVE_DAYS = 365;
+  const dayDiff = Math.round((end - start) / 86_400_000);
+  if (dayDiff > MAX_LEAVE_DAYS) return;
 
   // Günleri aya göre grupla
   const byMonth = {};

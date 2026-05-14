@@ -705,6 +705,10 @@ router.post('/import.xlsx', requireAuth, uploadSpreadsheet, async (req, res) => 
     if (!req.file) return res.status(400).json({ message: 'Excel dosyası gerekli (file)' });
 
     const rows = await parseSpreadsheetRows(req.file);
+    const MAX_IMPORT_ROWS = 500;
+    if (rows.length > MAX_IMPORT_ROWS) {
+      return res.status(400).json({ message: `En fazla ${MAX_IMPORT_ROWS} satır içe aktarılabilir (gönderilen: ${rows.length})` });
+    }
 
     const roleMap = {
       admin: 'admin',
