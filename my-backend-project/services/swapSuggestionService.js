@@ -3,6 +3,9 @@ const Assignment = require('../models/Assignment');
 const Setting = require('../models/Setting');
 const Person = require('../models/Person');
 const MonthlySchedule = require('../models/MonthlySchedule');
+const ScheduleRules = require('../models/ScheduleRules');
+const { validateAssignment } = require('../utils/rulesValidator');
+const { checkAdjacentDayConflict } = require('./conflictService');
 
 function parseYM(dateStr) {
   const m = String(dateStr || '').slice(0, 7).match(/^(\d{4})-(\d{2})$/);
@@ -32,6 +35,45 @@ function pickFirstString(...values) {
     if (str) return str;
   }
   return '';
+}
+
+function summarizeRuleErrors(errors = []) {
+  const out = [];
+  for (const raw of Array.isArray(errors) ? errors : []) {
+    const msg = String(raw || '').trim();
+    if (!msg) continue;
+    const lower = msg.toLocaleLowerCase('tr-TR');
+    if (lower.includes('ardişik') || lower.includes('ardışık')) {
+      out.push('Ardışık nöbet kuralı');
+    } else if (lower.includes('en az') && lower.includes('gün ara')) {
+      out.push('Dinlenme aralığı');
+    } else if (lower.includes('ayda maksimum')) {
+      out.push('Aylık nöbet limiti');
+    } else if (lower.includes('hafta sonu')) {
+      out.push('Kısıtlı gün');
+    } else {
+      out.push(msg);
+    }
+  }
+  return Array.from(new Set(out));
+}
+
+async function loadApplicableRules({ sectionId, serviceId, role, hospitalId }) {
+  const sid = String(sectionId || '').trim();
+  if (!sid) return { enabled: false };
+  const svc = serviceId != null ? String(serviceId).trim() : '';
+  const scopeRole = role != null ? String(role).trim() : '';
+  const query = {
+    sectionId: sid,
+    $or: [
+      { serviceId: svc, role: scopeRole },
+      { serviceId: svc, role: '' },
+      { serviceId: '', role: '' },
+    ],
+  };
+  if (hospitalId) query.hospitalId = hospitalId;
+  const rules = await ScheduleRules.findOne(query).lean();
+  return rules || { enabled: false };
 }
 
 function toStringArray(value) {
@@ -252,6 +294,12 @@ async function suggestSwaps({
   const ym = parseYM(date);
   if (!ym) return { ok: false, message: 'Geçersiz tarih formatı' };
   const requesterNameCanon = canonName(currentPersonName);
+  const scheduleRules = await loadApplicableRules({
+    sectionId,
+    serviceId,
+    role,
+    hospitalId,
+  });
 
   const scheduleDoc = sectionId
     ? await findScheduleReadModel({
@@ -285,18 +333,21 @@ async function suggestSwaps({
   const assignQuery = { year: ym.year, month: ym.month };
   if (hospitalId) assignQuery.hospitalId = hospitalId;
   const monthAssignments = await Assignment.find(assignQuery)
-    .select('personId date')
+    .select('personId personName date day shiftId shiftCode roleLabel')
     .lean();
 
   const assignCountByPerson = {};
   const assignedOnDateByPerson = new Set();
+  const assignedOnDateByName = new Set();
   for (const a of monthAssignments) {
     const pid = String(a.personId || '');
     const pname = canonName(a.personName || a.fullName || a.name || '');
-    if (!pid) continue;
-    assignCountByPerson[pid] = (assignCountByPerson[pid] || 0) + 1;
+    if (pid) {
+      assignCountByPerson[pid] = (assignCountByPerson[pid] || 0) + 1;
+    }
     if (String(a.date || '').slice(0, 10) === date) {
-      assignedOnDateByPerson.add(pid);
+      if (pid) assignedOnDateByPerson.add(pid);
+      if (pname) assignedOnDateByName.add(pname);
     }
     if (!personId && requesterNameCanon && pname === requesterNameCanon) {
       assignCountByPerson.__requesterByName = (assignCountByPerson.__requesterByName || 0) + 1;
@@ -329,7 +380,9 @@ async function suggestSwaps({
     const candidateNameCanon = canonName(c.name || '');
     if (!personId && requesterNameCanon && candidateNameCanon && candidateNameCanon === requesterNameCanon) continue;
     const warnings = [];
-    const assignedSameDay = assignedOnDateByPerson.has(cid);
+    const assignedSameDay =
+      assignedOnDateByPerson.has(cid) ||
+      (candidateNameCanon && assignedOnDateByName.has(candidateNameCanon));
     const onLeave = !!leaveValue[cid]?.[monthKey]?.[dayNum];
     const roleMatch = matchesScheduleRole(c, role);
     const areaShiftMatch = isShiftEligible(c, effectiveShiftCode, effectiveTaskLabel);
@@ -339,6 +392,33 @@ async function suggestSwaps({
     if (onLeave) warnings.push('İzinli');
     if (!roleMatch) warnings.push('Rol uyumsuz');
     if (!areaShiftMatch) warnings.push('Alan/vardiya uyumsuz');
+    if (warnings.length === 0) {
+      const adjacentConflicts = await checkAdjacentDayConflict({
+        personId: cid,
+        personName: c.name || cid,
+        date,
+      });
+      if (adjacentConflicts.length > 0) {
+        warnings.push('Peş peşe nöbet');
+      }
+    }
+    if (warnings.length === 0 && scheduleRules?.enabled) {
+      const validation = validateAssignment(
+        scheduleRules,
+        {
+          date,
+          personId: cid,
+          personName: c.name || cid,
+          shiftId: effectiveShiftCode,
+          shiftCode: effectiveShiftCode,
+          roleLabel: effectiveTaskLabel,
+        },
+        monthAssignments
+      );
+      if (!validation.valid) {
+        warnings.push(...summarizeRuleErrors(validation.errors));
+      }
+    }
 
     const shiftCount = assignCountByPerson[cid] || 0;
     const delta = ownCount - shiftCount;
@@ -359,9 +439,18 @@ async function suggestSwaps({
       recommendationTier,
       samePositionFit,
     };
-    if (warnings.length === 0) suggestions.push(candidateInfo);
-    else if (samePositionFit) samePositionBlocked.push(candidateInfo);
-    else otherBlocked.push(candidateInfo);
+    const hardBlocked = warnings.some((warning) =>
+      warning === 'Aynı gün başka nöbeti var' ||
+      warning === 'Peş peşe nöbet' ||
+      warning === 'İzinli'
+    );
+    if (warnings.length === 0) {
+      suggestions.push(candidateInfo);
+    } else if (!hardBlocked && samePositionFit) {
+      samePositionBlocked.push(candidateInfo);
+    } else if (!hardBlocked) {
+      otherBlocked.push(candidateInfo);
+    }
     blocked.push(candidateInfo);
   }
 

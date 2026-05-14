@@ -36,7 +36,7 @@ function validateAssignment(rules, assignment, existingAssignments) {
       const existDate = new Date(a?.date || a?.day || '');
       if (!Number.isFinite(existDate.getTime())) return false;
       const daysDiff = Math.abs((assignDate - existDate) / (1000 * 60 * 60 * 24));
-      return daysDiff < minDays;
+      return daysDiff <= minDays;
     });
 
     if (conflicts.length > 0) {
@@ -57,6 +57,16 @@ function validateAssignment(rules, assignment, existingAssignments) {
       for (let i = 1; i <= maxConsecutive + 1; i++) {
         const checkDate = new Date(assignDate);
         checkDate.setDate(checkDate.getDate() - i);
+        const dateStr = checkDate.toISOString().split('T')[0];
+        const hasShift = (existingAssignments || []).some(
+          (a) => matchesPerson(a) && String(a?.date || a?.day || '').slice(0, 10) === dateStr
+        );
+        if (hasShift) consecutive++;
+        else break;
+      }
+      for (let i = 1; i <= maxConsecutive + 1; i++) {
+        const checkDate = new Date(assignDate);
+        checkDate.setDate(checkDate.getDate() + i);
         const dateStr = checkDate.toISOString().split('T')[0];
         const hasShift = (existingAssignments || []).some(
           (a) => matchesPerson(a) && String(a?.date || a?.day || '').slice(0, 10) === dateStr

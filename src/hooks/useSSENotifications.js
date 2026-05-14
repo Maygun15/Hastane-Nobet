@@ -10,9 +10,8 @@ export default function useSSENotifications(onNotification) {
     const token = getToken();
     if (!token) return;
 
-    // EventSource doesn't support Authorization header natively.
-    // Backend auth uses cookie or query token fallback.
-    const url = `/api/notifications/stream`;
+    // EventSource Authorization header gönderemediği için token query'de taşınır.
+    const url = `/api/notifications/stream?token=${encodeURIComponent(token)}`;
     let es;
     try {
       es = new EventSource(url, { withCredentials: true });

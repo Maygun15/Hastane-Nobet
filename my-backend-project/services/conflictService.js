@@ -9,6 +9,14 @@ function parseYearMonth(dateStr) {
   return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
 }
 
+function formatLocalDate(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function samePerson(a, personId, personName) {
   const pid = String(personId || '').trim();
   const pname = String(personName || '').trim().toLowerCase();
@@ -23,11 +31,14 @@ function samePerson(a, personId, personName) {
  * Aynı kişiye aynı gün başka bir vardiya atanmış mı?
  * excludeShiftId: edit senaryosunda mevcut vardiyayı çakışma listesinden çıkar.
  */
-async function checkSameDayConflict({ personId, personName, date, excludeShiftId }) {
+async function checkSameDayConflict({ personId, personName, date, excludeShiftId, excludeSlot }) {
   const ym = parseYearMonth(date);
   if (!ym) return [];
   const dateStr = String(date).slice(0, 10);
   const excludeId = String(excludeShiftId || '').trim().toUpperCase();
+  const excludeSectionId = String(excludeSlot?.sectionId || '').trim();
+  const excludeServiceId = String(excludeSlot?.serviceId || '').trim();
+  const excludeRole = String(excludeSlot?.role || '').trim();
 
   const docs = await MonthlySchedule.find({ year: ym.year, month: ym.month }).lean();
   const conflicts = [];
@@ -38,7 +49,13 @@ async function checkSameDayConflict({ personId, personName, date, excludeShiftId
       if (String(a?.date || a?.day || '').slice(0, 10) !== dateStr) continue;
       if (!samePerson(a, personId, personName)) continue;
       const aShift = String(a?.shiftId || a?.shiftCode || '').trim().toUpperCase();
-      if (excludeId && aShift === excludeId) continue;
+      const isExactExcludedSlot =
+        excludeId &&
+        aShift === excludeId &&
+        (!excludeSectionId || String(doc?.sectionId || '').trim() === excludeSectionId) &&
+        (!excludeServiceId || String(doc?.serviceId || '').trim() === excludeServiceId) &&
+        (!excludeRole || String(doc?.role || '').trim() === excludeRole);
+      if (isExactExcludedSlot) continue;
       conflicts.push({
         date: dateStr,
         shiftId: aShift,
@@ -75,4 +92,44 @@ async function checkLeaveConflict({ personId, date, serviceId }) {
   return null;
 }
 
-module.exports = { checkSameDayConflict, checkLeaveConflict };
+async function checkAdjacentDayConflict({ personId, personName, date }) {
+  const ym = parseYearMonth(date);
+  if (!ym) return [];
+
+  const target = new Date(`${String(date).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(target.getTime())) return [];
+
+  const prev = new Date(target);
+  prev.setDate(prev.getDate() - 1);
+  const next = new Date(target);
+  next.setDate(next.getDate() + 1);
+  const wantedDates = new Set([
+    formatLocalDate(prev),
+    formatLocalDate(next),
+  ]);
+
+  const docs = await MonthlySchedule.find({
+    year: { $in: Array.from(new Set([ym.year, prev.getFullYear(), next.getFullYear()])) },
+    month: { $in: Array.from(new Set([ym.month, prev.getMonth() + 1, next.getMonth() + 1])) },
+  }).lean();
+
+  const conflicts = [];
+  for (const doc of docs) {
+    const assignments = Array.isArray(doc?.data?.assignments) ? doc.data.assignments : [];
+    for (const a of assignments) {
+      const aDate = String(a?.date || a?.day || '').slice(0, 10);
+      if (!wantedDates.has(aDate)) continue;
+      if (!samePerson(a, personId, personName)) continue;
+      conflicts.push({
+        date: aDate,
+        shiftId: String(a?.shiftId || a?.shiftCode || '').trim(),
+        shiftLabel: String(a?.shiftLabel || a?.roleLabel || '').trim(),
+        sectionId: String(doc?.sectionId || ''),
+        serviceId: String(doc?.serviceId || ''),
+      });
+    }
+  }
+  return conflicts;
+}
+
+module.exports = { checkSameDayConflict, checkLeaveConflict, checkAdjacentDayConflict };

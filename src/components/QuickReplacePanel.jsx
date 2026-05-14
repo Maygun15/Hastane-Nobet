@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { UserCheck, X, Loader2, RefreshCw, AlertCircle } from "lucide-react";
-import { assignSchedule, getSwapSuggestions, unassignSchedule } from "../api/apiAdapter.js";
+import { getSwapSuggestions, replaceScheduleAssignment } from "../api/apiAdapter.js";
 import { fetchScheduleTruth } from "../utils/scheduleTruth.js";
 
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -80,7 +80,9 @@ export default function QuickReplacePanel({
   onClose,
   sectionId = "calisma-cizelgesi",
   serviceId = "",
+  resolvedServiceId = "",
   scheduleRole = "",
+  resolvedRole = "",
   year,
   month,
   onAssigned,
@@ -90,6 +92,8 @@ export default function QuickReplacePanel({
 }) {
   const month0 = Math.max(0, Math.min(11, Number(month) - 1 || 0));
   const totalDays = daysInMonth(year, month0 + 1);
+  const effectiveServiceScope = String(resolvedServiceId || serviceId || "").trim();
+  const effectiveRoleScope = String(resolvedRole || scheduleRole || "").trim();
 
   const [truthDefs, setTruthDefs] = useState([]);
   const [truthAssignments, setTruthAssignments] = useState([]);
@@ -144,8 +148,8 @@ export default function QuickReplacePanel({
     setTruthLoading(true);
     fetchScheduleTruth({
       sectionId,
-      serviceId,
-      role: scheduleRole,
+      serviceId: effectiveServiceScope,
+      role: effectiveRoleScope,
       year,
       month,
       options: { preferScheduleReadModel: true },
@@ -162,7 +166,7 @@ export default function QuickReplacePanel({
     return () => {
       active = false;
     };
-  }, [open, sectionId, serviceId, scheduleRole, year, month]);
+  }, [open, sectionId, effectiveServiceScope, effectiveRoleScope, year, month]);
 
   const selectedDate = useMemo(() => {
     if (!selectedDay) return "";
@@ -241,8 +245,65 @@ export default function QuickReplacePanel({
     () => departingPeople.find((person) => personOptionKey(person) === departingPersonId) || null,
     [departingPeople, departingPersonId]
   );
+  const effectiveDepartingPerson = useMemo(() => {
+    if (!departingPerson) return null;
+    if (String(departingPerson?.id || "").trim()) return departingPerson;
 
-  const canSearch = !!selectedDate && !!selectedSlot && !!departingPerson;
+    const currentName = String(departingPerson?.name || "").trim();
+    const sameName = (candidateName = "") =>
+      !!currentName &&
+      String(candidateName || "").trim().localeCompare(currentName, "tr", { sensitivity: "base" }) === 0;
+
+    const candidates = [
+      {
+        id: String(resultCurrentPerson?.id || "").trim(),
+        name: String(resultCurrentPerson?.name || "").trim(),
+      },
+      {
+        id: String(initialSelection?.personId || "").trim(),
+        name: String(initialSelection?.personName || "").trim(),
+      },
+      {
+        id: String(preferredPerson?.id || "").trim(),
+        name: String(preferredPerson?.name || "").trim(),
+      },
+    ];
+
+    const match = candidates.find((candidate) => candidate.id && (!candidate.name || sameName(candidate.name)));
+    if (match) {
+      return {
+        id: match.id,
+        name: currentName || match.name,
+      };
+    }
+
+    return {
+      ...departingPerson,
+      id: "",
+      name: currentName,
+    };
+  }, [departingPerson, resultCurrentPerson, initialSelection, preferredPerson]);
+  const effectiveSlot = useMemo(() => {
+    const resolvedRowId = String(
+      resultSlot?.rowId ||
+        selectedSlot?.rowId ||
+        selectedSlot?.shiftId ||
+        resultSlot?.shiftCode ||
+        selectedSlot?.shiftCode ||
+        ""
+    ).trim();
+    return {
+      date: String(resultSlot?.date || selectedDate || "").slice(0, 10),
+      taskLabel: String(resultSlot?.taskLabel || selectedSlot?.taskLabel || selectedTaskLabel || "").trim(),
+      shiftCode: String(resultSlot?.shiftCode || selectedSlot?.shiftCode || "").trim(),
+      rowId: resolvedRowId,
+      shiftId: String(resultSlot?.shiftId || selectedSlot?.shiftId || resolvedRowId || "").trim(),
+      serviceId: String(resultSlot?.serviceId || selectedSlot?.serviceId || serviceId || "").trim(),
+      role: effectiveRoleScope,
+    };
+  }, [resultSlot, selectedSlot, selectedDate, selectedTaskLabel, serviceId, effectiveRoleScope]);
+
+  const canSearch = !!selectedDate && !!selectedSlot && !!effectiveDepartingPerson?.name;
 
   useEffect(() => {
     if (!open || !initialSelection || !selectedDate || !slotOptions.length) return;
@@ -306,7 +367,7 @@ export default function QuickReplacePanel({
   }, [open, initialSelection, departingPeople, departingPersonId, preferredPerson]);
 
   const handleSearch = async () => {
-    if (!canSearch || !selectedSlot || !departingPerson) return;
+    if (!canSearch || !selectedSlot || !effectiveDepartingPerson) return;
     setSearchLoading(true);
     setSearchError("");
     setAssignError("");
@@ -317,13 +378,13 @@ export default function QuickReplacePanel({
     setRecommendationText("");
     try {
       const result = await getSwapSuggestions({
-        personId: String(departingPerson.id || "").trim() || undefined,
-        currentPersonName: departingPerson.name,
+        personId: String(effectiveDepartingPerson.id || "").trim() || undefined,
+        currentPersonName: effectiveDepartingPerson.name,
         date: selectedDate,
         shiftId: selectedSlot.rowId || selectedSlot.shiftId || selectedSlot.shiftCode,
         roleLabel: selectedSlot.taskLabel,
-        serviceId: selectedSlot.serviceId || serviceId || undefined,
-        role: scheduleRole || undefined,
+        serviceId: selectedSlot.serviceId || effectiveServiceScope || undefined,
+        role: effectiveRoleScope || undefined,
         sectionId,
         limit: 100,
       });
@@ -380,44 +441,45 @@ export default function QuickReplacePanel({
   }, [candidates, recommendedCandidates, samePositionAlternatives]);
 
   const handleAssign = async (candidate) => {
-    if (!selectedDate || !selectedSlot || !departingPerson) return;
+    if (!effectiveSlot.date || !effectiveSlot.shiftId || !effectiveDepartingPerson?.name) return;
     setAssigning(candidate.id);
     setAssignError("");
+    const departingPersonId = String(effectiveDepartingPerson.id || "").trim();
+    if (!departingPersonId) {
+      setAssigning("");
+      setAssignError("Ayrılan kişi kimliği çözülemedi. Bu slotu kapatıp yeniden deneyin.");
+      return;
+    }
     const unassignPayload = {
       sectionId,
-      serviceId: selectedSlot.serviceId || serviceId,
-      role: scheduleRole,
-      date: selectedDate,
-      shiftId: selectedSlot.rowId || selectedSlot.shiftId || selectedSlot.shiftCode,
-      shiftCode: selectedSlot.shiftCode,
-      personId: departingPerson.id,
-      personName: departingPerson.name,
-      roleLabel: selectedSlot.taskLabel,
+      serviceId: effectiveSlot.serviceId,
+      role: effectiveSlot.role,
+      date: effectiveSlot.date,
+      rowId: effectiveSlot.rowId,
+      shiftId: effectiveSlot.shiftId,
+      shiftCode: effectiveSlot.shiftCode,
+      personId: departingPersonId,
+      personName: effectiveDepartingPerson.name,
+      roleLabel: effectiveSlot.taskLabel,
     };
     const assignPayload = {
       sectionId,
-      serviceId: selectedSlot.serviceId || serviceId,
-      role: scheduleRole,
-      date: selectedDate,
-      shiftId: selectedSlot.rowId || selectedSlot.shiftId || selectedSlot.shiftCode,
-      shiftCode: selectedSlot.shiftCode,
+      serviceId: effectiveSlot.serviceId,
+      role: effectiveSlot.role,
+      date: effectiveSlot.date,
+      rowId: effectiveSlot.rowId,
+      shiftId: effectiveSlot.shiftId,
+      shiftCode: effectiveSlot.shiftCode,
       personId: candidate.id,
       personName: candidate.name,
-      roleLabel: selectedSlot.taskLabel,
+      roleLabel: effectiveSlot.taskLabel,
     };
 
     try {
-      await unassignSchedule(unassignPayload);
-      try {
-        await assignSchedule(assignPayload);
-      } catch (assignErr) {
-        try {
-          await assignSchedule(unassignPayload);
-        } catch {
-          // best-effort rollback only
-        }
-        throw assignErr;
-      }
+      await replaceScheduleAssignment({
+        outgoing: unassignPayload,
+        incoming: assignPayload,
+      });
       setAssignedIds((prev) => new Set([...prev, candidate.id]));
       onAssigned?.();
     } catch (err) {

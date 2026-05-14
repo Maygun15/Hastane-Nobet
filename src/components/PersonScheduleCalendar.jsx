@@ -864,13 +864,11 @@ export default function PersonScheduleCalendar({
           const explicitAssignments = Array.isArray(explicitCandidate?.assignments)
             ? explicitCandidate.assignments
             : [];
-          const explicitMatches = countPersonMatches(explicitAssignments);
-          const hasTarget = !!targetPid || !!targetCanon;
-          const explicitUsable =
-            explicitAssignments.length > 0 && (!hasTarget || explicitMatches > 0);
+          const explicitDefs = Array.isArray(explicitCandidate?.defs) ? explicitCandidate.defs : [];
+          const explicitUsable = explicitAssignments.length > 0 || explicitDefs.length > 0;
           if (explicitUsable) {
             if (!active) return;
-            setRemoteDefs(explicitCandidate?.defs || []);
+            setRemoteDefs(explicitDefs);
             setRemoteAssignmentsRaw(explicitAssignments);
             setRemoteServiceIdUsed(explicitServiceKey || null);
             setRemoteRoleUsed(explicitRoleKey || null);
@@ -1027,12 +1025,14 @@ export default function PersonScheduleCalendar({
     const out = [];
     for (const [dayNum, list] of assignmentsByDay.entries()) {
       for (const item of Array.isArray(list) ? list : []) {
+        const rawPersonId = String(item?.personId || "").trim();
+        const rawPersonName = String(item?.personName || "").trim();
         out.push({
           ...item,
           day: `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`,
           date: `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`,
-          personId: String(item?.personId || selectedPerson?.id || "").trim(),
-          personName: String(item?.personName || selectedPerson?.name || "").trim(),
+          personId: rawPersonId || (!rawPersonName ? String(selectedPerson?.id || "").trim() : ""),
+          personName: rawPersonName || String(selectedPerson?.name || "").trim(),
           rowLabel: String(item?.rowLabel || item?.roleLabel || item?.label || item?.area || "").trim(),
         });
       }
@@ -1612,7 +1612,9 @@ export default function PersonScheduleCalendar({
         }}
         sectionId={sectionId}
         serviceId={effectiveServiceId}
+        resolvedServiceId={remoteServiceIdUsed ?? effectiveServiceId}
         scheduleRole={scheduleRole}
+        resolvedRole={remoteRoleUsed ?? scheduleRole}
         year={year}
         month={month0 + 1}
         onAssigned={refreshRemote}

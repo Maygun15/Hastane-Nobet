@@ -107,6 +107,42 @@ const normalizeRosterData = (roster) => {
     namedAssignments: normalizeRosterNamedAssignments(roster.namedAssignments),
   };
 };
+const rosterCellKey = (rowId, day) => `${String(rowId || "").trim()}::${Number(day) || 0}`;
+const firstRosterName = (roster, day, rowId) => {
+  const list = roster?.namedAssignments?.[day]?.[rowId];
+  return keepSingleAssignee(Array.isArray(list) ? list : [])[0] || "";
+};
+const buildRosterDiffMeta = ({ currentRoster, baselineRoster, rows = [], daysInMonth = 31 }) => {
+  const cellMap = new Map();
+  const changedRows = new Set();
+  let count = 0;
+
+  if (!baselineRoster?.namedAssignments || !currentRoster?.namedAssignments) {
+    return { count: 0, cellMap, changedRows: [], sample: [] };
+  }
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const rowId = String(row?.id || "").trim();
+    if (!rowId) continue;
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const before = String(firstRosterName(baselineRoster, day, rowId) || "").trim();
+      const after = String(firstRosterName(currentRoster, day, rowId) || "").trim();
+      if (canonName(before) === canonName(after)) continue;
+      count += 1;
+      changedRows.add(rowId);
+      cellMap.set(rosterCellKey(rowId, day), {
+        before,
+        after,
+        day,
+        rowId,
+        rowLabel: String(row?.label || rowId),
+      });
+    }
+  }
+
+  const sample = Array.from(cellMap.values()).slice(0, 5);
+  return { count, cellMap, changedRows: Array.from(changedRows.values()), sample };
+};
 const monIndex = (wdSun0) => (wdSun0 + 6) % 7;
 const pad2 = (n) => String(n).padStart(2, "0");
 function normalizeMonthAnyBase(value, { preferOneBased } = { preferOneBased: true }) {
@@ -841,6 +877,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
   const rows = defs;
   const [loadingRemote, setLoadingRemote] = useState(false);
+  const [remoteRevision, setRemoteRevision] = useState(0);
   const [saving, setSaving] = useState(false);
   const [lastSavedInfo, setLastSavedInfo] = useState(null);
   const [overrideDialog, setOverrideDialog] = useState({ open: false, errors: [], pendingPayload: null });
@@ -850,6 +887,27 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     updatedAt: null,
     generatedAt: null,
   }));
+
+  useEffect(() => {
+    const bumpRemote = () => setRemoteRevision((v) => v + 1);
+    const onStorage = (ev) => {
+      if (ev?.key === "scheduleLastSaved" || ev?.key === "scheduleBuildTrigger" || !ev?.key) {
+        bumpRemote();
+      }
+    };
+    window.addEventListener("planner:changed", bumpRemote);
+    window.addEventListener("schedule:saved", bumpRemote);
+    window.addEventListener("schedule:built", bumpRemote);
+    window.addEventListener("schedule:invalidated", bumpRemote);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("planner:changed", bumpRemote);
+      window.removeEventListener("schedule:saved", bumpRemote);
+      window.removeEventListener("schedule:built", bumpRemote);
+      window.removeEventListener("schedule:invalidated", bumpRemote);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
   const serviceKey = serviceId == null ? "" : String(serviceId);
   const autoSaveTimerRef = useRef(null);
   const lastSavedSignatureRef = useRef(null);
@@ -888,6 +946,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   );
   const [preview, setPreview] = useState(null);
   const [roster, setRoster] = useState(null);
+  const [rosterBaseline, setRosterBaseline] = useState(null);
   /* AI Plan: backend varsa backend, local sadece fallback */
   const [aiPlan, setAiPlan] = useState(null);
   const shiftMetaByCode = useMemo(() => {
@@ -916,6 +975,10 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       };
     });
   }, [rows, roster, daysInMonth, shiftMetaByCode]);
+  const rosterDiffMeta = useMemo(
+    () => buildRosterDiffMeta({ currentRoster: roster, baselineRoster: rosterBaseline, rows, daysInMonth }),
+    [roster, rosterBaseline, rows, daysInMonth]
+  );
 
   /* Pinler (Sabitlenenler) */
   const [pins, setPins] = useState([]);
@@ -1325,6 +1388,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     }
 
     setRoster(rosterRes);
+    setRosterBaseline(normalizeRosterData(rosterRes));
 
     // LS'ye yaz
     const STORE_KEY = "generatedRoster";
@@ -1347,7 +1411,12 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       LS.set("scheduleBuildTrigger", { ym: monthKey, ts: Date.now() });
       window.dispatchEvent(new Event("schedule:built"));
     } catch {}
-    return { committedOverrides: committed, previewData, roster: rosterRes };
+    return {
+      committedOverrides: committed,
+      previewData,
+      roster: rosterRes,
+      rosterBaseline: normalizeRosterData(rosterRes),
+    };
   };
 
   const exportXlsx = () => {
@@ -1696,14 +1765,17 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           }
           if ("preview" in data) setPreview(data.preview || null);
           const rosterFromData = "roster" in data ? normalizeRosterData(data.roster || null) : null;
+          const rosterBaselineFromData =
+            "rosterBaseline" in data
+              ? normalizeRosterData(data.rosterBaseline || null)
+              : rosterFromData;
           const rosterFromAssignments = remoteAssignments.length
             ? buildRosterFromBackend(remoteAssignments, data.issues, defsForUI, data.candidateAudit, data.issueDiagnostics)
             : null;
-          const rosterForUI = rosterFromData && rosterFromAssignments
-            ? mergeRosterNamedAssignments(rosterFromData, rosterFromAssignments)
-            : (rosterFromData || rosterFromAssignments);
+          const rosterForUI = rosterFromAssignments || rosterFromData;
           if (rosterForUI) setRoster(rosterForUI);
           else if ("roster" in data) setRoster(null);
+          setRosterBaseline(rosterBaselineFromData || null);
           setAiPlan("aiPlan" in data ? (data.aiPlan || null) : null);
           if ("pins" in data) setPins(data.pins || []);
           if ("rules" in data) {
@@ -1739,6 +1811,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           savedAssignmentsRef.current = [];
           setLastSavedInfo(null);
           setMonthlyReadModelState({ scheduleId: null, updatedAt: null, generatedAt: null });
+          setRoster(null);
+          setRosterBaseline(null);
           setAiPlan(readAiPlanFallback(year, month0));
           if (autoSaveTimerRef.current) {
             clearTimeout(autoSaveTimerRef.current);
@@ -1754,6 +1828,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           savedAssignmentsRef.current = [];
           setLastSavedInfo(null);
           setMonthlyReadModelState({ scheduleId: null, updatedAt: null, generatedAt: null });
+          setRoster(null);
+          setRosterBaseline(null);
           setAiPlan(readAiPlanFallback(year, month0));
           if (autoSaveTimerRef.current) {
             clearTimeout(autoSaveTimerRef.current);
@@ -1775,7 +1851,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     return () => {
       cancelled = true;
     };
-  }, [sectionId, serviceKey, role, year, month1, replaceAllDefs, note]);
+  }, [sectionId, serviceKey, role, year, month1, replaceAllDefs, note, remoteRevision]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1901,12 +1977,16 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         overrides,
         assignments: mergedAssignments,
         roster,
+        rosterBaseline: rosterBaseline || normalizeRosterData(roster),
         preview,
         aiPlan,
         pins,
         rules,
         generatedAt: new Date().toISOString(),
       };
+      if (!payload.rosterBaseline) {
+        payload.rosterBaseline = rosterBaseline || normalizeRosterData(payload.roster || roster);
+      }
 
       // Pre-save validation (only on explicit saves, not silent auto-saves)
       if (!silent && !payload._forceOverride && mergedAssignments.length > 0) {
@@ -1982,7 +2062,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     } finally {
       setSaving(false);
     }
-  }, [sectionId, serviceKey, role, year, month1, rows, overrides, roster, preview, aiPlan, pins, rules, daysInMonth, note, makeSignature]);
+  }, [sectionId, serviceKey, role, year, month1, rows, overrides, roster, rosterBaseline, preview, aiPlan, pins, rules, daysInMonth, note, makeSignature]);
 
   useEffect(() => {
     if (autoSaveStatus !== "saved") return undefined;
@@ -2321,11 +2401,13 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           data.issueDiagnostics
         );
         setRoster(rosterFromServer);
+        setRosterBaseline(normalizeRosterData(rosterFromServer));
         const payload = {
           version: 1,
           defs: effectiveRows,
           overrides: effectiveOverrides,
           roster: rosterFromServer,
+          rosterBaseline: normalizeRosterData(rosterFromServer),
           assignments: Array.isArray(data.assignments) ? data.assignments : [],
           preview: effectivePreview,
           aiPlan,
@@ -2762,6 +2844,24 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             </div>
           )}
 
+          {rosterDiffMeta.count > 0 && (
+            <div className="mb-3 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+              <div className="font-medium">
+                İlk oluşturulan plana göre {rosterDiffMeta.count} hücrede manuel değişiklik var.
+              </div>
+              <div className="mt-1 text-xs text-sky-800">
+                Mavi vurgulu hücreler sonradan güncellenen atamalardır. Hücrenin üstüne gelince ilk plan ve güncel kişi bilgisini görebilirsiniz.
+              </div>
+              {!!rosterDiffMeta.sample.length && (
+                <div className="mt-2 text-xs text-sky-800">
+                  Örnek: {rosterDiffMeta.sample
+                    .map((item) => `Gün ${item.day} ${item.rowLabel}: ${item.before || "Boş"} -> ${item.after || "Boş"}`)
+                    .join(" | ")}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="overflow-auto">
             <table className="min-w-[1600px] border-separate border-spacing-0 text-[12px]">
               <thead>
@@ -2844,15 +2944,40 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                         const weekday = new Date(year, month0, day).getDay();
                         const isWeekend = weekday === 0 || weekday === 6;
                         const name = names[slotIdx] || "";
+                        const changeMeta = rosterDiffMeta.cellMap.get(rosterCellKey(row.id, day));
+                        const isChangedCell = !!changeMeta && slotIdx === 0;
+                        const title = isChangedCell
+                          ? `Manuel güncelleme\nİlk plan: ${changeMeta.before || "Boş"}\nGüncel: ${changeMeta.after || "Boş"}`
+                          : (name || "");
                         return (
                           <td
                             key={`${row.id}-${slotIdx}-${day}`}
-                            title={name || ""}
+                            title={title}
                             className={`border border-slate-200 px-2 py-2 text-center align-middle ${
-                              isWeekend ? "bg-amber-50/40" : "bg-white"
+                              isChangedCell
+                                ? "bg-sky-100 text-sky-950 ring-1 ring-inset ring-sky-300"
+                                : isWeekend
+                                  ? "bg-amber-50/40"
+                                  : "bg-white"
                             } ${name ? "text-slate-700" : "text-slate-300"}`}
                           >
-                            {name ? compactRosterDisplayName(name) : ""}
+                            {name ? (
+                              <div className="space-y-1">
+                                <div>{compactRosterDisplayName(name)}</div>
+                                {isChangedCell && (
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-sky-700">
+                                    Güncellendi
+                                  </div>
+                                )}
+                              </div>
+                            ) : isChangedCell ? (
+                              <div className="space-y-1">
+                                <div className="text-slate-400">-</div>
+                                <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-sky-700">
+                                  Güncellendi
+                                </div>
+                              </div>
+                            ) : ""}
                           </td>
                         );
                       })}

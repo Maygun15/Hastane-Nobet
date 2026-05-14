@@ -1,7 +1,7 @@
 // src/api/apiAdapter.js
 // G6'DA KULLANDIĞIN ENDPOINTLERİ BURAYA AYNI ŞEKİLDE UYARLA
 
-import { getToken } from "../lib/api.js";
+import { getToken, http as sharedHttp } from "../lib/api.js";
 import { getApiBase, assertProdWriteAllowed } from "../lib/apiConfig.js";
 import { LS } from "../utils/storage.js";
 import { invalidateScheduleCache } from "../store/monthlyScheduleModel.js";
@@ -23,36 +23,20 @@ async function httpRequest(pathAndQuery, { method = "GET", body, token, headers 
   const finalHeaders = { ...(headers || {}) };
   const authToken = token || getToken();
   if (authToken && !finalHeaders.Authorization) finalHeaders.Authorization = `Bearer ${authToken}`;
-  if (body != null && !finalHeaders["Content-Type"]) finalHeaders["Content-Type"] = "application/json";
-
-  const res = await fetch(makeUrl(pathAndQuery), {
-    method,
-    credentials: "include",
-    headers: finalHeaders,
-    body: body == null
-      ? undefined
-      : typeof body === "string"
-        ? body
-        : JSON.stringify(body),
-  });
-
-  const text = await res.text();
-  let data = null;
-  if (text) {
-    try { data = JSON.parse(text); } catch { data = text; }
-  }
-
-  if (!res.ok) {
-    const err = new Error((data && (data.message || data.error)) || `HTTP ${res.status}`);
-    err.status = res.status;
-    err.body = data;
-    err.details = Array.isArray(data?.details)
-      ? data.details.map((item) => item?.message).filter(Boolean)
-      : [];
+  try {
+    return await sharedHttp.req(pathAndQuery, {
+      method,
+      body,
+      headers: finalHeaders,
+      retries: method === "GET" ? 2 : 0,
+    });
+  } catch (err) {
+    if (!err?.body && err?.data) err.body = err.data;
+    if (!err?.details && Array.isArray(err?.data?.details)) {
+      err.details = err.data.details.map((item) => item?.message).filter(Boolean);
+    }
     throw err;
   }
-
-  return data;
 }
 
 function buildScheduleMutationDetail({ sectionId, serviceId = "", role = "", date = "", year, month }) {
@@ -558,6 +542,27 @@ export async function unassignSchedule({
   };
   const result = await httpRequest("/api/schedules/assign", { method: "DELETE", body });
   const detail = buildScheduleMutationDetail({ sectionId, serviceId, role, date });
+  if (detail.year && detail.month) invalidateScheduleCache(detail.year, detail.month);
+  emitScheduleMutation(detail);
+  return result;
+}
+
+export async function replaceScheduleAssignment({
+  outgoing,
+  incoming,
+} = {}) {
+  if (!outgoing?.sectionId || !incoming?.sectionId) throw new Error("sectionId gerekli");
+  if (!outgoing?.date || !incoming?.date) throw new Error("date gerekli");
+  const result = await httpRequest("/api/schedules/assign/replace", {
+    method: "POST",
+    body: { outgoing, incoming },
+  });
+  const detail = buildScheduleMutationDetail({
+    sectionId: incoming?.sectionId || outgoing?.sectionId,
+    serviceId: incoming?.serviceId ?? outgoing?.serviceId ?? "",
+    role: incoming?.role ?? outgoing?.role ?? "",
+    date: incoming?.date || outgoing?.date || "",
+  });
   if (detail.year && detail.month) invalidateScheduleCache(detail.year, detail.month);
   emitScheduleMutation(detail);
   return result;

@@ -201,6 +201,7 @@ const globalApiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: 'Çok fazla istek, lütfen daha sonra tekrar deneyin' },
+  skip: (req) => req.path === '/health',
 });
 app.use('/api', globalApiLimiter);
 

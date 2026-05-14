@@ -8,7 +8,7 @@ const ScheduleRules = require('../models/ScheduleRules');
 const { listHolidays } = require('../services/holidayService');
 const { sendShiftChanged } = require('../services/notificationService');
 const { validateAssignment } = require('../utils/rulesValidator');
-const { checkSameDayConflict, checkLeaveConflict } = require('../services/conflictService');
+const { checkSameDayConflict, checkLeaveConflict, checkAdjacentDayConflict } = require('../services/conflictService');
 const {
   replaceAssignmentsForSchedule,
   upsertAssignment,
@@ -166,6 +166,69 @@ function buildDefsIndex(defs = []) {
     if (shiftCode) byShift.set(shiftCode, row);
   }
   return { byId, byShift };
+}
+
+function buildRosterNamedAssignmentsFromAssignments(assignments = [], defs = []) {
+  const namedAssignments = {};
+  const rowLabelById = new Map();
+  const rowIdByLabel = new Map();
+  const rowIdByLabelShift = new Map();
+
+  for (const row of defs || []) {
+    const rowId = String(row?.id || row?.rowId || '').trim();
+    const rowLabel = String(row?.label || row?.name || row?.area || rowId).trim();
+    const shiftCode = String(row?.shiftCode || row?.code || '').trim();
+    if (!rowId) continue;
+    rowLabelById.set(rowId, rowLabel || rowId);
+    if (rowLabel) {
+      const labelKey = normalizeText(rowLabel);
+      if (labelKey && !rowIdByLabel.has(labelKey)) rowIdByLabel.set(labelKey, rowId);
+      rowIdByLabelShift.set(`${labelKey}|${normalizeText(shiftCode)}`, rowId);
+    }
+  }
+
+  for (const item of assignments || []) {
+    const dateStr = String(item?.date || item?.day || '').slice(0, 10);
+    const day = Number(dateStr.slice(8, 10));
+    if (!Number.isFinite(day) || day < 1 || day > 31) continue;
+    const personName = String(item?.personName || item?.name || '').trim();
+    if (!personName) continue;
+
+    const rawRowId = String(item?.rowId || item?.shiftId || '').trim();
+    const shiftCode = String(item?.shiftCode || item?.shiftId || item?.rowId || '').trim();
+    const roleLabel = String(item?.roleLabel || item?.label || item?.area || '').trim();
+    const pairKey = `${normalizeText(roleLabel)}|${normalizeText(shiftCode)}`;
+    const labelKey = normalizeText(roleLabel);
+    const rowId =
+      (rawRowId && rowLabelById.has(rawRowId) ? rawRowId : '') ||
+      rowIdByLabelShift.get(pairKey) ||
+      rowIdByLabel.get(labelKey) ||
+      rawRowId ||
+      shiftCode;
+    if (!rowId) continue;
+
+    namedAssignments[day] ||= {};
+    namedAssignments[day][rowId] = [personName];
+  }
+
+  return namedAssignments;
+}
+
+function buildScheduleDataWriteback(data = {}, nextAssignments = [], defs = []) {
+  const currentRoster = data?.roster && typeof data.roster === 'object' ? { ...data.roster } : {};
+  const nextRoster = {
+    ...currentRoster,
+    namedAssignments: buildRosterNamedAssignmentsFromAssignments(nextAssignments, defs),
+  };
+  const nextData = {
+    ...(data || {}),
+    assignments: nextAssignments,
+    roster: nextRoster,
+  };
+  if (!nextData.rosterBaseline && currentRoster && Object.keys(currentRoster).length) {
+    nextData.rosterBaseline = currentRoster;
+  }
+  return nextData;
 }
 
 function normalizeShiftToken(v) {
@@ -397,6 +460,7 @@ function buildAssignmentsFromNamed({ year, month, defs = [], namedAssignments = 
           date,
           day: date,
           weekday,
+          rowId,
           shiftId,
           shiftCode,
           roleLabel,
@@ -447,6 +511,7 @@ function buildAssignQuery(body) {
 function normalizeAssignPayload(body, query, userId) {
   const personId = String(body?.personId ?? body?.personID ?? '').trim();
   const shiftId = String(body?.shiftId ?? body?.shiftCode ?? body?.shift ?? '').trim();
+  const rowId = String(body?.rowId ?? '').trim();
   if (!personId) throw new Error('personId gerekli');
   if (!shiftId) throw new Error('shiftId gerekli');
 
@@ -468,6 +533,7 @@ function normalizeAssignPayload(body, query, userId) {
     date: query.dateStr,
     personId,
     personName: personName || undefined,
+    rowId: rowId || undefined,
     shiftId,
     shiftCode: shiftCode || shiftId,
     roleLabel: roleLabel || undefined,
@@ -485,8 +551,9 @@ function normalizeAssignPayload(body, query, userId) {
 function assignmentKey(a) {
   const date = String(a?.date ?? a?.day ?? '').slice(0, 10);
   const personId = String(a?.personId ?? '').trim();
+  const rowId = String(a?.rowId ?? '').trim();
   const shiftId = String(a?.shiftId ?? a?.shiftCode ?? a?.shift ?? a?.code ?? '').trim();
-  return `${date}|${personId}|${shiftId}`;
+  return `${date}|${personId}|${rowId || shiftId}`;
 }
 
 function canonName(str = '') {
@@ -579,6 +646,12 @@ function matchesAssignForDelete(item, payload, query) {
   const date = String(item?.date ?? item?.day ?? '').slice(0, 10);
   if (date !== query.dateStr) return false;
 
+  const rowIdItem = String(item?.rowId ?? '').trim();
+  const rowIdTarget = String(payload?.rowId ?? '').trim();
+  if (rowIdTarget && rowIdItem && rowIdTarget !== rowIdItem) {
+    return false;
+  }
+
   const shiftCandidates = [
     item?.shiftId,
     item?.shiftCode,
@@ -613,6 +686,10 @@ function matchesByPersonAndDay(item, payload, query) {
   const date = String(item?.date ?? item?.day ?? '').slice(0, 10);
   if (date !== query.dateStr) return false;
 
+  const rowIdItem = String(item?.rowId ?? '').trim();
+  const rowIdTarget = String(payload?.rowId ?? '').trim();
+  if (rowIdTarget && rowIdItem && rowIdTarget !== rowIdItem) return false;
+
   const pidItem = String(item?.personId ?? '').trim();
   const pidTarget = String(payload?.personId ?? '').trim();
   if (pidTarget && pidItem) return pidTarget === pidItem;
@@ -622,6 +699,31 @@ function matchesByPersonAndDay(item, payload, query) {
   if (nameTarget && nameItem) return nameTarget === nameItem;
 
   return false;
+}
+
+function buildAssignMutationCandidates(assignQuery = {}) {
+  const base = {
+    sectionId: assignQuery.sectionId,
+    year: assignQuery.year,
+    month: assignQuery.month,
+  };
+  const serviceId = assignQuery.serviceId || '';
+  const role = assignQuery.role || '';
+  return [
+    { ...base, serviceId, role },
+    { ...base, serviceId, role: '' },
+    { ...base, serviceId: '', role },
+    { ...base, serviceId: '', role: '' },
+  ];
+}
+
+async function findMutableScheduleDoc(assignQuery = {}) {
+  const candidates = buildAssignMutationCandidates(assignQuery);
+  for (const q of candidates) {
+    const found = await MonthlySchedule.findOne(q).lean();
+    if (found) return { doc: found, query: q };
+  }
+  return { doc: null, query: null };
 }
 
 function buildQuery(req) {
@@ -670,6 +772,37 @@ async function loadRules(req, res, next) {
     return next();
   }
 }
+
+// Root GET — eski frontend kodları /api/schedules?year=&month= çağırıyordu.
+router.get('/',
+  requireAuth,
+  (req, _res, next) => {
+    if (!req.query.sectionId) req.query.sectionId = 'calisma-cizelgesi';
+    next();
+  },
+  (req, res, next) => {
+    try {
+      const query = buildQuery(req);
+      req.scheduleQuery = query;
+      req.targetServiceId = query.serviceId;
+      next();
+    } catch (err) {
+      return res.status(400).json({ ok: false, message: err.message || 'Geçersiz istek' });
+    }
+  },
+  allowMonthlyRead,
+  async (req, res) => {
+    try {
+      const query = req.scheduleQuery;
+      const doc = await MonthlySchedule.findOne(query).lean();
+      const assignments = Array.isArray(doc?.assignments) ? doc.assignments : [];
+      const issues = Array.isArray(doc?.issues) ? doc.issues : [];
+      return res.json({ ok: true, data: { assignments, issues }, assignments, issues });
+    } catch (err) {
+      return res.status(500).json({ ok: false, message: err.message });
+    }
+  }
+);
 
 // MonthlySchedule GET is the operational monthly read model.
 // It serves assignment snapshot + editable monthly schedule data for existing UI paths.
@@ -1041,6 +1174,13 @@ router.post('/assign',
           personName: payload.personName,
           date: payload.date,
           excludeShiftId: previousShiftId || null,
+          excludeSlot: previousShiftId
+            ? {
+                sectionId: query.sectionId,
+                serviceId: query.serviceId,
+                role: query.role,
+              }
+            : null,
         });
         if (dayConflicts.length > 0) {
           return res.status(409).json({
@@ -1048,6 +1188,20 @@ router.post('/assign',
             message: 'Bu kişi bu tarihte başka bir vardiyaya zaten atanmış',
             conflictType: 'SHIFT_CONFLICT',
             conflicts: dayConflicts,
+          });
+        }
+
+        const adjacentConflicts = await checkAdjacentDayConflict({
+          personId: payload.personId,
+          personName: payload.personName,
+          date: payload.date,
+        });
+        if (adjacentConflicts.length > 0) {
+          return res.status(409).json({
+            ok: false,
+            message: 'Bu kişi peş peşe günlerde nöbetli. Ardışık nöbet ataması engellendi.',
+            conflictType: 'ADJACENT_DAY_CONFLICT',
+            conflicts: adjacentConflicts,
           });
         }
 
@@ -1107,7 +1261,7 @@ router.post('/assign',
       const update = {
         $set: {
           ...query,
-          data: { ...data, assignments: nextAssignments },
+          data: buildScheduleDataWriteback(data, nextAssignments, defs),
           updatedBy: req.user?.uid || null,
         },
         $setOnInsert: {
@@ -1171,6 +1325,192 @@ router.post('/assign',
   }
 );
 
+router.post('/assign/replace',
+  requireAuth,
+  (req, res, next) => {
+    try {
+      const outgoingQuery = buildAssignQuery(req.body?.outgoing || req.body || {});
+      const incomingQuery = buildAssignQuery(req.body?.incoming || req.body || {});
+      req.outgoingAssignQuery = outgoingQuery;
+      req.incomingAssignQuery = incomingQuery;
+      req.outgoingAssignPayload = normalizeAssignPayload(req.body?.outgoing || req.body || {}, outgoingQuery, req.user?.uid || null);
+      req.incomingAssignPayload = normalizeAssignPayload(req.body?.incoming || req.body || {}, incomingQuery, req.user?.uid || null);
+      req.assignQuery = incomingQuery;
+      req.targetServiceId = incomingQuery.serviceId;
+      req.body = {
+        ...(req.body || {}),
+        sectionId: incomingQuery.sectionId,
+        serviceId: incomingQuery.serviceId,
+        role: incomingQuery.role,
+      };
+      next();
+    } catch (err) {
+      return res.status(400).json({ ok: false, message: err.message || 'Geçersiz istek' });
+    }
+  },
+  sameServiceOrAdmin,
+  loadRules,
+  async (req, res) => {
+    try {
+      const { doc, query } = await findMutableScheduleDoc(req.outgoingAssignQuery);
+      if (!doc || !query) {
+        return res.status(404).json({ ok: false, message: 'Değiştirilecek mevcut nöbet kaydı bulunamadı.' });
+      }
+
+      const data = doc?.data && typeof doc.data === 'object' ? doc.data : {};
+      const assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
+      const defs = Array.isArray(data.defs)
+        ? data.defs
+        : Array.isArray(data.rows)
+        ? data.rows
+        : [];
+      const overrides =
+        data?.overrides && typeof data.overrides === 'object'
+          ? data.overrides
+          : {};
+      const holidays = await listHolidays({ year: query.year, month: query.month, hospitalId: req.hospitalId });
+      const holidayKindByDate = buildHolidayKindByDateMap(holidays);
+      const supervisorRowIds = buildSupervisorRowIdSet(defs);
+
+      const removal = applyDeleteFilter(assignments, req.outgoingAssignPayload, req.outgoingAssignQuery);
+      if (!removal.removed) {
+        return res.status(404).json({ ok: false, message: 'Çıkacak kişi bu slotta bulunamadı.' });
+      }
+
+      let payload = { ...req.incomingAssignPayload };
+      const payloadLabel = String(payload?.roleLabel || payload?.label || '').trim();
+      const payloadShiftId = String(payload?.shiftId || payload?.shiftCode || '').trim();
+      const previousShiftId = String(payload?.previousShiftId || '').trim();
+      const isSupervisor =
+        payload?.supervisorTask === true ||
+        supervisorRowIds.has(payloadShiftId) ||
+        supervisorRowIds.has(previousShiftId) ||
+        isServiceSupervisorLabel(payloadLabel);
+      if (isSupervisor) {
+        payload = {
+          ...payload,
+          supervisorTask: true,
+          roleLabel: payloadLabel || SERVICE_SUPERVISOR_LABEL,
+        };
+        const dateStr = String(payload?.date || '').slice(0, 10);
+        const kind = String(holidayKindByDate?.[dateStr] || '').toLowerCase();
+        const dt = new Date(`${dateStr}T00:00:00`);
+        const weekday = Number.isNaN(dt.getTime()) ? NaN : dt.getDay();
+        if (weekday === 0 || weekday === 6 || kind === 'full') {
+          return res.status(400).json({
+            ok: false,
+            message: 'Servis sorumlusu hafta sonu ve resmi tatilde atanamaz',
+          });
+        }
+        if (kind === 'arife' || kind === 'half') {
+          payload = {
+            ...payload,
+            shiftCode: 'A',
+            shiftId: 'A',
+            hours: HALF_DAY_A_HOURS,
+          };
+        }
+      }
+
+      const validationBase = removal.filtered.filter((a) => assignmentKey(a) !== assignmentKey(payload));
+      const validation = validateAssignment(req.scheduleRules, payload, validationBase);
+      if (!validation.valid) {
+        return res.status(409).json({
+          ok: false,
+          message: 'Nöbet yazma kuralı ihlali',
+          errors: validation.errors,
+          canForce: validation.canForce,
+          conflictType: 'RULE_VIOLATION',
+        });
+      }
+
+      const dayConflicts = await checkSameDayConflict({
+        personId: payload.personId,
+        personName: payload.personName,
+        date: payload.date,
+      });
+      if (dayConflicts.length > 0) {
+        return res.status(409).json({
+          ok: false,
+          message: 'Bu kişi bu tarihte başka bir vardiyaya zaten atanmış',
+          conflictType: 'SHIFT_CONFLICT',
+          conflicts: dayConflicts,
+        });
+      }
+
+      const adjacentConflicts = await checkAdjacentDayConflict({
+        personId: payload.personId,
+        personName: payload.personName,
+        date: payload.date,
+      });
+      if (adjacentConflicts.length > 0) {
+        return res.status(409).json({
+          ok: false,
+          message: 'Bu kişi peş peşe günlerde nöbetli. Ardışık nöbet ataması engellendi.',
+          conflictType: 'ADJACENT_DAY_CONFLICT',
+          conflicts: adjacentConflicts,
+        });
+      }
+
+      const leaveConflict = await checkLeaveConflict({
+        personId: payload.personId,
+        date: payload.date,
+        serviceId: query.serviceId || '',
+      });
+      if (leaveConflict) {
+        return res.status(409).json({
+          ok: false,
+          message: `Bu kişi ${leaveConflict.date} tarihinde izinli (${leaveConflict.code}).`,
+          conflictType: 'LEAVE_CONFLICT',
+          leave: leaveConflict,
+        });
+      }
+
+      let nextAssignments = [...removal.filtered, payload];
+      const overbookTrim = trimOverbookedAssignments({ assignments: nextAssignments, defs, overrides });
+      if (overbookTrim.changed) {
+        nextAssignments = overbookTrim.assignments;
+      }
+
+      const saved = await MonthlySchedule.findOneAndUpdate(
+        query,
+        {
+          $set: {
+            data: buildScheduleDataWriteback(data, nextAssignments, defs),
+            updatedBy: req.user?.uid || null,
+          },
+        },
+        { new: true }
+      ).lean();
+
+      try {
+        await replaceAssignmentsForSchedule({
+          scope: {
+            ...query,
+            sourceScheduleId: saved?._id || null,
+          },
+          payload: saved?.data || { ...data, assignments: nextAssignments },
+          createdBy: saved?.createdBy || req.user?.uid || null,
+          updatedBy: req.user?.uid || null,
+          source: 'monthlySchedule',
+        });
+      } catch (syncErr) {
+        console.error('[assignmentSync][replace] ERR:', syncErr);
+      }
+
+      return res.json({
+        ok: true,
+        assignments: Array.isArray(saved?.data?.assignments) ? saved.data.assignments : nextAssignments,
+        scheduleId: saved?._id ? String(saved._id) : null,
+        updatedAt: saved?.updatedAt || null,
+      });
+    } catch (err) {
+      console.error('[POST /api/schedules/assign/replace] ERR:', err);
+      return res.status(500).json({ ok: false, message: 'Sunucu hatası' });
+    }
+  }
+);
+
 router.delete('/assign',
   requireAuth,
   (req, res, next) => {
@@ -1187,30 +1527,7 @@ router.delete('/assign',
   sameServiceOrAdmin,
   async (req, res) => {
     try {
-      const base = {
-        sectionId: req.assignQuery.sectionId,
-        year: req.assignQuery.year,
-        month: req.assignQuery.month,
-      };
-      const serviceId = req.assignQuery.serviceId || '';
-      const role = req.assignQuery.role || '';
-      const candidates = [
-        { ...base, serviceId, role },
-        { ...base, serviceId, role: '' },
-        { ...base, serviceId: '', role },
-        { ...base, serviceId: '', role: '' },
-      ];
-
-      let doc = null;
-      let query = null;
-      for (const q of candidates) {
-        const found = await MonthlySchedule.findOne(q).lean();
-        if (found) {
-          doc = found;
-          query = q;
-          break;
-        }
-      }
+      const { doc, query } = await findMutableScheduleDoc(req.assignQuery);
       const attemptRemove = async (targetDoc, targetQuery) => {
         const data = targetDoc?.data && typeof targetDoc.data === 'object' ? targetDoc.data : {};
         const assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
@@ -1222,7 +1539,11 @@ router.delete('/assign',
           targetQuery,
           {
             $set: {
-              data: { ...data, assignments: filtered },
+              data: buildScheduleDataWriteback(
+                data,
+                filtered,
+                Array.isArray(data.defs) ? data.defs : Array.isArray(data.rows) ? data.rows : []
+              ),
               updatedBy: req.user?.uid || null,
             },
           },

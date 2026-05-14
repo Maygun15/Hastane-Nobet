@@ -205,7 +205,7 @@ async function postTry(paths, body, opts = {}) {
 }
 
 /* ========= HEALTH ========= */
-export const apiHealth = () => req('/health');
+export const apiHealth = () => req('/api/health');
 
 /* ========= AUTH ========= */
 // Kayıt: name, tc, phone, email, password

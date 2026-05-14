@@ -30,6 +30,10 @@ export default function OfflineIndicator() {
         await apiHealth();
         if (mounted) setIsBackendUp(true);
       } catch (err) {
+        if (err?.status === 429) {
+          if (mounted) setIsBackendUp(true);
+          return;
+        }
         if (mounted) setIsBackendUp(false);
       }
     };
