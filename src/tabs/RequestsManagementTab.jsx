@@ -22,6 +22,7 @@ export default function RequestsManagementTab() {
   const [error, setError] = useState("");
   const [noteFor, setNoteFor] = useState(null);
   const [noteText, setNoteText] = useState("");
+  const [processing, setProcessing] = useState("");
 
   const load = async () => {
     try {
@@ -46,16 +47,35 @@ export default function RequestsManagementTab() {
   }, [items, statusFilter, typeFilter]);
 
   const approve = async (r) => {
-    await updateRequest(r._id || r.id, { status: "approved", adminNote: "" });
-    load();
+    const id = r._id || r.id;
+    if (processing === id) return;
+    setProcessing(id);
+    try {
+      setError("");
+      await updateRequest(id, { status: "approved", adminNote: "" });
+      load();
+    } catch (e) {
+      setError(e?.message || "Onaylanamadı");
+    } finally {
+      setProcessing("");
+    }
   };
 
   const reject = async (r) => {
     const id = r._id || r.id;
-    await updateRequest(id, { status: "rejected", adminNote: noteText });
-    setNoteFor(null);
-    setNoteText("");
-    load();
+    if (processing === id) return;
+    setProcessing(id);
+    try {
+      setError("");
+      await updateRequest(id, { status: "rejected", adminNote: noteText });
+      setNoteFor(null);
+      setNoteText("");
+      load();
+    } catch (e) {
+      setError(e?.message || "Reddedilemedi");
+    } finally {
+      setProcessing("");
+    }
   };
 
   return (
@@ -117,13 +137,15 @@ export default function RequestsManagementTab() {
 
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
-                  className="text-[12px] px-3 py-1 rounded bg-emerald-600 text-white"
+                  disabled={!!processing}
+                  className="text-[12px] px-3 py-1 rounded bg-emerald-600 text-white disabled:opacity-60"
                   onClick={() => approve(r)}
                 >
-                  Onayla
+                  {processing === (r._id || r.id) ? "…" : "Onayla"}
                 </button>
                 <button
-                  className="text-[12px] px-3 py-1 rounded bg-rose-600 text-white"
+                  disabled={!!processing}
+                  className="text-[12px] px-3 py-1 rounded bg-rose-600 text-white disabled:opacity-60"
                   onClick={() => setNoteFor(r)}
                 >
                   Reddet
@@ -141,16 +163,18 @@ export default function RequestsManagementTab() {
                   />
                   <div className="flex gap-2">
                     <button
-                      className="text-[12px] px-3 py-1 rounded border"
+                      disabled={!!processing}
+                      className="text-[12px] px-3 py-1 rounded border disabled:opacity-60"
                       onClick={() => { setNoteFor(null); setNoteText(""); }}
                     >
                       Vazgeç
                     </button>
                     <button
-                      className="text-[12px] px-3 py-1 rounded bg-rose-600 text-white"
+                      disabled={!!processing}
+                      className="text-[12px] px-3 py-1 rounded bg-rose-600 text-white disabled:opacity-60"
                       onClick={() => reject(r)}
                     >
-                      Reddet
+                      {processing === (r._id || r.id) ? "…" : "Reddet"}
                     </button>
                   </div>
                 </div>
