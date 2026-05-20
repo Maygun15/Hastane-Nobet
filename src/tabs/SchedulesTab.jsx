@@ -512,6 +512,36 @@ function SectionContent({
       .catch(() => {});
     return () => { active = false; };
   }, [year, month]);
+
+  // DutyRowsEditor'a iletilen takas hücresi seti — "dayNum|ROWID|personName"
+  const swappedCells = useMemo(() => {
+    const s = new Set();
+    const ymKey = `${year}-${String(month).padStart(2, "0")}`;
+    for (const r of swapLog) {
+      if (!r.swapExecuted) continue;
+      // myDate üzerinde artık swapWithPersonName var
+      if (String(r.swapMyDate || "").startsWith(ymKey)) {
+        const d = Number(String(r.swapMyDate || "").slice(8, 10));
+        const shiftId = String(r.swapMyShiftId || "");
+        const name = String(r.swapWithPersonName || "");
+        if (d && shiftId && name) {
+          s.add(`${d}|${shiftId}|${name}`);
+          s.add(`${d}|${shiftId.toUpperCase()}|${name}`);
+        }
+      }
+      // targetDate üzerinde artık fromName var
+      if (String(r.swapTargetDate || "").startsWith(ymKey)) {
+        const d = Number(String(r.swapTargetDate || "").slice(8, 10));
+        const shiftId = String(r.swapTargetShiftId || "");
+        const name = String(r.fromName || "");
+        if (d && shiftId && name) {
+          s.add(`${d}|${shiftId}|${name}`);
+          s.add(`${d}|${shiftId.toUpperCase()}|${name}`);
+        }
+      }
+    }
+    return s;
+  }, [swapLog, year, month]);
   const handleBuild = useCallback(() => {
     if (editorRef.current?.build) return editorRef.current.build();
     toast.error("Çizelge bileşeni yüklenemedi", { description: "Sayfayı yenileyin ve tekrar deneyin." });
@@ -762,6 +792,7 @@ function SectionContent({
               peopleAll={peopleAll}
               workingHours={workingHours}
               personLeaves={allLeaves}
+              swappedCells={swappedCells}
             />
           </div>
         </div>

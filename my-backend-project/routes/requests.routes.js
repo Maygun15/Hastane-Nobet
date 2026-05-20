@@ -129,6 +129,105 @@ async function revertLeaveBalance(request) {
   ]);
 }
 
+/* ── Takas yardımcıları ── */
+function swapCanonName(str = '') {
+  return String(str || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleUpperCase('tr-TR').replace(/\s+/g, ' ').trim();
+}
+function swapAddDays(dateStr, n) {
+  const d = new Date(String(dateStr) + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function isNightShiftDef(def) {
+  if (!def) return false;
+  const start = String(def?.start || def?.from || '').trim();
+  const end   = String(def?.end   || def?.to   || '').trim();
+  if (!start || !end) return false;
+  const sh = Number(start.split(':')[0]);
+  const eh = Number(end.split(':')[0]);
+  if (!Number.isFinite(sh) || !Number.isFinite(eh)) return false;
+  return sh >= 18 || eh < sh; // geç başlayan veya geceyi geçen vardiya
+}
+
+/* Takas çalışma kuralı kontrolü — onaylamadan önce çağrılır */
+async function checkSwapConflicts(request) {
+  const { fromPersonId, fromName, swapWithPersonId, swapSectionId,
+    swapMyDate, swapMyShiftId, swapTargetDate, swapTargetShiftId } = request;
+  if (!fromPersonId || !swapWithPersonId || !swapMyDate || !swapTargetDate) return null;
+
+  function ym(d) { const m = String(d).slice(0, 10).match(/^(\d{4})-(\d{2})/); return m ? { year: Number(m[1]), month: Number(m[2]) } : null; }
+  const myYm = ym(swapMyDate); const tYm = ym(swapTargetDate);
+  if (!myYm || !tYm) return null;
+
+  const sectionId = String(swapSectionId || '');
+  const fromPid   = String(fromPersonId);
+  const toPid     = String(swapWithPersonId);
+  const myDate    = String(swapMyDate).slice(0, 10);
+  const tDate     = String(swapTargetDate).slice(0, 10);
+  const myShift   = String(swapMyShiftId || '').toUpperCase();
+  const tShift    = String(swapTargetShiftId || '').toUpperCase();
+
+  const [fromPerson, toPerson] = await Promise.all([
+    Person.findById(fromPersonId).lean(),
+    Person.findById(swapWithPersonId).lean(),
+  ]);
+  const fromDisplayName = fromPerson?.name || fromName || 'Talep eden';
+  const toDisplayName   = toPerson?.name || 'Diğer personel';
+
+  // Çizelge dokümanları
+  const docs = await Promise.all([
+    MonthlySchedule.findOne({ sectionId, year: myYm.year, month: myYm.month }).lean(),
+    myYm.year !== tYm.year || myYm.month !== tYm.month
+      ? MonthlySchedule.findOne({ sectionId, year: tYm.year, month: tYm.month }).lean()
+      : null,
+  ]);
+  const myDoc = docs[0];
+  const tDoc  = docs[1] || myDoc;
+
+  function getAssignments(doc) { return Array.isArray(doc?.data?.assignments) ? doc.data.assignments : []; }
+  function getDefs(doc) { return Array.isArray(doc?.data?.defs) ? doc.data.defs : []; }
+  function personHasShiftOnDate(assignments, pid, date, excludeShift) {
+    return assignments.some((a) => {
+      const aDate  = String(a?.date || '').slice(0, 10);
+      const aPid   = String(a?.personId || '').trim();
+      const aShift = String(a?.shiftId || a?.shiftCode || '').trim().toUpperCase();
+      return aDate === date && aPid === pid && aShift !== excludeShift;
+    });
+  }
+  function hadNightShiftOnDate(assignments, defs, pid, date) {
+    const defByCode = new Map(defs.map((d) => [String(d?.shiftCode || d?.code || '').toUpperCase(), d]));
+    return assignments.some((a) => {
+      const aDate  = String(a?.date || '').slice(0, 10);
+      const aPid   = String(a?.personId || '').trim();
+      if (aDate !== date || aPid !== pid) return false;
+      const code = String(a?.shiftId || a?.shiftCode || '').toUpperCase();
+      return isNightShiftDef(defByCode.get(code));
+    });
+  }
+
+  // 1. Aynı gün çakışması: fromPid → tDate (takas edilen değil, başka bir vardiya)
+  if (personHasShiftOnDate(getAssignments(tDoc), fromPid, tDate, tShift)) {
+    return `${fromDisplayName} zaten ${tDate} tarihinde başka bir nöbeti var — aynı güne iki nöbet yazılamaz.`;
+  }
+  // 2. Aynı gün çakışması: toPid → myDate
+  if (personHasShiftOnDate(getAssignments(myDoc), toPid, myDate, myShift)) {
+    return `${toDisplayName} zaten ${myDate} tarihinde başka bir nöbeti var — aynı güne iki nöbet yazılamaz.`;
+  }
+
+  // 3. Ardarda nöbet: fromPid gece vardiyasının ertesi günü tDate'e yazılacak mı?
+  const prevTDate = swapAddDays(tDate, -1);
+  if (hadNightShiftOnDate(getAssignments(tDoc), getDefs(tDoc), fromPid, prevTDate)) {
+    return `${fromDisplayName} ${prevTDate} tarihinde gece nöbeti çalışıyor — ardarda nöbet yazılamaz.`;
+  }
+  // 4. Ardarda nöbet: toPid gece vardiyasının ertesi günü myDate'e yazılacak mı?
+  const prevMyDate = swapAddDays(myDate, -1);
+  if (hadNightShiftOnDate(getAssignments(myDoc), getDefs(myDoc), toPid, prevMyDate)) {
+    return `${toDisplayName} ${prevMyDate} tarihinde gece nöbeti çalışıyor — ardarda nöbet yazılamaz.`;
+  }
+
+  return null; // kural ihlali yok
+}
+
 /* ── Takas onaylandığında atamaları değiştir ── */
 async function executeSwap(request) {
   const {
@@ -166,16 +265,51 @@ async function executeSwap(request) {
 
   const isSameDoc = myYm.year === tYm.year && myYm.month === tYm.month;
 
-  const findAndSwap = async (doc, findDate, findPid, findShift, newPid, newName) => {
+  const findAndSwap = async (doc, findDate, findPid, findShift, newPid, newName, findNameFallback = '') => {
     const assignments = Array.isArray(doc?.data?.assignments) ? [...doc.data.assignments] : [];
-    const idx = assignments.findIndex((a) => {
+    let idx = assignments.findIndex((a) => {
       const aDate  = String(a?.date || a?.day || '').slice(0, 10);
       const aPid   = String(a?.personId || '').trim();
       const aShift = String(a?.shiftId || a?.shiftCode || '').trim().toUpperCase();
       return aDate === findDate && aPid === findPid && aShift === findShift;
     });
+    // isim tabanlı fallback (personId boş olabilir)
+    if (idx === -1 && findNameFallback) {
+      const canon = swapCanonName(findNameFallback);
+      idx = assignments.findIndex((a) => {
+        const aDate  = String(a?.date || a?.day || '').slice(0, 10);
+        const aName  = swapCanonName(String(a?.personName || a?.name || ''));
+        const aShift = String(a?.shiftId || a?.shiftCode || '').trim().toUpperCase();
+        return aDate === findDate && aName === canon && aShift === findShift;
+      });
+    }
     if (idx === -1) return { doc, found: false, assignments };
+
+    const oldName = String(assignments[idx].personName || '').trim();
+    const rowId   = String(assignments[idx].rowId || assignments[idx].shiftId || findShift).trim();
+    const day     = Number(String(findDate).slice(8, 10));
+
     assignments[idx] = { ...assignments[idx], personId: newPid, personName: newName, source: 'swap', overrideReason: 'takas' };
+
+    // namedAssignments güncelle (DutyRowsEditor bu formatı okur)
+    if (oldName && rowId && day) {
+      const canonOld = swapCanonName(oldName);
+      for (const namedRoot of [doc.data?.roster?.namedAssignments, doc.data?.namedAssignments]) {
+        if (!namedRoot || typeof namedRoot !== 'object') continue;
+        const daySlot = namedRoot[day];
+        if (!daySlot || typeof daySlot !== 'object') continue;
+        // rowId eşleşmesi — hem direkt hem büyük/küçük harf toleranslı
+        const matchKey = Object.keys(daySlot).find(
+          (k) => k === rowId || k.toUpperCase() === rowId.toUpperCase()
+        );
+        if (!matchKey) continue;
+        const names = Array.isArray(daySlot[matchKey]) ? [...daySlot[matchKey]] : [];
+        const ni = names.findIndex((n) => swapCanonName(n) === canonOld);
+        if (ni !== -1) names[ni] = newName;
+        daySlot[matchKey] = names;
+      }
+    }
+
     return { doc, found: true, assignments };
   };
 
@@ -183,11 +317,11 @@ async function executeSwap(request) {
     const doc = await MonthlySchedule.findOne({ sectionId, year: myYm.year, month: myYm.month });
     if (!doc) return false;
 
-    const r1 = await findAndSwap(doc, myDate, fromPid, myShift, toPid, toPerson?.name || '');
+    const r1 = await findAndSwap(doc, myDate, fromPid, myShift, toPid, toPerson?.name || '', fromPerson?.name || fromName || '');
     if (!r1.found) return false;
     doc.data = { ...doc.data, assignments: r1.assignments };
 
-    const r2 = await findAndSwap(doc, tDate, toPid, tShift, fromPid, fromPerson?.name || fromName || '');
+    const r2 = await findAndSwap(doc, tDate, toPid, tShift, fromPid, fromPerson?.name || fromName || '', toPerson?.name || '');
     if (!r2.found) return false;
     doc.data = { ...doc.data, assignments: r2.assignments };
     doc.markModified('data');
@@ -223,12 +357,12 @@ async function executeSwap(request) {
         ]);
         if (!fromDoc || !toDoc) throw new Error('Çizelge bulunamadı');
 
-        const r1 = await findAndSwap(fromDoc, myDate, fromPid, myShift, toPid, toPerson?.name || '');
+        const r1 = await findAndSwap(fromDoc, myDate, fromPid, myShift, toPid, toPerson?.name || '', fromPerson?.name || fromName || '');
         if (!r1.found) throw new Error('Vardiya bulunamadı (from)');
         fromDoc.data = { ...fromDoc.data, assignments: r1.assignments };
         fromDoc.markModified('data');
 
-        const r2 = await findAndSwap(toDoc, tDate, toPid, tShift, fromPid, fromPerson?.name || fromName || '');
+        const r2 = await findAndSwap(toDoc, tDate, toPid, tShift, fromPid, fromPerson?.name || fromName || '', toPerson?.name || '');
         if (!r2.found) throw new Error('Vardiya bulunamadı (to)');
         toDoc.data = { ...toDoc.data, assignments: r2.assignments };
         toDoc.markModified('data');
@@ -441,6 +575,18 @@ router.put('/:id', requireAuth, async (req, res) => {
     const isSwapRequest  = requestType === 'takas';
     const hasStatusChange = previousStatus !== String(status);
     const actorName = req.user?.name || req.user?.email || 'Yetkili';
+
+    // Takas onaylanmadan önce kural kontrolü
+    if (hasStatusChange && status === 'approved' && isSwapRequest && !request.swapExecuted) {
+      try {
+        const conflict = await checkSwapConflicts(request);
+        if (conflict) {
+          return res.status(422).json({ message: conflict });
+        }
+      } catch (checkErr) {
+        console.error('[swap-conflict-check] ERR:', checkErr?.message || checkErr);
+      }
+    }
 
     if (hasStatusChange && status === 'approved') {
       if (isLeaveRequest) {

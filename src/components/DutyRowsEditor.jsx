@@ -39,708 +39,24 @@ import { createPlanWorkHourResolver } from "../utils/planWorkCalculator.js";
 import { runPlannerOnce } from "../lib/runPlannerOnce.js";
 import OverrideDialog from "./OverrideDialog.jsx";
 import { toast } from "sonner";
+import {
+  WD_TR, HEAD_TR, MONTHS_TR, DUTY_RULES_LS_KEY,
+  norm, stripDiacritics, canonName, isPlainLowercaseName,
+  choosePreferredDisplayName, mergeDisplayNameLists, keepSingleAssignee,
+  normalizeRosterNamedAssignments, normalizeRosterData,
+  monIndex, pad2, normalizeMonthAnyBase,
+  isWeekendCol, isGroupLabel, compactRosterDisplayName, clampSingleSlotCount, formatDateTime,
+  normalizeDutyDefsAndOverrides, mapRulesToBackend, readDutyRulesFromLS,
+  buildLeavesByPersonForMonth, buildWeekGrid, dayFromAny, buildUnavailableByDay,
+  pickDefaultShiftCode, createEmptyExplainability, ISSUE_REASON_LABELS,
+  formatIssueReason, summarizeIssueAudit, summarizeIssueDiagnostic,
+  extractGeneratedExplainability, parseTimestamp, getExplainabilityStaleReasons,
+  applyExplainabilityGuard, normalizeRoleHint, normalizeFromParamTable,
+  ensureStaffInEngineStore, buildIdToNameMap, readAiPlanFallback,
+} from "./DutyRowsEditor.utils.js";
 
 /* ===== Toaster (opsiyonel) ===== */
 let toastSafe = toast;
-
-/* ======================= yardımcılar ======================= */
-const WD_TR = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
-const HEAD_TR = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
-const MONTHS_TR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
-const DUTY_RULES_LS_KEY = "dutyRulesV2";
-const norm = (s) => (s || "").toString().trim().toLocaleUpperCase("tr-TR");
-const stripDiacritics = (str) =>
-  (str || "")
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .replace(/Ğ/g, "G").replace(/Ü/g, "U").replace(/Ş/g, "S").replace(/İ/g, "I")
-    .replace(/Ö/g, "O").replace(/Ç/g, "C")
-    .replace(/ğ/g, "g").replace(/ü/g, "u").replace(/ş/g, "s").replace(/ı/g, "i")
-    .replace(/ö/g, "o").replace(/ç/g, "c");
-const canonName = (s) => stripDiacritics(norm(s)).replace(/\s+/g, " ").trim();
-const isPlainLowercaseName = (s = "") => {
-  const raw = String(s || "").trim();
-  if (!raw) return false;
-  const letters = stripDiacritics(raw).replace(/[^A-Za-z]/g, "");
-  if (!letters) return false;
-  return letters === letters.toLowerCase() && letters !== letters.toUpperCase();
-};
-const choosePreferredDisplayName = (current, candidate) => {
-  if (!current) return candidate;
-  if (!candidate) return current;
-  if (isPlainLowercaseName(current) && !isPlainLowercaseName(candidate)) return candidate;
-  return current;
-};
-const mergeDisplayNameLists = (base = [], addon = []) => {
-  const merged = new Map();
-  const pushName = (nm) => {
-    if (!nm || isGroupLabel(nm)) return;
-    const canon = canonName(nm);
-    if (!canon) return;
-    const chosen = choosePreferredDisplayName(merged.get(canon), String(nm).trim());
-    merged.set(canon, chosen);
-  };
-  (Array.isArray(base) ? base : []).forEach(pushName);
-  (Array.isArray(addon) ? addon : []).forEach(pushName);
-  return Array.from(merged.values());
-};
-const keepSingleAssignee = (names = []) => {
-  const merged = mergeDisplayNameLists([], names);
-  return merged.length ? [merged[0]] : [];
-};
-const normalizeRosterNamedAssignments = (namedAssignments) => {
-  const source = namedAssignments && typeof namedAssignments === "object" ? namedAssignments : {};
-  const normalized = {};
-  Object.entries(source).forEach(([dayKey, byRow]) => {
-    if (!byRow || typeof byRow !== "object") return;
-    normalized[dayKey] = {};
-    Object.entries(byRow).forEach(([rowId, list]) => {
-      normalized[dayKey][rowId] = keepSingleAssignee(list);
-    });
-  });
-  return normalized;
-};
-const normalizeRosterData = (roster) => {
-  if (!roster || typeof roster !== "object") return roster || null;
-  return {
-    ...roster,
-    namedAssignments: normalizeRosterNamedAssignments(roster.namedAssignments),
-  };
-};
-const monIndex = (wdSun0) => (wdSun0 + 6) % 7;
-const pad2 = (n) => String(n).padStart(2, "0");
-function normalizeMonthAnyBase(value, { preferOneBased } = { preferOneBased: true }) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return new Date().getMonth();
-  const norm = Math.trunc(n);
-  if (preferOneBased) {
-    if (norm >= 1 && norm <= 12) return norm - 1;
-    if (norm >= 0 && norm <= 11) return norm;
-  } else {
-    if (norm >= 0 && norm <= 11) return norm;
-    if (norm >= 1 && norm <= 12) return norm - 1;
-  }
-  return ((norm % 12) + 12) % 12;
-}
-const isWeekendCol = (i) => i === 5 || i === 6;
-const isGroupLabel = (nm) =>
-  !!nm &&
-  /^(hemşire(ler)?|hemsire(ler)?|doktor(lar)?|personel|nurses?|doctors?)$/i.test(
-    String(nm).trim()
-  );
-const compactRosterDisplayName = (name) => {
-  const raw = String(name || "").trim();
-  if (!raw) return "";
-  const parts = raw.split(/\s+/).filter(Boolean);
-  if (parts.length <= 1) return raw;
-  const first = parts[0];
-  const last = parts[parts.length - 1];
-  const compact = `${first} ${last.charAt(0)}.`;
-  return compact.length < raw.length ? compact : raw;
-};
-const clampSingleSlotCount = (value) => {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return 0;
-  return 1;
-};
-const formatDateTime = (iso) => {
-  if (!iso) return null;
-  const dt = new Date(iso);
-  return Number.isNaN(dt.getTime()) ? null : dt.toLocaleString("tr-TR");
-};
-function normalizeDutyDefsAndOverrides(defs = [], overrides = {}) {
-  const nextDefs = [];
-  const nextOverrides = {};
-  for (const row of Array.isArray(defs) ? defs : []) {
-    const rowId = String(row?.id ?? row?.rowId ?? "").trim();
-    const normalizedPattern = Array.isArray(row?.pattern)
-      ? row.pattern.map((value) => clampSingleSlotCount(value))
-      : Array(7).fill(clampSingleSlotCount(row?.defaultCount || 0));
-    const normalizedDefaultCount = clampSingleSlotCount(row?.defaultCount || 0);
-    const normalizedRow = {
-      ...row,
-      defaultCount: normalizedDefaultCount,
-      pattern: normalizedPattern,
-    };
-    nextDefs.push(normalizedRow);
-    if (!rowId) continue;
-    const source = overrides?.[rowId] || {};
-    const normalizedDays = {};
-    for (const [day, value] of Object.entries(source)) {
-      normalizedDays[day] = clampSingleSlotCount(value);
-    }
-    if (Object.keys(normalizedDays).length) {
-      nextOverrides[rowId] = normalizedDays;
-    }
-  }
-
-  return { defs: nextDefs, overrides: nextOverrides };
-}
-
-function mapRulesToBackend(list) {
-  const arr = Array.isArray(list) ? list : [];
-  const findById = (id) => arr.find((r) => r?.id === id);
-  const findAny = (ids) => ids.map(findById).find(Boolean);
-  const findEnabled = (ids) => ids.map(findById).find((r) => r && r.enabled);
-
-  const boolRule = (ids) => {
-    const any = findAny(ids);
-    if (!any) return undefined;
-    const enabled = !!findEnabled(ids);
-    return enabled;
-  };
-  const numRule = (ids, fallback) => {
-    const any = findAny(ids);
-    if (!any) return undefined;
-    const r = findEnabled(ids);
-    if (!r) return 0;
-    const n = Number(r.value);
-    return Number.isFinite(n) ? n : fallback;
-  };
-
-  const out = {};
-  const v1 = boolRule(["ONE_SHIFT_PER_DAY", "NO_MULTIPLE_ASSIGNMENTS_PER_DAY"]);
-  if (v1 !== undefined) out.ONE_SHIFT_PER_DAY = v1;
-
-  const v2 = boolRule(["LEAVE_BLOCK_GENERIC"]);
-  if (v2 !== undefined) out.LEAVE_BLOCK = v2;
-
-  const v3 = numRule(["MAX_CONSECUTIVE_6D"], 6);
-  if (v3 !== undefined) out.MAX_CONSECUTIVE_DAYS = v3;
-
-  const v4 = numRule(["MIN_GAP_12H", "MIN_REST_11H"], 11);
-  if (v4 !== undefined) out.MIN_REST_HOURS = v4;
-
-  const v5 = boolRule(["NIGHT_NEXT_DAY_OFF"]);
-  if (v5 !== undefined) out.NIGHT_NEXT_DAY_OFF = v5;
-
-  const v6 = numRule(["WEEKLY_MAX_SHIFTS", "WEEKLY_MAX_DUTIES", "WEEKLY_MAX_SHIFTS_PER_PERSON"], 0);
-  if (v6 !== undefined) out.MAX_SHIFTS_PER_WEEK = v6;
-
-  const v7 = numRule(["MAX_TASK_PER_PERSON", "MAX_SAME_TASK_PER_PERSON"], 0);
-  if (v7 !== undefined) out.MAX_TASK_PER_PERSON = v7;
-
-  return out;
-}
-
-function readDutyRulesFromLS() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(DUTY_RULES_LS_KEY) || "[]");
-    const out = mapRulesToBackend(raw);
-    // ONE_SHIFT_PER_DAY kapalı gelirse backend defaultuna bırak
-    if (out?.ONE_SHIFT_PER_DAY === false) delete out.ONE_SHIFT_PER_DAY;
-    return out;
-  } catch {
-    return {};
-  }
-}
-
-function buildLeavesByPersonForMonth(year, month1, people = []) {
-  const all = getAllLeaves();
-  const ym = `${year}-${pad2(month1)}`;
-  const out = {};
-  const ensure = (pid) => {
-    const key = String(pid);
-    out[key] ??= new Set();
-    return out[key];
-  };
-  const addDay = (pid, dayNum) => {
-    if (!pid) return;
-    const d = Number(dayNum);
-    if (!Number.isFinite(d) || d < 1 || d > 31) return;
-    ensure(pid).add(`${year}-${pad2(month1)}-${pad2(d)}`);
-  };
-  for (const [pid, byYm] of Object.entries(all || {})) {
-    const bucket = byYm?.[ym];
-    if (!bucket) continue;
-    for (const dKey of Object.keys(bucket || {})) {
-      addDay(pid, dKey);
-    }
-  }
-
-  if (Array.isArray(people) && people.length) {
-    const nameMap = buildNameUnavailability(people, year, month1);
-    for (const p of people) {
-      const pid = String(p?.id ?? "");
-      if (!pid) continue;
-      const canon = canonName(p?.name || p?.fullName || "");
-      if (!canon) continue;
-      const days = nameMap.get(canon);
-      if (!days || !days.size) continue;
-      for (const d of days) addDay(pid, d);
-    }
-  }
-
-  const normalized = {};
-  for (const [pid, set] of Object.entries(out)) {
-    const arr = Array.from(set.values());
-    if (arr.length) normalized[pid] = arr;
-  }
-  return normalized;
-}
-
-function buildWeekGrid(y, m0) {
-  const daysInMonth = new Date(y, m0 + 1, 0).getDate();
-  const dowSun0 = new Date(y, m0, 1).getDay();
-  const dowMon0 = monIndex(dowSun0);
-  const weeks = Math.ceil((dowMon0 + daysInMonth) / 7);
-  const matrix = Array.from({ length: weeks }, () => Array(7).fill(null));
-  let d = 1;
-  for (let w = 0; w < weeks; w++) {
-    for (let i = 0; i < 7; i++) {
-      const idx = w * 7 + i;
-      if (idx >= dowMon0 && d <= daysInMonth) matrix[w][i] = d++;
-    }
-  }
-  return { weeks, matrix, daysInMonth };
-}
-
-function dayFromAny(dateLike, year, month0) {
-  if (dateLike == null || dateLike === "") return null;
-
-  if (typeof dateLike === "number" && Number.isFinite(dateLike)) {
-    const excelEpoch = new Date(1899, 11, 30);
-    const dt = new Date(excelEpoch.getTime() + dateLike * 86400000);
-    if (!Number.isNaN(dt.getTime()) && dt.getFullYear() === year && dt.getMonth() === month0) {
-      return dt.getDate();
-    }
-  }
-  const s = String(dateLike).trim();
-  const d1 = new Date(s);
-  if (!Number.isNaN(d1.getTime()) && d1.getFullYear() === year && d1.getMonth() === month0) {
-    return d1.getDate();
-  }
-  const m = s.match(/^(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{2,4})$/);
-  if (m) {
-    const dd = +m[1];
-    const MM = +m[2] - 1;
-    let yyyy = +m[3];
-    if (yyyy < 100) yyyy += 2000;
-    if (yyyy === year && MM === month0) return dd;
-  }
-  const m2 = s.match(/^(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})$/);
-  if (m2) {
-    const yyyy = +m2[1],
-      MM = +m2[2] - 1,
-      dd = +m2[3];
-    if (yyyy === year && MM === month0) return dd;
-  }
-  return null;
-}
-
-function buildUnavailableByDay(year, month0) {
-  try {
-    const all = getAllLeaves();
-    const byPid = leavesToUnavailableByPid(all, year, month0 + 1);
-    const idNameMap = buildIdToNameMap();
-    const out = {};
-    for (const [pid, daysObj] of Object.entries(byPid || {})) {
-      const canon = idNameMap.has(pid) ? canonName(idNameMap.get(pid)) : null;
-      for (const dStr of Object.keys(daysObj || {})) {
-        const d = Number(dStr);
-        if (!Number.isFinite(d) || d < 1) continue;
-        const bucket = (out[d] ??= { ids: new Set(), canon: new Set() });
-        bucket.ids.add(String(pid));
-        if (canon) bucket.canon.add(canon);
-      }
-    }
-    return out;
-  } catch (e) {
-    console.warn("buildUnavailableByDay error:", e);
-    return {};
-  }
-}
-
-function pickDefaultShiftCode(area, shifts) {
-  return (
-    area?.defaultShift ||
-    (shifts || []).find((s) => s.code === "M")?.code ||
-    (shifts || [])[0]?.code ||
-    "M"
-  );
-}
-
-function createEmptyExplainability() {
-  return {
-    generatedId: null,
-    sourceScheduleId: null,
-    generatedCreatedAt: null,
-    generatedUpdatedAt: null,
-    monthlyWriteBack: null,
-    candidateAudit: [],
-    shadowAudit: null,
-    selectedPolicyBreakdowns: [],
-    isStale: false,
-    staleReasons: [],
-  };
-}
-
-const ISSUE_REASON_LABELS = {
-  SERVICE_MATCH: "servis uyumsuz",
-  ROLE_ELIGIBILITY: "rol uygun değil",
-  SECTION_ELIGIBILITY: "birim uygun değil",
-  ACTIVE_REQUIRED: "aktif personel değil",
-  REST_AFTER_NIGHT: "gece sonrası dinlenme",
-  MAX_WEEKLY_SHIFTS: "haftalık limit",
-  MAX_CONSECUTIVE_DAYS: "ardışık gün limiti",
-  ONE_SHIFT_PER_DAY: "aynı gün tek vardiya",
-  LEAVE_BLOCK: "izin çakışması",
-};
-
-function formatIssueReason(code) {
-  const normalized = String(code || "").trim().toUpperCase();
-  return ISSUE_REASON_LABELS[normalized] || normalized || null;
-}
-
-function summarizeIssueAudit(audits = []) {
-  if (!Array.isArray(audits) || !audits.length) return null;
-
-  const blockers = new Map();
-  let inputStaffCount = 0;
-  let candidateBuilderEligibleCount = 0;
-  let postConstraintCount = 0;
-
-  const addBlockers = (src) => {
-    Object.entries(src || {}).forEach(([code, count]) => {
-      const normalized = String(code || "").trim().toUpperCase();
-      if (!normalized) return;
-      blockers.set(normalized, Number(blockers.get(normalized) || 0) + (Number(count || 0) || 0));
-    });
-  };
-
-  audits.forEach((audit) => {
-    inputStaffCount = Math.max(inputStaffCount, Number(audit?.inputStaffCount || 0));
-    candidateBuilderEligibleCount = Math.max(
-      candidateBuilderEligibleCount,
-      Number((audit?.candidateBuilderEligibleCount ?? audit?.eligibleCount) || 0)
-    );
-    postConstraintCount = Math.max(postConstraintCount, Number(audit?.postConstraintCount || 0));
-    addBlockers(audit?.hardFilteredBlockingRules);
-    addBlockers(audit?.runtimeGuardBlockingRules);
-
-    (Array.isArray(audit?.rejected) ? audit.rejected : []).forEach((item) => {
-      (Array.isArray(item?.failedRuleCodes) ? item.failedRuleCodes : []).forEach((code) => {
-        const normalized = String(code || "").trim().toUpperCase();
-        if (!normalized) return;
-        blockers.set(normalized, Number(blockers.get(normalized) || 0) + 1);
-      });
-      (Array.isArray(item?.reasonCodes) ? item.reasonCodes : []).forEach((code) => {
-        const normalized = String(code || "")
-          .trim()
-          .toUpperCase()
-          .replace(/_EXCEEDED$/, "");
-        if (!normalized) return;
-        blockers.set(normalized, Number(blockers.get(normalized) || 0) + 1);
-      });
-    });
-  });
-
-  const topBlockers = Array.from(blockers.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([code, count]) => `${formatIssueReason(code)} x${count}`);
-
-  const pipeline = `havuz ${inputStaffCount} -> builder ${candidateBuilderEligibleCount} -> runtime ${postConstraintCount}`;
-  return topBlockers.length ? `${pipeline}; engeller: ${topBlockers.join(", ")}` : pipeline;
-}
-
-function summarizeIssueDiagnostic(diagnostic = null) {
-  if (!diagnostic || typeof diagnostic !== "object") return null;
-  const inputStaffCount = Number(diagnostic?.inputStaffCount || 0);
-  const candidateBuilderEligibleCount = Number(diagnostic?.candidateBuilderEligibleCount || 0);
-  const postConstraintCount = Number(diagnostic?.postConstraintCount || 0);
-  const topBlockers = Array.isArray(diagnostic?.topBlockers)
-    ? diagnostic.topBlockers
-        .map((item) => {
-          const label = formatIssueReason(item?.code);
-          const count = Number(item?.count || 0);
-          return label && count > 0 ? `${label} x${count}` : null;
-        })
-        .filter(Boolean)
-        .slice(0, 3)
-    : [];
-  const pipeline = `havuz ${inputStaffCount} -> builder ${candidateBuilderEligibleCount} -> runtime ${postConstraintCount}`;
-  return topBlockers.length ? `${pipeline}; engeller: ${topBlockers.join(", ")}` : pipeline;
-}
-
-function extractGeneratedExplainability(scheduleDoc) {
-  const data = scheduleDoc?.data && typeof scheduleDoc.data === "object" ? scheduleDoc.data : {};
-  const candidateAudit = Array.isArray(data.candidateAudit) ? data.candidateAudit : [];
-  const shadowAudit = data.shadowAudit && typeof data.shadowAudit === "object" ? data.shadowAudit : null;
-  const selectedPolicyBreakdowns = candidateAudit
-    .map((entry) => ({
-      selectedCandidateId: entry?.selectedCandidateId || null,
-      selectionReason: entry?.selectionReason || null,
-      breakdown: Array.isArray(entry?.selectedPolicyBreakdown) ? entry.selectedPolicyBreakdown : [],
-    }))
-    .filter((entry) => entry.breakdown.length > 0);
-
-  return {
-    generatedId: scheduleDoc?.id || (scheduleDoc?._id ? String(scheduleDoc._id) : null),
-    sourceScheduleId: scheduleDoc?.sourceScheduleId ? String(scheduleDoc.sourceScheduleId) : null,
-    generatedCreatedAt: scheduleDoc?.createdAt || null,
-    generatedUpdatedAt: scheduleDoc?.updatedAt || null,
-    monthlyWriteBack:
-      data?.debug?.monthlyWriteBack && typeof data.debug.monthlyWriteBack === "object"
-        ? data.debug.monthlyWriteBack
-        : null,
-    candidateAudit,
-    shadowAudit,
-    selectedPolicyBreakdowns,
-    isStale: false,
-    staleReasons: [],
-  };
-}
-
-function parseTimestamp(value) {
-  if (!value) return null;
-  const ts = Date.parse(value);
-  return Number.isFinite(ts) ? ts : null;
-}
-
-function getExplainabilityStaleReasons({
-  explainability = null,
-  monthlyReadModel = null,
-  autoSaveStatus = "idle",
-} = {}) {
-  const reasons = [];
-  if (!explainability?.generatedId) return reasons;
-
-  if (explainability?.monthlyWriteBack?.ok === false) {
-    reasons.push("MONTHLY_WRITE_BACK_FAILED");
-  }
-
-  const monthlyScheduleId = monthlyReadModel?.scheduleId ? String(monthlyReadModel.scheduleId) : null;
-  const sourceScheduleId = explainability?.sourceScheduleId ? String(explainability.sourceScheduleId) : null;
-  if (monthlyScheduleId && sourceScheduleId && monthlyScheduleId !== sourceScheduleId) {
-    reasons.push("SOURCE_SCHEDULE_MISMATCH");
-  }
-
-  const monthlyGeneratedAtTs = parseTimestamp(monthlyReadModel?.generatedAt);
-  const generatedCreatedAtTs = parseTimestamp(explainability?.generatedCreatedAt);
-  if (monthlyGeneratedAtTs != null && generatedCreatedAtTs != null) {
-    const skewMs = Math.abs(monthlyGeneratedAtTs - generatedCreatedAtTs);
-    if (skewMs > 60 * 1000) {
-      reasons.push("GENERATED_RUN_TIMESTAMP_MISMATCH");
-    }
-  }
-
-  const monthlyUpdatedAtTs = parseTimestamp(monthlyReadModel?.updatedAt);
-  if (monthlyUpdatedAtTs != null && monthlyGeneratedAtTs != null && monthlyUpdatedAtTs > monthlyGeneratedAtTs + 1000) {
-    reasons.push("MONTHLY_UPDATED_AFTER_GENERATION");
-  }
-
-  if (autoSaveStatus === "dirty" || autoSaveStatus === "saving" || autoSaveStatus === "error") {
-    reasons.push("EDITOR_HAS_LOCAL_CHANGES");
-  }
-
-  return Array.from(new Set(reasons));
-}
-
-function applyExplainabilityGuard({
-  explainability = null,
-  monthlyReadModel = null,
-  autoSaveStatus = "idle",
-} = {}) {
-  const base = explainability && typeof explainability === "object"
-    ? explainability
-    : createEmptyExplainability();
-  const staleReasons = getExplainabilityStaleReasons({
-    explainability: base,
-    monthlyReadModel,
-    autoSaveStatus,
-  });
-  return {
-    ...base,
-    isStale: staleReasons.length > 0,
-    staleReasons,
-  };
-}
-
-/* ===== personel normalize ===== */
-function normalizeRoleHint(rawRole, fallbackRole = null) {
-  const value = String(rawRole || "").trim().toLocaleLowerCase("tr-TR");
-  if (!value) return fallbackRole;
-  if (
-    value === "doctor" ||
-    value === "doktor" ||
-    value.includes("doktor")
-  ) {
-    return "Doctor";
-  }
-  if (
-    value === "nurse" ||
-    value === "hemşire" ||
-    value === "hemsire" ||
-    value.includes("hemşire") ||
-    value.includes("hemsire")
-  ) {
-    return "Nurse";
-  }
-  return fallbackRole;
-}
-
-function normalizeFromParamTable(x, role) {
-  const name = x?.fullName || x?.name || x?.["AD SOYAD"];
-  if (!name || isGroupLabel(name)) return null;
-  const id = x?.id ?? x?.pid ?? x?.tc ?? x?.tcNo ?? x?.code ?? name;
-  const serviceIdRaw =
-    x?.serviceId ??
-    x?.service ??
-    x?.department ??
-    x?.departmentId ??
-    x?.sectionId ??
-    x?.meta?.serviceId ??
-    x?.meta?.service ??
-    "";
-  const areasText = x?.areas || x?.workAreas || x?.["ÇALIŞMA ALANLARI"] || "";
-  const shiftsText =
-    x?.shiftCodes ||
-    x?.codes ||
-    x?.shifts ||
-    x?.["VARDİYE KODLARI"] ||
-    x?.["VARDIYE KODLARI"] ||
-    x?.meta?.shiftCodes ||
-    x?.meta?.shifts ||
-    "";
-  const areas =
-    typeof areasText === "string"
-      ? areasText
-          .split(/[;,/-]/)
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : Array.isArray(areasText)
-      ? areasText
-      : [];
-  const shiftCodes =
-    typeof shiftsText === "string"
-      ? shiftsText
-          .split(/[;,/-]/)
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : Array.isArray(shiftsText)
-      ? shiftsText
-      : [];
-  return {
-    id: String(id),
-    name: String(name),
-    role: normalizeRoleHint(
-      x?.role || x?.title || x?.departmentRole || x?.meta?.role || x?.meta?.title || x?.meta?.unvan,
-      role === "Doctor" ? "Doctor" : "Nurse"
-    ),
-    serviceId: String(serviceIdRaw || ""),
-    areas,
-    shiftCodes,
-    weekendOff: !!x?.weekendOff,
-    nightAllowed: !(x?.nightAllowed === false || x?.geceYasak === true),
-    dailyMax: 1,
-    monthlyMax: 31,
-    maxConsecutive: 5,
-    weight: 1,
-  };
-}
-
-function ensureStaffInEngineStore(activeRole) {
-  const roleKey = activeRole === "Doctor" ? "doctors" : "nurses";
-  const specific = LS.get(roleKey, []) || [];
-  const canonicalV2 = LS.get("peopleV2", []) || [];
-
-  let sourceUsed = "role-specific-backend-sync";
-  let fallbackUsed = false;
-  let raw = Array.isArray(specific) ? specific : [];
-
-  if (!raw.length && Array.isArray(canonicalV2) && canonicalV2.length) {
-    raw = canonicalV2.filter(
-      (item) =>
-        normalizeRoleHint(
-          item?.role || item?.title || item?.departmentRole || item?.meta?.role || item?.meta?.title || item?.meta?.unvan,
-          null
-        ) === activeRole
-    );
-    if (raw.length) sourceUsed = "peopleV2-role-filter";
-  }
-
-  if (!raw.length) {
-    raw = getPeople(activeRole) || [];
-    sourceUsed = "general-fallback";
-    fallbackUsed = true;
-  }
-
-  let staff = raw.map((x) => normalizeFromParamTable(x, activeRole)).filter(Boolean);
-
-  // Eğer hala boşsa diğer kaynaklara bak (kartlar, izinler)
-  if (!staff.length) {
-    const cards = LS.get(STAFF_KEY, []) || [];
-    staff = cards.filter((c) => c?.name && !isGroupLabel(c.name));
-    if (staff.length) {
-      sourceUsed = "engine-store-fallback";
-      fallbackUsed = true;
-    } else {
-      staff = buildPeopleFromLeaves(activeRole);
-      if (staff.length) {
-        sourceUsed = "leaves-fallback";
-        fallbackUsed = true;
-      }
-    }
-  }
-  
-  // Dedupe (ID bazlı mükerrer kayıtları temizle)
-  const seen = new Set();
-  staff = staff.filter(p => {
-    if (!p.id || seen.has(p.id)) return false;
-    seen.add(p.id);
-    return true;
-  });
-
-  staff = (staff || []).filter((s) => s?.name && !isGroupLabel(s.name));
-  // Alfabetik sıralama
-  staff.sort((a, b) => (a.name || "").localeCompare(b.name || "", "tr"));
-  LS.set(STAFF_KEY, staff);
-  return { staff, sourceUsed, fallbackUsed };
-}
-
-function buildIdToNameMap(preferredPeople = null) {
-  const mp = new Map();
-  if (Array.isArray(preferredPeople) && preferredPeople.length) {
-    for (const p of preferredPeople) {
-      const id = p?.id ?? p?.pid ?? p?.tc ?? p?.tcNo ?? p?.code ?? (p?.["AD SOYAD"] || p?.fullName || p?.name);
-      const name = p?.fullName || p?.name || p?.displayName || p?.["AD SOYAD"];
-      if (!id || !name || isGroupLabel(name)) continue;
-      mp.set(String(id), String(name));
-    }
-    return mp;
-  }
-  const nurses = LS.get("nurses", []) || [];
-  const doctors = LS.get("doctors", []) || [];
-  for (const p of [...nurses, ...doctors]) {
-    const id =
-      p?.id ?? p?.pid ?? p?.tc ?? p?.tcNo ?? p?.code ?? (p?.["AD SOYAD"] || p?.fullName || p?.name);
-    const name = p?.fullName || p?.name || p?.["AD SOYAD"];
-    if (!id || !name || isGroupLabel(name)) continue;
-    mp.set(String(id), String(name));
-  }
-  const ppl = getPeople() || [];
-  for (const p of ppl) {
-    const id = p?.id;
-    const nm = p?.fullName || p?.name || p?.displayName || p?.code;
-    if (!id || !nm || isGroupLabel(nm) || mp.has(id)) continue;
-    mp.set(id, nm);
-  }
-  const cards = LS.get(STAFF_KEY, []) || [];
-  for (const p of cards) {
-    const id = p?.id;
-    const nm = p?.name || p?.fullName || p?.displayName;
-    if (!id || !nm || isGroupLabel(nm) || mp.has(id)) continue;
-    mp.set(String(id), String(nm));
-  }
-  return mp;
-}
-
-function readAiPlanFallback(year, month0) {
-  const saved = LS.get("scheduleRowsV2");
-  if (saved && saved.year === year && saved.month === month0 + 1) return saved;
-  return null;
-}
 
 /* ======================= bileşen ======================= */
 const DutyRowsEditor = forwardRef(function DutyRowsEditor(
@@ -756,6 +72,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     peopleAll = [],
     workingHours: workingHoursProp,
     personLeaves = {},
+    mode = "full",
+    swappedCells = null, // Set<"dayNum|ROWID|personName"> — takas yapılan hücreler
   },
   ref
 ) {
@@ -2405,6 +1723,13 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     hasLastSaved ||
     explainabilityReady ||
     generatedExplainability.isStale;
+  const showConfigSections = mode !== "assignmentOnly";
+  const showAssignmentSections = mode !== "configOnly";
+  const showTemplateTools = mode !== "assignmentOnly";
+  const showRowImportTools = mode !== "assignmentOnly";
+  const showRuleTools = mode !== "assignmentOnly";
+  const showOverrideJsonTools = mode !== "assignmentOnly";
+  const showPinTools = mode !== "configOnly";
 
   /* ===================== ŞABLON YÖNETİMİ ===================== */
   const TEMPLATES_KEY = "dutyRowTemplates";
@@ -2570,40 +1895,53 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           ↪ Yinele
         </button>
 
-        <button onClick={() => setTemplateModal(true)} className="px-3 py-2 rounded bg-emerald-600 text-white text-sm">
-          Şablon
-        </button>
+        {showTemplateTools && (
+          <button onClick={() => setTemplateModal(true)} className="px-3 py-2 rounded bg-emerald-600 text-white text-sm">
+            Şablon
+          </button>
+        )}
 
-        <button onClick={() => setSupOpen(true)} className="px-3 py-2 rounded bg-violet-600 text-white text-sm">
-          Sorumlu Ayarları
-        </button>
-        <button onClick={() => setPinOpen(true)} className="px-3 py-2 rounded bg-sky-600 text-white text-sm">
-          Sabitle (Pin)
-        </button>
+        {showRuleTools && (
+          <button onClick={() => setSupOpen(true)} className="px-3 py-2 rounded bg-violet-600 text-white text-sm">
+            Sorumlu Ayarları
+          </button>
+        )}
+        {showPinTools && (
+          <button onClick={() => setPinOpen(true)} className="px-3 py-2 rounded bg-sky-600 text-white text-sm">
+            Sabitle (Pin)
+          </button>
+        )}
 
-        {/* Satır-bazlı içe aktarma (G1) */}
-        <input ref={assignmentRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onAssignmentFile} />
-        <button onClick={askAssignmentImport} className="px-3 py-2 rounded border hover:bg-slate-50 text-sm">
-          Satır Bazlı İçe Aktar (G1)
-        </button>
+        {showRowImportTools && (
+          <>
+            <input ref={assignmentRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onAssignmentFile} />
+            <button onClick={askAssignmentImport} className="px-3 py-2 rounded border hover:bg-slate-50 text-sm">
+              Satır Bazlı İçe Aktar (G1)
+            </button>
+          </>
+        )}
 
-        {/* Overrides JSON */}
-        <button onClick={exportOverridesJSON} className="px-3 py-2 rounded border hover:bg-slate-50 text-sm">
-          Ayın Üst-Yazmalarını İndir (JSON)
-        </button>
-        <input
-          ref={overridesFileRef}
-          type="file"
-          accept="application/json,.json"
-          className="hidden"
-          onChange={onOverridesJsonFile}
-        />
-        <button onClick={() => overridesFileRef.current?.click()} className="px-3 py-2 rounded border hover:bg-slate-50 text-sm">
-          JSON’dan Geri Yükle
-        </button>
+        {showOverrideJsonTools && (
+          <>
+            <button onClick={exportOverridesJSON} className="px-3 py-2 rounded border hover:bg-slate-50 text-sm">
+              Ayın Üst-Yazmalarını İndir (JSON)
+            </button>
+            <input
+              ref={overridesFileRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={onOverridesJsonFile}
+            />
+            <button onClick={() => overridesFileRef.current?.click()} className="px-3 py-2 rounded border hover:bg-slate-50 text-sm">
+              JSON’dan Geri Yükle
+            </button>
+          </>
+        )}
       </div>
 
       {/* Otomatik Plan (AI) — Önizleme */}
+      {showAssignmentSections && (
       <div className="rounded-lg border bg-white p-3">
         <div className="mb-2 flex items-center gap-2">
           <div className="text-sm font-medium">Otomatik Plan (AI) — Önizleme</div>
@@ -2661,9 +1999,10 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           Not: Bu tablo <code>people/peopleV2</code>, <code>leaves/leavesV2</code>, <code>workAreas/workAreasV2</code> vb. anahtarlardan okunur; sonuç <code>scheduleRowsV2</code>’ye kaydedilir.
         </p>
       </div>
+      )}
 
       {/* Sayısal Önizleme */}
-      {preview && (
+      {showConfigSections && preview && (
         <div className="rounded-lg border bg-white p-3">
           <div className="mb-2 flex items-center gap-2">
             <div className="text-sm font-medium">Oluşturulan Liste — (Sayı) Önizleme</div>
@@ -2711,7 +2050,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       )}
 
       {/* Kişilere Atama Önizleme */}
-      {roster && (
+      {showAssignmentSections && roster && (
         <div className="rounded-lg border bg-white p-3">
           <div className="mb-2 flex items-center gap-3">
             <div className="text-sm font-medium">Kişilere Atama — Önizleme</div>
@@ -2762,28 +2101,17 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             </div>
           )}
 
-          <div className="overflow-auto">
-            <table className="min-w-[1600px] border-separate border-spacing-0 text-[12px]">
-              <thead>
+          <div className="overflow-auto rounded-card border border-slate-200 shadow-card">
+            <table className="min-w-[1600px] border-separate border-spacing-0 text-sm">
+              <thead className="sticky top-0 z-20">
                 <tr>
-                  <th colSpan={3} className="border border-slate-300 bg-white px-3 py-2 text-left text-sm font-semibold text-slate-700">
-                    {MONTHS_TR[month0]} {year}
-                  </th>
-                  <th
-                    colSpan={daysInMonth + 1}
-                    className="border border-slate-300 bg-slate-50 px-3 py-2 text-left text-sm font-semibold text-slate-800"
-                  >
-                    Çalışma Çizelgesi Önizleme
-                  </th>
-                </tr>
-                <tr>
-                  <th className="sticky left-0 z-20 border border-slate-300 bg-slate-100 px-3 py-2 text-left font-semibold text-slate-700">
+                  <th className="sticky left-0 z-20 bg-white px-3 py-3 text-left text-xs font-semibold text-ink-muted border-b-2 border-brand-600 border-r border-slate-100">
                     Görev
                   </th>
-                  <th className="sticky left-[220px] z-20 border border-slate-300 bg-slate-100 px-3 py-2 text-left font-semibold text-slate-700">
+                  <th className="sticky left-[220px] z-20 bg-white px-3 py-3 text-left text-xs font-semibold text-ink-muted border-b-2 border-brand-600 border-r border-slate-100">
                     Saat
                   </th>
-                  <th className="sticky left-[360px] z-20 border border-slate-300 bg-slate-100 px-3 py-2 text-center font-semibold text-slate-700">
+                  <th className="sticky left-[360px] z-20 bg-white px-3 py-3 text-center text-xs font-semibold text-ink-muted border-b-2 border-brand-600 border-r border-slate-200 shadow-[2px_0_8px_-2px_rgba(13,27,62,0.06)]">
                     Kod
                   </th>
                   {Array.from({ length: daysInMonth }).map((_x, idx) => {
@@ -2794,28 +2122,30 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                     return (
                       <th
                         key={`head-${day}`}
-                        className={`min-w-[112px] border border-slate-300 px-2 py-2 text-center font-semibold ${
-                          isWeekend ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-700"
+                        className={`min-w-[112px] px-2 py-3 text-center text-xs font-semibold border-b-2 ${
+                          isWeekend
+                            ? "bg-blue-50 text-blue-600 border-blue-300"
+                            : "bg-white text-ink-muted border-brand-600"
                         }`}
                       >
-                        <div>{day}</div>
-                        <div className="text-[10px] font-medium">{headLabel}</div>
+                        <div className="tabular-nums font-mono text-sm font-semibold">{day}</div>
+                        <div className="text-[10px] font-normal opacity-60 mt-0.5">{headLabel}</div>
                       </th>
                     );
                   })}
-                  <th className="border border-slate-300 bg-slate-100 px-3 py-2 text-center font-semibold text-slate-700">
+                  <th className="bg-white px-3 py-3 text-center text-xs font-semibold text-ink-muted border-b-2 border-brand-600">
                     Toplam
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100">
                 {rosterDisplayRows.map((row) =>
                   Array.from({ length: row.depth }).map((_slot, slotIdx) => (
-                    <tr key={`${row.id}-${slotIdx}`}>
+                    <tr key={`${row.id}-${slotIdx}`} className="hover:bg-slate-50/80 transition-colors">
                       {slotIdx === 0 && (
                         <td
                           rowSpan={row.depth}
-                          className="sticky left-0 z-10 border border-slate-300 bg-white px-3 py-2 align-middle font-semibold text-slate-800"
+                          className="sticky left-0 z-10 bg-white px-3 py-2.5 align-middle font-semibold text-ink border-r border-slate-100 shadow-[2px_0_8px_-2px_rgba(13,27,62,0.05)]"
                           style={{ minWidth: 220 }}
                         >
                           {row.label}
@@ -2824,19 +2154,19 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                       {slotIdx === 0 && (
                         <td
                           rowSpan={row.depth}
-                          className="sticky left-[220px] z-10 border border-slate-300 bg-white px-3 py-2 align-middle text-slate-600"
+                          className="sticky left-[220px] z-10 bg-white px-3 py-2.5 align-middle text-ink-muted font-mono tabular-nums text-xs border-r border-slate-100"
                           style={{ minWidth: 140 }}
                         >
-                          {row.shiftHoursText || "-"}
+                          {row.shiftHoursText || "—"}
                         </td>
                       )}
                       {slotIdx === 0 && (
                         <td
                           rowSpan={row.depth}
-                          className="sticky left-[360px] z-10 border border-slate-300 bg-white px-3 py-2 text-center align-middle font-semibold text-slate-700"
+                          className="sticky left-[360px] z-10 bg-white px-3 py-2.5 text-center align-middle font-semibold text-brand-600 border-r border-slate-200 shadow-[2px_0_8px_-2px_rgba(13,27,62,0.05)]"
                           style={{ minWidth: 64 }}
                         >
-                          {row.shiftCode || "-"}
+                          {row.shiftCode || "—"}
                         </td>
                       )}
                       {row.namesByDay.map((names, dayIdx) => {
@@ -2844,22 +2174,31 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                         const weekday = new Date(year, month0, day).getDay();
                         const isWeekend = weekday === 0 || weekday === 6;
                         const name = names[slotIdx] || "";
+                        const isSwapped = name && swappedCells instanceof Set && (
+                          swappedCells.has(`${day}|${row.id}|${name}`) ||
+                          swappedCells.has(`${day}|${String(row.id).toUpperCase()}|${name}`)
+                        );
                         return (
                           <td
                             key={`${row.id}-${slotIdx}-${day}`}
-                            title={name || ""}
-                            className={`border border-slate-200 px-2 py-2 text-center align-middle ${
-                              isWeekend ? "bg-amber-50/40" : "bg-white"
-                            } ${name ? "text-slate-700" : "text-slate-300"}`}
+                            title={isSwapped ? `⇆ Takas: ${name}` : (name || "")}
+                            className={`px-2 py-2.5 text-center align-middle text-sm relative ${
+                              isSwapped
+                                ? "bg-orange-50 ring-1 ring-inset ring-orange-300"
+                                : isWeekend ? "bg-blue-50/70" : ""
+                            } ${name ? "text-ink" : "text-slate-200"}`}
                           >
-                            {name ? compactRosterDisplayName(name) : ""}
+                            {name ? compactRosterDisplayName(name) : "·"}
+                            {isSwapped && (
+                              <span className="absolute top-0.5 right-0.5 text-[8px] text-orange-500 font-bold leading-none">⇆</span>
+                            )}
                           </td>
                         );
                       })}
                       {slotIdx === 0 && (
                         <td
                           rowSpan={row.depth}
-                          className="border border-slate-300 bg-slate-50 px-3 py-2 text-center align-middle text-xs font-semibold text-slate-600"
+                          className="px-3 py-2.5 text-center align-middle font-mono tabular-nums text-sm font-semibold text-brand-600 border-l border-slate-100"
                         >
                           {row.namesByDay.reduce((sum, names) => sum + names.length, 0)}
                         </td>
@@ -2874,6 +2213,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       )}
 
       {/* Yeni Satır Ekle */}
+      {showConfigSections && (
       <div className="rounded-lg border bg-white p-3 flex flex-wrap items-end gap-3 shadow-sm">
           <div className="flex-1 min-w-[200px]">
             <div className="text-[11px] text-slate-500 mb-1 ml-1">Görev (Çalışma Alanı)</div>
@@ -2919,8 +2259,10 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             Ekle
           </button>
       </div>
+      )}
 
       {/* Düzenleme Grid’i (Pzt→Paz) */}
+      {showConfigSections && (
       <div className="rounded-lg border bg-white">
         <div className="p-3 text-sm font-medium border-b">Ayın Günleri (Pzt→Paz)</div>
         <div className="w-full overflow-auto">
@@ -3173,6 +2515,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           </table>
         </div>
       </div>
+      )}
 
       {/* Sorumlu Ayarları Paneli */}
       <SupervisorSetup 
