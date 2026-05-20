@@ -97,6 +97,54 @@ function groupByMonth(list) {
     }));
 }
 
+// Bir kişinin belirli tarihteki vardiyalarını çeken dropdown
+function ShiftPicker({ date, personId, value, onChange, placeholder = "Vardiya seçin…" }) {
+  const [shifts, setShifts] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!date) { setShifts([]); return; }
+    setLoading(true);
+    const params = new URLSearchParams({ date });
+    if (personId) params.set("personId", personId);
+    http.get(`/api/requests/swap-shifts?${params}`)
+      .then((res) => setShifts(Array.isArray(res?.items) ? res.items : []))
+      .catch(() => setShifts([]))
+      .finally(() => setLoading(false));
+  }, [date, personId]);
+
+  if (!date) return null;
+  if (loading) return <div className="text-[11px] text-slate-400 py-1">Vardiyalar yükleniyor…</div>;
+  if (shifts.length === 0) return (
+    <div className="text-[11px] text-amber-600 py-1">
+      Bu tarihte kayıtlı vardiya bulunamadı — kodu elle girin.
+    </div>
+  );
+
+  return (
+    <div className="space-y-1">
+      <select
+        className={inputCls}
+        value={value}
+        onChange={(e) => {
+          const sel = shifts.find((s) => (s.shiftId || s.shiftCode || s.rowId) === e.target.value);
+          onChange(
+            e.target.value,
+            sel ? (sel.roleLabel || sel.shiftCode || sel.shiftId || "") : e.target.value
+          );
+        }}
+      >
+        <option value="">{placeholder}</option>
+        {shifts.map((s, i) => {
+          const id = s.shiftId || s.shiftCode || s.rowId || `row-${i}`;
+          const label = [s.roleLabel, s.shiftCode].filter(Boolean).join(" · ") || id;
+          return <option key={id} value={id}>{label}</option>;
+        })}
+      </select>
+    </div>
+  );
+}
+
 // Person autocomplete dropdown
 function PersonSearch({ value, personnel, onSelect }) {
   const [query, setQuery] = useState(value || "");
@@ -518,35 +566,58 @@ export default function MyRequestsTab() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className={labelCls}>Benim Tarihim <span className="text-rose-500">*</span></label>
-                      <input type="date" className={inputCls} value={form.swapMyDate} onChange={(e) => set("swapMyDate", e.target.value)} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className={labelCls}>Benim Vardiya Kodu <span className="text-rose-500">*</span></label>
-                      <input className={inputCls} placeholder="ör. G, N, AG…" value={form.swapMyShiftId} onChange={(e) => set("swapMyShiftId", e.target.value)} />
-                    </div>
-                  </div>
+                  {/* Benim vardiyam */}
                   <div className="space-y-1">
-                    <label className={labelCls}>Benim Vardiya Etiketi (isteğe bağlı)</label>
-                    <input className={inputCls} placeholder="ör. Gündüz 08:00-16:00" value={form.swapMyShiftLabel} onChange={(e) => set("swapMyShiftLabel", e.target.value)} />
+                    <label className={labelCls}>Benim Tarihim <span className="text-rose-500">*</span></label>
+                    <input
+                      type="date" className={inputCls} value={form.swapMyDate}
+                      onChange={(e) => setForm((f) => ({ ...f, swapMyDate: e.target.value, swapMyShiftId: "", swapMyShiftLabel: "" }))}
+                    />
                   </div>
+                  {form.swapMyDate && (
+                    <div className="space-y-1">
+                      <label className={labelCls}>Benim Vardiyam <span className="text-rose-500">*</span></label>
+                      <ShiftPicker
+                        date={form.swapMyDate}
+                        personId={null}
+                        value={form.swapMyShiftId}
+                        onChange={(id, label) => setForm((f) => ({ ...f, swapMyShiftId: id, swapMyShiftLabel: label }))}
+                        placeholder="Kendi vardiyamı seçin…"
+                      />
+                      {!form.swapMyShiftId && (
+                        <input className={inputCls + " mt-1"} placeholder="Veya kodu elle girin…" value={form.swapMyShiftId}
+                          onChange={(e) => setForm((f) => ({ ...f, swapMyShiftId: e.target.value, swapMyShiftLabel: e.target.value }))} />
+                      )}
+                    </div>
+                  )}
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className={labelCls}>Karşı Tarih <span className="text-rose-500">*</span></label>
-                      <input type="date" className={inputCls} value={form.swapTargetDate} onChange={(e) => set("swapTargetDate", e.target.value)} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className={labelCls}>Karşı Vardiya Kodu <span className="text-rose-500">*</span></label>
-                      <input className={inputCls} placeholder="ör. G, N, AG…" value={form.swapTargetShiftId} onChange={(e) => set("swapTargetShiftId", e.target.value)} />
-                    </div>
-                  </div>
+                  {/* Karşı tarafın vardiyası */}
                   <div className="space-y-1">
-                    <label className={labelCls}>Karşı Vardiya Etiketi (isteğe bağlı)</label>
-                    <input className={inputCls} placeholder="ör. Gece 00:00-08:00" value={form.swapTargetShiftLabel} onChange={(e) => set("swapTargetShiftLabel", e.target.value)} />
+                    <label className={labelCls}>Karşı Tarih <span className="text-rose-500">*</span></label>
+                    <input
+                      type="date" className={inputCls} value={form.swapTargetDate}
+                      onChange={(e) => setForm((f) => ({ ...f, swapTargetDate: e.target.value, swapTargetShiftId: "", swapTargetShiftLabel: "" }))}
+                    />
                   </div>
+                  {form.swapTargetDate && form.swapWithPersonId && (
+                    <div className="space-y-1">
+                      <label className={labelCls}>Karşı Vardiya <span className="text-rose-500">*</span></label>
+                      <ShiftPicker
+                        date={form.swapTargetDate}
+                        personId={form.swapWithPersonId}
+                        value={form.swapTargetShiftId}
+                        onChange={(id, label) => setForm((f) => ({ ...f, swapTargetShiftId: id, swapTargetShiftLabel: label }))}
+                        placeholder="Karşı tarafın vardiyasını seçin…"
+                      />
+                      {!form.swapTargetShiftId && (
+                        <input className={inputCls + " mt-1"} placeholder="Veya kodu elle girin…" value={form.swapTargetShiftId}
+                          onChange={(e) => setForm((f) => ({ ...f, swapTargetShiftId: e.target.value, swapTargetShiftLabel: e.target.value }))} />
+                      )}
+                    </div>
+                  )}
+                  {form.swapTargetDate && !form.swapWithPersonId && (
+                    <div className="text-[11px] text-slate-400">Karşı tarafın vardiyasını görmek için önce kişiyi seçin.</div>
+                  )}
                 </div>
               )}
 

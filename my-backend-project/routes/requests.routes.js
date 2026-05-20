@@ -4,6 +4,7 @@ const router = express.Router();
 const Request = require('../models/Request');
 const Person = require('../models/Person');
 const MonthlySchedule = require('../models/MonthlySchedule');
+const Assignment = require('../models/Assignment');
 const Setting = require('../models/Setting');
 const LeaveBalance = require('../models/LeaveBalance');
 const LeaveType = require('../models/LeaveType');
@@ -184,44 +185,86 @@ async function checkSwapConflicts(request) {
   const myDoc = docs[0];
   const tDoc  = docs[1] || myDoc;
 
-  function getAssignments(doc) { return Array.isArray(doc?.data?.assignments) ? doc.data.assignments : []; }
   function getDefs(doc) { return Array.isArray(doc?.data?.defs) ? doc.data.defs : []; }
-  function personHasShiftOnDate(assignments, pid, date, excludeShift) {
-    return assignments.some((a) => {
+
+  // assignments[] veya namedAssignments formatından birleşik liste üret
+  function getAllAssignmentEntries(doc) {
+    const fromArr = Array.isArray(doc?.data?.assignments) ? doc.data.assignments : [];
+    if (fromArr.length > 0) return fromArr;
+    // Fallback: namedAssignments (personId yok, sadece isim)
+    const named = doc?.data?.roster?.namedAssignments || doc?.data?.namedAssignments;
+    if (!named || typeof named !== 'object') return [];
+    const defs = getDefs(doc);
+    const defById = new Map(defs.map((d) => [String(d?.id || d?.rowId || ''), d]));
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const entries = [];
+    for (const [dayStr, byRow] of Object.entries(named)) {
+      const day = Number(dayStr);
+      if (!Number.isFinite(day) || day < 1 || day > 31) continue;
+      const date = `${doc.year}-${pad2(doc.month)}-${pad2(day)}`;
+      for (const [rowId, names] of Object.entries(byRow || {})) {
+        const def = defById.get(rowId);
+        const shiftCode = String(def?.shiftCode || def?.code || rowId);
+        for (const name of (Array.isArray(names) ? names : [])) {
+          if (name) entries.push({ date, personName: name, personId: '', shiftId: shiftCode, shiftCode });
+        }
+      }
+    }
+    return entries;
+  }
+
+  // pid varsa pid ile, yoksa kanonize isimle eşleş
+  function personHasShiftOnDate(entries, pid, personName, date, excludeShift) {
+    const canonTarget = personName ? swapCanonName(personName) : '';
+    return entries.some((a) => {
       const aDate  = String(a?.date || '').slice(0, 10);
       const aPid   = String(a?.personId || '').trim();
       const aShift = String(a?.shiftId || a?.shiftCode || '').trim().toUpperCase();
-      return aDate === date && aPid === pid && aShift !== excludeShift;
+      if (aDate !== date || aShift === excludeShift) return false;
+      if (pid && aPid) return aPid === pid;
+      const aName = swapCanonName(String(a?.personName || a?.name || ''));
+      return canonTarget ? aName === canonTarget : false;
     });
   }
-  function hadNightShiftOnDate(assignments, defs, pid, date) {
+  function hadNightShiftOnDate(entries, defs, pid, personName, date) {
+    const canonTarget = personName ? swapCanonName(personName) : '';
     const defByCode = new Map(defs.map((d) => [String(d?.shiftCode || d?.code || '').toUpperCase(), d]));
-    return assignments.some((a) => {
+    return entries.some((a) => {
       const aDate  = String(a?.date || '').slice(0, 10);
       const aPid   = String(a?.personId || '').trim();
-      if (aDate !== date || aPid !== pid) return false;
+      if (aDate !== date) return false;
+      let matches;
+      if (pid && aPid) { matches = aPid === pid; }
+      else {
+        const aName = swapCanonName(String(a?.personName || a?.name || ''));
+        matches = canonTarget ? aName === canonTarget : false;
+      }
+      if (!matches) return false;
       const code = String(a?.shiftId || a?.shiftCode || '').toUpperCase();
       return isNightShiftDef(defByCode.get(code));
     });
   }
 
+  const myEntries = getAllAssignmentEntries(myDoc);
+  const tEntries  = getAllAssignmentEntries(tDoc);
+
   // 1. Aynı gün çakışması: fromPid → tDate (takas edilen değil, başka bir vardiya)
-  if (personHasShiftOnDate(getAssignments(tDoc), fromPid, tDate, tShift)) {
+  if (personHasShiftOnDate(tEntries, fromPid, fromDisplayName, tDate, tShift)) {
     return `${fromDisplayName} zaten ${tDate} tarihinde başka bir nöbeti var — aynı güne iki nöbet yazılamaz.`;
   }
   // 2. Aynı gün çakışması: toPid → myDate
-  if (personHasShiftOnDate(getAssignments(myDoc), toPid, myDate, myShift)) {
+  if (personHasShiftOnDate(myEntries, toPid, toDisplayName, myDate, myShift)) {
     return `${toDisplayName} zaten ${myDate} tarihinde başka bir nöbeti var — aynı güne iki nöbet yazılamaz.`;
   }
 
   // 3. Ardarda nöbet: fromPid gece vardiyasının ertesi günü tDate'e yazılacak mı?
   const prevTDate = swapAddDays(tDate, -1);
-  if (hadNightShiftOnDate(getAssignments(tDoc), getDefs(tDoc), fromPid, prevTDate)) {
+  if (hadNightShiftOnDate(tEntries, getDefs(tDoc), fromPid, fromDisplayName, prevTDate)) {
     return `${fromDisplayName} ${prevTDate} tarihinde gece nöbeti çalışıyor — ardarda nöbet yazılamaz.`;
   }
   // 4. Ardarda nöbet: toPid gece vardiyasının ertesi günü myDate'e yazılacak mı?
   const prevMyDate = swapAddDays(myDate, -1);
-  if (hadNightShiftOnDate(getAssignments(myDoc), getDefs(myDoc), toPid, prevMyDate)) {
+  if (hadNightShiftOnDate(myEntries, getDefs(myDoc), toPid, toDisplayName, prevMyDate)) {
     return `${toDisplayName} ${prevMyDate} tarihinde gece nöbeti çalışıyor — ardarda nöbet yazılamaz.`;
   }
 
@@ -373,11 +416,46 @@ async function executeSwap(request) {
         syncToDoc = toDoc;
       });
     } catch (txErr) {
-      console.error('[swap] Transaction başarısız, rollback yapıldı:', txErr?.message);
-      if (session) await session.endSession();
-      return false;
+      const isNoReplicaSet = txErr?.codeName === 'IllegalOperation'
+        || txErr?.message?.includes('Transaction')
+        || txErr?.message?.includes('replica');
+
+      if (isNoReplicaSet) {
+        // Standalone MongoDB: transaction desteklemiyor — sıralı kayıt ile devam
+        console.warn('[swap][cross-doc] Transaction desteği yok, standalone fallback kullanılıyor');
+        try {
+          const [fbFromDoc, fbToDoc] = await Promise.all([
+            MonthlySchedule.findOne({ sectionId, year: myYm.year, month: myYm.month }),
+            MonthlySchedule.findOne({ sectionId, year: tYm.year, month: tYm.month }),
+          ]);
+          if (!fbFromDoc || !fbToDoc) { if (session) await session.endSession().catch(() => {}); return false; }
+
+          const fr1 = await findAndSwap(fbFromDoc, myDate, fromPid, myShift, toPid, toPerson?.name || '', fromPerson?.name || fromName || '');
+          if (!fr1.found) { if (session) await session.endSession().catch(() => {}); return false; }
+          fbFromDoc.data = { ...fbFromDoc.data, assignments: fr1.assignments };
+          fbFromDoc.markModified('data');
+
+          const fr2 = await findAndSwap(fbToDoc, tDate, toPid, tShift, fromPid, fromPerson?.name || fromName || '', toPerson?.name || '');
+          if (!fr2.found) { if (session) await session.endSession().catch(() => {}); return false; }
+          fbToDoc.data = { ...fbToDoc.data, assignments: fr2.assignments };
+          fbToDoc.markModified('data');
+
+          await fbFromDoc.save();
+          await fbToDoc.save();
+          syncFromDoc = fbFromDoc;
+          syncToDoc = fbToDoc;
+        } catch (fbErr) {
+          console.error('[swap][cross-doc][fallback] ERR:', fbErr?.message || fbErr);
+          if (session) await session.endSession().catch(() => {});
+          return false;
+        }
+      } else {
+        console.error('[swap] Transaction başarısız, rollback yapıldı:', txErr?.message);
+        if (session) await session.endSession().catch(() => {});
+        return false;
+      }
     }
-    if (session) await session.endSession();
+    if (session) await session.endSession().catch(() => {});
 
     if (!syncFromDoc || !syncToDoc) return false;
 
@@ -488,6 +566,31 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/requests/swap-shifts — bir kişinin belirli tarihteki vardiyalarını döndürür
+// ?personId=...  (belirtilmezse kendi vardiyaları)  &date=YYYY-MM-DD
+router.get('/swap-shifts', requireAuth, async (req, res) => {
+  try {
+    const { personId, date } = req.query;
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
+      return res.status(400).json({ message: 'Geçerli tarih (YYYY-MM-DD) zorunlu' });
+    }
+    let queryPid = personId ? String(personId).trim() : null;
+    if (!queryPid) {
+      const myPerson = await Person.findOne(withHospitalFilter(req, { userId: req.user._id })).lean();
+      queryPid = myPerson ? String(myPerson._id) : null;
+    }
+    if (!queryPid) return res.json({ items: [] });
+
+    const items = await Assignment.find(
+      withHospitalFilter(req, { date: String(date), personId: queryPid })
+    ).select('date shiftId shiftCode roleLabel rowId personName personId sectionId serviceId').limit(20).lean();
+
+    res.json({ items });
+  } catch (err) {
+    res.status(500).json({ message: safeMessage(err) });
+  }
+});
+
 // GET /api/requests — kullanıcı kendi taleplerini, yetkili/admin tümünü görür
 router.get('/', requireAuth, async (req, res) => {
   try {
@@ -558,6 +661,18 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
 
     const previousStatus = String(request.status || 'pending');
+    const requestType = String(request.type || '').toLowerCase();
+    const isSwapRequest = requestType === 'takas';
+
+    // Takas onay ÖNCE kural kontrolü — status henüz değişmeden
+    if (status === 'approved' && previousStatus !== 'approved' && isSwapRequest && !request.swapExecuted) {
+      try {
+        const conflict = await checkSwapConflicts(request);
+        if (conflict) return res.status(422).json({ message: conflict });
+      } catch (checkErr) {
+        console.error('[swap-conflict-check] ERR:', checkErr?.message || checkErr);
+      }
+    }
 
     // Atomic CAS: aynı anda iki onay gelirse ikincisi 409 alır
     const updatedRequest = await Request.findOneAndUpdate(
@@ -570,23 +685,9 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
     request = updatedRequest; // CAS sonrası güncel dokümanı kullan
 
-    const requestType = String(request.type || '').toLowerCase();
     const isLeaveRequest = requestType === 'izin';
-    const isSwapRequest  = requestType === 'takas';
     const hasStatusChange = previousStatus !== String(status);
     const actorName = req.user?.name || req.user?.email || 'Yetkili';
-
-    // Takas onaylanmadan önce kural kontrolü
-    if (hasStatusChange && status === 'approved' && isSwapRequest && !request.swapExecuted) {
-      try {
-        const conflict = await checkSwapConflicts(request);
-        if (conflict) {
-          return res.status(422).json({ message: conflict });
-        }
-      } catch (checkErr) {
-        console.error('[swap-conflict-check] ERR:', checkErr?.message || checkErr);
-      }
-    }
 
     if (hasStatusChange && status === 'approved') {
       if (isLeaveRequest) {
@@ -607,10 +708,21 @@ router.put('/:id', requireAuth, async (req, res) => {
             );
             request.swapExecuted = true;
           } else {
-            console.warn('[swap-execute] Takas gerçekleştirilemedi, request approved olarak kaldı:', request._id);
+            // Swap başarısız — durumu geri al, yöneticiye hata döndür
+            console.warn('[swap-execute] Takas gerçekleştirilemedi, durum geri alınıyor:', request._id);
+            await Request.updateOne(
+              withHospitalFilter(req, { _id: request._id }),
+              { $set: { status: previousStatus, adminNote: 'Takas çizelgede gerçekleştirilemedi — vardiya bulunamadı veya çizelge kaydedilmemiş. Durum geri alındı.' } }
+            );
+            return res.status(422).json({ message: 'Takas onaylandı ancak çizelgede ilgili vardiya bulunamadı. Durum "Beklemede" ye geri alındı — çizelgeyi kaydedin ve tekrar deneyin.' });
           }
         } catch (e) {
           console.error('[swap-execute] ERR:', e?.message || e);
+          await Request.updateOne(
+            withHospitalFilter(req, { _id: request._id }),
+            { $set: { status: previousStatus, adminNote: `Takas sırasında hata: ${e?.message || 'bilinmeyen hata'}` } }
+          ).catch(() => {});
+          return res.status(500).json({ message: safeMessage(e, 'Takas sırasında sunucu hatası, durum geri alındı.') });
         }
         // Takas onay bildirimi — her iki tarafa
         void sendShiftChanged({

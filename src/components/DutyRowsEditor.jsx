@@ -1000,7 +1000,18 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         if (schedule && schedule.data) {
           const data = schedule.data || {};
           const remoteDefs = Array.isArray(data.defs) ? data.defs : [];
-          const remoteAssignments = Array.isArray(data.assignments) ? data.assignments : [];
+          let remoteAssignments = Array.isArray(data.assignments) ? data.assignments : [];
+          // namedAssignments'tan fallback: assignments boşsa ama roster varsa dönüştür
+          // Bu sayede sonraki kayıtta personId metadata'sı korunur
+          if (remoteAssignments.length === 0) {
+            const namedFallback = data.roster?.namedAssignments || data.namedAssignments;
+            if (namedFallback && typeof namedFallback === "object" && Object.keys(namedFallback).length > 0) {
+              const rebuilt = namedToAssignments(namedFallback, remoteDefs, year, month1, {
+                people: Array.isArray(peopleAll) ? peopleAll : [],
+              });
+              if (rebuilt.length > 0) remoteAssignments = rebuilt;
+            }
+          }
           savedAssignmentsRef.current = remoteAssignments;
           const normalizedRemote = normalizeDutyDefsAndOverrides(
             remoteDefs,
