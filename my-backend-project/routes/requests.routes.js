@@ -175,7 +175,7 @@ async function executeSwap(request) {
       return aDate === findDate && aPid === findPid && aShift === findShift;
     });
     if (idx === -1) return { doc, found: false, assignments };
-    assignments[idx] = { ...assignments[idx], personId: newPid, personName: newName };
+    assignments[idx] = { ...assignments[idx], personId: newPid, personName: newName, source: 'swap', overrideReason: 'takas' };
     return { doc, found: true, assignments };
   };
 
@@ -205,7 +205,6 @@ async function executeSwap(request) {
         payload: doc.data || {},
         createdBy: doc.createdBy || null,
         updatedBy: null,
-        source: 'requestSwap',
       });
     } catch (syncErr) {
       console.error('[assignmentSync][swap-same-doc] ERR:', syncErr?.message || syncErr);
@@ -262,7 +261,6 @@ async function executeSwap(request) {
           payload: syncFromDoc.data || {},
           createdBy: syncFromDoc.createdBy || null,
           updatedBy: null,
-          source: 'requestSwap',
         }),
         replaceAssignmentsForSchedule({
           scope: {
@@ -276,7 +274,6 @@ async function executeSwap(request) {
           payload: syncToDoc.data || {},
           createdBy: syncToDoc.createdBy || null,
           updatedBy: null,
-          source: 'requestSwap',
         }),
       ]);
     } catch (syncErr) {

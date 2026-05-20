@@ -489,6 +489,21 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
     return Array.from(unique.values());
   }, [truthDayHoursIndex]);
 
+  // Takas ile değiştirilmiş (source:'swap') atamaların kişi+gün kümesi
+  const swappedPersonDays = useMemo(() => {
+    const map = new Map(); // 'id:<pid>' | 'name:<canon>' → Set<YYYY-MM-DD>
+    for (const a of truthAssignments) {
+      if (a.source !== 'swap') continue;
+      const pid  = String(a.personId || '').trim();
+      const name = canonName(a.personName || '');
+      const date = String(a.date || '').slice(0, 10);
+      if (!date) continue;
+      if (pid)  { if (!map.has(`id:${pid}`))   map.set(`id:${pid}`,   new Set()); map.get(`id:${pid}`).add(date); }
+      if (name) { if (!map.has(`name:${name}`)) map.set(`name:${name}`, new Set()); map.get(`name:${name}`).add(date); }
+    }
+    return map;
+  }, [truthAssignments]);
+
   useEffect(() => {
     let active = true;
     (async () => {
@@ -1132,68 +1147,80 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
       </div>
 
       {/* Tablo */}
-      <div className="rounded-xl border bg-white overflow-auto">
-        <table className="min-w-full text-[13px]">
-          <thead className="bg-slate-50">
+      <div className="rounded-card border border-slate-200 bg-white overflow-auto shadow-card">
+        <table className="min-w-full text-sm">
+          <thead className="sticky top-0 z-10">
             <tr>
               {(HEADER_STATIC_LEFT||[]).map((h)=>(
-                <th key={h.key} style={{ minWidth: h.width*8, border:"1px solid #e5e7eb", padding:4 }}>{h.title}</th>
+                <th key={h.key} className="bg-white px-3 py-2.5 text-left text-xs font-semibold text-ink-muted uppercase tracking-wide whitespace-nowrap border-b-2 border-brand-600" style={{ minWidth: h.width*8 }}>{h.title}</th>
               ))}
               {(days||[]).map((d)=>(
-                <th key={d.ymd} className="text-center min-w-[60px]" style={{ border:"1px solid #e5e7eb", padding:4 }}>{d.d}</th>
+                <th key={d.ymd} className={`px-2 py-2.5 text-center text-xs font-semibold font-mono tabular-nums min-w-[60px] border-b-2 ${d.isWeekend ? "bg-blue-50 text-blue-600 border-blue-300" : "bg-white text-ink-muted border-brand-600"}`}>{d.d}</th>
               ))}
               {(HEADER_STATIC_RIGHT||[]).map((h)=>(
-                <th key={h.key} style={{ minWidth: h.width*7.2, border:"1px solid #e5e7eb", padding:4 }}>{h.title}</th>
+                <th key={h.key} className="bg-white px-3 py-2.5 text-right text-xs font-semibold text-ink-muted uppercase tracking-wide whitespace-nowrap border-b-2 border-brand-600" style={{ minWidth: h.width*7.2 }}>{h.title}</th>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100">
             {(rows||[]).map((r,ri)=>(
-              <tr key={r.tckn || r.adsoyad || ri} style={{ background: ri%2 ? "#ffffff" : "rgba(249,250,251,0.6)" }}>
-                <td style={{ border:"1px solid #e5e7eb", padding:4 }}>
-                  <input className="border rounded px-2 py-1 w-16" value={r?.sira ?? ""} onChange={(e)=>setField(ri,"sira",e.target.value)} />
+              <tr key={r.tckn || r.adsoyad || ri} className="odd:bg-white even:bg-slate-50/50 hover:bg-blue-50/30 transition-colors">
+                <td className="px-2 py-1.5 border-r border-slate-100">
+                  <input className="border border-slate-200 rounded-chip px-2 py-1 w-16 text-sm" value={r?.sira ?? ""} onChange={(e)=>setField(ri,"sira",e.target.value)} />
                 </td>
-                <td style={{ border:"1px solid #e5e7eb", padding:4 }}>
-                  <input className="border rounded px-2 py-1 w-40" value={r?.unvan ?? ""} onChange={(e)=>setField(ri,"unvan",e.target.value)} />
+                <td className="px-2 py-1.5 border-r border-slate-100">
+                  <input className="border border-slate-200 rounded-chip px-2 py-1 w-40 text-sm" value={r?.unvan ?? ""} onChange={(e)=>setField(ri,"unvan",e.target.value)} />
                 </td>
-                <td style={{ border:"1px solid #e5e7eb", padding:4 }}>
+                <td className="px-2 py-1.5 border-r border-slate-100">
                   <input
-                    className="border rounded px-2 py-1 w-44 bg-slate-50 text-slate-600"
+                    className="border border-slate-200 rounded-chip px-2 py-1 w-44 text-sm bg-slate-50 text-ink-muted"
                     value={maskTC(r?.tckn ?? "")}
                     readOnly
                   />
                 </td>
-                <td style={{ border:"1px solid #e5e7eb", padding:4 }}>
-                  <input className="border rounded px-2 py-1 w-56" value={r?.adsoyad ?? ""} onChange={(e)=>setField(ri,"adsoyad",e.target.value)} />
+                <td className="px-2 py-1.5 border-r border-slate-100">
+                  <input className="border border-slate-200 rounded-chip px-2 py-1 w-56 text-sm" value={r?.adsoyad ?? ""} onChange={(e)=>setField(ri,"adsoyad",e.target.value)} />
                 </td>
 
-                {(days||[]).map((d)=>(
-                  <td key={d.ymd} className="text-center" style={{ border:"1px solid #e5e7eb", padding:4, background: d.isWeekend ? "#fff1f2":"transparent" }}>
-                    <input
-                      className="border rounded px-2 py-1 text-center w-14"
-                      placeholder={d.isWeekend ? "-" : ""}
-                      value={r?.days?.[d.ymd] ?? ""}
-                      onChange={(e)=>setCell(ri, d.ymd, e.target.value)}
-                    />
-                  </td>
-                ))}
+                {(days||[]).map((d)=>{
+                  const pid   = r?.id ? `id:${r.id}` : null;
+                  const nkey  = canonName(r?.adsoyad || "");
+                  const swSet = (pid && swappedPersonDays.get(pid)) || (nkey && swappedPersonDays.get(`name:${nkey}`));
+                  const isSwapped = swSet?.has(d.ymd) ?? false;
+                  return (
+                    <td key={d.ymd} className={`px-1 py-1.5 text-center border-r border-slate-100 ${d.isWeekend ? "bg-blue-50" : ""} ${isSwapped ? "bg-orange-50" : ""}`}>
+                      <div className="relative inline-block w-full">
+                        <input
+                          className={`border rounded-chip px-1 py-1 text-center w-14 text-sm font-mono ${isSwapped ? "border-orange-300 bg-orange-50" : "border-slate-200"}`}
+                          placeholder={d.isWeekend ? "—" : ""}
+                          value={r?.days?.[d.ymd] ?? ""}
+                          onChange={(e)=>setCell(ri, d.ymd, e.target.value)}
+                          title={isSwapped ? "Bu gün takas ile değiştirildi" : undefined}
+                        />
+                        {isSwapped && (
+                          <span className="absolute -top-1.5 -right-1 text-[8px] bg-orange-500 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center leading-none" title="Takas yapıldı">⇆</span>
+                        )}
+                      </div>
+                    </td>
+                  );
+                })}
 
-                <td style={{ border:"1px solid #e5e7eb", padding:4, textAlign:"right", fontWeight:600 }}>{fmt(r?.aylikCalistigiSaat)}</td>
-                <td style={{ border:"1px solid #e5e7eb", padding:4 }}>
-                  <input className="border rounded px-2 py-1 text-right w-24" value={r?.gecenAydanDevir ?? 0} onChange={(e)=>setField(ri,"gecenAydanDevir",num(e.target.value,0))}/>
+                <td className="px-3 py-1.5 text-right font-semibold font-mono tabular-nums text-ink border-r border-slate-100">{fmt(r?.aylikCalistigiSaat)}</td>
+                <td className="px-2 py-1.5 border-r border-slate-100">
+                  <input className="border border-slate-200 rounded-chip px-2 py-1 text-right w-24 text-sm font-mono" value={r?.gecenAydanDevir ?? 0} onChange={(e)=>setField(ri,"gecenAydanDevir",num(e.target.value,0))}/>
                 </td>
-                <td style={{ border:"1px solid #e5e7eb", padding:4 }}>
-                  <input className="border rounded px-2 py-1 text-right w-24" value={r?.gelecekAyaDevir ?? 0} onChange={(e)=>setField(ri,"gelecekAyaDevir",num(e.target.value,0))}/>
+                <td className="px-2 py-1.5 border-r border-slate-100">
+                  <input className="border border-slate-200 rounded-chip px-2 py-1 text-right w-24 text-sm font-mono" value={r?.gelecekAyaDevir ?? 0} onChange={(e)=>setField(ri,"gelecekAyaDevir",num(e.target.value,0))}/>
                 </td>
-                <td style={{ border:"1px solid #e5e7eb", padding:4 }}>
-                  <input className="border rounded px-2 py-1 text-right w-28" value={r?.aylikCalisilacak ?? 168} onChange={(e)=>setField(ri,"aylikCalisilacak",num(e.target.value,168))}/>
+                <td className="px-2 py-1.5 border-r border-slate-100">
+                  <input className="border border-slate-200 rounded-chip px-2 py-1 text-right w-28 text-sm font-mono" value={r?.aylikCalisilacak ?? 168} onChange={(e)=>setField(ri,"aylikCalisilacak",num(e.target.value,168))}/>
                 </td>
-                <td style={{ border:"1px solid #e5e7eb", padding:4, textAlign:"right", fontWeight:600 }}>{fmt(r?.toplamCalisma)}</td>
-                <td style={{ border:"1px solid #e5e7eb", padding:4 }}>
-                  <input className="border rounded px-2 py-1 text-right w-28" value={r?.ucretNobet ?? 0} onChange={(e)=>setField(ri,"ucretNobet",num(e.target.value,0))}/>
+                <td className="px-3 py-1.5 text-right font-semibold font-mono tabular-nums text-ink border-r border-slate-100">{fmt(r?.toplamCalisma)}</td>
+                <td className="px-2 py-1.5 border-r border-slate-100">
+                  <input className="border border-slate-200 rounded-chip px-2 py-1 text-right w-28 text-sm font-mono" value={r?.ucretNobet ?? 0} onChange={(e)=>setField(ri,"ucretNobet",num(e.target.value,0))}/>
                 </td>
-                <td style={{ border:"1px solid #e5e7eb", padding:4 }}>
-                  <input className="border rounded px-2 py-1 text-right w-32" value={r?.birimDisi ?? 0} onChange={(e)=>setField(ri,"birimDisi",num(e.target.value,0))}/>
+                <td className="px-2 py-1.5">
+                  <input className="border border-slate-200 rounded-chip px-2 py-1 text-right w-32 text-sm font-mono" value={r?.birimDisi ?? 0} onChange={(e)=>setField(ri,"birimDisi",num(e.target.value,0))}/>
                 </td>
               </tr>
             ))}
@@ -1201,18 +1228,18 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
 
           {/* Alt toplam (tfoot) */}
           <tfoot>
-            <tr className="bg-slate-100 font-semibold">
-              <td style={{ border:"1px solid #e5e7eb", padding:4 }} colSpan={4}>TOPLAM</td>
+            <tr className="bg-slate-50 font-semibold border-t-2 border-brand-200">
+              <td className="px-3 py-2.5 text-ink-muted text-xs uppercase tracking-wide" colSpan={4}>Toplam</td>
               {(days||[]).map((d)=>(
-                <td key={d.ymd} style={{ border:"1px solid #e5e7eb", padding:4, textAlign:"right" }}>{fmt(colTotals.perDay[d.ymd])}</td>
+                <td key={d.ymd} className={`px-2 py-2.5 text-right font-mono tabular-nums text-sm ${d.isWeekend ? "text-blue-600 bg-blue-50/50" : "text-ink"}`}>{fmt(colTotals.perDay[d.ymd])}</td>
               ))}
-              <td style={{ border:"1px solid #e5e7eb", padding:4, textAlign:"right" }}>{fmt(colTotals.right.aylik)}</td>
-              <td style={{ border:"1px solid #e5e7eb", padding:4, textAlign:"right" }}>{fmt(colTotals.right.gecen)}</td>
-              <td style={{ border:"1px solid #e5e7eb", padding:4, textAlign:"right" }}>{fmt(colTotals.right.gelecek)}</td>
-              <td style={{ border:"1px solid #e5e7eb", padding:4, textAlign:"right" }}>{fmt(colTotals.right.calisilacak)}</td>
-              <td style={{ border:"1px solid #e5e7eb", padding:4, textAlign:"right" }}>{fmt(colTotals.right.toplam)}</td>
-              <td style={{ border:"1px solid #e5e7eb", padding:4, textAlign:"right" }}>{fmt(colTotals.right.ucret)}</td>
-              <td style={{ border:"1px solid #e5e7eb", padding:4, textAlign:"right" }}>{fmt(colTotals.right.birimDisi)}</td>
+              <td className="px-3 py-2.5 text-right font-mono tabular-nums text-sm text-ink">{fmt(colTotals.right.aylik)}</td>
+              <td className="px-3 py-2.5 text-right font-mono tabular-nums text-sm text-ink">{fmt(colTotals.right.gecen)}</td>
+              <td className="px-3 py-2.5 text-right font-mono tabular-nums text-sm text-ink">{fmt(colTotals.right.gelecek)}</td>
+              <td className="px-3 py-2.5 text-right font-mono tabular-nums text-sm text-ink">{fmt(colTotals.right.calisilacak)}</td>
+              <td className="px-3 py-2.5 text-right font-mono tabular-nums text-sm text-brand-600 font-bold">{fmt(colTotals.right.toplam)}</td>
+              <td className="px-3 py-2.5 text-right font-mono tabular-nums text-sm text-ink">{fmt(colTotals.right.ucret)}</td>
+              <td className="px-3 py-2.5 text-right font-mono tabular-nums text-sm text-ink">{fmt(colTotals.right.birimDisi)}</td>
             </tr>
           </tfoot>
         </table>

@@ -3,6 +3,7 @@ import React, { useMemo, useState, useEffect, useCallback, useRef } from "react"
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import {
+  ArrowLeftRight,
   CalendarClock,
   ClipboardList,
   Clock3,
@@ -11,18 +12,19 @@ import {
   Stethoscope,
   Users,
 } from "lucide-react";
+import { http } from "../lib/api.js";
 import { LS } from "../utils/storage.js";
 import DutyRowsEditor from "../components/DutyRowsEditor.jsx";
 import ScheduleToolbar from "../components/ScheduleToolbar.jsx";
 import MonthlyHoursSheet from "../components/MonthlyHoursSheet.jsx";
 import OvertimeTab from "./OvertimeTab.jsx";
 import MonthlyLeavesMatrixGeneric from "./MonthlyLeavesMatrixGeneric.jsx";
+import { WorkspaceHero, WorkspacePanel } from "../components/workspace/WorkspaceShell.jsx";
 import { getAllLeaves, setLeave, unsetLeave, buildNameUnavailability } from "../lib/leaves.js";
 import { collectRequestsByPerson } from "../lib/requestParser.js";
 import { checkLeaveShiftConflict, removeShiftOnDay } from "../utils/conflictChecker.js";
 import useActiveYM from "../hooks/useActiveYM.js";
 import useServiceScope from "../hooks/useServiceScope.js"; // ⬅️ YENİ: servis kapsamı
-import { useAppData } from "../context/AppDataContext.jsx";
 import { useAppStore } from "../state/appStore";
 
 /* =========================================================
@@ -337,6 +339,49 @@ const SECTION_META = {
   },
 };
 
+const SECTION_WORKSPACE_COPY = {
+  "calisma-cizelgesi": {
+    label: "Atama Çalışma Alanı",
+    summary: "Bu ekranda yalnız kişilere atama, manuel düzeltme ve sonuç önizlemesi yapılır.",
+    source: "Görev satırları, gün bazlı sayı matrisi ve sayısal kurgu Parametreler > Çizelge Yapısı altında yönetilir.",
+    steps: [
+      "Önce servis ve rol bağlamını seçin.",
+      "Listeyi oluşturun veya mevcut atamaları düzenleyin.",
+      "Hızlı yerine atama, sabitleme ve manuel düzeltmeleri doğrudan burada yapın.",
+    ],
+  },
+  "aylik-calisma-ve-mesai-saatleri-cizelgesi": {
+    label: "Saat ve Devir Çalışma Alanı",
+    summary: "Çalışma çizelgesinden gelen vardiyalar aylık saat, devir ve çalışılacak süre hesabına burada dönüştürülür.",
+    source: "Bu tablo çalışma çizelgesini truth kaynağı olarak okur; burada yaptığınız Excel içe/dışa aktarma sadece aylık saat matrisini etkiler.",
+    steps: [
+      "Önce çalışma çizelgesini güncel tutun.",
+      "Gerekirse Çizelgeden Doldur ile saat matrisini yenileyin.",
+      "Excel düzenlemeleri sonrası toplamları ve devir alanlarını buradan kontrol edin.",
+    ],
+  },
+  "fazla-mesai-takip": {
+    label: "Mesai İzleme Çalışma Alanı",
+    summary: "Fiili çalışma, çalışılmış sayılan izin kredisi ve fazla mesai hesapları personel bazında burada izlenir.",
+    source: "Fazla mesai tablosu çalışma çizelgesi, izin kayıtları ve vardiya saat tanımlarını birlikte kullanır.",
+    steps: [
+      "Servis ve rol bağlamını seçin.",
+      "Çizelgeden Doldur ile güncel vardiya saatlerini aktarın.",
+      "Arama ve toplam kartlarıyla personel bazlı fazla mesai yükünü inceleyin.",
+    ],
+  },
+  "toplu-izin-listesi": {
+    label: "İzin Toplama Çalışma Alanı",
+    summary: "Ay içindeki izin kodlarını toplu görün, içe aktarın ve diğer çizelgelerle uyumu buradan yönetin.",
+    source: "İzin matrisi aylık çalışma ve fazla mesai hesaplarını doğrudan etkiler; bu nedenle burada yapılan değişiklikler diğer çizelgelere yansır.",
+    steps: [
+      "Ay ve servis bağlamını seçin.",
+      "Excel içe aktarımıyla izinleri toplu yükleyin veya tek tek kontrol edin.",
+      "Kaynak izin kodlarının çalışma saatine etkisini aylık/fazla mesai ekranlarında doğrulayın.",
+    ],
+  },
+};
+
 function getSectionMeta(sectionId, fallbackName = "") {
   return (
     SECTION_META[sectionId] || {
@@ -345,6 +390,35 @@ function getSectionMeta(sectionId, fallbackName = "") {
       shortLabel: fallbackName || "Çizelge",
       description: "Bu çalışma alanı için özel içerik burada görüntülenir.",
     }
+  );
+}
+
+function SectionWorkspaceIntro({ sectionId }) {
+  const copy = SECTION_WORKSPACE_COPY[sectionId];
+  if (!copy) return null;
+  return (
+    <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+      <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
+        <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">{copy.label}</div>
+        <p className="mt-2 text-sm leading-6 text-slate-700">{copy.summary}</p>
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-600">
+          <span className="font-medium text-slate-800">Veri kaynağı:</span> {copy.source}
+        </div>
+      </div>
+      <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-4">
+        <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Kullanım Akışı</div>
+        <ol className="mt-2 space-y-2 text-sm leading-6 text-slate-700">
+          {copy.steps.map((step, idx) => (
+            <li key={step} className="flex gap-3">
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
+                {idx + 1}
+              </span>
+              <span>{step}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </div>
   );
 }
 
@@ -414,12 +488,30 @@ function SectionContent({
   selectedServiceId,
   selectedServiceName,
   activeRole,
+  servicesById,
 }) {
   const editorRef = useRef(null);
   const monthlyRef = useRef(null);
   const templateFileRef = useRef(null);
   const overtimeRef = useRef(null);
   const fileInputRef = useRef(null); // Toplu İzin içe aktar
+
+  // Takas geçmişi — onaylanmış takas talepleri bu ay
+  const [swapLog, setSwapLog] = useState([]);
+  const [swapLogOpen, setSwapLogOpen] = useState(false);
+  useEffect(() => {
+    let active = true;
+    http.get(`/api/requests?type=takas&status=approved`)
+      .then((res) => {
+        if (!active) return;
+        const ymKey = `${year}-${String(month).padStart(2, "0")}`;
+        const executed = (Array.isArray(res?.items) ? res.items : [])
+          .filter((r) => r.swapExecuted && (String(r.swapMyDate || "").startsWith(ymKey) || String(r.swapTargetDate || "").startsWith(ymKey)));
+        setSwapLog(executed);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [year, month]);
   const handleBuild = useCallback(() => {
     if (editorRef.current?.build) return editorRef.current.build();
     toast.error("Çizelge bileşeni yüklenemedi", { description: "Sayfayı yenileyin ve tekrar deneyin." });
@@ -602,29 +694,66 @@ function SectionContent({
     []
   );
 
+  const SwapLogBanner = swapLog.length > 0 && (
+    <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm">
+      <button
+        className="w-full flex items-center gap-2 text-left"
+        onClick={() => setSwapLogOpen((v) => !v)}
+      >
+        <ArrowLeftRight size={15} className="text-orange-500 shrink-0" />
+        <span className="font-semibold text-orange-800">
+          Bu ay {swapLog.length} takas gerçekleşti
+        </span>
+        <span className="ml-auto text-[11px] text-orange-500">{swapLogOpen ? "▲ Gizle" : "▼ Göster"}</span>
+      </button>
+      {swapLogOpen && (
+        <div className="mt-2 space-y-1.5 border-t border-orange-200 pt-2">
+          {swapLog.map((r) => (
+            <div key={r._id || r.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-orange-900">
+              <span className="font-medium">{r.fromName}</span>
+              <span className="text-orange-400">⇆</span>
+              <span className="font-medium">{r.swapWithPersonName || "?"}</span>
+              <span className="text-orange-600 font-mono">{r.swapMyDate} {r.swapMyShiftLabel || r.swapMyShiftId}</span>
+              <span className="text-orange-400">↔</span>
+              <span className="text-orange-600 font-mono">{r.swapTargetDate} {r.swapTargetShiftLabel || r.swapTargetShiftId}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   switch (sectionId) {
     case "calisma-cizelgesi":
       return (
         <div className="space-y-3">
+          {SwapLogBanner}
           <ScheduleToolbar
             title="Çalışma Çizelgesi"
             {...commonToolbarProps}
             onAi={() => editorRef.current?.ai?.() ?? commonToolbarProps.onAi()}
             onBuild={handleBuild}
             onExport={() => editorRef.current?.exportExcel?.() ?? commonToolbarProps.onExport()}
-            onImport={triggerTemplateImport}
-            onReset={() => editorRef.current?.reset?.() ?? commonToolbarProps.onReset()}
           />
-          <input
-            ref={templateFileRef}
-            type="file"
-            accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-            className="hidden"
-            onChange={handleTemplateFile}
-          />
+          <SectionWorkspaceIntro sectionId={sectionId} />
+          <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            <div className="font-medium">Yapılandırma bu ekrandan ayrıldı.</div>
+            <div className="mt-1 text-sky-800/80">
+              Görev satırları, gün bazlı sayı matrisi ve sayısal önizleme artık{" "}
+              <button
+                type="button"
+                onClick={() => { try { window.location.hash = "/parametreler/cizelge-yapisi"; } catch {} }}
+                className="font-semibold underline underline-offset-2"
+              >
+                Parametreler &gt; Çizelge Yapısı
+              </button>{" "}
+              altında yönetilir.
+            </div>
+          </div>
           <div className="rounded-lg border bg-white p-4">
             <DutyRowsEditor
               ref={editorRef}
+              mode="assignmentOnly"
               year={year}
               month={month}
               sectionId={sectionId}
@@ -641,6 +770,7 @@ function SectionContent({
     case "aylik-calisma-ve-mesai-saatleri-cizelgesi":
       return (
         <div className="space-y-3">
+          {SwapLogBanner}
           <ScheduleToolbar
             title="Aylık Çalışma ve Mesai Saatleri Çizelgesi"
             {...commonToolbarProps}
@@ -649,6 +779,7 @@ function SectionContent({
             onImport={() => monthlyRef.current?.importExcel?.() ?? commonToolbarProps.onImport()}
             onReset={() => monthlyRef.current?.reset?.() ?? commonToolbarProps.onReset()}
           />
+          <SectionWorkspaceIntro sectionId={sectionId} />
           <div className="rounded-lg border bg-white p-4">
             <MonthlyHoursSheet
               ref={monthlyRef}
@@ -672,6 +803,7 @@ function SectionContent({
     case "fazla-mesai-takip":
       return (
         <div className="space-y-3">
+          {SwapLogBanner}
           <ScheduleToolbar
             title="Fazla Mesai Takip Formu"
             {...commonToolbarProps}
@@ -679,17 +811,20 @@ function SectionContent({
             onExport={() => overtimeRef.current?.exportExcel?.() ?? commonToolbarProps.onExport()}
             onReset={() => overtimeRef.current?.reset?.() ?? commonToolbarProps.onReset()}
           />
+          <SectionWorkspaceIntro sectionId={sectionId} />
           <div className="rounded-lg border bg-white p-4">
             <OvertimeTab
               ref={overtimeRef}
               hideToolbar
+              year={year}
+              month={month}
               workingHours={workingHours}
               people={Array.isArray(peopleAll) ? peopleAll : []}
               leaveTypes={Array.isArray(leaveTypes) ? leaveTypes : []}
               selectedServiceId={selectedServiceId}
               selectedServiceName={selectedServiceName}
               activeRole={activeRole}
-              servicesById={scope.servicesById instanceof Map ? scope.servicesById : null}
+              servicesById={servicesById instanceof Map ? servicesById : null}
             />
           </div>
         </div>
@@ -711,6 +846,7 @@ function SectionContent({
             className="hidden"
             onChange={onFilePicked}
           />
+          <SectionWorkspaceIntro sectionId={sectionId} />
           <div className="rounded-lg border bg-white p-4">
             <MonthlyLeavesMatrixGeneric
               people={Array.isArray(peopleAll) ? peopleAll : []}
@@ -743,21 +879,19 @@ function SectionContent({
    Ana bileşen
 ========================= */
 export default function SchedulesTab({ workAreas, workingHours, peopleAll: peopleAllProp, leaveTypes: leaveTypesProp, personLeaves: personLeavesProp }) {
-  const appData = useAppData();
-  const effectiveWorkingHours = Array.isArray(workingHours)
-    ? workingHours
-    : (Array.isArray(appData.workingHours) ? appData.workingHours : []);
-  const effectivePeopleAllProp = Array.isArray(peopleAllProp)
-    ? peopleAllProp
-    : (Array.isArray(appData.peopleAll) ? appData.peopleAll : []);
-  const effectiveLeaveTypesProp = Array.isArray(leaveTypesProp)
-    ? leaveTypesProp
-    : (Array.isArray(appData.leaveTypes) ? appData.leaveTypes : []);
-  const effectivePersonLeaves = (personLeavesProp && typeof personLeavesProp === "object")
+  const storeWorkingHours = useAppStore((s) => s.workingHours);
+  const storeNurses       = useAppStore((s) => s.nurses);
+  const storeDoctors      = useAppStore((s) => s.doctors);
+  const storeLeaveTypes   = useAppStore((s) => s.leaveTypes);
+  const storePersonLeaves = useAppStore((s) => s.personLeaves);
+  const storePeopleAll    = useMemo(() => [...storeDoctors, ...storeNurses], [storeDoctors, storeNurses]);
+
+  const effectiveWorkingHours   = Array.isArray(workingHours)   ? workingHours   : storeWorkingHours;
+  const effectivePeopleAllProp  = Array.isArray(peopleAllProp)  ? peopleAllProp  : storePeopleAll;
+  const effectiveLeaveTypesProp = Array.isArray(leaveTypesProp) ? leaveTypesProp : storeLeaveTypes;
+  const effectivePersonLeaves   = (personLeavesProp && typeof personLeavesProp === "object")
     ? personLeavesProp
-    : (appData?.personLeaves && typeof appData.personLeaves === "object")
-      ? appData.personLeaves
-      : null;
+    : storePersonLeaves;
 
   const initialSections = useMemo(() => {
     const v = LS.get(LS_KEY, DEFAULT_SECTIONS);
@@ -766,7 +900,8 @@ export default function SchedulesTab({ workAreas, workingHours, peopleAll: peopl
   const [sections, setSections] = useState(initialSections);
 
   useEffect(() => {
-    const refresh = () => {
+    const refresh = (e) => {
+      if (e?.type === "storage" && e.key !== null && e.key !== LS_KEY) return;
       const v = LS.get(LS_KEY, DEFAULT_SECTIONS);
       setSections(Array.isArray(v) && v.length ? v : DEFAULT_SECTIONS);
     };
@@ -932,115 +1067,142 @@ export default function SchedulesTab({ workAreas, workingHours, peopleAll: peopl
 
   return (
     <div className="p-4 space-y-5">
-      <section className="rounded-[30px] border border-slate-200 bg-white px-5 py-5 shadow-sm md:px-6">
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_340px]">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
-                <ActiveIcon className="h-3.5 w-3.5 text-sky-700" />
-                {activeMeta.eyebrow}
-              </span>
-              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                {scope.isAdmin ? "Yönetim Kapsamı" : "Servis Kapsamı"}
-              </span>
-            </div>
-            <div className="mt-4 flex items-start gap-4">
-              <div className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm md:flex">
-                <ActiveIcon className="h-7 w-7" />
-              </div>
-              <div className="min-w-0">
-                <h2 className="text-2xl font-semibold tracking-tight text-slate-950">{active?.name || "Çizelgeler"}</h2>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{activeMeta.description}</p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
-                    <CalendarClock className="h-4 w-4 text-sky-700" />
-                    {monthLabel}
-                  </span>
-                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
-                    <Stethoscope className="h-4 w-4 text-emerald-700" />
-                    {scopeBadgeLabel || "Tümü"}
-                  </span>
-                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
-                    <Users className="h-4 w-4 text-violet-700" />
-                    {scopedPeople.length} kişi görünür
-                  </span>
-                  {activeId === "calisma-cizelgesi" && (
-                    <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
-                      <ClipboardList className="h-4 w-4 text-amber-700" />
-                      Aktif rol: {roleLabel}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+      <WorkspaceHero
+        badges={[
+          { icon: ActiveIcon, label: "Çizelge Odaklı Workspace", tone: "border-slate-200 bg-slate-50 text-slate-500" },
+          { icon: ShieldCheck, label: scope.isAdmin ? "Yönetim Kapsamı" : "Servis Kapsamı", tone: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+        ]}
+        title={active?.name || "Çizelgeler"}
+        description="Çizelgeyi ana çalışma yüzeyi yaptık. Çizelge türü, servis ve rol kontrolleri tabloya yaklaştırıldı; böylece kullanıcı önce bağlamı seçip sonra doğrudan veri üzerinde çalışır."
+        metrics={[
+          { icon: CalendarClock, accent: "sky", label: "Dönem", value: monthLabel },
+          { icon: Stethoscope, accent: "emerald", label: "Servis", value: scopeBadgeLabel || "Tümü" },
+          { icon: Users, accent: "violet", label: "Personel", value: `${scopedPeople.length} kişi` },
+          { icon: ClipboardList, accent: "amber", label: "Görünüm", value: activeMeta.shortLabel },
+        ]}
+      />
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Çalışma Bağlamı</div>
-              <div className="mt-2 text-lg font-semibold text-slate-900">{activeMeta.shortLabel}</div>
-              <p className="mt-1 text-sm leading-5 text-slate-600">
-                Bu modül, aynı ay ve servis kapsamı içinde diğer çizelgelerle senkron çalışır.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Kullanım Notu</div>
-              <div className="mt-2 text-sm leading-6 text-slate-700">
-                Önce çalışma çizelgesini üretin, sonra aylık çalışma ve fazla mesai çıktılarında aynı ayı doğrulayın.
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {sections.map((s) => {
-            const meta = getSectionMeta(s.id, s.name);
-            const Icon = meta.icon;
-            const isActive = s.id === activeId;
-            return (
-              <button
-                key={s.id}
-                onClick={() => handleTabClick(s.id)}
-                title={s.id}
-                className={`group rounded-[24px] border px-4 py-4 text-left transition-all ${
-                  isActive
-                    ? "border-slate-900 bg-slate-950 text-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.75)]"
-                    : "border-slate-200 bg-white hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className={`flex h-11 w-11 items-center justify-center rounded-2xl border ${isActive ? "border-white/15 bg-white/10 text-white" : "border-slate-200 bg-slate-100 text-slate-700"}`}>
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  {isActive && (
-                    <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-white/85">
-                      Aktif
-                    </span>
-                  )}
-                </div>
-                <div className={`mt-4 text-sm font-medium uppercase tracking-[0.16em] ${isActive ? "text-white/70" : "text-slate-500"}`}>
-                  {meta.eyebrow}
-                </div>
-                <div className={`mt-2 text-lg font-semibold ${isActive ? "text-white" : "text-slate-900"}`}>{s.name}</div>
-                <p className={`mt-2 text-sm leading-6 ${isActive ? "text-white/72" : "text-slate-600"}`}>
-                  {meta.description}
-                </p>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="min-w-0 rounded-[30px] border border-slate-200 bg-slate-50/70 p-3 md:p-4">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <section className="space-y-4">
+        <WorkspacePanel
+          title="Çizelge Türü"
+          description="Aktif çizelgeyi seçin, sonra aynı bağlam içinde ilgili çalışma alanına geçin."
+          aside={
             <div>
-              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Aktif Çalışma Alanı</div>
-              <div className="mt-1 text-lg font-semibold text-slate-900">{active?.name || "Çizelgeler"}</div>
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Çalışma Bağlamı</div>
+              <div className="mt-3 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">Servis</label>
+                    {scope.isAdmin ? (
+                      <select
+                        className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:bg-white"
+                        value={svc}
+                        onChange={(e) => setSvc(e.target.value)}
+                      >
+                        <option value="">Tümü</option>
+                        {(scope.allowedIds || []).map((id) => {
+                          const s = scope.servicesById.get(String(id));
+                          const name = s?.name || s?.code || id;
+                          return (
+                            <option key={id} value={id}>
+                              {name}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    ) : (
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                        {selectedServiceName || "-"}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="mb-2 text-sm font-medium text-slate-700">Rol</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => setActiveRole("Nurse")}
+                        className={`h-11 rounded-2xl border text-sm font-medium transition ${
+                          activeRole === "Nurse"
+                            ? "border-slate-900 bg-slate-950 text-white"
+                            : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
+                        }`}
+                      >
+                        Hemşire
+                      </button>
+                      <button
+                        onClick={() => setActiveRole("Doctor")}
+                        className={`h-11 rounded-2xl border text-sm font-medium transition ${
+                          activeRole === "Doctor"
+                            ? "border-slate-900 bg-slate-950 text-white"
+                            : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
+                        }`}
+                      >
+                        Doktor
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-600">
+                    <div className="font-medium text-slate-800">Aktif bağlam</div>
+                    <div className="mt-1 leading-6">
+                      {activeMeta.shortLabel} · {scopeBadgeLabel || "Tümü"} · {monthLabel}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="text-sm text-slate-500">
-              Kapsam: <span className="font-medium text-slate-700">{scopeBadgeLabel || "Tümü"}</span>
+          }
+        >
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {sections.map((s) => {
+                const meta = getSectionMeta(s.id, s.name);
+                const Icon = meta.icon;
+                const isActive = s.id === activeId;
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => handleTabClick(s.id)}
+                    className={`w-full rounded-[22px] border px-3 py-3 text-left transition ${
+                      isActive
+                        ? "border-slate-900 bg-slate-950 text-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.75)]"
+                        : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border ${
+                        isActive ? "border-white/15 bg-white/10 text-white" : "border-slate-200 bg-white text-slate-700"
+                      }`}>
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className={`text-[11px] font-medium uppercase tracking-[0.16em] ${isActive ? "text-white/65" : "text-slate-500"}`}>
+                          {meta.eyebrow}
+                        </div>
+                        <div className={`mt-1 text-sm font-semibold ${isActive ? "text-white" : "text-slate-900"}`}>{s.name}</div>
+                        <p className={`mt-1 text-xs leading-5 ${isActive ? "text-white/72" : "text-slate-600"}`}>
+                          {meta.shortLabel}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+          </div>
+        </WorkspacePanel>
+
+        <div className="min-w-0 rounded-[30px] border border-slate-200 bg-white p-3 shadow-sm md:p-4">
+          <div className="sticky top-3 z-10 mb-4 rounded-[24px] border border-slate-200 bg-white/92 px-4 py-3 shadow-sm backdrop-blur">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Tablo Çalışma Alanı</div>
+                <div className="mt-1 text-lg font-semibold text-slate-900">{active?.name || "Çizelgeler"}</div>
+              </div>
+              <div className="flex flex-wrap gap-2 text-sm text-slate-600">
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">Servis: <span className="font-medium text-slate-800">{scopeBadgeLabel || "Tümü"}</span></span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">Rol: <span className="font-medium text-slate-800">{roleLabel}</span></span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">Kişi: <span className="font-medium text-slate-800">{scopedPeople.length}</span></span>
+              </div>
             </div>
           </div>
 
@@ -1068,88 +1230,12 @@ export default function SchedulesTab({ workAreas, workingHours, peopleAll: peopl
                   selectedServiceId={selectedServiceId}
                   selectedServiceName={selectedServiceName}
                   activeRole={activeRole}
+                  servicesById={scope.servicesById}
                 />
               </div>
             );
           })}
         </div>
-
-        <aside className="space-y-4">
-          <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Kapsam Ayarları</div>
-            <div className="mt-4 space-y-4">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">Servis</label>
-                {scope.isAdmin ? (
-                  <select
-                    className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:bg-white"
-                    value={svc}
-                    onChange={(e) => setSvc(e.target.value)}
-                  >
-                    <option value="">Tümü</option>
-                    {(scope.allowedIds || []).map((id) => {
-                      const s = scope.servicesById.get(String(id));
-                      const name = s?.name || s?.code || id;
-                      return (
-                        <option key={id} value={id}>
-                          {name}
-                        </option>
-                      );
-                    })}
-                  </select>
-                ) : (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-                    {selectedServiceName || "-"}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="mb-2 text-sm font-medium text-slate-700">Rol</div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setActiveRole("Nurse")}
-                    className={`h-11 rounded-2xl border text-sm font-medium transition ${
-                      activeRole === "Nurse"
-                        ? "border-slate-900 bg-slate-950 text-white"
-                        : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
-                    }`}
-                  >
-                    Hemşireler
-                  </button>
-                  <button
-                    onClick={() => setActiveRole("Doctor")}
-                    className={`h-11 rounded-2xl border text-sm font-medium transition ${
-                      activeRole === "Doctor"
-                        ? "border-slate-900 bg-slate-950 text-white"
-                        : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
-                    }`}
-                  >
-                    Doktorlar
-                  </button>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                  Rol seçimi özellikle çalışma çizelgesi üretiminde etkili olur; diğer çizelgeler aynı ay kapsamını paylaşır.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Önerilen Akış</div>
-            <ol className="mt-4 space-y-3 text-sm text-slate-700">
-              <li className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-                <span className="font-medium text-slate-900">1.</span> Çalışma çizelgesini üretin ve kaydedin.
-              </li>
-              <li className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-                <span className="font-medium text-slate-900">2.</span> Aylık çalışma saatlerini aynı ay ve servis kapsamında doğrulayın.
-              </li>
-              <li className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-                <span className="font-medium text-slate-900">3.</span> Fazla mesai ve toplu izin çıktılarında son kontrolü yapın.
-              </li>
-            </ol>
-          </div>
-        </aside>
       </section>
     </div>
   );

@@ -141,7 +141,7 @@ function normalizeAssignmentRecord(item = {}, scope = {}, options = {}) {
         return shiftDurationHours(def?.start ?? def?.from ?? def?.begin ?? def?.startTime, def?.end ?? def?.to ?? def?.finish ?? def?.endTime);
       })()
     : 0;
-  const source = String(options?.source || item?.source || 'monthlySchedule').trim() || 'monthlySchedule';
+  const source = String(item?.source || options?.source || 'monthlySchedule').trim() || 'monthlySchedule';
 
   return {
     sourceScheduleId: scope?.sourceScheduleId || null,

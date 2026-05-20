@@ -343,13 +343,16 @@ const OvertimeTab = forwardRef(function OvertimeTab({
   workingHours,
   people: peopleProp = [],
   leaveTypes = [],
+  year: controlledYear,
+  month: controlledMonth,
   selectedServiceId = "",
   selectedServiceName = "",
   activeRole = "Nurse",
   servicesById = null,
 }, ref) {
   const { ym } = useActiveYM();
-  const { year, month } = ym;
+  const year = Number(controlledYear) || Number(ym?.year) || new Date().getFullYear();
+  const month = Number(controlledMonth) || Number(ym?.month) || new Date().getMonth() + 1;
   const serviceScopeKey = useMemo(() => storageScopeKey(selectedServiceId), [selectedServiceId]);
   const storageKey = useMemo(
     () => LS_DATA_PREFIX + ymKey(year, month) + "::" + serviceScopeKey,
@@ -359,6 +362,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({
   const [cfg, setCfg] = useState(() => ({ ...DEFAULT_CFG, ...(JSON.parse(localStorage.getItem(LS_CFG) || "null") || {}) }));
   const [rows, setRows] = useState(() => loadOvertimeRowsFromCache(year, month, selectedServiceId));
   const [truthRows, setTruthRows] = useState([]);
+  const [swappedPersonDays, setSwappedPersonDays] = useState(new Map()); // personId → Set<YYYY-MM-DD>
   const [holidays, setHolidays] = useState([]);
   const [search, setSearch] = useState("");
   const [scheduleChangedBanner, setScheduleChangedBanner] = useState(false);
@@ -484,6 +488,17 @@ const OvertimeTab = forwardRef(function OvertimeTab({
       .catch(() => []);
 
     if (truthAssignments.length) {
+      // Takas ile değiştirilmiş atamaları işaretle
+      const swapMap = new Map(); // personId → Set<YYYY-MM-DD>
+      for (const a of truthAssignments) {
+        if (a.source !== 'swap') continue;
+        const pid = String(a.personId || '').trim();
+        const date = String(a.date || '').slice(0, 10);
+        if (!pid || !date) continue;
+        if (!swapMap.has(pid)) swapMap.set(pid, new Set());
+        swapMap.get(pid).add(date);
+      }
+      setSwappedPersonDays(swapMap);
       return buildDerivedOvertimeRows({
         assignments: truthAssignments,
         people,
@@ -814,7 +829,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({
         />
       )}
 
-      <div className="sticky top-0 z-30 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="sticky top-0 z-30 rounded-card border border-slate-200 bg-white p-4 shadow-card">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -892,37 +907,37 @@ const OvertimeTab = forwardRef(function OvertimeTab({
         </div>
       )}
 
-      <div className="rounded-[22px] border border-slate-200 bg-white shadow-sm overflow-auto max-h-[calc(100vh-22rem)]">
-        <table className="min-w-full text-xs md:text-sm">
-          <thead>
-            <tr className="bg-slate-100 text-slate-700 text-sm sticky top-0 z-10">
-              <th className="p-2 text-left sticky left-0 z-20 bg-slate-100">Unvan</th>
-              <th className="p-2 text-left sticky left-[160px] z-20 bg-slate-100">Adı Soyadı</th>
+      <div className="rounded-card border border-slate-200 bg-white shadow-card overflow-auto max-h-[calc(100vh-22rem)]">
+        <table className="min-w-full text-sm">
+          <thead className="sticky top-0 z-10">
+            <tr>
+              <th className="p-2.5 text-left sticky left-0 z-20 bg-white text-xs font-semibold text-ink-muted uppercase tracking-wide border-b-2 border-brand-600 shadow-[2px_0_6px_-2px_rgba(13,27,62,0.08)]">Unvan</th>
+              <th className="p-2.5 text-left sticky left-[160px] z-20 bg-white text-xs font-semibold text-ink-muted uppercase tracking-wide border-b-2 border-brand-600 shadow-[2px_0_6px_-2px_rgba(13,27,62,0.08)]">Adı Soyadı</th>
               {Array.from({ length: dcount }, (_, i) => (
-                <th key={i} className={`p-2 text-center w-[3.5rem] md:w-[3.75rem] font-mono tabular-nums border-l border-slate-200 ${isWeekend(year, month, i + 1) ? "bg-blue-50 text-blue-600" : ""}`}>
+                <th key={i} className={`p-2.5 text-center w-[3.5rem] font-mono tabular-nums text-xs font-semibold border-b-2 ${isWeekend(year, month, i + 1) ? "bg-blue-50 text-blue-600 border-blue-300" : "bg-white text-ink-muted border-brand-600"}`}>
                   {i + 1}
                 </th>
               ))}
-              <th className="p-2 text-right">Çalışma</th>
-              <th className="p-2 text-right">İzin (ÇS)</th>
-              <th className="p-2 text-right">Gereken</th>
-              <th className="p-2 text-right">Fazla Mesai</th>
-              <th className="p-2 text-center w-12">Sil</th>
+              <th className="p-2.5 text-right text-xs font-semibold text-ink-muted uppercase tracking-wide bg-white border-b-2 border-brand-600">Çalışma</th>
+              <th className="p-2.5 text-right text-xs font-semibold text-ink-muted uppercase tracking-wide bg-white border-b-2 border-brand-600">İzin (ÇS)</th>
+              <th className="p-2.5 text-right text-xs font-semibold text-ink-muted uppercase tracking-wide bg-white border-b-2 border-brand-600">Gereken</th>
+              <th className="p-2.5 text-right text-xs font-semibold text-ink-muted uppercase tracking-wide bg-white border-b-2 border-brand-600">Fazla Mesai</th>
+              <th className="p-2.5 text-center w-12 text-xs font-semibold text-ink-faint bg-white border-b-2 border-brand-600">Sil</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100">
             {filteredRows.length === 0 ? (
-              <tr><td colSpan={dcount + 9} className="p-6 text-center text-slate-500">Kayıt yok. Personel seçin veya satır ekleyin.</td></tr>
+              <tr><td colSpan={dcount + 9} className="p-8 text-center text-ink-faint">Kayıt yok. Personel seçin veya satır ekleyin.</td></tr>
             ) : (
               filteredRows.map((r) => {
                 const rec = computed.perRow.find((x) => x.id === r.id) || { work: 0, credited: 0, required: 0, overtime: 0 };
                 const otColor = rec.overtime === 0 ? "text-slate-400" : rec.overtime <= 8 ? "text-amber-600" : "text-rose-600";
                 return (
-                  <tr key={r.id} className="odd:bg-white even:bg-slate-50 hover:bg-slate-100 transition-colors">
-                    <td className="p-1 min-w-[160px] sticky left-0 z-10 bg-white shadow-[inset_-1px_0_0_0_rgba(0,0,0,0.06)]">
+                  <tr key={r.id} className="odd:bg-white even:bg-slate-50/50 hover:bg-blue-50/30 transition-colors">
+                    <td className="p-1 min-w-[160px] sticky left-0 z-10 bg-white border-r border-slate-200 shadow-[2px_0_6px_-2px_rgba(13,27,62,0.06)]">
                       <input className={TXT} value={r.title} onChange={(e) => updateField(r.id, "title", e.target.value)} placeholder="Unvan" />
                     </td>
-                    <td className="p-1 min-w-[220px] sticky left-[160px] z-10 bg-white shadow-[inset_-1px_0_0_0_rgba(0,0,0,0.06)]">
+                    <td className="p-1 min-w-[220px] sticky left-[160px] z-10 bg-white border-r border-slate-200 shadow-[2px_0_6px_-2px_rgba(13,27,62,0.06)]">
                       <PersonSelect
                         value={r.personId}
                         people={people.filter((p) => !search || p.fullName.toLowerCase().includes(search.toLowerCase()))}
@@ -930,25 +945,32 @@ const OvertimeTab = forwardRef(function OvertimeTab({
                         displayValue={r.person}
                       />
                     </td>
-                    {r.days.map((v, i) => (
-                      <td key={i} className={`p-1 text-center ${isWeekend(year, month, i + 1) ? "bg-blue-50" : ""}`}>
-                        <input
-                          className={`${INPUT} h-8 md:h-9 w-[3.5rem] md:w-[3.75rem]`}
-                          value={v === "" ? "" : v}
-                          placeholder="-"
-                          inputMode="decimal"
-                          title="Çalışılan saat (örn: 8 veya 8,5)"
-                          aria-label={`${i + 1}. gün çalışma saati`}
-                          onChange={(e) => updateDay(r.id, i, e.target.value)}
-                        />
-                      </td>
-                    ))}
-                    <td className="p-2 text-right tabular-nums font-mono">{rec.work.toFixed(2)}</td>
-                    <td className="p-2 text-right tabular-nums font-mono">{rec.credited.toFixed(2)}</td>
-                    <td className="p-2 text-right tabular-nums font-mono">{rec.required.toFixed(2)}</td>
+                    {r.days.map((v, i) => {
+                      const ymd = `${year}-${String(month).padStart(2, "0")}-${String(i + 1).padStart(2, "0")}`;
+                      const isSwapped = swappedPersonDays.get(String(r.personId || ""))?.has(ymd) ?? false;
+                      return (
+                        <td key={i} className={`p-1 text-center relative ${isWeekend(year, month, i + 1) ? "bg-blue-50" : ""} ${isSwapped ? "bg-orange-50" : ""}`}>
+                          <input
+                            className={`${INPUT} h-8 w-[3.5rem] ${isSwapped ? "border-orange-300" : ""}`}
+                            value={v === "" ? "" : v}
+                            placeholder="-"
+                            inputMode="decimal"
+                            title={isSwapped ? "Bu gün takas ile değiştirildi" : "Çalışılan saat (örn: 8 veya 8,5)"}
+                            aria-label={`${i + 1}. gün çalışma saati`}
+                            onChange={(e) => updateDay(r.id, i, e.target.value)}
+                          />
+                          {isSwapped && (
+                            <span className="absolute top-0 right-0 text-[7px] bg-orange-500 text-white px-0.5 rounded-bl leading-tight select-none">⇆</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                    <td className="p-2 text-right tabular-nums font-mono text-ink">{rec.work.toFixed(2)}</td>
+                    <td className="p-2 text-right tabular-nums font-mono text-ink-muted">{rec.credited.toFixed(2)}</td>
+                    <td className="p-2 text-right tabular-nums font-mono text-ink-muted">{rec.required.toFixed(2)}</td>
                     <td className={`p-2 text-right tabular-nums font-semibold font-mono ${otColor}`}>{rec.overtime.toFixed(2)}</td>
                     <td className="p-2 text-center">
-                      <button onClick={() => removeRow(r.id)} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-600"><Trash2 size={16} /></button>
+                      <button onClick={() => removeRow(r.id)} className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-500 transition-colors"><Trash2 size={15} /></button>
                     </td>
                   </tr>
                 );
@@ -957,21 +979,21 @@ const OvertimeTab = forwardRef(function OvertimeTab({
           </tbody>
           {filteredRows.length > 0 && (
             <tfoot>
-              <tr className="bg-slate-100 font-semibold text-xs border-t-2 border-slate-300">
-                <td className="p-2 sticky left-0 bg-slate-100 z-10">TOPLAM</td>
-                <td className="p-2 sticky left-[160px] bg-slate-100 z-10"></td>
+              <tr className="bg-slate-50 font-semibold border-t-2 border-brand-200">
+                <td className="p-2.5 sticky left-0 bg-slate-50 z-10 text-xs uppercase tracking-wide text-ink-muted">Toplam</td>
+                <td className="p-2.5 sticky left-[160px] bg-slate-50 z-10"></td>
                 {dailyTotals.map((total, i) => (
-                  <td key={i} className={`p-2 text-center tabular-nums font-mono text-xs ${isWeekend(year, month, i + 1) ? "bg-blue-100" : ""}`}>
+                  <td key={i} className={`p-2.5 text-center tabular-nums font-mono text-sm ${isWeekend(year, month, i + 1) ? "text-blue-600 bg-blue-50/50" : "text-ink"}`}>
                     {total > 0 ? total : ""}
                   </td>
                 ))}
-                <td className="p-2 text-right tabular-nums font-mono">{computed.grandWork.toFixed(2)}</td>
-                <td className="p-2"></td>
-                <td className="p-2"></td>
-                <td className={`p-2 text-right tabular-nums font-mono ${computed.grandOT > 0 ? "text-rose-600" : "text-slate-400"}`}>
+                <td className="p-2.5 text-right tabular-nums font-mono text-ink">{computed.grandWork.toFixed(2)}</td>
+                <td className="p-2.5"></td>
+                <td className="p-2.5"></td>
+                <td className={`p-2.5 text-right tabular-nums font-mono font-bold ${computed.grandOT > 0 ? "text-brand-600" : "text-ink-faint"}`}>
                   {computed.grandOT.toFixed(2)}
                 </td>
-                <td className="p-2"></td>
+                <td className="p-2.5"></td>
               </tr>
             </tfoot>
           )}
