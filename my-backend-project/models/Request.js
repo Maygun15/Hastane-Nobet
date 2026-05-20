@@ -32,6 +32,16 @@ const RequestSchema = new mongoose.Schema({
   swapTargetShiftLabel: { type: String, default: '' },
   swapExecuted:       { type: Boolean, default: false },
 
+  // Karşı tarafın (swapWithPersonId) yanıt durumu — peer-approval flow
+  swapWithPersonName: { type: String, default: '' },
+  peerStatus: {
+    type: String,
+    enum: ['pending', 'accepted', 'rejected'],
+    default: 'pending',
+  },
+  peerRespondedAt: { type: Date, default: null },
+  peerNote:        { type: String, default: '' },
+
   // İzin talebi için izin türü kodu
   leaveTypeCode:      { type: String, default: '' },   // 'YILLIK', 'HASTALIK' vb.
 
@@ -51,8 +61,10 @@ const RequestSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 RequestSchema.index({ fromUserId: 1 });
-RequestSchema.index({ serviceId: 1, status: 1 });
-RequestSchema.index({ status: 1, createdAt: -1 });
+RequestSchema.index({ hospitalId: 1, serviceId: 1, status: 1 });
+RequestSchema.index({ hospitalId: 1, status: 1, createdAt: -1 });
+RequestSchema.index({ hospitalId: 1, fromPersonId: 1, createdAt: -1 });
+RequestSchema.index({ hospitalId: 1, swapWithPersonId: 1, status: 1 });
 RequestSchema.index({ purgeAt: 1 }, { expireAfterSeconds: 0 });
 applyHospitalScope(RequestSchema);
 

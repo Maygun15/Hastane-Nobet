@@ -5,12 +5,16 @@ const Request = require('../models/Request');
 const Person = require('../models/Person');
 const MonthlySchedule = require('../models/MonthlySchedule');
 const Setting = require('../models/Setting');
+const LeaveBalance = require('../models/LeaveBalance');
+const LeaveType = require('../models/LeaveType');
 const {
   sendLeaveApproved,
   sendLeaveRejected,
   sendShiftChanged,
+  sendNewRequestNotification,
 } = require('../services/notificationService');
 const { replaceAssignmentsForSchedule } = require('../services/assignmentSyncService');
+const { suggestSwaps } = require('../services/swapSuggestionService');
 const { withHospitalFilter, isSuperAdminRole } = require('../middleware/hospital');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
@@ -29,7 +33,7 @@ async function applyLeaveRange(request) {
   if (isNaN(start) || isNaN(end) || end < start) return;
   const MAX_LEAVE_DAYS = 365;
   const dayDiff = Math.round((end - start) / 86_400_000);
-  if (dayDiff > MAX_LEAVE_DAYS) return;
+  if (dayDiff >= MAX_LEAVE_DAYS) return; // inclusive günler 365'i aşmamalı
 
   // Günleri aya göre grupla
   const byMonth = {};
@@ -59,6 +63,70 @@ async function applyLeaveRange(request) {
     doc.markModified('value');
     await doc.save();
   }
+
+  // LeaveBalance güncelle — atomik $inc ile race condition önlenir
+  try {
+    const totalDays = Math.round((end - start) / 86_400_000) + 1;
+    const year = start.getFullYear();
+    const hid = request.hospitalId;
+    if (!hid) throw new Error('hospitalId zorunlu (izin bakiyesi)');
+
+
+    const leaveType = await LeaveType.findOne({ hospitalId: hid, code: leaveCode });
+    const leaveTypeId = leaveType ? String(leaveType._id) : leaveCode;
+    const leaveTypeName = leaveType?.name || leaveCode;
+
+    const filter = { hospitalId: hid, personId: pid, leaveTypeId, year };
+    // upsert + $inc atomik: iki eş zamanlı onay çakışmaz
+    const updated = await LeaveBalance.findOneAndUpdate(
+      filter,
+      {
+        $inc: { used: totalDays },
+        $setOnInsert: {
+          hospitalId: hid,
+          personId: pid,
+          personName: request.fromName || '',
+          leaveTypeId,
+          leaveTypeName,
+          year,
+          allocated: 0,
+        },
+      },
+      { upsert: true, new: true }
+    );
+    // remaining'i ayrı set et (allocated güncel olabilir)
+    await LeaveBalance.updateOne(filter, [
+      { $set: { remaining: { $subtract: ['$allocated', '$used'] } } },
+    ]);
+    void updated; // linter uyarısını bastır
+  } catch (e) {
+    console.error('[leave-balance-update] ERR:', e?.message || e);
+  }
+}
+
+/* ── İzin geri alındığında/reddedildiğinde LeaveBalance'ı geri al ── */
+async function revertLeaveBalance(request) {
+  const { fromPersonId, targetDate, targetDateEnd, leaveTypeCode, hospitalId: hid } = request;
+  if (!fromPersonId || !targetDate) return;
+
+  const leaveCode = String(leaveTypeCode || 'YILLIK').trim().toUpperCase();
+  const start = new Date(`${String(targetDate).slice(0, 10)}T00:00:00`);
+  const end   = new Date(`${String(targetDateEnd || targetDate).slice(0, 10)}T00:00:00`);
+  if (isNaN(start) || isNaN(end) || end < start) return;
+
+  const totalDays = Math.round((end - start) / 86_400_000) + 1;
+  const year = start.getFullYear();
+  const pid = String(fromPersonId);
+
+  const leaveType = await LeaveType.findOne({ hospitalId: hid, code: leaveCode });
+  const leaveTypeId = leaveType ? String(leaveType._id) : leaveCode;
+
+  const filter = { hospitalId: hid, personId: pid, leaveTypeId, year };
+  // used negatife düşmesin — pipeline update ile atomik
+  await LeaveBalance.updateOne(filter, [
+    { $set: { used: { $max: [0, { $subtract: ['$used', totalDays] }] } } },
+    { $set: { remaining: { $subtract: ['$allocated', '$used'] } } },
+  ]);
 }
 
 /* ── Takas onaylandığında atamaları değiştir ── */
@@ -71,6 +139,8 @@ async function executeSwap(request) {
   } = request;
 
   if (!fromPersonId || !swapWithPersonId || !swapMyDate || !swapTargetDate) return false;
+  // Self-swap: kişi kendisiyle takas yapamaz
+  if (String(fromPersonId) === String(swapWithPersonId)) return false;
 
   function ym(dateStr) {
     const m = String(dateStr).slice(0, 10).match(/^(\d{4})-(\d{2})/);
@@ -141,50 +211,70 @@ async function executeSwap(request) {
       console.error('[assignmentSync][swap-same-doc] ERR:', syncErr?.message || syncErr);
     }
   } else {
-    const [fromDoc, toDoc] = await Promise.all([
-      MonthlySchedule.findOne({ sectionId, year: myYm.year, month: myYm.month }),
-      MonthlySchedule.findOne({ sectionId, year: tYm.year,  month: tYm.month  }),
-    ]);
-    if (!fromDoc || !toDoc) return false;
+    // İki farklı ay dokümanı — okuma + yazma transaction içinde; write conflict'e karşı güvenli
+    const mongoose = require('mongoose');
+    let session;
+    let syncFromDoc, syncToDoc;
+    try {
+      session = await mongoose.startSession();
+      await session.withTransaction(async () => {
+        const [fromDoc, toDoc] = await Promise.all([
+          MonthlySchedule.findOne({ sectionId, year: myYm.year, month: myYm.month }).session(session),
+          MonthlySchedule.findOne({ sectionId, year: tYm.year,  month: tYm.month  }).session(session),
+        ]);
+        if (!fromDoc || !toDoc) throw new Error('Çizelge bulunamadı');
 
-    const r1 = await findAndSwap(fromDoc, myDate, fromPid, myShift, toPid, toPerson?.name || '');
-    if (!r1.found) return false;
-    fromDoc.data = { ...fromDoc.data, assignments: r1.assignments };
-    fromDoc.markModified('data');
+        const r1 = await findAndSwap(fromDoc, myDate, fromPid, myShift, toPid, toPerson?.name || '');
+        if (!r1.found) throw new Error('Vardiya bulunamadı (from)');
+        fromDoc.data = { ...fromDoc.data, assignments: r1.assignments };
+        fromDoc.markModified('data');
 
-    const r2 = await findAndSwap(toDoc, tDate, toPid, tShift, fromPid, fromPerson?.name || fromName || '');
-    if (!r2.found) return false;
-    toDoc.data = { ...toDoc.data, assignments: r2.assignments };
-    toDoc.markModified('data');
+        const r2 = await findAndSwap(toDoc, tDate, toPid, tShift, fromPid, fromPerson?.name || fromName || '');
+        if (!r2.found) throw new Error('Vardiya bulunamadı (to)');
+        toDoc.data = { ...toDoc.data, assignments: r2.assignments };
+        toDoc.markModified('data');
 
-    await Promise.all([fromDoc.save(), toDoc.save()]);
+        await fromDoc.save({ session });
+        await toDoc.save({ session });
+        syncFromDoc = fromDoc;
+        syncToDoc = toDoc;
+      });
+    } catch (txErr) {
+      console.error('[swap] Transaction başarısız, rollback yapıldı:', txErr?.message);
+      if (session) await session.endSession();
+      return false;
+    }
+    if (session) await session.endSession();
+
+    if (!syncFromDoc || !syncToDoc) return false;
+
     try {
       await Promise.all([
         replaceAssignmentsForSchedule({
           scope: {
-            sectionId: String(fromDoc.sectionId || sectionId || '').trim(),
-            serviceId: fromDoc.serviceId != null ? String(fromDoc.serviceId).trim() : '',
-            role: fromDoc.role != null ? String(fromDoc.role).trim() : '',
+            sectionId: String(syncFromDoc.sectionId || sectionId || '').trim(),
+            serviceId: syncFromDoc.serviceId != null ? String(syncFromDoc.serviceId).trim() : '',
+            role: syncFromDoc.role != null ? String(syncFromDoc.role).trim() : '',
             year: myYm.year,
             month: myYm.month,
-            sourceScheduleId: fromDoc._id,
+            sourceScheduleId: syncFromDoc._id,
           },
-          payload: fromDoc.data || {},
-          createdBy: fromDoc.createdBy || null,
+          payload: syncFromDoc.data || {},
+          createdBy: syncFromDoc.createdBy || null,
           updatedBy: null,
           source: 'requestSwap',
         }),
         replaceAssignmentsForSchedule({
           scope: {
-            sectionId: String(toDoc.sectionId || sectionId || '').trim(),
-            serviceId: toDoc.serviceId != null ? String(toDoc.serviceId).trim() : '',
-            role: toDoc.role != null ? String(toDoc.role).trim() : '',
+            sectionId: String(syncToDoc.sectionId || sectionId || '').trim(),
+            serviceId: syncToDoc.serviceId != null ? String(syncToDoc.serviceId).trim() : '',
+            role: syncToDoc.role != null ? String(syncToDoc.role).trim() : '',
             year: tYm.year,
             month: tYm.month,
-            sourceScheduleId: toDoc._id,
+            sourceScheduleId: syncToDoc._id,
           },
-          payload: toDoc.data || {},
-          createdBy: toDoc.createdBy || null,
+          payload: syncToDoc.data || {},
+          createdBy: syncToDoc.createdBy || null,
           updatedBy: null,
           source: 'requestSwap',
         }),
@@ -226,6 +316,7 @@ router.post('/', requireAuth, async (req, res) => {
       leaveTypeCode,
       swapSectionId, swapMyDate, swapMyShiftId, swapMyShiftLabel,
       swapTargetDate, swapTargetShiftId, swapTargetShiftLabel,
+      swapWithPersonName,
     } = req.body;
 
     if (!type || !message) {
@@ -245,8 +336,9 @@ router.post('/', requireAuth, async (req, res) => {
       serviceId:    person?.serviceId || '',
       targetDate:   targetDate || '',
       targetDateEnd: targetDateEnd || '',
-      swapWithPersonId: swapWithPersonId || null,
-      leaveTypeCode:    String(leaveTypeCode || '').trim().toUpperCase(),
+      swapWithPersonId:   swapWithPersonId || null,
+      swapWithPersonName: String(swapWithPersonName || '').trim(),
+      leaveTypeCode:      String(leaveTypeCode || '').trim().toUpperCase(),
       swapSectionId:    String(swapSectionId || '').trim(),
       swapMyDate:       String(swapMyDate || '').slice(0, 10),
       swapMyShiftId:    String(swapMyShiftId || '').trim(),
@@ -258,6 +350,7 @@ router.post('/', requireAuth, async (req, res) => {
       status: 'pending',
     }));
 
+    void sendNewRequestNotification({ request, senderName: req.user?.name || '' }).catch(() => {});
     res.json({ ok: true, request });
   } catch (err) {
     res.status(500).json({ message: safeMessage(err) });
@@ -283,8 +376,13 @@ router.get('/', requireAuth, async (req, res) => {
       }
       // Admin hiçbir filtre olmadan tümünü görür
     } else {
-      // Normal kullanıcı sadece kendi taleplerini görür
-      filter.fromUserId = req.user._id;
+      // Normal kullanıcı kendi talepleri + gelen takas taleplerini görür
+      const myPerson = await Person.findOne(withHospitalFilter(req, { userId: req.user._id })).lean();
+      if (myPerson?._id) {
+        filter = { $or: [{ fromUserId: req.user._id }, { swapWithPersonId: myPerson._id }] };
+      } else {
+        filter.fromUserId = req.user._id;
+      }
     }
     if (statusFilter) filter.status = statusFilter;
 
@@ -311,7 +409,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ message: 'Geçersiz durum' });
     }
 
-    const request = await Request.findOne(withHospitalFilter(req, { _id: req.params.id }));
+    let request = await Request.findOne(withHospitalFilter(req, { _id: req.params.id }));
     if (!request) return res.status(404).json({ message: 'Talep bulunamadı' });
     if (String(request.status || '') === 'deleted') {
       return res.status(409).json({ message: 'Silinmiş talep güncellenemez' });
@@ -321,19 +419,25 @@ router.put('/:id', requireAuth, async (req, res) => {
     const role = String(req.user.role || '').toLowerCase();
     if (role === 'staff') {
       const serviceIds = Array.isArray(req.user.serviceIds)
-        ? req.user.serviceIds.filter(Boolean)
+        ? req.user.serviceIds.filter(Boolean).map(String)
         : [];
-      if (serviceIds.length && !serviceIds.includes(request.serviceId)) {
+      if (serviceIds.length && !serviceIds.includes(String(request.serviceId))) {
         return res.status(403).json({ message: 'Bu talep sizin servisinize ait değil' });
       }
     }
 
     const previousStatus = String(request.status || 'pending');
-    request.status = status;
-    request.adminNote = adminNote || '';
-    request.resolvedBy = req.user._id;
-    request.resolvedAt = new Date();
-    await request.save();
+
+    // Atomic CAS: aynı anda iki onay gelirse ikincisi 409 alır
+    const updatedRequest = await Request.findOneAndUpdate(
+      withHospitalFilter(req, { _id: req.params.id, status: previousStatus }),
+      { $set: { status, adminNote: adminNote || '', resolvedBy: req.user._id, resolvedAt: new Date() } },
+      { new: true }
+    );
+    if (!updatedRequest) {
+      return res.status(409).json({ message: 'Talep durumu değişti, lütfen sayfayı yenileyin' });
+    }
+    request = updatedRequest; // CAS sonrası güncel dokümanı kullan
 
     const requestType = String(request.type || '').toLowerCase();
     const isLeaveRequest = requestType === 'izin';
@@ -353,8 +457,14 @@ router.put('/:id', requireAuth, async (req, res) => {
         try {
           const executed = await executeSwap(request);
           if (executed) {
+            // Swap başarılı → swapExecuted atomik olarak işaretle
+            await Request.updateOne(
+              withHospitalFilter(req, { _id: request._id }),
+              { $set: { swapExecuted: true } }
+            );
             request.swapExecuted = true;
-            await request.save();
+          } else {
+            console.warn('[swap-execute] Takas gerçekleştirilemedi, request approved olarak kaldı:', request._id);
           }
         } catch (e) {
           console.error('[swap-execute] ERR:', e?.message || e);
@@ -383,6 +493,17 @@ router.put('/:id', requireAuth, async (req, res) => {
       void sendLeaveRejected({ request, actorName }).catch((e) => {
         console.error('[notify][leave-rejected] ERR:', e?.message || e);
       });
+      // Daha önce onaylanmış bir izin reddediliyorsa bakiyeyi geri al
+      if (previousStatus === 'approved') {
+        void revertLeaveBalance(request).catch((e) => {
+          console.error('[leave-balance-revert] ERR:', e?.message || e);
+        });
+      }
+    } else if (isLeaveRequest && hasStatusChange && status === 'pending' && previousStatus === 'approved') {
+      // Onay geri alındı (approved → pending)
+      void revertLeaveBalance(request).catch((e) => {
+        console.error('[leave-balance-revert] ERR:', e?.message || e);
+      });
     }
 
     res.json({ ok: true, request });
@@ -407,9 +528,9 @@ router.delete('/:id', requireAuth, async (req, res) => {
     const role = String(req.user.role || '').toLowerCase();
     if (userIsManager && role === 'staff') {
       const serviceIds = Array.isArray(req.user.serviceIds)
-        ? req.user.serviceIds.filter(Boolean)
+        ? req.user.serviceIds.filter(Boolean).map(String)
         : [];
-      if (serviceIds.length && !serviceIds.includes(request.serviceId)) {
+      if (serviceIds.length && !serviceIds.includes(String(request.serviceId))) {
         return res.status(403).json({ message: 'Bu talep sizin servisinize ait değil' });
       }
     }
@@ -432,6 +553,89 @@ router.delete('/:id', requireAuth, async (req, res) => {
     await request.save();
 
     res.json({ ok: true, request });
+  } catch (err) {
+    res.status(500).json({ message: safeMessage(err) });
+  }
+});
+
+// GET /api/requests/swap-suggestions — takas için uygun kişi önerileri
+router.get('/swap-suggestions', requireAuth, async (req, res) => {
+  try {
+    const { personId, currentPersonName, date, shiftId, sectionId, serviceId, role, roleLabel, limit } = req.query;
+    if (!date || !shiftId) {
+      return res.status(400).json({ message: 'date ve shiftId zorunlu' });
+    }
+    const result = await suggestSwaps({
+      personId:          personId || null,
+      currentPersonName: String(currentPersonName || ''),
+      date:              String(date).slice(0, 10),
+      shiftId:           String(shiftId),
+      roleLabel:         String(roleLabel || ''),
+      serviceId:         String(serviceId || ''),
+      role:              String(role || ''),
+      sectionId:         String(sectionId || ''),
+      hospitalId:        req.hospitalId,
+      limit:             Math.min(50, Number(limit) || 10),
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ message: safeMessage(err) });
+  }
+});
+
+// POST /api/requests/:id/peer-response — hedef kişi takas talebini kabul/reddeder
+router.post('/:id/peer-response', requireAuth, async (req, res) => {
+  try {
+    const { accepted, note } = req.body;
+    if (typeof accepted !== 'boolean' && accepted !== 'true' && accepted !== 'false') {
+      return res.status(400).json({ message: 'accepted alanı zorunlu (boolean)' });
+    }
+    const isAccepted = accepted === true || accepted === 'true';
+
+    const myPerson = await Person.findOne(withHospitalFilter(req, { userId: req.user._id })).lean();
+    if (!myPerson) return res.status(403).json({ message: 'Personel kaydınız bulunamadı' });
+
+    const request = await Request.findOne(
+      withHospitalFilter(req, { _id: req.params.id, type: 'takas', swapWithPersonId: myPerson._id })
+    );
+    if (!request) return res.status(404).json({ message: 'Talep bulunamadı' });
+    if (request.status !== 'pending') {
+      return res.status(409).json({ message: 'Talep artık beklemede değil' });
+    }
+    if (request.peerStatus !== 'pending') {
+      return res.status(409).json({ message: 'Bu talebi zaten yanıtladınız' });
+    }
+
+    const peerStatus = isAccepted ? 'accepted' : 'rejected';
+    const peerNote = String(note || '').trim().slice(0, 500);
+
+    // Atomik CAS: iki eşzamanlı yanıt gelirse ikincisi 409 alır
+    const updated = await Request.findOneAndUpdate(
+      withHospitalFilter(req, { _id: req.params.id, peerStatus: 'pending' }),
+      { $set: { peerStatus, peerRespondedAt: new Date(), peerNote } },
+      { new: true }
+    );
+    if (!updated) return res.status(409).json({ message: 'Durum değişti, sayfayı yenileyin' });
+
+    if (!isAccepted) {
+      // Karşı taraf reddetti → talebi otomatik olarak reddet
+      await Request.updateOne(
+        withHospitalFilter(req, { _id: req.params.id }),
+        {
+          $set: {
+            status: 'rejected',
+            adminNote: peerNote ? `Karşı taraf reddetti: ${peerNote}` : 'Karşı taraf reddetti',
+            resolvedAt: new Date(),
+          },
+        }
+      );
+      updated.status = 'rejected';
+    } else {
+      // Kabul edildi → yöneticilere bildir (nihai onay bekleniyor)
+      void sendNewRequestNotification({ request: updated, senderName: req.user?.name || '' }).catch(() => {});
+    }
+
+    res.json({ ok: true, request: updated });
   } catch (err) {
     res.status(500).json({ message: safeMessage(err) });
   }
