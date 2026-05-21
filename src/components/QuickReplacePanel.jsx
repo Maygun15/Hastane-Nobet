@@ -404,6 +404,7 @@ export default function QuickReplacePanel({
     try {
       await assignSchedule(assignPayload);
       setAssignedIds((prev) => new Set([...prev, candidate.id]));
+      window.dispatchEvent(new CustomEvent('schedule:changed', { detail: { source: 'quickReplace', date: selectedDate } }));
       onAssigned?.();
     } catch (err) {
       setAssignError(err?.message || "Yerine atama başarısız.");

@@ -500,12 +500,18 @@ function SectionContent({
   const [swapLog, setSwapLog] = useState([]);
   const [swapLogOpen, setSwapLogOpen] = useState(false);
 
-  // PlanTab yeni plan ürettiğinde DutyRowsEditor'ı yeniden yüklemeye zorlamak için
+  // DutyRowsEditor'ı yeniden yüklemeye zorlar:
+  // - schedule:saved   → PlanTab yeni plan üretince
+  // - schedule:changed → QuickReplacePanel veya takas onayı sonrası
   const [plannerGeneratedKey, setPlannerGeneratedKey] = useState(0);
   useEffect(() => {
-    const onScheduleSaved = () => setPlannerGeneratedKey((k) => k + 1);
-    window.addEventListener("schedule:saved", onScheduleSaved);
-    return () => window.removeEventListener("schedule:saved", onScheduleSaved);
+    const bump = () => setPlannerGeneratedKey((k) => k + 1);
+    window.addEventListener("schedule:saved", bump);
+    window.addEventListener("schedule:changed", bump);
+    return () => {
+      window.removeEventListener("schedule:saved", bump);
+      window.removeEventListener("schedule:changed", bump);
+    };
   }, []);
 
   useEffect(() => {
