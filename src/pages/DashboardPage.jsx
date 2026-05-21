@@ -7,11 +7,13 @@ import {
 } from 'lucide-react';
 import { http } from '../lib/api.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { getMonthlySchedule } from '../api/apiAdapter.js';
 
 const TR_MONTHS = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
 
 function fmt(d) {
   const dt = new Date(d);
+  if (isNaN(dt.getTime())) return '—';
   return `${dt.getDate()} ${TR_MONTHS[dt.getMonth()]}`;
 }
 
@@ -114,21 +116,27 @@ export default function DashboardPage({ activeYM, peopleAll = [], onGoSchedules,
   const [lastQuality, setLastQuality] = useState(null);
   const [loadingStats, setLoadingStats] = useState(true);
 
-  const [year, month] = activeYM ? activeYM.split('-').map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
+  const [year, month] = (activeYM && /^\d{4}-\d{2}$/.test(activeYM))
+    ? activeYM.split('-').map(Number)
+    : [new Date().getFullYear(), new Date().getMonth() + 1];
   const monthLabel = `${TR_MONTHS[(month || 1) - 1]} ${year}`;
 
-  const loadDashboard = useCallback(async () => {
+  const userId = user?._id || user?.id;
+
+  const loadDashboard = useCallback(async (signal) => {
     setLoadingStats(true);
     try {
       const [schedRes, reqRes] = await Promise.allSettled([
-        http.get(`/api/schedules?sectionId=calisma-cizelgesi&year=${year}&month=${month}&size=1`),
+        getMonthlySchedule({ sectionId: 'calisma-cizelgesi', year, month }),
         http.get(`/api/requests?status=pending&size=5`),
       ]);
 
+      if (signal?.aborted) return;
+
       // Stats
       const schedData = schedRes.status === 'fulfilled' ? schedRes.value : null;
-      const assignments = schedData?.data?.assignments || schedData?.assignments || [];
-      const issues = schedData?.data?.issues || schedData?.issues || [];
+      const assignments = schedData?.data?.assignments || [];
+      const issues = schedData?.issues || schedData?.data?.issues || [];
       const totalStaff = new Set(assignments.map((a) => String(a.personId || a.personName))).size;
       const totalShifts = assignments.length;
       const unfilledSlots = issues.filter((i) => Number(i?.missing || 0) > 0).reduce((s, i) => s + Number(i.missing), 0);
@@ -136,14 +144,14 @@ export default function DashboardPage({ activeYM, peopleAll = [], onGoSchedules,
       setStats({ totalStaff, totalShifts, unfilledSlots });
 
       // Quality from last generated schedule
-      if (schedData?.quality) setLastQuality(schedData.quality);
+      if (schedData?.meta?.quality || schedData?.quality) setLastQuality(schedData?.meta?.quality || schedData?.quality);
 
-      // Upcoming shifts for current user (next 7 days)
+      // Upcoming shifts for current user (next 14 days)
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const cutoff = new Date(today);
       cutoff.setDate(cutoff.getDate() + 14);
-      const myId = String(user?._id || user?.id || '');
+      const myId = String(userId || '');
       const myName = String(user?.name || user?.email || '').toLowerCase();
       const upcoming = assignments
         .filter((a) => {
@@ -160,14 +168,16 @@ export default function DashboardPage({ activeYM, peopleAll = [], onGoSchedules,
       const reqs = reqData?.items || reqData?.data || [];
       setPendingRequests(reqs.slice(0, 5));
     } catch (err) {
-      console.warn('Dashboard load error:', err?.message || err);
+      if (!signal?.aborted) console.warn('Dashboard load error:', err?.message || err);
     } finally {
-      setLoadingStats(false);
+      if (!signal?.aborted) setLoadingStats(false);
     }
-  }, [year, month, user]);
+  }, [year, month, userId]); // user nesnesini değil, yalnızca kararlı id'yi bağımlılığa koy
 
   useEffect(() => {
-    loadDashboard();
+    const ctrl = new AbortController();
+    loadDashboard(ctrl.signal);
+    return () => ctrl.abort();
   }, [loadDashboard]);
 
   return (
@@ -186,6 +196,7 @@ export default function DashboardPage({ activeYM, peopleAll = [], onGoSchedules,
         <StatCard icon={Calendar} label="Toplam Atama" value={stats?.totalShifts ?? '—'} sub={monthLabel} color="#10b981" loading={loadingStats} />
         <StatCard icon={AlertTriangle} label="Eksik Slot" value={stats?.unfilledSlots ?? '—'} sub="Doldurulmayan" color={stats?.unfilledSlots > 0 ? '#ef4444' : '#10b981'} loading={loadingStats} />
         <StatCard icon={Activity} label="Çizelge" value={loadingStats ? '—' : (stats?.totalShifts > 0 ? 'Hazır' : 'Boş')} sub="Bu ay" color="#f59e0b" loading={loadingStats} />
+        <StatCard icon={ClipboardList} label="Bekleyen Talepler" value={pendingRequests?.length ?? '—'} sub="Onay bekliyor" color="#f59e0b" loading={loadingStats} />
       </div>
 
       {/* Main grid */}
@@ -208,9 +219,9 @@ export default function DashboardPage({ activeYM, peopleAll = [], onGoSchedules,
             <div style={{ color: '#9ca3af', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
               {loadingStats ? 'Yükleniyor…' : 'Yaklaşan nöbet bulunamadı'}
             </div>
-          ) : upcomingShifts.map((a, i) => (
+          ) : upcomingShifts.map((a) => (
             <ShiftRow
-              key={i}
+              key={a._id || `${a.date || a.day}-${a.personId}-${a.shiftId || a.shiftCode}`}
               date={a.date || a.day}
               shiftId={a.shiftId || a.shiftCode || '—'}
               serviceName={a.serviceName || ''}
@@ -272,8 +283,8 @@ export default function DashboardPage({ activeYM, peopleAll = [], onGoSchedules,
               <h2 style={{ fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <ClipboardList size={16} color="#f59e0b" /> Bekleyen Talepler
               </h2>
-              {pendingRequests.map((r, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
+              {pendingRequests.map((r) => (
+                <div key={r._id || r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
                   <CheckCircle2 size={14} color="#f59e0b" />
                   <span style={{ fontSize: 13, color: '#374151', flex: 1 }}>
                     {r.personName || r.requesterName || 'Bilinmiyor'} · {r.type || r.requestType || '—'}

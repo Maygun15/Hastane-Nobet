@@ -1,5 +1,6 @@
 // src/tabs/DutyRulesTab.Explained.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { getUiRuleMetaByUiRuleId } from "../rules/uiRuleAdapter.js";
 import UnifiedRulePreviewPanel from "../components/UnifiedRulePreviewPanel.jsx";
@@ -581,6 +582,13 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
   const ordered = useMemo(() => normalizeAndSort(list), [list]);
   const fileRef = useRef(null);
 
+  // Scroll lock: herhangi bir panel açıkken body scroll'u kilitle
+  useEffect(() => {
+    const anyOpen = showEditor || showQuick || showTextImport;
+    document.body.style.overflow = anyOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [showEditor, showQuick, showTextImport]);
+
   // ilk yükleme (boşsa)
   useEffect(() => {
     if (!Array.isArray(list) || list.length === 0) {
@@ -648,10 +656,10 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
       for (const r of parsed) byId.set(r.id, r);
       const next = normalizeAndSort(Array.from(byId.values()));
       setR(next);
-      alert(`Toplam ${next.length} kural içe aktarıldı.`);
+      toast.success(`Toplam ${next.length} kural içe aktarıldı.`);
     } catch (err) {
       console.error(err);
-      alert("Excel içe aktarma hatası: " + (err?.message || String(err)));
+      toast.error("Excel içe aktarma hatası: " + (err?.message || String(err)));
     }
   };
 
@@ -1267,7 +1275,7 @@ Resmi tatil nöbetlerinin eşit dağılımı
                   onClick={() => {
                     const parsed = parseRulesFromText(rawText || "");
                     if (!parsed.length) {
-                      alert(
+                      toast.error(
                         "Metinden kural çıkarılamadı. RULE blokları veya numaralı maddeler içermeli."
                       );
                       return;
@@ -1299,7 +1307,7 @@ Resmi tatil nöbetlerinin eşit dağılımı
                     });
                     setShowTextImport(false);
                     setRawText("");
-                    alert(
+                    toast.success(
                       addedCount
                         ? `${addedCount} yeni kural eklendi.`
                         : "Tüm kurallar zaten listede mevcuttu."

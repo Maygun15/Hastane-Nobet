@@ -11,7 +11,6 @@ const { validateAssignment } = require('../utils/rulesValidator');
 const { checkSameDayConflict, checkLeaveConflict } = require('../services/conflictService');
 const {
   replaceAssignmentsForSchedule,
-  upsertAssignment,
   removeAssignment,
 } = require('../services/assignmentSyncService');
 const { requireAuth, sameServiceOrAdmin, requireRole } = require('../middleware/authz');
@@ -409,6 +408,124 @@ function buildAssignmentsFromNamed({ year, month, defs = [], namedAssignments = 
   return out;
 }
 
+function findDefForAssignment(item = {}, defs = []) {
+  const defIndex = buildDefsIndex(defs);
+  const refCandidates = [
+    item?.rowId,
+    item?.shiftId,
+    item?.shiftCode,
+    item?.shift,
+    item?.code,
+  ]
+    .map((v) => (v == null ? '' : String(v).trim()))
+    .filter(Boolean);
+  for (const ref of refCandidates) {
+    const found = defIndex.byId.get(ref) || defIndex.byShift.get(ref);
+    if (found) return found;
+  }
+
+  const targetShift = canonText(item?.shiftCode || item?.shiftId || item?.shift || item?.code || '');
+  const targetLabel = canonText(item?.roleLabel || item?.rowLabel || item?.label || item?.area || '');
+  if (!targetShift && !targetLabel) return null;
+
+  return (defs || []).find((row) => {
+    const rowShift = canonText(row?.shiftCode || row?.code || row?.shiftId || row?.id || row?.rowId || '');
+    const rowLabel = canonText(row?.label || row?.name || row?.area || '');
+    const shiftOk = !targetShift || rowShift === targetShift;
+    const labelOk = !targetLabel || rowLabel === targetLabel;
+    return shiftOk && labelOk;
+  }) || null;
+}
+
+function assignmentDayInfo(item = {}, year, month) {
+  const parsed = parseDateYmd(item?.date || item?.day);
+  if (parsed) return parsed;
+  const day = Number(item?.day);
+  if (!Number.isFinite(day) || day < 1 || day > 31) return null;
+  const pad2 = (n) => String(n).padStart(2, '0');
+  return parseDateYmd(`${year}-${pad2(month)}-${pad2(day)}`);
+}
+
+function buildNamedAssignmentsFromAssignments({ year, month, defs = [], assignments = [] }) {
+  const namedAssignments = {};
+  const seen = new Set();
+
+  for (const item of assignments || []) {
+    const dateInfo = assignmentDayInfo(item, year, month);
+    if (!dateInfo) continue;
+
+    const def = findDefForAssignment(item, defs);
+    const rowId = String(
+      def?.id ||
+      def?.rowId ||
+      item?.rowId ||
+      item?.shiftId ||
+      item?.shiftCode ||
+      item?.shift ||
+      item?.code ||
+      ''
+    ).trim();
+    if (!rowId) continue;
+
+    const personName = String(item?.personName || item?.name || item?.fullName || '').trim();
+    if (!personName) continue;
+
+    const dayKey = String(dateInfo.d);
+    const dedupeKey = `${dayKey}|${rowId}|${canonName(personName)}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    if (!namedAssignments[dayKey]) namedAssignments[dayKey] = {};
+    if (!Array.isArray(namedAssignments[dayKey][rowId])) namedAssignments[dayKey][rowId] = [];
+    namedAssignments[dayKey][rowId].push(personName);
+  }
+
+  return namedAssignments;
+}
+
+function syncRosterNamedAssignments(data = {}, assignments = [], defs = [], year, month) {
+  const rosterBase =
+    data?.roster && typeof data.roster === 'object' && !Array.isArray(data.roster)
+      ? data.roster
+      : {};
+  return {
+    ...rosterBase,
+    namedAssignments: buildNamedAssignmentsFromAssignments({ year, month, defs, assignments }),
+  };
+}
+
+function appendScheduleChangeLog(existing = [], entry = null) {
+  const list = Array.isArray(existing) ? existing : [];
+  if (!entry) return list;
+  return [...list, entry].slice(-200);
+}
+
+function buildChangeLogEntry({ type, payload, removedItem = null, user = null, at = new Date().toISOString() } = {}) {
+  const fromPersonId = String(removedItem?.personId || payload?.changedFromPersonId || '').trim();
+  const fromPersonName = String(removedItem?.personName || removedItem?.name || payload?.changedFromPersonName || '').trim();
+  const toPersonId = String(payload?.personId || '').trim();
+  const toPersonName = String(payload?.personName || payload?.name || '').trim();
+  const shiftId = String(payload?.shiftId || payload?.shiftCode || removedItem?.shiftId || removedItem?.shiftCode || '').trim();
+  const roleLabel = String(payload?.roleLabel || removedItem?.roleLabel || '').trim();
+
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: type || 'manualChange',
+    date: String(payload?.date || removedItem?.date || '').slice(0, 10),
+    day: Number(String(payload?.date || removedItem?.date || '').slice(8, 10)) || undefined,
+    rowId: String(payload?.rowId || removedItem?.rowId || shiftId || '').trim(),
+    shiftId,
+    shiftCode: String(payload?.shiftCode || removedItem?.shiftCode || shiftId || '').trim(),
+    roleLabel,
+    from: { personId: fromPersonId, personName: fromPersonName },
+    to: { personId: toPersonId, personName: toPersonName },
+    changedAt: at,
+    changedBy: user?.uid || null,
+    changedByName: user?.name || user?.email || 'Yetkili',
+    note: String(payload?.note || '').trim(),
+  };
+}
+
 function parseDateYmd(raw) {
   const str = String(raw || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) return null;
@@ -451,6 +568,7 @@ function normalizeAssignPayload(body, query, userId) {
   if (!shiftId) throw new Error('shiftId gerekli');
 
   const personName = String(body?.personName ?? body?.name ?? '').trim();
+  const rowId = String(body?.rowId ?? body?.slotId ?? '').trim();
   const shiftCode = String(body?.shiftCode ?? body?.shiftId ?? body?.shift ?? '').trim();
   const roleLabel = String(body?.roleLabel ?? body?.roleName ?? body?.label ?? '').trim();
   const note = String(body?.note ?? '').trim();
@@ -468,6 +586,7 @@ function normalizeAssignPayload(body, query, userId) {
     date: query.dateStr,
     personId,
     personName: personName || undefined,
+    rowId: rowId || undefined,
     shiftId,
     shiftCode: shiftCode || shiftId,
     roleLabel: roleLabel || undefined,
@@ -531,6 +650,96 @@ function shiftMatchLoose(item, payload) {
     if ([...candSet].some((c) => c.toUpperCase() === tNorm)) return true;
   }
   return false;
+}
+
+function normalizeReplaceTarget(body, payload) {
+  const hasExplicitReplacePerson =
+    body?.replacePersonId != null ||
+    body?.departingPersonId != null ||
+    body?.fromPersonId != null ||
+    body?.replacePersonName != null ||
+    body?.departingPersonName != null ||
+    body?.fromPersonName != null;
+  const personId = String(
+    body?.replacePersonId ??
+    body?.departingPersonId ??
+    body?.fromPersonId ??
+    (!hasExplicitReplacePerson && payload?.previousShiftId ? payload?.personId : '') ??
+    ''
+  ).trim();
+  const personName = String(
+    body?.replacePersonName ??
+    body?.departingPersonName ??
+    body?.fromPersonName ??
+    (!hasExplicitReplacePerson && payload?.previousShiftId ? payload?.personName : '') ??
+    ''
+  ).trim();
+  const shiftId = String(
+    body?.replaceShiftId ??
+    body?.replaceShiftCode ??
+    body?.departingShiftId ??
+    body?.fromShiftId ??
+    payload?.previousShiftId ??
+    ''
+  ).trim();
+
+  if (!personId && !personName && !shiftId) return null;
+
+  return {
+    date: String(payload?.date || '').slice(0, 10),
+    personId,
+    personName,
+    shiftId,
+    shiftCode: shiftId,
+    roleLabel: String(
+      body?.replaceRoleLabel ??
+      body?.departingRoleLabel ??
+      body?.fromRoleLabel ??
+      payload?.roleLabel ??
+      ''
+    ).trim(),
+  };
+}
+
+function removeReplaceTarget(assignments, target) {
+  if (!target?.date) return { assignments, removed: [] };
+
+  const targetPid = String(target.personId || '').trim();
+  const targetName = canonName(target.personName || '');
+  const targetLabel = canonText(target.roleLabel || '');
+  const next = [];
+  const removed = [];
+
+  for (const item of assignments) {
+    const itemDate = String(item?.date ?? item?.day ?? '').slice(0, 10);
+    if (itemDate !== target.date) {
+      next.push(item);
+      continue;
+    }
+
+    const hasShiftTarget = !!String(target.shiftId || target.shiftCode || '').trim();
+    const shiftMatches = !hasShiftTarget || shiftMatchLoose(item, target);
+    if (!shiftMatches) {
+      next.push(item);
+      continue;
+    }
+
+    const itemPid = String(item?.personId ?? '').trim();
+    const itemName = canonName(item?.personName ?? item?.name ?? '');
+    const itemLabel = canonText(item?.roleLabel ?? item?.label ?? '');
+    const personMatches =
+      (targetPid && itemPid && targetPid === itemPid) ||
+      (targetName && itemName && targetName === itemName);
+    const labelMatches = targetLabel && itemLabel && targetLabel === itemLabel;
+
+    if (personMatches || (!targetPid && !targetName && labelMatches)) {
+      removed.push(item);
+    } else {
+      next.push(item);
+    }
+  }
+
+  return { assignments: next, removed };
 }
 
 function applyDeleteFilter(assignments, payload, assignQuery) {
@@ -637,7 +846,11 @@ function buildQuery(req, defaults = {}) {
   if (!year || year < 2000) throw new Error('year geçersiz');
   if (!month || month < 1 || month > 12) throw new Error('month 1..12 aralığında olmalı');
 
+  const hospitalId = req.hospitalId || null;
+  if (!hospitalId) throw new Error('hospitalId eksik');
+
   return {
+    hospitalId,
     sectionId: String(sectionId),
     serviceId: serviceId != null ? String(serviceId) : '',
     role: role != null ? String(role) : '',
@@ -692,8 +905,13 @@ router.get('/',
     try {
       const query = req.scheduleQuery;
       const doc = await MonthlySchedule.findOne(query).lean();
-      const assignments = doc?.assignments || [];
-      const issues = doc?.issues || [];
+      const data = doc?.data && typeof doc.data === 'object' ? doc.data : {};
+      const assignments = Array.isArray(data?.assignments) ? data.assignments : [];
+      const issues =
+        data?.issues ||
+        data?.roster?.issues ||
+        doc?.meta?.issues ||
+        [];
       return res.json({ ok: true, data: { assignments, issues }, assignments, issues });
     } catch (err) {
       return res.status(500).json({ ok: false, message: err.message });
@@ -860,18 +1078,20 @@ async function upsertMonthly(req, res) {
     }
 
     const update = {
-      ...query,
       data: payload,
       meta,
       updatedBy: req.user?.uid || null,
     };
-    if (!req.body?.id) {
-      update.createdBy = req.user?.uid || null;
-    }
 
     const doc = await MonthlySchedule.findOneAndUpdate(
       query,
-      { $set: update },
+      {
+        $set: update,
+        $setOnInsert: {
+          ...query,
+          createdBy: req.user?.uid || null,
+        },
+      },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     ).lean();
 
@@ -967,22 +1187,39 @@ router.post('/assign',
   async (req, res) => {
     try {
       const query = {
+        hospitalId: req.hospitalId,
         sectionId: req.assignQuery.sectionId,
         serviceId: req.assignQuery.serviceId,
         role: req.assignQuery.role,
         year: req.assignQuery.year,
         month: req.assignQuery.month,
       };
+      if (!query.hospitalId) {
+        return res.status(400).json({ ok: false, message: 'hospitalId eksik' });
+      }
 
       const doc = await MonthlySchedule.findOne(query).lean();
       const data = doc?.data && typeof doc.data === 'object' ? doc.data : {};
-      const assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
+      let assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
 
       const defs = Array.isArray(data.defs)
         ? data.defs
         : Array.isArray(data.rows)
         ? data.rows
         : [];
+      const namedAssignments = data?.roster?.namedAssignments || data?.namedAssignments || null;
+      if (
+        namedAssignments &&
+        typeof namedAssignments === 'object' &&
+        countNamedAssignments(namedAssignments) > assignments.length
+      ) {
+        assignments = buildAssignmentsFromNamed({
+          year: query.year,
+          month: query.month,
+          defs,
+          namedAssignments,
+        });
+      }
       const overrides =
         data?.overrides && typeof data.overrides === 'object'
           ? data.overrides
@@ -1027,21 +1264,30 @@ router.post('/assign',
       }
 
       let nextAssignments = [...assignments];
-      if (previousShiftId) {
-        const prevNorm = previousShiftId.toUpperCase();
-        const payloadDate = String(payload?.date || '').slice(0, 10);
-        const payloadPid = String(payload?.personId || '').trim();
-        const payloadPname = canonName(payload?.personName || '');
-        nextAssignments = nextAssignments.filter((a) => {
-          const aDate = String(a?.date || a?.day || '').slice(0, 10);
-          if (aDate !== payloadDate) return true;
-          const aShift = String(a?.shiftId || a?.shiftCode || a?.shift || a?.code || '').trim().toUpperCase();
-          if (aShift !== prevNorm) return true;
-          const aPid = String(a?.personId || '').trim();
-          const aPname = canonName(a?.personName || a?.name || '');
-          if (payloadPid && aPid) return aPid !== payloadPid;
-          if (payloadPname && aPname) return aPname !== payloadPname;
-          return true;
+      const replaceTarget = normalizeReplaceTarget(req.body || {}, payload);
+      const replaceRemoval = removeReplaceTarget(nextAssignments, replaceTarget);
+      nextAssignments = replaceRemoval.assignments;
+      const replacedAssignment = Array.isArray(replaceRemoval.removed) && replaceRemoval.removed.length
+        ? replaceRemoval.removed[0]
+        : null;
+      let changeLogEntry = null;
+      if (replacedAssignment) {
+        const changedAt = new Date().toISOString();
+        payload = {
+          ...payload,
+          source: 'quickReplace',
+          changeType: 'quickReplace',
+          changedAt,
+          changedBy: req.user?.uid || null,
+          changedFromPersonId: replacedAssignment.personId || null,
+          changedFromPersonName: replacedAssignment.personName || replacedAssignment.name || null,
+        };
+        changeLogEntry = buildChangeLogEntry({
+          type: 'quickReplace',
+          payload,
+          removedItem: replacedAssignment,
+          user: req.user,
+          at: changedAt,
         });
       }
 
@@ -1134,13 +1380,20 @@ router.post('/assign',
         nextAssignments = overbookTrim.assignments;
       }
 
+      const nextData = {
+        ...data,
+        assignments: nextAssignments,
+        roster: syncRosterNamedAssignments(data, nextAssignments, defs, query.year, query.month),
+        changeLog: appendScheduleChangeLog(data.changeLog, changeLogEntry),
+      };
+
       const update = {
         $set: {
-          ...query,
-          data: { ...data, assignments: nextAssignments },
+          data: nextData,
           updatedBy: req.user?.uid || null,
         },
         $setOnInsert: {
+          ...query,
           createdBy: req.user?.uid || null,
         },
       };
@@ -1152,15 +1405,15 @@ router.post('/assign',
       ).lean();
 
       try {
-        await upsertAssignment({
+        await replaceAssignmentsForSchedule({
           scope: {
             ...query,
             sourceScheduleId: saved?._id || null,
           },
-          assignment: idx === -1 ? payload : (nextAssignments[idx] || payload),
           createdBy: existingAssignment?.createdBy || req.user?.uid || null,
           updatedBy: req.user?.uid || null,
-          source: 'manualAssign',
+          payload: saved?.data || nextData,
+          source: 'monthlySchedule',
         });
       } catch (syncErr) {
         console.error('[assignmentSync][assign] ERR:', syncErr);
@@ -1218,10 +1471,14 @@ router.delete('/assign',
   async (req, res) => {
     try {
       const base = {
+        hospitalId: req.hospitalId,
         sectionId: req.assignQuery.sectionId,
         year: req.assignQuery.year,
         month: req.assignQuery.month,
       };
+      if (!base.hospitalId) {
+        return res.status(400).json({ ok: false, message: 'hospitalId eksik' });
+      }
       const serviceId = req.assignQuery.serviceId || '';
       const role = req.assignQuery.role || '';
       const candidates = [
@@ -1243,16 +1500,54 @@ router.delete('/assign',
       }
       const attemptRemove = async (targetDoc, targetQuery) => {
         const data = targetDoc?.data && typeof targetDoc.data === 'object' ? targetDoc.data : {};
-        const assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
+        let assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
+        const defs = Array.isArray(data.defs)
+          ? data.defs
+          : Array.isArray(data.rows)
+          ? data.rows
+          : [];
+        const namedAssignments = data?.roster?.namedAssignments || data?.namedAssignments || null;
+        const scheduleYear = Number(targetDoc?.year || req.assignQuery.year);
+        const scheduleMonth = Number(targetDoc?.month || req.assignQuery.month);
+        if (
+          namedAssignments &&
+          typeof namedAssignments === 'object' &&
+          countNamedAssignments(namedAssignments) > assignments.length
+        ) {
+          assignments = buildAssignmentsFromNamed({
+            year: scheduleYear,
+            month: scheduleMonth,
+            defs,
+            namedAssignments,
+          });
+        }
         const { filtered, removed } = applyDeleteFilter(assignments, req.assignPayload, req.assignQuery);
         if (!removed) return { removed: false };
         const removedAssignment = assignments.find((item) => !filtered.includes(item)) || null;
+        const changedAt = new Date().toISOString();
+        const removeChangeEntry = buildChangeLogEntry({
+          type: 'manualRemove',
+          payload: {
+            ...(removedAssignment || req.assignPayload),
+            date: req.assignQuery?.dateStr || removedAssignment?.date || req.assignPayload?.date,
+          },
+          removedItem: removedAssignment || req.assignPayload,
+          user: req.user,
+          at: changedAt,
+        });
+        removeChangeEntry.to = { personId: '', personName: '' };
+        const nextData = {
+          ...data,
+          assignments: filtered,
+          roster: syncRosterNamedAssignments(data, filtered, defs, scheduleYear, scheduleMonth),
+          changeLog: appendScheduleChangeLog(data.changeLog, removeChangeEntry),
+        };
 
         const saved = await MonthlySchedule.findOneAndUpdate(
           targetQuery,
           {
             $set: {
-              data: { ...data, assignments: filtered },
+              data: nextData,
               updatedBy: req.user?.uid || null,
             },
           },
@@ -1310,6 +1605,7 @@ router.delete('/assign',
           try {
             await removeAssignment({
               scope: {
+                hospitalId: base.hospitalId,
                 sectionId: String(d?.sectionId || base.sectionId || '').trim(),
                 serviceId: d?.serviceId != null ? String(d.serviceId).trim() : '',
                 role: d?.role != null ? String(d.role).trim() : '',
@@ -1379,10 +1675,21 @@ router.put('/rules',
   requireRole('admin'),
   async (req, res) => {
     try {
-      const { sectionId, serviceId = '', role = '', ...ruleData } = req.body || {};
+      const { sectionId, serviceId = '', role = '' } = req.body || {};
       if (!sectionId) {
         return res.status(400).json({ ok: false, message: 'sectionId gerekli' });
       }
+
+      // Sadece şema'da tanımlı alanları kabul et — mass assignment önlemi
+      const ALLOWED = ['enabled','maxShiftsPerPerson','minRestDaysBetween',
+        'maxConsecutiveShifts','restrictedDays','allowedHours','notes'];
+      const ruleData = {};
+      for (const key of ALLOWED) {
+        if (Object.prototype.hasOwnProperty.call(req.body, key)) {
+          ruleData[key] = req.body[key];
+        }
+      }
+
       const update = {
         sectionId,
         serviceId: String(serviceId || ''),
@@ -1459,17 +1766,40 @@ router.post('/comparison',
   }
 );
 
+function escapeIcal(str = '') {
+  return String(str || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r?\n/g, '\\n');
+}
+
+// RFC 5545 §3.1 — 75 oktet'ten uzun satırları CRLF + boşluk ile kat
+function foldIcalLine(line) {
+  const bytes = Buffer.from(line, 'utf8');
+  if (bytes.length <= 75) return line;
+  const parts = [];
+  let offset = 0;
+  while (offset < bytes.length) {
+    const limit = parts.length === 0 ? 75 : 74;
+    parts.push(bytes.slice(offset, offset + limit).toString('utf8'));
+    offset += limit;
+  }
+  return parts.join('\r\n ');
+}
+
 /* ─── GET /api/schedules/export/ical ───────────────────────────
    iCal (.ics) dışa aktarma — personId veya serviceId bazlı.
    Query: year, month, personId?, serviceId?
    ─────────────────────────────────────────────────────────────── */
-router.get('/export/ical', requireAuth, async (req, res) => {
+router.get('/export/ical', requireAuth, requireRole('admin', 'authorized'), async (req, res) => {
   try {
     const year  = Number(req.query.year  || new Date().getFullYear());
     const month = Number(req.query.month || new Date().getMonth() + 1);
     const { personId, serviceId } = req.query;
 
-    const q = { year, month };
+    if (!req.hospitalId) return res.status(400).json({ ok: false, message: 'hospitalId eksik' });
+    const q = { year, month, hospitalId: req.hospitalId };
     if (serviceId) q.serviceId = serviceId;
     const docs = await MonthlySchedule.find(q).lean();
 
@@ -1501,8 +1831,8 @@ router.get('/export/ical', requireAuth, async (req, res) => {
       const endStr = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
 
       const uid = `${dateStr}-${String(a?.shiftId||'').replace(/[^A-Z0-9]/g,'')||'S'}-${String(a?.personId||'').slice(-6)||'X'}@hastane.nobet`;
-      const summary = `${a?.shiftId || 'Nöbet'} — ${a?.personName || 'Çalışan'}`;
-      const desc = `Vardiya: ${a?.shiftId || '—'} | Kişi: ${a?.personName || '—'} | Saat: ${a?.hours || '—'}s`;
+      const summary = `${escapeIcal(a?.shiftId || 'Nöbet')} — ${escapeIcal(a?.personName || 'Çalışan')}`;
+      const desc = `Vardiya: ${escapeIcal(a?.shiftId || '—')} | Kişi: ${escapeIcal(a?.personName || '—')} | Saat: ${escapeIcal(String(a?.hours || '—'))}s`;
 
       lines.push(
         'BEGIN:VEVENT',
@@ -1516,7 +1846,7 @@ router.get('/export/ical', requireAuth, async (req, res) => {
     }
 
     lines.push('END:VCALENDAR');
-    const icsContent = lines.join('\r\n') + '\r\n';
+    const icsContent = lines.map(foldIcalLine).join('\r\n') + '\r\n';
 
     res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="nobetler-${year}-${String(month).padStart(2,'0')}.ics"`);
@@ -1536,7 +1866,8 @@ router.get('/export/excel', requireAuth, requireRole('admin', 'authorized'), asy
     const month = Number(req.query.month || new Date().getMonth() + 1);
     const { serviceId } = req.query;
 
-    const q = { year, month };
+    if (!req.hospitalId) return res.status(400).json({ ok: false, message: 'hospitalId eksik' });
+    const q = { year, month, hospitalId: req.hospitalId };
     if (serviceId) q.serviceId = serviceId;
     const docs = await MonthlySchedule.find(q).lean();
     const assignments = docs.flatMap((d) => d?.data?.assignments || []);
@@ -1665,6 +1996,22 @@ router.get('/assignments',
       if (!sectionId || !year || !month) {
         return res.status(400).json({ ok: false, message: 'sectionId, year, month zorunlu' });
       }
+      const callerRole = String(req.user?.role || '').toLowerCase();
+      const isPrivileged = ['admin', 'superadmin', 'authorized', 'staff'].includes(callerRole);
+      if (!isPrivileged) {
+        // role=user can only see their own assignments
+        const personId = req.user?.personId ? String(req.user.personId) : null;
+        if (!personId) return res.json({ ok: true, assignments: [], count: 0 });
+        const query = {
+          personId,
+          sectionId: String(sectionId).trim(),
+          year: Number(year),
+          month: Number(month),
+        };
+        if (req.hospitalId) query.hospitalId = req.hospitalId;
+        const assignments = await Assignment.find(query).lean();
+        return res.json({ ok: true, assignments, count: assignments.length });
+      }
       const query = {
         sectionId: String(sectionId).trim(),
         serviceId: serviceId != null ? String(serviceId).trim() : '',
@@ -1693,6 +2040,14 @@ router.get('/person-calendar',
       const { personId, sectionId, year, month, serviceId, role } = req.query;
       if (!personId || !year || !month) {
         return res.status(400).json({ ok: false, message: 'personId, year, month zorunlu' });
+      }
+      const callerRole = String(req.user?.role || '').toLowerCase();
+      const isPrivileged = ['admin', 'superadmin', 'authorized', 'staff'].includes(callerRole);
+      if (!isPrivileged) {
+        const ownPersonId = req.user?.personId ? String(req.user.personId) : null;
+        if (!ownPersonId || ownPersonId !== String(personId).trim()) {
+          return res.status(403).json({ ok: false, message: 'Yalnızca kendi takvimini görebilirsin' });
+        }
       }
       const query = {
         personId: String(personId).trim(),
@@ -1748,8 +2103,9 @@ router.get('/generated',
   allowMonthlyRead,
   async (req, res) => {
   try {
+    if (!req.hospitalId) return res.status(400).json({ ok: false, message: 'hospitalId eksik' });
     const { sectionId = 'calisma-cizelgesi', serviceId = '', role = '', year, month } = req.query;
-    const filter = { sectionId };
+    const filter = { hospitalId: req.hospitalId, sectionId };
     if (serviceId) filter.serviceId = serviceId;
     if (role) filter.role = role;
     if (year) filter.year = Number(year);

@@ -28,13 +28,6 @@ export function isOnlineOnly() {
 export function getApiEnv() {
   if (typeof window !== "undefined") {
     try {
-      const q = new URLSearchParams(window.location.search).get("env");
-      if (q === "staging" && ENV_STAGING_BASE) return "staging";
-      if (q === "prod") return "prod";
-    } catch {}
-  }
-  if (typeof window !== "undefined") {
-    try {
       const ls = localStorage.getItem(API_ENV_KEY);
       if (ls === "staging" && ENV_STAGING_BASE) return "staging";
       if (ls === "prod") return "prod";

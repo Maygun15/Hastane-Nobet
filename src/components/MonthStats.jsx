@@ -19,6 +19,10 @@ function shiftKeyCandidates(raw = "") {
   return Array.from(out.values());
 }
 
+function isInternalRowId(value = "") {
+  return /^\d{10,}$/.test(String(value || "").trim());
+}
+
 export default function MonthStats({
   year,
   month,
@@ -72,7 +76,9 @@ export default function MonthStats({
         const shiftCode = String(shiftRaw || "").trim();
         const shiftKey = shiftCode ? shiftCode.toUpperCase() : "__UNKNOWN__";
         const wh = shiftKey === "__UNKNOWN__" ? null : workingHoursMap.get(shiftKey);
-        const labelText = shiftKey === "__UNKNOWN__" ? "Bilinmiyor" : (assg?.rowLabel || assg?.roleLabel || wh?.label || shiftCode || "Bilinmiyor");
+        const labelText = shiftKey === "__UNKNOWN__"
+          ? "Bilinmiyor"
+          : (assg?.rowLabel || assg?.roleLabel || wh?.label || (isInternalRowId(shiftCode) ? "" : shiftCode) || "Bilinmiyor");
         const label = String(labelText).trim().toLocaleUpperCase("tr-TR");
         const hours = Number.isFinite(wh?.hours) ? wh.hours : 0;
 
@@ -105,7 +111,11 @@ export default function MonthStats({
         const shiftCode = String(assg?.shiftCode || "").trim();
         const shiftKey = shiftCode ? shiftCode.toUpperCase() : "__UNKNOWN__";
         const wh = shiftKey === "__UNKNOWN__" ? null : workingHoursMap.get(shiftKey);
-        const labelText = String(assg?.rowLabel || "").trim() || wh?.label || shiftCode || "Bilinmiyor";
+        const labelText =
+          String(assg?.rowLabel || assg?.roleLabel || "").trim() ||
+          wh?.label ||
+          (isInternalRowId(shiftCode) ? "" : shiftCode) ||
+          "Bilinmiyor";
         const label = String(labelText).toLocaleUpperCase("tr-TR");
         const hours = Number.isFinite(Number(assg?.hours)) ? Number(assg.hours) : 0;
         const existing = truthShiftStatsMap.get(label) || { key: label, label, count: 0, hours: 0 };

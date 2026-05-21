@@ -1,7 +1,8 @@
 // src/pages/FairnessReportPage.jsx — Adillik skoru ve nöbet dağılımı raporu
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, BarChart2, CheckCircle2, RefreshCw, TrendingUp, Users } from 'lucide-react';
-import { http } from '../lib/api.js';
+import { AlertTriangle, BarChart2, CheckCircle2, Download, RefreshCw, TrendingUp, Users } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { getMonthlySchedule } from '../api/apiAdapter.js';
 
 const TR_MONTHS = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
 
@@ -79,9 +80,9 @@ export default function FairnessReportPage({ activeYM }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await http.get(`/api/schedules?sectionId=calisma-cizelgesi&year=${year}&month=${month}&size=1`);
-      const assignments = res?.data?.assignments || res?.assignments || [];
-      const issues = res?.data?.issues || res?.issues || [];
+      const res = await getMonthlySchedule({ sectionId: 'calisma-cizelgesi', year, month });
+      const assignments = res?.data?.assignments || [];
+      const issues = res?.issues || res?.data?.issues || [];
 
       // Aggregate by person
       const byPerson = {};
@@ -131,6 +132,21 @@ export default function FairnessReportPage({ activeYM }) {
 
   const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
 
+  const exportToExcel = () => {
+    if (!data?.people) return;
+    const rows = data.people.map((p) => ({
+      'Ad Soyad': p.name || p.personName || '-',
+      'Servis': p.serviceId || '-',
+      'Toplam Nöbet': p.count ?? 0,
+      'Toplam Saat': p.hours ?? 0,
+      'Adillik Puanı': data.fairnessScore ?? '-',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Adillik Raporu');
+    XLSX.writeFile(wb, `adillik-raporu-${year}-${String(month).padStart(2,'0')}.xlsx`);
+  };
+
   return (
     <div style={{ maxWidth: 960, margin: '0 auto' }}>
       {/* Header */}
@@ -143,14 +159,29 @@ export default function FairnessReportPage({ activeYM }) {
             {TR_MONTHS[month-1]} {year} · Nöbet yükü dağılımı ve adillik analizi
           </p>
         </div>
-        <button onClick={load} disabled={loading} style={{
-          display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-          borderRadius: 10, border: '1px solid #d1d5db', background: '#fff',
-          color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-        }}>
-          <RefreshCw size={13} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
-          Yenile
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            onClick={exportToExcel}
+            disabled={!data}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 text-[13px] text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+              borderRadius: 10, border: '1px solid #d1d5db', background: '#fff',
+              color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              opacity: !data ? 0.4 : 1,
+            }}
+          >
+            <Download size={14} /> Excel İndir
+          </button>
+          <button onClick={load} disabled={loading} style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+            borderRadius: 10, border: '1px solid #d1d5db', background: '#fff',
+            color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+          }}>
+            <RefreshCw size={13} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
+            Yenile
+          </button>
+        </div>
       </div>
 
       {/* Filters */}

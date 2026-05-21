@@ -28,17 +28,49 @@ function applyHospitalScope(schema) {
       const { role, hospitalId } = resolveContext();
       if (!hospitalId || isSuperAdminRole(role)) return next();
 
+      // Zaten doğru hospitalId ile filtreleniyorsa tekrar ekleme
       const filter = this.getFilter() || {};
       if (!Object.prototype.hasOwnProperty.call(filter, 'hospitalId')) {
         this.setQuery({ ...filter, hospitalId });
       }
 
-      if (this.options?.upsert) {
-        const upd = this.getUpdate() || {};
-        const setOnInsert = { ...(upd.$setOnInsert || {}) };
+      // Update operator'larında hospitalId override saldırısını engelle
+      const upd = this.getUpdate();
+      if (upd) {
+        if (Array.isArray(upd)) {
+          // Aggregation pipeline update — her $set/$unset stage'i tara
+          for (const stage of upd) {
+            const setFields = stage.$set || {};
+            if (
+              Object.prototype.hasOwnProperty.call(setFields, 'hospitalId') &&
+              String(setFields.hospitalId) !== hospitalId
+            ) {
+              return next(new Error('hospitalId değiştirme yetkisi yok'));
+            }
+            if (stage.$unset && Object.prototype.hasOwnProperty.call(stage.$unset, 'hospitalId')) {
+              return next(new Error('hospitalId silinemez'));
+            }
+          }
+        } else {
+          const setFields = upd.$set || upd;
+          if (
+            Object.prototype.hasOwnProperty.call(setFields, 'hospitalId') &&
+            String(setFields.hospitalId) !== hospitalId
+          ) {
+            return next(new Error('hospitalId değiştirme yetkisi yok'));
+          }
+          // unset ile hospitalId silme girişimini engelle
+          if (upd.$unset && Object.prototype.hasOwnProperty.call(upd.$unset, 'hospitalId')) {
+            return next(new Error('hospitalId silinemez'));
+          }
+        }
+      }
+
+      if (this.options?.upsert && !Array.isArray(upd)) {
+        const setOnInsert = { ...(upd?.$setOnInsert || {}) };
         if (!Object.prototype.hasOwnProperty.call(setOnInsert, 'hospitalId')) {
           setOnInsert.hospitalId = hospitalId;
-          this.setUpdate({ ...upd, $setOnInsert: setOnInsert });
+          this.setUpdate({ ...(upd || {}), $setOnInsert: setOnInsert });
         }
       }
       return next();
@@ -50,11 +82,13 @@ function applyHospitalScope(schema) {
     if (!hospitalId || isSuperAdminRole(role)) return next();
 
     const pipeline = this.pipeline();
+    // Herhangi bir $match aşamasında hospitalId varsa ekleme
     const hasMatch = pipeline.some(
       (stage) => stage?.$match && Object.prototype.hasOwnProperty.call(stage.$match, 'hospitalId')
     );
     if (hasMatch) return next();
 
+    // $geoNear her zaman ilk aşama olmalı, arkasına ekle
     if (pipeline[0]?.$geoNear) {
       pipeline.splice(1, 0, { $match: { hospitalId } });
     } else {
@@ -66,7 +100,11 @@ function applyHospitalScope(schema) {
   schema.pre('save', function scopeSave(next) {
     const { role, hospitalId } = resolveContext();
     if (!hospitalId || isSuperAdminRole(role)) return next();
-    if (!this.hospitalId) this.hospitalId = hospitalId;
+    if (!this.hospitalId) {
+      this.hospitalId = hospitalId;
+    } else if (String(this.hospitalId) !== hospitalId) {
+      return next(new Error('hospitalId değiştirme yetkisi yok'));
+    }
     return next();
   });
 

@@ -42,6 +42,7 @@ export default function AuthDemo() {
   const [resetEmail, setResetEmail] = useState("");
   const [resetMsg, setResetMsg] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
 
   const identNorm = useMemo(() => normalizeIdentifier(identifier), [identifier]);
   const tcNorm = useMemo(() => normTC(tc), [tc]);
@@ -125,12 +126,8 @@ export default function AuthDemo() {
     }
     setResetLoading(true);
     try {
-      const r = await apiRequestReset(clean);
-      if (r?.resetToken) {
-        setResetMsg(`Geçici token: ${r.resetToken}`);
-      } else {
-        setResetMsg("Şifre sıfırlama bağlantısı gönderildi.");
-      }
+      await apiRequestReset(clean);
+      setResetMsg("Geçici şifreniz e-posta adresinize gönderildi. Lütfen gelen kutunuzu kontrol edin.");
     } catch (err) {
       setResetMsg(err.message || "İstek başarısız");
     } finally {
@@ -223,6 +220,17 @@ export default function AuthDemo() {
               {loading ? "Gönderiliyor…" : "Giriş Yap"}
             </button>
 
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => setShowForgot((v) => !v)}
+                className="text-[12px] text-sky-600 hover:underline mt-1"
+              >
+                Şifremi unuttum
+              </button>
+            </div>
+
+            {showForgot && (
             <div className="border rounded-xl p-3 mt-2">
               <div className="text-sm font-semibold">Parolamı unuttum</div>
               <div className="mt-2 flex gap-2">
@@ -249,6 +257,7 @@ export default function AuthDemo() {
                 <div className="mt-2 text-xs text-slate-600">{resetMsg}</div>
               )}
             </div>
+            )}
           </form>
         ) : (
           <form className="space-y-3" onSubmit={handleRegister}>

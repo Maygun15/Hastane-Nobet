@@ -291,6 +291,9 @@ export function leavesToUnavailable(allLeaves = {}, year, month1) {
   return out;
 }
 
+// Geriye uyumluluk: bazı eski chunk/importlar bu ismi doğrudan bekliyor.
+export const leavesToUnavailableByPid = leavesToUnavailable;
+
 export function buildNameUnavailability(people = [], year, month1) {
   const Y = toInt(year);
   const M1 = toInt(month1);

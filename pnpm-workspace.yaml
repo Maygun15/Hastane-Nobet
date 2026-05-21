@@ -1,0 +1,4 @@
+packages:
+  - "."                   # frontend (Vite/React)
+  - "my-backend-project"  # Express backend
+  - "shared"              # ortak sabitler ve tip tanımları

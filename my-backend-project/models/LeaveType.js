@@ -23,9 +23,8 @@ const LeaveTypeSchema = new mongoose.Schema({
   },
   code: {
     type: String,
-    unique: true,
-    sparse: true,
-    trim: true
+    trim: true,
+    uppercase: true,
   },
   category: {
     type: String,
@@ -54,25 +53,24 @@ const LeaveTypeSchema = new mongoose.Schema({
   },
   notes: {
     type: String,
-    default: ''
+    default: '',
+    maxlength: 1000,
   },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  }
-}, { 
+}, {
   timestamps: true,
   collection: 'leave_types'
 });
 
-// Index for faster queries
-LeaveTypeSchema.index({ name: 1 });
-LeaveTypeSchema.index({ category: 1 });
-LeaveTypeSchema.index({ isActive: 1 });
+// Boş string sparse unique index'te çakışmaya yol açar — undefined'a çevir
+LeaveTypeSchema.pre('save', function (next) {
+  if (this.code === '') this.code = undefined;
+  next();
+});
+
+// Hastane kapsamında izin kodu benzersiz olmalı
+LeaveTypeSchema.index({ hospitalId: 1, code: 1 }, { unique: true, sparse: true });
+LeaveTypeSchema.index({ hospitalId: 1, name: 1 });
+LeaveTypeSchema.index({ hospitalId: 1, isActive: 1 });
 applyHospitalScope(LeaveTypeSchema);
 
-module.exports = mongoose.model('LeaveType', LeaveTypeSchema);
+module.exports = mongoose.models.LeaveType || mongoose.model('LeaveType', LeaveTypeSchema);

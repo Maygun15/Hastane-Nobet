@@ -47,6 +47,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Security audit
+        run: npm audit --audit-level=high
+
       - name: Syntax check — routes
         run: node --check $(find routes models middleware services -name "*.js" | tr '\n' ' ') index.js
 
@@ -55,4 +58,4 @@ jobs:
         env:
           NODE_ENV: test
           MONGODB_URI: mongodb://localhost:27017/test
-          JWT_SECRET: ci-test-secret
+          JWT_SECRET: ${{ secrets.CI_JWT_SECRET || 'ci-test-secret-replace-in-prod' }}

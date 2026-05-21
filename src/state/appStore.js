@@ -7,17 +7,38 @@ function todayYM() {
   return { year: d.getFullYear(), month: d.getMonth() + 1 }; // 1..12
 }
 
+/* LS okuma yardımcısı — store initialize olurken senkron çalışır */
+function lsInit(keys, fallback = []) {
+  try {
+    for (const k of keys) {
+      const raw = localStorage.getItem(k);
+      if (raw) {
+        const v = JSON.parse(raw);
+        if (Array.isArray(v)) return v;
+      }
+    }
+  } catch {}
+  return fallback;
+}
+
 const initial = {
   ym: todayYM(),
   activeServiceId: "",   // Seçili servis — tüm sekmeler tarafından paylaşılır
   activeRole: "Nurse",   // Seçili rol (Nurse|Doctor) — tüm sekmeler tarafından paylaşılır
-  // temel modeller (şimdilik boş; ileride dolduracağız)
+  // temel modeller
   personnelById: {},   // {id: {id, fullName, title, service, tckn? ...}}
   rulesById: {},       // {id: {...}}
   shiftsById: {},      // {id: {id, code, start, end, hours}}
   leaveTypesById: {},  // {id: {id, code, name}}
   leavesByPerson: {},  // {personId: [{id, start, end, partial, hours}]}
   shiftCodeHours: {},  // {"V1": 8, "N": 16, ...}
+  // backend-sourced arrays (NOT persisted via Zustand; synced by HospitalRosterApp)
+  workAreas: [],
+  nurses: [],
+  doctors: [],
+  workingHours: lsInit(["workingHoursV2", "workingHours"]),
+  leaveTypes: lsInit(["leaveTypesV2", "leaveTypes", "izinTurleri"]),
+  personLeaves: {},  // {personId: [...]} — leaves:changed event'inde güncellenir
 };
 
 export const useAppStore = create(
@@ -99,6 +120,14 @@ export const useAppStore = create(
           leavesByPerson: { ...s.leavesByPerson, [personId]: Array.isArray(leavesArr) ? [...leavesArr] : [] },
         })),
 
+      /* === BACKEND-SOURCED ARRAYS === */
+      setWorkAreas: (arr) => set({ workAreas: Array.isArray(arr) ? arr : [] }),
+      setNurses: (arr) => set({ nurses: Array.isArray(arr) ? arr : [] }),
+      setDoctors: (arr) => set({ doctors: Array.isArray(arr) ? arr : [] }),
+      setWorkingHours: (arr) => set({ workingHours: Array.isArray(arr) ? arr : [] }),
+      setLeaveTypes: (arr) => set({ leaveTypes: Array.isArray(arr) ? arr : [] }),
+      setPersonLeaves: (obj) => set({ personLeaves: (obj && typeof obj === "object") ? obj : {} }),
+
       /* === RULES & LEAVE TYPES (örnek) === */
       upsertRules: (rules) =>
         set((s) => {
@@ -121,9 +150,11 @@ export const useAppStore = create(
         }),
     }),
     {
-      name: "appStoreV1", // localStorage anahtarı
+      name: "appStoreV1",
       storage: createJSONStorage(() => localStorage),
       version: 1,
+      // Backend-sourced arrays are large and managed separately; exclude from persist snapshot.
+      partialize: ({ workAreas, nurses, doctors, workingHours, leaveTypes, personLeaves, ...rest }) => rest,
     }
   )
 );

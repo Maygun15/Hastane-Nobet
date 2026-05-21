@@ -36,4 +36,7 @@ const AIPreferenceSchema = new mongoose.Schema({
 
 AIPreferenceSchema.index({ hospitalId: 1, personId: 1 }, { unique: true });
 
+const { applyHospitalScope } = require('./plugins/hospitalScope');
+applyHospitalScope(AIPreferenceSchema);
+
 module.exports = mongoose.models.AIPreference || mongoose.model('AIPreference', AIPreferenceSchema);

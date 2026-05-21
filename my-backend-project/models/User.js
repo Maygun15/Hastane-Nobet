@@ -49,7 +49,7 @@ function normalizePhone(phone) {
 
 function normalizeTC(tc) {
   const d = String(tc || '').replace(/\D+/g, '');
-  return d.length === 11 ? d : d; // 11 hane kontrolünü route tarafında yapacağız
+  return d.length === 11 ? d : undefined; // 11 hane değilse undefined → sparse index güvenli
 }
 
 function looksLikeEmail(s)  { return /@/.test(String(s)); }
@@ -61,6 +61,11 @@ function looksLikePhone(s)  {
 
 function sha256Hex(v) {
   return crypto.createHash('sha256').update(String(v)).digest('hex');
+}
+
+// Reset/invite token'ları plaintext yerine hash ile saklıyoruz
+function hashToken(raw) {
+  return sha256Hex(raw);
 }
 
 /* =========================
@@ -95,6 +100,16 @@ const userSchema = new mongoose.Schema({
     ref: 'Person',
     default: null,
   },
+  googleCalendar: {
+    connected: { type: Boolean, default: false },
+    calendarId: { type: String, default: 'primary' },
+    accessToken: { type: String, select: false },
+    refreshToken: { type: String, select: false },
+    expiryDate: { type: Date },
+    scope: { type: String, default: '' },
+    lastSyncAt: { type: Date },
+    reminderMinutes: { type: [Number], default: [480] },
+  },
   tokenVersion: { type: Number, default: 0 },
 }, { timestamps: true });
 
@@ -115,6 +130,12 @@ userSchema.pre('save', function(next) {
   if (this.isModified('email') && this.email) this.email = normalizeEmail(this.email);
   if (this.isModified('phone') && this.phone) this.phone = normalizePhone(this.phone);
   if (this.isModified('tc')    && this.tc)    this.tc    = normalizeTC(this.tc);
+
+  // Boş string sparse unique index'te çakışmaya yol açar — null'a çevir
+  if (this.email  === '') this.email  = undefined;
+  if (this.phone  === '') this.phone  = undefined;
+  if (this.tc     === '') this.tc     = undefined;
+
   next();
 });
 
@@ -208,9 +229,14 @@ userSchema.set('toJSON', {
     delete ret.resetToken;
     delete ret.resetTokenExp;
     delete ret.inviteToken;
+    if (ret.googleCalendar) {
+      delete ret.googleCalendar.accessToken;
+      delete ret.googleCalendar.refreshToken;
+    }
     return ret;
   }
 });
 applyHospitalScope(userSchema);
 
 module.exports = mongoose.models.User || mongoose.model('User', userSchema);
+module.exports.hashToken = hashToken;

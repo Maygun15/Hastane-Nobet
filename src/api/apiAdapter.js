@@ -1,58 +1,32 @@
 // src/api/apiAdapter.js
-// G6'DA KULLANDIĞIN ENDPOINTLERİ BURAYA AYNI ŞEKİLDE UYARLA
 
-import { getToken } from "../lib/api.js";
-import { getApiBase, assertProdWriteAllowed } from "../lib/apiConfig.js";
+import { http } from "../lib/api.js";
 import { LS } from "../utils/storage.js";
 import { invalidateScheduleCache } from "../store/monthlyScheduleModel.js";
 
-const API_BASE = (() => {
-  if (typeof window !== "undefined" && window.__API_BASE__) return window.__API_BASE__;
-  return getApiBase();
-})();
-
-const makeUrl = (pathAndQuery) => {
-  if (!API_BASE || /^https?:\/\//i.test(pathAndQuery)) return pathAndQuery;
-  const base = API_BASE.replace(/\/+$/, "");
-  const path = pathAndQuery.startsWith("/") ? pathAndQuery : `/${pathAndQuery}`;
-  return `${base}${path}`;
-};
-
-async function httpRequest(pathAndQuery, { method = "GET", body, token, headers } = {}) {
-  assertProdWriteAllowed(pathAndQuery, method);
-  const finalHeaders = { ...(headers || {}) };
-  const authToken = token || getToken();
-  if (authToken && !finalHeaders.Authorization) finalHeaders.Authorization = `Bearer ${authToken}`;
-  if (body != null && !finalHeaders["Content-Type"]) finalHeaders["Content-Type"] = "application/json";
-
-  const res = await fetch(makeUrl(pathAndQuery), {
-    method,
-    credentials: "include",
-    headers: finalHeaders,
-    body: body == null
-      ? undefined
-      : typeof body === "string"
-        ? body
-        : JSON.stringify(body),
-  });
-
-  const text = await res.text();
-  let data = null;
-  if (text) {
-    try { data = JSON.parse(text); } catch { data = text; }
-  }
-
-  if (!res.ok) {
-    const err = new Error((data && (data.message || data.error)) || `HTTP ${res.status}`);
-    err.status = res.status;
-    err.body = data;
-    err.details = Array.isArray(data?.details)
-      ? data.details.map((item) => item?.message).filter(Boolean)
-      : [];
+// Thin wrapper: api.js'nin retry + token-refresh mantığını kullanır,
+// eski httpRequest hata şeklini (err.body, err.details) korur.
+async function httpRequest(pathAndQuery, { method = "GET", body, token, headers, signal } = {}) {
+  try {
+    return await http.req(pathAndQuery, {
+      method,
+      body,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(headers || {}),
+      },
+      signal,
+      credentials: "include",
+    });
+  } catch (err) {
+    if (err.data && !err.body) {
+      err.body = err.data;
+      err.details = Array.isArray(err.data?.details)
+        ? err.data.details.map((item) => item?.message).filter(Boolean)
+        : [];
+    }
     throw err;
   }
-
-  return data;
 }
 
 function buildScheduleMutationDetail({ sectionId, serviceId = "", role = "", date = "", year, month }) {
@@ -495,9 +469,15 @@ export async function assignSchedule({
   serviceId = "",
   role = "",
   date,
+  rowId,
   shiftId,
   shiftCode,
   previousShiftId,
+  replacePersonId,
+  replacePersonName,
+  replaceShiftId,
+  replaceShiftCode,
+  replaceRoleLabel,
   personId,
   personName,
   roleLabel,
@@ -515,9 +495,15 @@ export async function assignSchedule({
     serviceId,
     role,
     date,
+    ...(rowId ? { rowId } : {}),
     shiftId: shiftId || shiftCode,
     shiftCode,
     ...(previousShiftId ? { previousShiftId } : {}),
+    ...(replacePersonId ? { replacePersonId } : {}),
+    ...(replacePersonName ? { replacePersonName } : {}),
+    ...(replaceShiftId ? { replaceShiftId } : {}),
+    ...(replaceShiftCode ? { replaceShiftCode } : {}),
+    ...(replaceRoleLabel ? { replaceRoleLabel } : {}),
     personId,
     personName,
     roleLabel,
@@ -698,4 +684,82 @@ export async function updateRequest(id, payload = {}) {
 
 export async function getUnreadRequestCount() {
   return httpRequest('/api/requests/unread-count');
+}
+
+// ─── PLANNINGS ──────────────────────────────────────────────────────────────
+
+export async function getPlannings(params = {}) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== '') qs.set(k, v);
+  }
+  const query = qs.toString() ? `?${qs}` : '';
+  return httpRequest(`/api/plannings${query}`);
+}
+
+export async function getPlanning(id) {
+  return httpRequest(`/api/plannings/${id}`);
+}
+
+export async function createPlanning(payload = {}) {
+  return httpRequest('/api/plannings', { method: 'POST', body: payload });
+}
+
+export async function updatePlanning(id, payload = {}) {
+  return httpRequest(`/api/plannings/${id}`, { method: 'PUT', body: payload });
+}
+
+export async function deletePlanning(id) {
+  return httpRequest(`/api/plannings/${id}`, { method: 'DELETE' });
+}
+
+export async function getPlanningTasks(planningId) {
+  return httpRequest(`/api/plannings/tasks/list?planningId=${planningId}`);
+}
+
+export async function createPlanningTask(payload = {}) {
+  return httpRequest('/api/plannings/tasks', { method: 'POST', body: payload });
+}
+
+export async function updatePlanningTask(id, payload = {}) {
+  return httpRequest(`/api/plannings/tasks/${id}`, { method: 'PUT', body: payload });
+}
+
+export async function patchPlanningTaskStatus(id, status) {
+  return httpRequest(`/api/plannings/tasks/${id}/status`, { method: 'PATCH', body: { status } });
+}
+
+export async function deletePlanningTask(id) {
+  return httpRequest(`/api/plannings/tasks/${id}`, { method: 'DELETE' });
+}
+
+export async function checkPlanningTaskConflicts(payload = {}) {
+  return httpRequest('/api/plannings/tasks/check-conflicts', { method: 'POST', body: payload });
+}
+
+// ─── LEAVE BALANCES ─────────────────────────────────────────────────────────
+
+export async function getLeaveBalances(params = {}) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== '') qs.set(k, v);
+  }
+  const query = qs.toString() ? `?${qs}` : '';
+  return httpRequest(`/api/leave-balances${query}`);
+}
+
+export async function createLeaveBalance(data) {
+  return httpRequest('/api/leave-balances', { method: 'POST', body: data });
+}
+
+export async function updateLeaveBalance(id, data) {
+  return httpRequest(`/api/leave-balances/${id}`, { method: 'PUT', body: data });
+}
+
+export async function patchLeaveBalanceUse(id, days) {
+  return httpRequest(`/api/leave-balances/${id}/use`, { method: 'PATCH', body: { days } });
+}
+
+export async function deleteLeaveBalance(id) {
+  return httpRequest(`/api/leave-balances/${id}`, { method: 'DELETE' });
 }

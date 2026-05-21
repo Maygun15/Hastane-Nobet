@@ -1,17 +1,21 @@
 // src/tabs/UsersTab.jsx
 import React, { useEffect, useMemo, useState, useRef } from "react";
+import { toast } from "sonner";
 import {
   Building2,
   KeyRound,
+  PencilLine,
   RefreshCw,
+  Save,
   Search,
   ShieldCheck,
   UserCog,
   Users,
+  X,
 } from "lucide-react";
 import { maskTC } from "../utils/format.js";
 import useServicesModel from "../hooks/useServicesModel.js";
-import { API, getToken, REQUIRE_BACKEND } from "../lib/api.js";
+import { API, http, getToken, REQUIRE_BACKEND } from "../lib/api.js";
 
 /* ---------------- küçük yardımcılar ---------------- */
 function Badge({ children, tone = "slate" }) {
@@ -201,9 +205,10 @@ function QuickAddModal({ open, onClose, onSave }) {
 }
 
 function EditUserModal({ open, user, onClose, onSave }) {
-  const [form, setForm] = useState({ name: "", tc: "", phone: "", email: "" });
+  const [form, setForm] = useState({ name: "", tc: "", phone: "", email: "", personId: null });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [personelList, setPersonelList] = useState([]);
 
   useEffect(() => {
     if (!open || !user) return;
@@ -212,10 +217,18 @@ function EditUserModal({ open, user, onClose, onSave }) {
       tc: user.tc || "",
       phone: user.phone || "",
       email: user.email || "",
+      personId: user.personId || null,
     });
     setMsg("");
     setSaving(false);
   }, [open, user]);
+
+  useEffect(() => {
+    if (!open) return;
+    http.get("/api/personnel?limit=200")
+      .then((r) => setPersonelList(Array.isArray(r?.people) ? r.people : Array.isArray(r?.items) ? r.items : []))
+      .catch(() => {});
+  }, [open]);
 
   if (!open || !user) return null;
 
@@ -239,6 +252,12 @@ function EditUserModal({ open, user, onClose, onSave }) {
         method: "PATCH",
         body: { phone: form.phone, email: form.email },
       });
+      if (form.personId !== user.personId) {
+        await API.http.req(`/api/users/${userId}/link-person`, {
+          method: "PUT",
+          body: { personId: form.personId || null },
+        });
+      }
       setMsg("✅ Güncellendi.");
       await onSave?.();
     } catch (err) {
@@ -272,6 +291,22 @@ function EditUserModal({ open, user, onClose, onSave }) {
             <label className="text-xs text-slate-500">E-posta</label>
             <input className="w-full border rounded-lg px-3 py-2 mt-1 text-sm" value={form.email} onChange={setField("email")} />
           </div>
+          <div className="space-y-1">
+            <label className="text-[12px] font-medium text-slate-600">Personel Bağlantısı</label>
+            <select
+              className="w-full rounded-lg border px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-400"
+              value={form.personId || ""}
+              onChange={(e) => setForm((u) => ({ ...u, personId: e.target.value || null }))}
+            >
+              <option value="">— Bağlantısız —</option>
+              {personelList.map((p) => (
+                <option key={p._id || p.id} value={p._id || p.id}>
+                  {p.name || p.fullName} {p.serviceId ? `(${p.serviceId})` : ""}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-slate-400">Kullanıcıyı bir personel kaydına bağlar</p>
+          </div>
           {msg && <div className="text-sm">{msg}</div>}
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" className="px-3 h-9 rounded-lg border" onClick={onClose}>İptal</button>
@@ -292,6 +327,7 @@ export default function UsersTab() {
   const [q, setQ] = useState("");
   const [assignFor, setAssignFor] = useState(null);
   const [editUser, setEditUser] = useState(null);
+  const [editingContact, setEditingContact] = useState(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [backendError, setBackendError] = useState("");
   const [importing, setImporting] = useState(false);
@@ -335,6 +371,7 @@ export default function UsersTab() {
     () => (rows || []).filter((u) => (u.status || (u.active === false ? "pending" : "active")) === "active").length,
     [rows]
   );
+  const bulkCreateDisabled = unlinkedPersonnel.length === 0 || !hasBackend;
 
   const refresh = async () => {
     if (REQUIRE_BACKEND && !getToken()) {
@@ -369,6 +406,25 @@ export default function UsersTab() {
       .catch(() => {});
   }, []);
 
+  // Modal ESC ile kapanma
+  const anyModalOpen = Boolean(assignFor) || quickAddOpen || Boolean(editUser);
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key !== "Escape") return;
+      if (editUser) { setEditUser(null); return; }
+      if (quickAddOpen) { setQuickAddOpen(false); return; }
+      if (assignFor) { setAssignFor(null); return; }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [editUser, quickAddOpen, assignFor]);
+
+  // Scroll lock
+  useEffect(() => {
+    document.body.style.overflow = anyModalOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [anyModalOpen]);
+
   const downloadTemplate = async () => {
     try {
       setImportMsg("");
@@ -389,14 +445,14 @@ export default function UsersTab() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert(e?.message || "Şablon indirilemedi");
+      toast.error(e?.message || "Şablon indirilemedi");
     }
   };
 
   const handleImport = async (file) => {
     if (!file) return;
     if (!hasBackend) {
-      alert("Backend gerekli. Lütfen giriş yapın.");
+      toast.error("Backend gerekli. Lütfen giriş yapın.");
       return;
     }
     setImporting(true);
@@ -447,92 +503,98 @@ export default function UsersTab() {
 
   const handleActivate = async (u) => {
     if (!hasBackend) {
-      alert("Backend gerekli. Lütfen giriş yapın.");
+      toast.error("Backend gerekli. Lütfen giriş yapın.");
       return;
     }
 
     // ID belirleme ve doğrulama
     const userId = String(u._id || u.id || "");
     if (userId.length !== 24) {
-      alert("Geçersiz kullanıcı id.");
+      toast.error("Geçersiz kullanıcı id.");
       return;
     }
 
     // Doğru endpoint: /api/users/:id/activate
     try {
       await API.http.post(`/api/users/${userId}/activate`);
+      toast.success("Kullanıcı aktifleştirildi.");
       refresh();
     } catch (e) {
-      alert(e?.message || "Aktifleştirme başarısız");
+      toast.error(e?.message || "Aktifleştirme başarısız");
     }
   };
 
   const handleSetRole = async (u, role) => {
     if (!hasBackend) {
-      alert("Backend gerekli. Lütfen giriş yapın.");
+      toast.error("Backend gerekli. Lütfen giriş yapın.");
       return;
     }
     const userId = String(u._id || u.id || "");
     if (userId.length !== 24) {
-      alert("Geçersiz kullanıcı id.");
+      toast.error("Geçersiz kullanıcı id.");
       return;
     }
     const roleMap = { ADMIN: 'admin', AUTHORIZED: 'staff', STAFF: 'staff', STANDARD: 'user', USER: 'user', admin: 'admin', authorized: 'staff', staff: 'staff', standard: 'user', user: 'user' };
     const roleOut = roleMap[role] || roleMap[String(role || '').toUpperCase()] || 'user';
     try {
       await API.http.req(`/api/users/${userId}/role`, { method: 'PATCH', body: { role: roleOut } });
+      toast.success("Rol güncellendi.");
       refresh();
     } catch (e) {
-      alert(e?.message || "Rol güncellenemedi");
+      toast.error(e?.message || "Rol güncellenemedi");
     }
   };
 
   const handleSuspend = async (u) => {
     if (!hasBackend) {
-      alert("Backend gerekli. Lütfen giriş yapın.");
+      toast.error("Backend gerekli. Lütfen giriş yapın.");
       return;
     }
     const userId = String(u._id || u.id || "");
     if (userId.length !== 24) {
-      alert("Geçersiz kullanıcı id.");
+      toast.error("Geçersiz kullanıcı id.");
       return;
     }
     try {
       await API.http.post(`/api/users/${userId}/deactivate`);
+      toast.success("Kullanıcı askıya alındı.");
       refresh();
     } catch (e) {
-      alert(e?.message || "Askıya alma başarısız");
+      toast.error(e?.message || "Askıya alma başarısız");
     }
   };
 
   const handleResetPassword = async (u) => {
     if (!hasBackend) {
-      alert("Backend gerekli. Lütfen giriş yapın.");
+      toast.error("Backend gerekli. Lütfen giriş yapın.");
       return;
     }
     const identifier = u.email || u.phone || u.tc;
     if (!identifier) {
-      alert("E-posta/telefon/TC bilgisi yok.");
+      toast.error("E-posta/telefon/TC bilgisi yok.");
       return;
     }
-    if (!confirm(`"${u.name || u.email || u.tc}" için şifre sıfırlansın mı?`)) return;
+    if (!window.confirm(`"${u.name || u.email || u.tc}" için şifre sıfırlansın mı?`)) return;
     try {
       const r = await API.http.post('/api/users/reset-password', { identifier });
       if (r?.tempPassword) {
-        alert(`Geçici şifre: ${r.tempPassword}`);
+        toast.success(`Geçici şifre: ${r.tempPassword}`);
       } else {
-        alert("Şifre sıfırlandı. E-posta gönderildi.");
+        toast.success("Şifre sıfırlandı. E-posta gönderildi.");
       }
     } catch (e) {
-      alert(e?.message || "Şifre sıfırlanamadı");
+      toast.error(e?.message || "Şifre sıfırlanamadı");
     }
   };
 
   const handleBulkFromPersonnel = async () => {
     const unlinked = unlinkedPersonnel;
-    if (!unlinked.length) return alert("Tüm personelin zaten kullanıcısı var.");
+    if (!unlinked.length) {
+      toast.error("Tüm personelin zaten kullanıcısı var.");
+      return;
+    }
 
-    const ok = confirm(
+    const ok = window.confirm(
       `${unlinked.length} personel için otomatik kullanıcı oluşturulsun mu?\nGeçici şifre: TC numarası (TC yoksa Hastane2026!)`
     );
     if (!ok) return;
@@ -541,21 +603,21 @@ export default function UsersTab() {
       const res = await API.http.post("/api/users/bulk-from-personnel", {
         personIds: unlinked.map((p) => p.id || p._id),
       });
-      alert(`✅ ${res.created || 0} kullanıcı oluşturuldu. ${res.skipped || 0} atlandı.`);
+      toast.success(`${res.created || 0} kullanıcı oluşturuldu. ${res.skipped || 0} atlandı.`);
       refresh();
     } catch (e) {
-      alert(e?.message || "Hata oluştu.");
+      toast.error(e?.message || "Hata oluştu.");
     }
   };
 
   const handleLinkPerson = async (user, nextPersonId) => {
     if (!hasBackend) {
-      alert("Backend gerekli. Lütfen giriş yapın.");
+      toast.error("Backend gerekli. Lütfen giriş yapın.");
       return;
     }
     const userId = String(user?.id || user?._id || "");
     if (!userId) {
-      alert("Geçersiz kullanıcı id.");
+      toast.error("Geçersiz kullanıcı id.");
       return;
     }
     const payloadId = nextPersonId ? String(nextPersonId) : null;
@@ -579,8 +641,50 @@ export default function UsersTab() {
           String(u.id || u._id) === userId ? { ...u, personId: user?.personId || null } : u
         )
       );
-      alert(e?.message || "Personel bağlanamadı.");
+      toast.error(e?.message || "Personel bağlanamadı.");
       return;
+    }
+  };
+
+  const openContactEditor = (u) => {
+    const userId = String(u?.id || u?._id || "");
+    if (!userId) return;
+    setEditingContact({
+      userId,
+      phone: String(u?.phone || ""),
+      email: String(u?.email || ""),
+      saving: false,
+    });
+  };
+
+  const closeContactEditor = () => setEditingContact(null);
+
+  const updateContactDraft = (key, value) => {
+    setEditingContact((prev) => (prev ? { ...prev, [key]: value } : prev));
+  };
+
+  const saveContactEditor = async (u) => {
+    const userId = String(u?.id || u?._id || "");
+    if (!hasBackend) {
+      toast.error("Backend gerekli. Lütfen giriş yapın.");
+      return;
+    }
+    if (!editingContact || editingContact.userId !== userId) return;
+    setEditingContact((prev) => (prev ? { ...prev, saving: true } : prev));
+    try {
+      await API.http.req(`/api/users/${userId}/profile`, {
+        method: "PATCH",
+        body: {
+          phone: String(editingContact.phone || "").trim() || undefined,
+          email: String(editingContact.email || "").trim() || undefined,
+        },
+      });
+      toast.success("İletişim bilgileri güncellendi.");
+      await refresh();
+      setEditingContact(null);
+    } catch (e) {
+      toast.error(e?.message || "İletişim bilgileri güncellenemedi");
+      setEditingContact((prev) => (prev ? { ...prev, saving: false } : prev));
     }
   };
 
@@ -649,8 +753,20 @@ export default function UsersTab() {
               + Kullanıcı Ekle
             </button>
             <button
-              className="h-10 px-3 rounded-xl border text-sm hover:bg-slate-50"
+              className={`h-10 px-3 rounded-xl text-sm transition ${
+                bulkCreateDisabled
+                  ? "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
+                  : "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+              }`}
               onClick={handleBulkFromPersonnel}
+              disabled={bulkCreateDisabled}
+              title={
+                !hasBackend
+                  ? "Backend oturumu gerekli"
+                  : unlinkedPersonnel.length === 0
+                      ? "Kullanıcısı olmayan personel kalmadı"
+                      : "Personel kayıtlarından toplu giriş hesabı oluştur"
+              }
             >
               Personelden Oluştur ({unlinkedPersonnel.length})
             </button>
@@ -711,6 +827,7 @@ export default function UsersTab() {
         {rows.map((u) => {
           const userId = u.id || u._id;
           const currentServiceIds = (Array.isArray(u.serviceIds) ? u.serviceIds : u.services) || [];
+          const isEditingContact = editingContact?.userId === String(userId);
 
           return (
             <div key={userId} className="rounded-[24px] border border-slate-200 bg-white shadow-sm p-4">
@@ -746,6 +863,76 @@ export default function UsersTab() {
                     })}
                   </select>
                 </div>
+              </div>
+
+              <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
+                      İletişim Bilgileri
+                    </div>
+                    <div className="mt-1 text-[12px] text-slate-600">
+                      Telefon ve e-posta buradan güncellenir.
+                    </div>
+                  </div>
+                  {!isEditingContact ? (
+                    <button
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-100"
+                      onClick={() => openContactEditor(u)}
+                    >
+                      <PencilLine className="h-3.5 w-3.5" />
+                      İletişim düzenle
+                    </button>
+                  ) : null}
+                </div>
+
+                {!isEditingContact ? null : (
+                  <div className="mt-3 grid gap-3">
+                    <div>
+                      <label className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">
+                        Telefon
+                      </label>
+                      <input
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                        value={editingContact.phone}
+                        onChange={(e) => updateContactDraft("phone", e.target.value)}
+                        placeholder="05xx xxx xx xx"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">
+                        E-posta
+                      </label>
+                      <input
+                        type="email"
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                        value={editingContact.email}
+                        onChange={(e) => updateContactDraft("email", e.target.value)}
+                        placeholder="ornek@mail.com"
+                      />
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-700 hover:bg-slate-100"
+                        type="button"
+                        onClick={closeContactEditor}
+                        disabled={editingContact.saving}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Vazgeç
+                      </button>
+                      <button
+                        className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-2 text-[12px] font-medium text-white hover:bg-sky-700 disabled:opacity-60"
+                        type="button"
+                        onClick={() => saveContactEditor(u)}
+                        disabled={editingContact.saving}
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                        {editingContact.saving ? "Kaydediliyor..." : "Kaydet"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
@@ -788,7 +975,7 @@ export default function UsersTab() {
                   className="text-[12px] px-3 py-1 rounded border"
                   onClick={() => setEditUser(u)}
                 >
-                  Düzenle
+                  Kimlik / Bağlantı Düzenle
                 </button>
 
                 <button
@@ -816,21 +1003,22 @@ export default function UsersTab() {
                 <button
                   className="text-[12px] px-3 py-1 rounded border text-red-600"
                   onClick={async () => {
-                    if (confirm(`"${u.name || u.email}" silinsin mi?`)) {
+                    if (window.confirm(`"${u.name || u.email}" silinsin mi?`)) {
                       if (!hasBackend) {
-                        alert("Backend gerekli. Lütfen giriş yapın.");
+                        toast.error("Backend gerekli. Lütfen giriş yapın.");
                         return;
                       }
                       if (String(userId).length !== 24) {
-                        alert("Geçersiz kullanıcı id.");
+                        toast.error("Geçersiz kullanıcı id.");
                         return;
                       }
                       try {
                         await API.http.req(`/api/users/${userId}`, { method: 'DELETE' });
+                        toast.success("Kullanıcı silindi.");
                         refresh();
                         return;
                       } catch (e) {
-                        alert(e?.message || 'Silinemedi');
+                        toast.error(e?.message || 'Silinemedi');
                         return;
                       }
                     }
@@ -851,18 +1039,19 @@ export default function UsersTab() {
         onSave={async (ids) => {
           try {
             if (!hasBackend) {
-              alert("Backend gerekli. Lütfen giriş yapın.");
+              toast.error("Backend gerekli. Lütfen giriş yapın.");
               return;
             }
             if (String(assignFor.id || "").length !== 24) {
-              alert("Geçersiz kullanıcı id.");
+              toast.error("Geçersiz kullanıcı id.");
               return;
             }
             await API.setUserServices(assignFor.id, ids);
+            toast.success("Servisler kaydedildi.");
             setAssignFor(null);
             refresh();
           } catch (e) {
-            alert(e.message || "Kaydedilemedi");
+            toast.error(e.message || "Kaydedilemedi");
           }
         }}
       />

@@ -36,4 +36,7 @@ AILogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 365 * 24 * 60 * 60 });
 AILogSchema.index({ hospitalId: 1, action: 1, createdAt: -1 });
 AILogSchema.index({ userId: 1, createdAt: -1 });
 
+const { applyHospitalScope } = require('./plugins/hospitalScope');
+applyHospitalScope(AILogSchema);
+
 module.exports = mongoose.models.AILog || mongoose.model('AILog', AILogSchema);

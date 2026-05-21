@@ -145,6 +145,7 @@ function normalizeAssignmentRecord(item = {}, scope = {}, options = {}) {
 
   return {
     sourceScheduleId: scope?.sourceScheduleId || null,
+    hospitalId: scope?.hospitalId || null,
     sectionId,
     serviceId,
     role,
@@ -201,6 +202,7 @@ function extractAssignmentsFromPayload(payload = {}, scope = {}) {
 
 async function replaceAssignmentsForSchedule({ scope = {}, payload = {}, createdBy = null, updatedBy = null, source = 'monthlySchedule' } = {}) {
   const baseScope = {
+    hospitalId: scope?.hospitalId || null,
     sectionId: String(scope?.sectionId || '').trim(),
     serviceId: scope?.serviceId != null ? String(scope.serviceId).trim() : '',
     role: scope?.role != null ? String(scope.role).trim() : '',
@@ -222,6 +224,7 @@ async function replaceAssignmentsForSchedule({ scope = {}, payload = {}, created
     .filter(Boolean);
 
   const deleteQuery = {
+    hospitalId: baseScope.hospitalId,
     sectionId: baseScope.sectionId,
     serviceId: baseScope.serviceId,
     role: baseScope.role,
@@ -250,11 +253,13 @@ async function replaceAssignmentsForSchedule({ scope = {}, payload = {}, created
           updateOne: {
             filter: {
               sectionId: d.sectionId, serviceId: d.serviceId, role: d.role,
+              hospitalId: d.hospitalId || null,
               date: d.date, taskKey: d.taskKey, personKey: d.personKey,
             },
             update: {
               $set: {
                 sourceScheduleId: d.sourceScheduleId,
+                hospitalId: d.hospitalId || null,
                 sectionId: d.sectionId,
                 serviceId: d.serviceId,
                 role: d.role,
@@ -309,6 +314,7 @@ async function upsertAssignment({ scope = {}, assignment = {}, createdBy = null,
   if (!doc) return null;
   await Assignment.findOneAndUpdate(
     {
+      hospitalId: doc.hospitalId || null,
       sectionId: doc.sectionId,
       serviceId: doc.serviceId,
       role: doc.role,
@@ -337,6 +343,7 @@ async function removeAssignment({ scope = {}, assignment = {} } = {}) {
 
   const result = await Assignment.deleteMany({
     sectionId: String(scope.sectionId).trim(),
+    hospitalId: scope?.hospitalId || null,
     serviceId,
     role,
     date: dateInfo.date,

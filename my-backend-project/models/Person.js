@@ -39,6 +39,10 @@ const personSchema = new mongoose.Schema({
 personSchema.index({ tc: 1 }, { sparse: true });
 personSchema.index({ hospitalId: 1, tc: 1 }, { unique: true, sparse: true });
 personSchema.index({ hospitalId: 1, serviceId: 1 });
+// Personel arama: ?q= sorguları için
+personSchema.index({ hospitalId: 1, name: 1 });
+// Email lookup (kullanıcı bağlama)
+personSchema.index({ hospitalId: 1, email: 1 }, { sparse: true });
 applyHospitalScope(personSchema);
 
 module.exports = mongoose.models.Person || mongoose.model('Person', personSchema);

@@ -54,6 +54,10 @@ export function pruneOldMonthlySheets(keepMonths = 3) {
   } catch { /* no-op */ }
 }
 
+// 512 KB üzerindeki tek bir değer için uyarı logu atar; 2 MB üzerinde yazmayı engeller.
+const LS_WARN_BYTES  = 512 * 1024;
+const LS_BLOCK_BYTES = 2 * 1024 * 1024;
+
 /* İsteğe bağlı: proje genelinde kullanışlı tek bir LS wrapper */
 export const LS = {
   get(key, def = null) {
@@ -66,9 +70,22 @@ export const LS = {
   },
   set(key, val) {
     try {
-      localStorage.setItem(key, JSON.stringify(val));
-    } catch {
-      /* no-op */
+      const serialized = JSON.stringify(val);
+      if (serialized.length > LS_BLOCK_BYTES) {
+        console.warn(`[LS] "${key}" için veri çok büyük (${(serialized.length / 1024).toFixed(0)} KB) — yazılmadı.`);
+        return false;
+      }
+      if (serialized.length > LS_WARN_BYTES) {
+        console.warn(`[LS] "${key}" büyük veri: ${(serialized.length / 1024).toFixed(0)} KB`);
+      }
+      localStorage.setItem(key, serialized);
+      return true;
+    } catch (e) {
+      if (e?.name === "QuotaExceededError" || e?.code === 22) {
+        console.warn(`[LS] localStorage dolu — "${key}" yazılamadı. pruneOldMonthlySheets() çalıştırılıyor.`);
+        try { pruneOldMonthlySheets(1); } catch {}
+      }
+      return false;
     }
   },
   remove(key) {

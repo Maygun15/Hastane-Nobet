@@ -245,28 +245,38 @@ export default function MonthlyLeavesMatrixGeneric({
         </div>
       </div>
 
-      <div className="overflow-auto mt-3">
+      <div className="overflow-auto mt-3 rounded-card border border-slate-200 shadow-card">
         <table className="w-full text-sm">
-          <thead className="text-slate-500">
+          <thead className="sticky top-0 z-10">
             <tr>
-              <th className="text-left w-64 px-2 py-1">Ad Soyad</th>
-              {days.map((d) => (
-                <th key={d} className="text-center px-1 py-1">{d}</th>
-              ))}
+              <th className="text-left w-64 px-3 py-2.5 text-xs font-semibold text-ink-muted uppercase tracking-wide bg-white border-b-2 border-brand-600 border-r border-slate-100">Ad Soyad</th>
+              {days.map((d) => {
+                const dow = new Date(year, m0, d).getDay();
+                const isWE = dow === 0 || dow === 6;
+                return (
+                  <th key={d} className={`text-center px-1 py-2.5 text-xs font-semibold font-mono tabular-nums border-b-2 ${isWE ? "bg-blue-50 text-blue-600 border-blue-300" : "bg-white text-ink-muted border-brand-600"}`}>{d}</th>
+                );
+              })}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100">
             {rows.map((r) => (
-              <tr key={r.id} className="border-t">
-                <td className="px-2 py-1 font-medium text-slate-800">{r.name}</td>
+              <tr key={r.id} className="odd:bg-white even:bg-slate-50/50 hover:bg-blue-50/30 transition-colors">
+                <td className="px-3 py-2 font-medium text-ink border-r border-slate-200 w-64">{r.name}</td>
                 {days.map((d) => {
+                  const dow = new Date(year, m0, d).getDay();
+                  const isWE = dow === 0 || dow === 6;
                   const code = cellCode(r.monthly, d);
                   const has  = !!code;
                   return (
                     <td
                       key={`${r.id}-${d}`}
-                      className={`text-center px-1 py-1 cursor-pointer select-none ${
-                        has ? "bg-emerald-50 hover:bg-emerald-100" : "hover:bg-slate-50"
+                      className={`text-center px-1 py-1 cursor-pointer select-none transition-colors ${
+                        has
+                          ? "bg-emerald-50 hover:bg-emerald-100"
+                          : isWE
+                          ? "bg-blue-50 hover:bg-blue-100/70"
+                          : "hover:bg-slate-100/60"
                       }`}
                       title={
                         has
@@ -282,13 +292,13 @@ export default function MonthlyLeavesMatrixGeneric({
                       onContextMenu={(e) => { e.preventDefault(); applyUnset(r.id, r.name, d); }}
                     >
                       <div
-                        className={`h-7 min-w-[28px] mx-auto rounded-md grid place-items-center ${
-                          has ? "border border-emerald-300 text-emerald-700 font-semibold"
-                              : "border border-transparent text-slate-300"
+                        className={`h-7 min-w-[28px] mx-auto rounded-chip grid place-items-center text-xs font-semibold ${
+                          has
+                            ? "bg-emerald-100 border border-emerald-300 text-emerald-800"
+                            : "border border-transparent text-slate-300"
                         }`}
-                        style={{ lineHeight: 1 }}
                       >
-                        {has ? code : "—"}
+                        {has ? code : ""}
                       </div>
                     </td>
                   );
@@ -297,7 +307,7 @@ export default function MonthlyLeavesMatrixGeneric({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={1 + days.length} className="px-3 py-6 text-center text-slate-500">
+                <td colSpan={1 + days.length} className="px-3 py-10 text-center text-ink-faint">
                   Kişi bulunamadı. (Personel listesi veya filtreyi kontrol edin.)
                 </td>
               </tr>

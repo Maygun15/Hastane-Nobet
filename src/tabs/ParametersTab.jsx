@@ -7,6 +7,7 @@ import {
   Clock3,
   ClipboardList,
   FileSpreadsheet,
+  HelpCircle,
   Settings2,
   ShieldCheck,
 } from "lucide-react";
@@ -20,10 +21,37 @@ import DutyRulesTabExplained from "./DutyRulesTab.Explained.jsx"; // ✅ açıkl
 import ScheduleRulesManager from "../components/ScheduleRulesManager.jsx";
 import RequestBoxTab from "./RequestBoxTab.jsx";
 import { API, getToken } from "../lib/api.js";
+import DutyRowsEditor from "../components/DutyRowsEditor.jsx";
+import useActiveYM from "../hooks/useActiveYM.js";
+import useServiceScope from "../hooks/useServiceScope.js";
+import { useAppStore } from "../state/appStore";
 
 const LS_ACTIVE_SUBTAB = "paramsActiveSubtabV1";
 const LS_KEY_RULES = "dutyRulesV2"; // ✅ nöbet kuralları LS anahtarı
 const cn = (...c) => c.filter(Boolean).join(" ");
+
+/**
+ * Reusable field hint — label yanına küçük ? ikonu, hover'da tooltip balonu.
+ * Kullanım: <FieldHint text="Açıklama metni" />
+ */
+export function FieldHint({ text }) {
+  const [show, setShow] = useState(false);
+  return (
+    <span className="relative ml-1 inline-flex">
+      <HelpCircle
+        size={12}
+        className="text-slate-400 cursor-help"
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+      />
+      {show && (
+        <span className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-1 w-48 rounded-lg bg-slate-800 px-2 py-1.5 text-[11px] text-white shadow-lg pointer-events-none">
+          {text}
+        </span>
+      )}
+    </span>
+  );
+}
 
 // Backend kural anahtarlarını UI listesinden türet
 function mapRulesToBackend(list) {
@@ -172,6 +200,13 @@ const SUBTABS = [
     icon: Settings2,
   },
   {
+    id: "cizelge-yapisi",
+    label: "Çizelge Yapısı",
+    eyebrow: "Çizelge Kurgusu",
+    description: "Görev satırlarını, günlük ihtiyaç matrisini ve sayısal önizlemeyi burada yönetin.",
+    icon: FileSpreadsheet,
+  },
+  {
     id: "istek",
     label: "İstek",
     eyebrow: "Talep Kaynağı",
@@ -247,6 +282,136 @@ function lsClear() {
   try {
     localStorage.removeItem(LS_ACTIVE_SUBTAB);
   } catch {}
+}
+
+function ScheduleStructureSettingsTab({ workAreas, workingHours, people }) {
+  const { ym, setYear, setMonth } = useActiveYM();
+  const scope = useServiceScope();
+  const storeServiceId = useAppStore((s) => s.activeServiceId);
+  const setStoreServiceId = useAppStore((s) => s.setActiveServiceId);
+  const activeRole = useAppStore((s) => s.activeRole);
+  const setActiveRole = useAppStore((s) => s.setActiveRole);
+  const selectedServiceId = scope.isAdmin ? (storeServiceId || "") : scope.defaultServiceId;
+  const selectedServiceName = scope.isAdmin
+    ? (selectedServiceId
+        ? (scope.servicesById.get(String(selectedServiceId))?.name
+            || scope.servicesById.get(String(selectedServiceId))?.code
+            || String(selectedServiceId))
+        : "Tümü")
+    : (
+        scope.servicesById.get(scope.defaultServiceId)?.name
+        || scope.servicesById.get(scope.defaultServiceId)?.code
+        || scope.defaultServiceId
+        || "-"
+      );
+  const monthLabel = `${["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"][Math.max(0, Math.min(11, Number(ym.month || 1) - 1))]} ${ym.year}`;
+  const personLeaves = useAppStore((s) => s.personLeaves);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0">
+            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Çizelge Yapısı Yönetimi</div>
+            <div className="mt-2 text-lg font-semibold text-slate-900">Görev satırları ve günlük ihtiyaç kurgusu</div>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              Bu alan sayı bazlı ihtiyaç matrisi ve görev satırı düzenini yönetir. Kişilere atama önizlemesi artık çalışma çizelgesi ekranında kalır.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Dönem</div>
+              <div className="mt-1 font-semibold text-slate-900">{monthLabel}</div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Servis</div>
+              <div className="mt-1 font-semibold text-slate-900">{selectedServiceName || "Tümü"}</div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Rol</div>
+              <div className="mt-1 font-semibold text-slate-900">{activeRole === "Doctor" ? "Doktor" : "Hemşire"}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">Servis</label>
+            {scope.isAdmin ? (
+              <select
+                className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-sky-300"
+                value={storeServiceId}
+                onChange={(e) => setStoreServiceId(e.target.value)}
+              >
+                <option value="">Tümü</option>
+                {(scope.allowedIds || []).map((id) => {
+                  const service = scope.servicesById.get(String(id));
+                  return <option key={id} value={id}>{service?.name || service?.code || id}</option>;
+                })}
+              </select>
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700">{selectedServiceName || "-"}</div>
+            )}
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">Rol</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveRole("Nurse")}
+                className={`h-11 rounded-2xl border text-sm font-medium transition ${activeRole === "Nurse" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
+              >
+                Hemşire
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveRole("Doctor")}
+                className={`h-11 rounded-2xl border text-sm font-medium transition ${activeRole === "Doctor" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
+              >
+                Doktor
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">Ay / Yıl</label>
+            <div className="grid grid-cols-[1fr_1fr] gap-2">
+              <input
+                type="number"
+                min="2000"
+                max="2100"
+                value={ym.year}
+                onChange={(e) => setYear(Number(e.target.value))}
+                className="h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-sky-300"
+              />
+              <input
+                type="number"
+                min="1"
+                max="12"
+                value={ym.month}
+                onChange={(e) => setMonth(Number(e.target.value))}
+                className="h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-sky-300"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <DutyRowsEditor
+        mode="configOnly"
+        year={ym.year}
+        month={ym.month}
+        setYear={setYear}
+        setMonth={setMonth}
+        sectionId="calisma-cizelgesi"
+        serviceId={selectedServiceId}
+        role={activeRole}
+        workAreas={workAreas}
+        peopleAll={people}
+        workingHours={workingHours}
+        personLeaves={personLeaves}
+      />
+    </div>
+  );
 }
 
 /* ---------- component ---------- */
@@ -382,20 +547,9 @@ export default function ParametersTab({
 
   return (
     <div className="params-ui-v2 p-4">
-      <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
-        <aside className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
-              <Settings2 className="h-3.5 w-3.5 text-sky-700" />
-              Sistem Parametreleri
-            </div>
-            <div className="mt-3 text-xl font-semibold tracking-tight text-slate-950">Yapılandırma Merkezi</div>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Buradaki ayarlar çalışma çizelgesi, aylık çalışma, fazla mesai ve izin akışlarının ortak davranışını belirler.
-            </p>
-          </div>
-
-          <div className="mt-4 space-y-2">
+      <div className="space-y-4">
+        <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap gap-2">
             {SUBTABS.map((t) => {
               const Icon = t.icon;
               const isActiveTab = active === t.id;
@@ -404,63 +558,20 @@ export default function ParametersTab({
                   key={t.id}
                   type="button"
                   onClick={() => handleClick(t.id)}
-                  data-params-tab-btn
-                  data-active={isActiveTab ? "true" : "false"}
                   className={cn(
-                    "w-full rounded-[22px] border px-4 py-3 text-left transition-all",
+                    "inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-sm font-medium transition",
                     isActiveTab
-                      ? "border-slate-900 bg-slate-950 text-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.75)]"
-                      : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                      ? "border-slate-900 bg-slate-950 text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                   )}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className={cn(
-                      "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border",
-                      isActiveTab
-                        ? "border-white/15 bg-white/10 text-white"
-                        : "border-slate-200 bg-slate-100 text-slate-700"
-                    )}>
-                      <Icon className="h-4.5 w-4.5" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className={cn(
-                        "text-[11px] font-medium uppercase tracking-[0.16em]",
-                        isActiveTab ? "text-white/70" : "text-slate-500"
-                      )}>
-                        {t.eyebrow}
-                      </div>
-                      <div className={cn("mt-1 text-sm font-semibold", isActiveTab ? "text-white" : "text-slate-900")}>
-                        {t.label}
-                      </div>
-                      <div className={cn("mt-1 text-xs leading-5", isActiveTab ? "text-white/72" : "text-slate-500")}>
-                        {t.description}
-                      </div>
-                    </div>
-                  </div>
+                  <Icon className={cn("h-4 w-4", isActiveTab ? "text-white" : "text-slate-500")} />
+                  {t.label}
                 </button>
               );
             })}
           </div>
-
-          <div className="mt-4 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
-            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Hızlı Geçiş</div>
-            <div className="mt-3 flex gap-2">
-              <button type="button" className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100" onClick={() => go(-1)} title="Önceki">
-                Önceki
-              </button>
-              <button type="button" className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100" onClick={() => go(1)} title="Sonraki">
-                Sonraki
-              </button>
-            </div>
-            <button
-              type="button"
-              className="mt-3 w-full rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100"
-              onClick={resetRemembered}
-            >
-              Varsayılan Sekmeye Dön
-            </button>
-          </div>
-        </aside>
+        </div>
 
         <section className="min-w-0 space-y-4">
           <div data-params-topbar className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
@@ -497,8 +608,9 @@ export default function ParametersTab({
         {active === "calisma-saatleri" && (
           <div className="space-y-4">
             <div>
-              <label className="text-xs font-medium text-slate-600">
+              <label className="text-xs font-medium text-slate-600 inline-flex items-center">
                 Aylık Zorunlu Çalışma Saati
+                <FieldHint text="Bir personelin aylık tamamlaması gereken toplam çalışma saati (örn. 160 saat)" />
               </label>
               <input
                 type="number"
@@ -531,6 +643,13 @@ export default function ParametersTab({
         )}
         {active === "nobet-yazma-kurallari" && (
           <ScheduleRulesManager sectionId="calisma-cizelgesi" />
+        )}
+        {active === "cizelge-yapisi" && (
+          <ScheduleStructureSettingsTab
+            workAreas={workAreas}
+            workingHours={workingHours}
+            people={people}
+          />
         )}
         {active === "istek"            && (
           <RequestBoxTab

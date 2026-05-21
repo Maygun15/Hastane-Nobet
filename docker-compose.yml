@@ -5,8 +5,9 @@ services:
     image: mongo:6
     container_name: hospital-roster-mongo
     restart: unless-stopped
-    ports:
-      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASS:?MONGO_PASS env var required}
     volumes:
       - mongo_data:/data/db
     healthcheck:
@@ -19,13 +20,11 @@ services:
     image: redis:7-alpine
     container_name: hospital-roster-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
-    command: redis-server --save 60 1 --loglevel warning
+    command: redis-server --save 60 1 --loglevel warning --requirepass ${REDIS_PASS:-changeme}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASS:-changeme}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -41,17 +40,14 @@ services:
     env_file:
       - ./my-backend-project/.env
     environment:
-      - NODE_ENV=development
-      - MONGODB_URI=mongodb://mongo:27017/hastane
-      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=${NODE_ENV:-production}
+      - MONGODB_URI=mongodb://${MONGO_USER:-admin}:${MONGO_PASS}@mongo:27017/hastane?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASS:-changeme}@redis:6379
     depends_on:
       mongo:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - ./my-backend-project:/app
-      - /app/node_modules
 
 volumes:
   mongo_data:

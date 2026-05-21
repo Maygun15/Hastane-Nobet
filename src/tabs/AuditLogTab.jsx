@@ -1,5 +1,5 @@
 // src/tabs/AuditLogTab.jsx — admin audit log görüntüleyici
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, CheckCircle, XCircle, Clock } from "lucide-react";
 import { http } from "../lib/api.js";
 
@@ -22,6 +22,8 @@ export default function AuditLogTab() {
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortDir, setSortDir] = useState("desc");
   const PER_PAGE = 50;
 
   const load = useCallback(async () => {
@@ -41,16 +43,49 @@ export default function AuditLogTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  const filtered = logs.filter((l) => {
-    if (!query) return true;
-    const q = query.toLocaleLowerCase("tr-TR");
-    return (
-      String(l.userId || "").toLowerCase().includes(q) ||
-      String(l.action || l.endpoint || "").toLowerCase().includes(q) ||
-      String(l.method || "").toLowerCase().includes(q) ||
-      String(l.statusCode || "").includes(q)
-    );
-  });
+  const filtered = useMemo(() => {
+    const result = logs.filter((l) => {
+      if (!query) return true;
+      const q = query.toLocaleLowerCase("tr-TR");
+      return (
+        String(l.userName || l.userEmail || l.userId || "").toLowerCase().includes(q) ||
+        String(l.action || l.endpoint || "").toLowerCase().includes(q) ||
+        String(l.method || "").toLowerCase().includes(q) ||
+        String(l.statusCode || "").includes(q)
+      );
+    });
+
+    result.sort((a, b) => {
+      let valA = a[sortBy] ?? "";
+      let valB = b[sortBy] ?? "";
+      if (sortBy === "createdAt") {
+        valA = valA ? new Date(valA).getTime() : 0;
+        valB = valB ? new Date(valB).getTime() : 0;
+      } else {
+        valA = String(valA).toLowerCase();
+        valB = String(valB).toLowerCase();
+      }
+      if (valA < valB) return sortDir === "asc" ? -1 : 1;
+      if (valA > valB) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [logs, query, sortBy, sortDir]);
+
+  const toggleSort = (col) => {
+    if (sortBy === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(col);
+      setSortDir("desc");
+    }
+  };
+
+  const sortArrow = (col) => {
+    if (sortBy !== col) return null;
+    return sortDir === "asc" ? " ↑" : " ↓";
+  };
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -85,18 +120,34 @@ export default function AuditLogTab() {
 
       {/* Tablo */}
       <div className="rounded-xl border bg-white overflow-x-auto">
-        {loading && logs.length === 0 ? (
-          <div className="py-12 text-center text-sm text-slate-400">Yükleniyor…</div>
-        ) : filtered.length === 0 ? (
+        {loading && (
+          <div className="py-8 text-center text-sm text-slate-500">Yükleniyor…</div>
+        )}
+        {!loading && filtered.length === 0 ? (
           <div className="py-12 text-center text-sm text-slate-400">Kayıt bulunamadı</div>
-        ) : (
+        ) : !loading && (
           <table className="min-w-full text-xs divide-y divide-slate-100">
             <thead className="bg-slate-50 text-slate-500 text-left">
               <tr>
-                <th className="px-3 py-2.5 font-medium">Tarih</th>
+                <th
+                  className="px-3 py-2.5 font-medium cursor-pointer select-none hover:text-slate-700"
+                  onClick={() => toggleSort("createdAt")}
+                >
+                  Tarih{sortArrow("createdAt")}
+                </th>
                 <th className="px-3 py-2.5 font-medium">Kullanıcı</th>
-                <th className="px-3 py-2.5 font-medium">Metod</th>
-                <th className="px-3 py-2.5 font-medium">Endpoint</th>
+                <th
+                  className="px-3 py-2.5 font-medium cursor-pointer select-none hover:text-slate-700"
+                  onClick={() => toggleSort("method")}
+                >
+                  Metod{sortArrow("method")}
+                </th>
+                <th
+                  className="px-3 py-2.5 font-medium cursor-pointer select-none hover:text-slate-700"
+                  onClick={() => toggleSort("action")}
+                >
+                  Endpoint{sortArrow("action")}
+                </th>
                 <th className="px-3 py-2.5 font-medium text-center">Durum</th>
                 <th className="px-3 py-2.5 font-medium text-right">Süre (ms)</th>
               </tr>
@@ -111,8 +162,10 @@ export default function AuditLogTab() {
                         })
                       : "—"}
                   </td>
-                  <td className="px-3 py-2 font-mono text-slate-700 max-w-[120px] truncate">
-                    {l.userId === "anonymous" ? <span className="text-slate-400 italic">anonim</span> : l.userId}
+                  <td className="px-3 py-2 font-mono text-slate-700 max-w-[120px] truncate" title={l.userName || l.userEmail || l.userId}>
+                    {l.userId === "anonymous"
+                      ? <span className="text-slate-400 italic">anonim</span>
+                      : (l.userName || l.userEmail || String(l.userId || "").slice(0, 8))}
                   </td>
                   <td className="px-3 py-2">
                     <span className={`px-1.5 py-0.5 rounded font-semibold ${METHOD_COLOR[l.method] || "bg-slate-100 text-slate-600"}`}>

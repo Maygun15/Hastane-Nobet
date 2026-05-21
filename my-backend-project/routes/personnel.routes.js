@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const Person = require('../models/Person');
 const User = require('../models/User');
+const Assignment = require('../models/Assignment');
 const { requireAuth, requireRole, sameServiceOrAdmin } = require('../middleware/authz');
 const { withHospitalFilter } = require('../middleware/hospital');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
@@ -47,18 +48,24 @@ router.get('/',
         Person.countDocuments(scopedQuery),
       ]);
 
+      const callerRole = String(req.user?.role || '').toLowerCase();
+      const canSeePII = ['admin', 'superadmin', 'authorized', 'staff'].includes(callerRole);
+
       const mapped = (items || []).map((p) => ({
         id: String(p._id),
+        name: p.name || '',
         fullName: p.name || '',
         first_name: p.firstName || '',
         last_name: p.lastName || '',
         title: p.meta?.title || p.meta?.unvan || p.meta?.role || '',
         service: p.meta?.service || p.meta?.department || p.serviceId || '',
         serviceId: p.serviceId || '',
-        tc: p.tc || '',
+        tc: canSeePII ? (p.tc || '') : undefined,
         active: p.active !== false,
-        phone: p.phone || '',
-        email: p.email || '',
+        phone: canSeePII ? (p.phone || '') : undefined,
+        email: canSeePII ? (p.email || '') : undefined,
+        userId: p.userId ? String(p.userId) : '',
+        hasUser: !!p.userId,
         areas: p.meta?.areas || [],
         meta: p.meta || {},
       }));
@@ -73,6 +80,7 @@ router.get('/',
 
 router.post('/',
   requireAuth,
+  sameServiceOrAdmin,
   async (req, res) => {
     try {
       const {
@@ -82,8 +90,12 @@ router.post('/',
         tc = '',
         phone = '',
         email = '',
+        // userId bağlama yalnızca admin/staff yapabilir
         userId = ''
       } = req.body;
+
+      const callerRole = String(req.user?.role || '').toLowerCase();
+      const canLinkUser = ['admin', 'superadmin', 'authorized', 'staff'].includes(callerRole);
 
       if (!name || !String(name).trim()) {
         return res.status(400).json({ error: 'İsim gerekli' });
@@ -99,12 +111,12 @@ router.post('/',
         createdBy: req.user?.uid || null
       }));
 
-      // opsiyonel: kullanıcı ile otomatik bağla
+      // opsiyonel: kullanıcı ile otomatik bağla (yalnızca admin/staff userId belirleyebilir)
       try {
-        if (userId) {
+        if (userId && canLinkUser) {
           await User.findOneAndUpdate(withHospitalFilter(req, { _id: userId }), { personId: person._id });
           await Person.findOneAndUpdate(withHospitalFilter(req, { _id: person._id }), { userId });
-        } else {
+        } else if (!userId) {
           const or = [];
           if (tc) or.push({ tc: String(tc).trim() });
           if (email) or.push({ email: String(email).toLowerCase().trim() });
@@ -129,7 +141,8 @@ router.post('/',
           serviceId: person.serviceId,
           meta: person.meta || {},
           personId: String(person._id),
-          userId: person.userId ? String(person.userId) : null
+          userId: person.userId ? String(person.userId) : null,
+          hasUser: !!person.userId
         }
       });
     } catch (err) {
@@ -190,13 +203,30 @@ router.put('/:id',
 
       await person.save();
 
+      // Aktifliği kaldırılıyorsa gelecek atamaları temizle
+      const update = req.body || {};
+      if (update.active === false || update.active === 'false') {
+        const today = new Date().toISOString().split('T')[0];
+        const deleted = await Assignment.deleteMany({
+          hospitalId: req.hospitalId,
+          personId: String(person._id),
+          date: { $gt: today },
+          status: 'active',
+        });
+        if (deleted.deletedCount > 0) {
+          console.log(`[Personnel] ${person.name} deactivated — ${deleted.deletedCount} gelecek atama silindi`);
+        }
+      }
+
       return res.json({
         ok: true,
         person: {
           id: String(person._id),
           name: person.name,
           serviceId: person.serviceId,
-          meta: person.meta || {}
+          meta: person.meta || {},
+          userId: person.userId ? String(person.userId) : null,
+          hasUser: !!person.userId
         }
       });
     } catch (err) {
@@ -302,5 +332,38 @@ router.post('/bulk',
     }
   }
 );
+
+// GET /api/personnel/:id/profile — personel profili + geçmiş atamalar
+router.get('/:id/profile', requireAuth, async (req, res) => {
+  try {
+    const person = await Person.findById(req.params.id).lean();
+    if (!person) return res.status(404).json({ message: 'Personel bulunamadı' });
+
+    const callerRole = String(req.user?.role || '').toLowerCase();
+    const canSeePII = ['admin', 'superadmin', 'authorized', 'staff'].includes(callerRole);
+
+    const safePerson = {
+      _id: person._id,
+      name: person.name,
+      serviceId: person.serviceId,
+      active: person.active,
+      meta: person.meta,
+      tc: canSeePII ? person.tc : undefined,
+      phone: canSeePII ? person.phone : undefined,
+      email: canSeePII ? person.email : undefined,
+    };
+
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const assignments = await Assignment.find({
+      hospitalId: req.hospitalId,
+      personId: String(person._id),
+      status: 'active',
+    }).sort({ date: -1 }).limit(limit).lean();
+
+    res.json({ person: safePerson, assignments, total: assignments.length });
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
+});
 
 module.exports = router;

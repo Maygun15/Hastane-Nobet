@@ -1,70 +1,83 @@
+/* parameters-ui-v2.css — Token sistemine hizalandı */
 .params-ui-v2 {
-  --params-accent: #0f766e;
-  --params-accent-soft: #ccfbf1;
-  --params-border: #cbd5e1;
-  --params-bg: #f8fafc;
-  --params-card-bg: #ffffff;
+  --params-accent:      #0d1b3e;   /* brand-900 */
+  --params-accent-soft: #e2e8f0;
+  --params-border:      #e2e8f0;
+  --params-bg:          #f7f8fc;   /* surface */
+  --params-card-bg:     #ffffff;
 }
 
+/* ── Topbar (sekmeler üstü araç çubuğu) ── */
 .params-ui-v2 [data-params-topbar] {
   padding: 12px;
   border: 1px solid var(--params-border);
-  border-radius: 14px;
+  border-radius: 20px;
   background:
-    radial-gradient(circle at top right, rgba(15, 118, 110, 0.08), transparent 38%),
-    radial-gradient(circle at bottom left, rgba(14, 116, 144, 0.08), transparent 42%),
+    radial-gradient(circle at top right, rgba(148, 163, 184, 0.07), transparent 40%),
+    radial-gradient(circle at bottom left, rgba(191, 219, 254, 0.10), transparent 40%),
     var(--params-bg);
+  box-shadow: 0 1px 2px rgba(13, 27, 62, 0.03);
 }
 
+/* ── Sekme butonları ── */
 .params-ui-v2 [data-params-tab-btn] {
-  border-color: #94a3b8;
+  border-color: #e2e8f0;
   background: #fff;
-  color: #334155;
-  transition: all 0.18s ease;
+  color: #475569;
+  border-radius: 10px;
+  transition: all 0.15s ease;
 }
 
 .params-ui-v2 [data-params-tab-btn]:hover {
-  border-color: var(--params-accent);
-  color: #0f172a;
-  box-shadow: 0 2px 10px rgba(15, 118, 110, 0.1);
+  border-color: #cbd5e1;
+  color: #0d1b3e;
+  box-shadow: 0 4px 16px rgba(13, 27, 62, 0.06);
 }
 
 .params-ui-v2 [data-params-tab-btn][data-active="true"] {
-  background: linear-gradient(180deg, #f0fdfa 0%, #ccfbf1 100%);
-  border-color: var(--params-accent);
-  color: #115e59;
-  font-weight: 600;
-  box-shadow: 0 2px 10px rgba(15, 118, 110, 0.12);
-}
-
-.params-ui-v2 [data-params-content] {
-  padding: 10px;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-color: #0d1b3e;
+  color: #0d1b3e;
+  font-weight: 600;
+  box-shadow: 0 8px 24px -8px rgba(13, 27, 62, 0.20);
 }
 
+/* ── İçerik alanı ── */
+.params-ui-v2 [data-params-content] {
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top right, rgba(191, 219, 254, 0.10), transparent 30%),
+    linear-gradient(180deg, #ffffff 0%, #f7f8fc 100%);
+  box-shadow: 0 1px 2px rgba(13, 27, 62, 0.03);
+}
+
+/* İçindeki kartlar */
 .params-ui-v2 [data-params-content] .bg-white.rounded-2xl,
 .params-ui-v2 [data-params-content] .bg-white.rounded-xl {
-  border: 1px solid #dbeafe;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 16px rgba(13, 27, 62, 0.05);
 }
 
+/* ── Form elemanları ── */
 .params-ui-v2 [data-params-content] input,
 .params-ui-v2 [data-params-content] select,
 .params-ui-v2 [data-params-content] textarea {
-  border-color: #cbd5e1;
+  border-color: #e2e8f0;
   background: #ffffff;
+  border-radius: 8px;
 }
 
 .params-ui-v2 [data-params-content] input:focus,
 .params-ui-v2 [data-params-content] select:focus,
 .params-ui-v2 [data-params-content] textarea:focus {
   outline: none;
-  border-color: var(--params-accent);
-  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
+  border-color: #1d4ed8;    /* brand-600 */
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.10);
 }
 
+/* ── Tablo ── */
 .params-ui-v2 [data-params-content] table thead tr {
   background: #f1f5f9;
 }
@@ -75,10 +88,9 @@
 }
 
 @media (max-width: 768px) {
-  .params-ui-v2 [data-params-topbar] {
-    padding: 10px;
-  }
+  .params-ui-v2 [data-params-topbar],
   .params-ui-v2 [data-params-content] {
     padding: 8px;
+    border-radius: 14px;
   }
 }

@@ -1,5 +1,6 @@
 // src/tabs/ServicesTab.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import useServicesModel, { useServices } from "../hooks/useServicesModel.js";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { PERMISSIONS } from "../constants/roles.js";
@@ -387,7 +388,7 @@ export default function ServicesTab() {
       }
 
       if (!rowsFromFile.length) {
-        alert("Geçerli bir satır bulunamadı.");
+        toast.error("Geçerli bir satır bulunamadı.");
         return;
       }
 
@@ -425,10 +426,10 @@ export default function ServicesTab() {
       });
 
       bump();
-      alert(`Excelden yükleme tamamlandı.\nEklendi: ${added}\nGüncellendi: ${updated}`);
+      toast.success(`Excelden yükleme tamamlandı. Eklendi: ${added}, Güncellendi: ${updated}`);
     } catch (err) {
       console.error(err);
-      alert("Dosya okunurken bir hata oluştu. Lütfen şablona uygun dosya yükleyin.");
+      toast.error("Dosya okunurken bir hata oluştu. Lütfen şablona uygun dosya yükleyin.");
     } finally {
       e.target.value = "";
     }

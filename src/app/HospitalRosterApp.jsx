@@ -47,6 +47,8 @@ import AISchedulerPage from "../pages/AISchedulerPage.jsx";
 import AICostPage from "../pages/AICostPage.jsx";
 import FairnessReportPage from "../pages/FairnessReportPage.jsx";
 import useSSENotifications from "../hooks/useSSENotifications.js";
+import NotificationBell from "../components/NotificationBell.jsx";
+import AnnouncementsPanel from "../components/AnnouncementsPanel.jsx";
 
 // Normal kullanıcı takvimi
 import PersonScheduleCalendar from "../components/PersonScheduleCalendar.jsx";
@@ -54,10 +56,19 @@ import { getActiveYM, setActiveYM, ymKey } from "../utils/activeYM.js";
 import { apiChangePassword, API, getToken } from "../lib/api.js";
 import { getAllLeaves } from "../lib/leaves.js";
 import { ROLE } from "../constants/enums.js";
-import { AppDataProvider } from "../context/AppDataContext.jsx";
+import { useAppStore } from "../state/appStore.js";
+import { useDebouncedSetting } from "../hooks/useDebouncedSetting.js";
+import { fetchAllPages } from "../utils/fetchAllPages.js";
+import { useStoreEventBridge } from "../hooks/useStoreEventBridge.js";
 
 // Yedekleme butonları (yeni)
 import BackupButtons from "../components/BackupButtons.jsx";
+import PlanningManagementTab from "../tabs/PlanningManagementTab.jsx";
+import LeaveBalanceTab from "../tabs/LeaveBalanceTab.jsx";
+import OccupancyReportPage from "../pages/OccupancyReportPage.jsx";
+import WorkingHoursSummaryPage from "../pages/WorkingHoursSummaryPage.jsx";
+import LeaveStatsPage from "../pages/LeaveStatsPage.jsx";
+import AnnouncementModal from "../components/AnnouncementModal.jsx";
 
 /* ---------------- URL yardımcıları ---------------- */
 function pushUrl(pathAndQuery) {
@@ -120,14 +131,16 @@ export default function HospitalRosterApp() {
 
   // Yetkili tanımı (STAFF eklendi)
   const isStaff = roleOf(user) === "STAFF";
+  const isManager = roleOf(user) === "MANAGER";
   const isAuthorized =
     !isAdmin && (
       isStaff ||
       roleOf(user) === "AUTHORIZED" ||
-      roleOf(user) === "MANAGER"   ||
+      isManager   ||
       has(PERMISSIONS.SCHEDULE_WRITE) ||
       has(PERMISSIONS.LEAVES_WRITE)
     );
+  const canSendAnnouncement = isAdmin || isManager;
 
   const isBasicUser  = !!user && !isAdmin && !isAuthorized;
 
@@ -141,15 +154,34 @@ export default function HospitalRosterApp() {
   const canSeeAICost      = isAdmin;                   // AI Maliyet: yalnız Admin
   const canSeeFairness    = isAdmin || isAuthorized;   // Adillik Raporu: Admin + Yetkili
 
+  // Store değişikliklerini legacy window event'lerine köprüle (geriye dönük uyumluluk)
+  useStoreEventBridge();
+
   // SSE bildirimleri — bağlantı kur, Toaster ile göster
   useSSENotifications(React.useCallback((data) => {
-    if (data?.message) toast.info(data.message);
+    const normalized = {
+      ...data,
+      message: String(data?.message || data?.body || "").trim(),
+      title: String(data?.title || "").trim(),
+      read: !!data?.read,
+      createdAt: data?.createdAt || new Date().toISOString(),
+    };
+    const toastTitle = normalized.title || (normalized.type === "announcement" ? "Duyuru" : "Bildirim");
+    if (normalized.message) toast.info(toastTitle, { description: normalized.message });
+    else if (toastTitle) toast.info(toastTitle);
+    window.dispatchEvent(new CustomEvent("notification:new", { detail: normalized }));
   }, []));
 
-  const [activeTab, setActiveTab] = useState(() => (isAdmin || isAuthorized) ? "dashboard" : "plan");
+  const [activeTab, setActiveTab] = useState(() => "plan");
   const [navOrder, setNavOrder] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("navOrder")) || ["dashboard", "plan", "personnel", "schedules", "parameters", "users", "aiScheduler", "fairness", "aiCost"]; }
-    catch { return ["dashboard", "plan", "personnel", "schedules", "parameters", "users", "aiScheduler", "fairness", "aiCost"]; }
+    const fallback = ["plan", "personnel", "schedules", "parameters", "users", "aiScheduler", "fairness", "aiCost"];
+    try {
+      const saved = JSON.parse(localStorage.getItem("navOrder"));
+      if (!Array.isArray(saved)) return fallback;
+      return saved.filter((id) => id !== "dashboard");
+    } catch {
+      return fallback;
+    }
   });
 
   const handleDragStart = (e, id) => {
@@ -174,62 +206,51 @@ export default function HospitalRosterApp() {
   };
 
   useEffect(() => {
-    if (isBasicUser && activeTab !== "plan" && activeTab !== "myRequests" && activeTab !== "profile") {
+    if (isBasicUser && activeTab !== "plan" && activeTab !== "announcements" && activeTab !== "myRequests" && activeTab !== "profile") {
       setActiveTab("plan");
       pushUrl("/");
     }
   }, [isBasicUser, activeTab]);
 
-  /* ---- Mongo-first state’ler (LS sadece cache) ---- */
-  const [workAreas, setWorkAreas] = useState([]);
-  const [nurses, setNurses] = useState([]);
-  const [doctors, setDoctors] = useState([]);
-  const [workingHours, setWorkingHours] = useState(() => {
-    const v2 = LS.get("workingHoursV2", null);
-    const v1 = LS.get("workingHours", null);
-    return Array.isArray(v2) ? v2 : Array.isArray(v1) ? v1 : [];
-  });
-  const [leaveTypes, setLeaveTypes] = useState(() => {
-    const v2 = LS.get("leaveTypesV2", null);
-    const v1 = LS.get("leaveTypes", null);
-    const legacy = LS.get("izinTurleri", null);
-    return Array.isArray(v2) ? v2 : Array.isArray(v1) ? v1 : Array.isArray(legacy) ? legacy : [];
-  });
-  const [personLeaves, setPersonLeaves] = useState({});
+  /* ---- Mongo-first state’ler — Zustand store üzerinden ---- */
+  const workAreas     = useAppStore((s) => s.workAreas);
+  const setWorkAreas  = useAppStore((s) => s.setWorkAreas);
+  const nurses        = useAppStore((s) => s.nurses);
+  const setNurses     = useAppStore((s) => s.setNurses);
+  const doctors       = useAppStore((s) => s.doctors);
+  const setDoctors    = useAppStore((s) => s.setDoctors);
+  const workingHours  = useAppStore((s) => s.workingHours);
+  const setWorkingHours = useAppStore((s) => s.setWorkingHours);
+  const leaveTypes    = useAppStore((s) => s.leaveTypes);
+  const setLeaveTypes = useAppStore((s) => s.setLeaveTypes);
+
+  const personLeaves    = useAppStore((s) => s.personLeaves);
+  const setPersonLeaves = useAppStore((s) => s.setPersonLeaves);
+
   const [requestBox, setRequestBox] = useState([]);
 
+  // LS cache güncellemeleri (dispatchEvent çağrıları useStoreEventBridge'e taşındı)
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
     LS.set("workAreas", workAreas);
     LS.set("workAreasV2", workAreas);
-    try {
-      window.dispatchEvent(new Event("workAreas:changed"));
-      window.dispatchEvent(new Event("settings:changed"));
-    } catch {}
   }, [workAreas]);
   useEffect(() => {
     if (!personnelLoadedRef.current) return;
     LS.set("nurses", nurses);
-    try { window.dispatchEvent(new Event("people:changed")); } catch {}
   }, [nurses]);
   useEffect(() => {
     if (!personnelLoadedRef.current) return;
     LS.set("doctors", doctors);
-    try { window.dispatchEvent(new Event("people:changed")); } catch {}
   }, [doctors]);
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
     LS.set("workingHours", workingHours);
     LS.set("workingHoursV2", workingHours);
-    try {
-      window.dispatchEvent(new Event("workingHours:changed"));
-      window.dispatchEvent(new Event("settings:changed"));
-    } catch {}
   }, [workingHours]);
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
     LS.set("leaveTypesV2", leaveTypes);
-    try { window.dispatchEvent(new Event("leaveTypes:changed")); } catch {}
   }, [leaveTypes]);
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
@@ -256,7 +277,6 @@ export default function HospitalRosterApp() {
       .filter(Boolean);
     LS.set("peopleV2", canonical);
     LS.set("people", canonical);
-    try { window.dispatchEvent(new Event("people:changed")); } catch {}
   }, [doctors, nurses]);
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
@@ -272,12 +292,11 @@ export default function HospitalRosterApp() {
 
   /* ---- Backend parametre sync (online-only) ---- */
   const settingsLoadedRef = useRef(false);
-  const personnelLoadedRef = useRef(false);
-  const saveTimersRef = useRef({ wa: null, wh: null, lt: null, rq: null });
-  const lastSavedWorkAreasRef = useRef(null);
+  const personnelLoadedRef       = useRef(false);
+  const lastSavedWorkAreasRef    = useRef(null);
   const lastSavedWorkingHoursRef = useRef(null);
-  const lastSavedLeaveTypesRef = useRef(null);
-  const lastSavedRequestBoxRef = useRef(null);
+  const lastSavedLeaveTypesRef   = useRef(null);
+  const lastSavedRequestBoxRef   = useRef(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -325,131 +344,13 @@ export default function HospitalRosterApp() {
     return () => { controller.abort(); };
   }, [user?.id]);
 
-  const saveSetting = useCallback(async (key, value) => {
-    await API.http.req(`/api/settings/${key}`, {
-      method: "PUT",
-      body: { value, serviceId: "" },
-      retries: 0,
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!settingsLoadedRef.current) return;
-    if (!isAdmin) return;
-    const serialized = JSON.stringify(workAreas ?? []);
-    if (lastSavedWorkAreasRef.current === serialized) {
-      return;
-    }
-    if (saveTimersRef.current.wa) clearTimeout(saveTimersRef.current.wa);
-    saveTimersRef.current.wa = setTimeout(() => {
-      saveSetting("workAreas", workAreas)
-        .then(() => {
-          lastSavedWorkAreasRef.current = serialized;
-        })
-        .catch((err) => {
-          console.warn("workAreas save failed, retrying in 5s:", err?.message || err);
-          saveTimersRef.current.wa = setTimeout(() => {
-            saveSetting("workAreas", workAreas)
-              .then(() => { lastSavedWorkAreasRef.current = serialized; })
-              .catch((e) => console.warn("workAreas retry failed:", e?.message || e));
-          }, 5000);
-        });
-    }, 600);
-    return () => {
-      if (saveTimersRef.current.wa) clearTimeout(saveTimersRef.current.wa);
-    };
-  }, [workAreas, isAdmin, saveSetting]);
-
-  useEffect(() => {
-    if (!settingsLoadedRef.current) return;
-    if (!isAdmin) return;
-    const serialized = JSON.stringify(workingHours ?? []);
-    if (lastSavedWorkingHoursRef.current === serialized) return;
-    if (saveTimersRef.current.wh) clearTimeout(saveTimersRef.current.wh);
-    saveTimersRef.current.wh = setTimeout(() => {
-      saveSetting("workingHours", workingHours)
-        .then(() => {
-          lastSavedWorkingHoursRef.current = serialized;
-        })
-        .catch((err) => {
-          console.warn("workingHours save failed, retrying in 5s:", err?.message || err);
-          saveTimersRef.current.wh = setTimeout(() => {
-            saveSetting("workingHours", workingHours)
-              .then(() => { lastSavedWorkingHoursRef.current = serialized; })
-              .catch((e) => console.warn("workingHours retry failed:", e?.message || e));
-          }, 5000);
-        });
-    }, 600);
-    return () => {
-      if (saveTimersRef.current.wh) clearTimeout(saveTimersRef.current.wh);
-    };
-  }, [workingHours, isAdmin, saveSetting]);
-
-  useEffect(() => {
-    if (!settingsLoadedRef.current) return;
-    if (!isAdmin) return;
-    const serialized = JSON.stringify(leaveTypes ?? []);
-    if (lastSavedLeaveTypesRef.current === serialized) return;
-    if (saveTimersRef.current.lt) clearTimeout(saveTimersRef.current.lt);
-    saveTimersRef.current.lt = setTimeout(() => {
-      saveSetting("leaveTypes", leaveTypes)
-        .then(() => {
-          lastSavedLeaveTypesRef.current = serialized;
-        })
-        .catch((err) => {
-          console.warn("leaveTypes save failed, retrying in 5s:", err?.message || err);
-          saveTimersRef.current.lt = setTimeout(() => {
-            saveSetting("leaveTypes", leaveTypes)
-              .then(() => { lastSavedLeaveTypesRef.current = serialized; })
-              .catch((e) => console.warn("leaveTypes retry failed:", e?.message || e));
-          }, 5000);
-        });
-    }, 600);
-    return () => {
-      if (saveTimersRef.current.lt) clearTimeout(saveTimersRef.current.lt);
-    };
-  }, [leaveTypes, isAdmin, saveSetting]);
-
-  useEffect(() => {
-    if (!settingsLoadedRef.current) return;
-    if (!isAdmin) return;
-    const serialized = JSON.stringify(requestBox ?? []);
-    if (lastSavedRequestBoxRef.current === serialized) return;
-    if (saveTimersRef.current.rq) clearTimeout(saveTimersRef.current.rq);
-    saveTimersRef.current.rq = setTimeout(() => {
-      saveSetting("requestBoxV1", requestBox)
-        .then(() => {
-          lastSavedRequestBoxRef.current = serialized;
-        })
-        .catch((err) => {
-          console.warn("requestBox save failed, retrying in 5s:", err?.message || err);
-          saveTimersRef.current.rq = setTimeout(() => {
-            saveSetting("requestBoxV1", requestBox)
-              .then(() => { lastSavedRequestBoxRef.current = serialized; })
-              .catch((e) => console.warn("requestBox retry failed:", e?.message || e));
-          }, 5000);
-        });
-    }, 600);
-    return () => {
-      if (saveTimersRef.current.rq) clearTimeout(saveTimersRef.current.rq);
-    };
-  }, [requestBox, isAdmin, saveSetting]);
+  /* ---- Backend ayar kayıtları (debounced + retry) ---- */
+  useDebouncedSetting("workAreas",    workAreas,    { gateRef: settingsLoadedRef, enabled: isAdmin, lastSavedRef: lastSavedWorkAreasRef });
+  useDebouncedSetting("workingHours", workingHours, { gateRef: settingsLoadedRef, enabled: isAdmin, lastSavedRef: lastSavedWorkingHoursRef });
+  useDebouncedSetting("leaveTypes",   leaveTypes,   { gateRef: settingsLoadedRef, enabled: isAdmin, lastSavedRef: lastSavedLeaveTypesRef });
+  useDebouncedSetting("requestBoxV1", requestBox,   { gateRef: settingsLoadedRef, enabled: isAdmin, lastSavedRef: lastSavedRequestBoxRef });
 
   const peopleAll = useMemo(() => [...(doctors || []), ...(nurses || [])], [doctors, nurses]);
-  const appDataValue = useMemo(
-    () => ({
-      workAreas,
-      workingHours,
-      leaveTypes,
-      personLeaves,
-      nurses,
-      doctors,
-      peopleAll,
-      setNurses,
-      setDoctors,
-    }),
-    [workAreas, workingHours, leaveTypes, personLeaves, nurses, doctors, peopleAll, setNurses, setDoctors]
-  );
 
   /* ---- Backend’den personel çek ---- */
   const reloadPersonnel = useCallback(async () => {
@@ -470,22 +371,15 @@ export default function HospitalRosterApp() {
           personnelLoadedRef.current = true;
           return;
         }
-        const results = await Promise.all(
-          serviceIds.map((sid) =>
-            API.http.get(`/api/personnel?page=1&size=2000&serviceId=${encodeURIComponent(sid)}`)
-          )
-        );
-        const merged = results.flatMap((r) => (Array.isArray(r?.items) ? r.items : []));
-        const byId = new Map();
-        merged.forEach((p) => {
-          const key = String(p?.id ?? p?._id ?? "");
-          if (!key) return;
-          if (!byId.has(key)) byId.set(key, p);
+        // Tüm sayfaları çek; STAFF kullanıcısının servislerine göre filtrele
+        const allowed = new Set(serviceIds);
+        const all = await fetchAllPages("/api/personnel");
+        items = all.filter((p) => {
+          const sid = String(p?.serviceId ?? p?.service ?? "").trim();
+          return !sid || allowed.has(sid);
         });
-        items = Array.from(byId.values());
       } else {
-        const data = await API.http.get(`/api/personnel?page=1&size=2000`);
-        items = Array.isArray(data?.items) ? data.items : [];
+        items = await fetchAllPages("/api/personnel");
       }
 
       const mapped = items.map((p) => {
@@ -616,6 +510,10 @@ export default function HospitalRosterApp() {
         if (activeTab !== "myRequests") setActiveTab("myRequests");
         return;
       }
+      if (pathname.startsWith("/duyurular")) {
+        if (activeTab !== "announcements") setActiveTab("announcements");
+        return;
+      }
       if (pathname.startsWith("/profilim")) {
         if (activeTab !== "profile") setActiveTab("profile");
         return;
@@ -674,17 +572,135 @@ export default function HospitalRosterApp() {
     closeParamsDd();
   }, [closePersonnelDd, closeSchedulesDd, closeParamsDd]);
 
+  const openDashboard = useCallback(() => {
+    setActiveTab("dashboard");
+    pushUrl("/");
+    closePersonnelDd();
+    closeSchedulesDd();
+    closeParamsDd();
+  }, [closePersonnelDd, closeSchedulesDd, closeParamsDd]);
+
+  const openPlan = useCallback(() => {
+    setActiveTab("plan");
+    if (typeof location !== "undefined") location.hash = "";
+    pushUrl("/");
+    closePersonnelDd();
+    closeSchedulesDd();
+    closeParamsDd();
+  }, [closePersonnelDd, closeSchedulesDd, closeParamsDd]);
+
+  const openUsers = useCallback(() => {
+    setActiveTab("users");
+    pushUrl("/kullanicilar");
+  }, []);
+
+  const openAuditLog = useCallback(() => {
+    setActiveTab("auditlog");
+    pushUrl("/islem-gunlugu");
+  }, []);
+
+  const openRequests = useCallback(() => {
+    const target = (isAdmin || isStaff) ? "requests" : "myRequests";
+    setActiveTab(target);
+    pushUrl("/talepler");
+    closePersonnelDd();
+    closeSchedulesDd();
+    closeParamsDd();
+  }, [isAdmin, isStaff, closePersonnelDd, closeSchedulesDd, closeParamsDd]);
+
+  const openProfile = useCallback(() => {
+    setActiveTab("profile");
+    pushUrl("/profilim");
+    closePersonnelDd();
+    closeSchedulesDd();
+    closeParamsDd();
+  }, [closePersonnelDd, closeSchedulesDd, closeParamsDd]);
+
+  const openAI = useCallback(() => setActiveTab("ai"), []);
+  const openAIScheduler = useCallback(() => setActiveTab("aiScheduler"), []);
+  const openFairness = useCallback(() => setActiveTab("fairness"), []);
+  const openAICost = useCallback(() => setActiveTab("aiCost"), []);
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
+
+  const activeModuleLabel = useMemo(() => {
+    if (activeTab === "dashboard") return "Genel Bakış";
+    if (activeTab === "plan") return isBasicUser ? "Takvimim" : "Planlama";
+    if (activeTab === "personnel") return "Personel";
+    if (activeTab === "schedules") return "Çizelgeler";
+    if (activeTab === "parameters") return "Parametreler";
+    if (activeTab === "users") return "Kullanıcılar";
+    if (activeTab === "auditlog") return "İşlem Günlüğü";
+    if (activeTab === "ai") return "AI Asistan";
+    if (activeTab === "aiScheduler") return "AI Çizelge";
+    if (activeTab === "fairness") return "Adillik";
+    if (activeTab === "aiCost") return "AI Maliyet";
+    if (activeTab === "announcements") return "Duyurular";
+    if (activeTab === "requests" || activeTab === "myRequests") return "Talepler";
+    if (activeTab === "profile") return "Profilim";
+    if (activeTab === "plannings") return "Planlama Yönetimi";
+    if (activeTab === "leaveBalance") return "İzin Bakiyesi";
+    if (activeTab === "occupancyReport") return "Doluluk Raporu";
+    return "Çalışma Alanı";
+  }, [activeTab, isBasicUser]);
+
+  useEffect(() => {
+    const labels = {
+      dashboard: "Dashboard",
+      plan: "Planlama",
+      personnel: "Personel",
+      schedules: "Çizelgeler",
+      parameters: "Parametreler",
+      users: "Kullanıcılar",
+      ai: "AI Asistan",
+      aiScheduler: "AI Çizelge",
+      fairness: "Adillik",
+      aiCost: "AI Maliyet",
+      plannings: "Planlama Yönetimi",
+      leaveBalance: "İzin Bakiyesi",
+      occupancyReport: "Doluluk Raporu",
+      workingHoursSummary: "Çalışma Saatleri",
+      leaveStats: "İzin İstatistikleri",
+    };
+    document.title = `${labels[activeTab] || "Hastane Nöbet"} | Hastane Nöbet Sistemi`;
+  }, [activeTab]);
+
+  const [openBranches, setOpenBranches] = useState({
+    personnel: false,
+    schedules: false,
+    parameters: false,
+  });
+
+  useEffect(() => {
+    if (!["personnel", "schedules", "parameters"].includes(activeTab)) return;
+    setOpenBranches({
+      personnel: activeTab === "personnel",
+      schedules: activeTab === "schedules",
+      parameters: activeTab === "parameters",
+    });
+  }, [activeTab]);
+
+  const toggleBranch = useCallback((branch) => {
+    setOpenBranches((prev) => {
+      const willOpen = !prev[branch];
+      return {
+        personnel: false,
+        schedules: false,
+        parameters: false,
+        [branch]: willOpen,
+      };
+    });
+  }, []);
+
   /* ======================= RENDER ======================= */
   return (
     <ErrorBoundary>
       <Toaster richColors position="bottom-right" />
-      <AppDataProvider value={appDataValue}>
       <div className="w-screen h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_16%,#f8fafc_100%)] text-slate-800 flex flex-col">
         <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
           <div className="w-full px-4 py-3 md:px-6 md:py-4">
             <div className="rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_42px_-34px_rgba(15,23,42,0.28)]">
               <div className="flex flex-col gap-4 px-4 py-4 md:px-5">
-                <div className="grid gap-3 lg:grid-cols-[minmax(320px,1fr)_auto] lg:items-start">
+                <div className="grid gap-3 lg:grid-cols-[minmax(320px,1fr)_auto] lg:items-center">
                   <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 px-4 py-3">
                     <div className="flex min-w-0 items-center gap-4">
                       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-[0_12px_28px_-18px_rgba(15,23,42,0.8)]">
@@ -728,266 +744,239 @@ export default function HospitalRosterApp() {
                     />
                   </div>
                 </div>
-
-                <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-2 overflow-x-auto">
-                  <nav className="flex flex-nowrap sm:flex-wrap gap-2 min-w-max sm:min-w-0">
-              {/* DASHBOARD — Admin + Yetkili */}
-              {canSeeDashboard && (
-                <div style={{ order: navOrder.indexOf("dashboard") !== -1 ? navOrder.indexOf("dashboard") : 0 }} draggable onDragStart={(e) => handleDragStart(e, "dashboard")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "dashboard")}><NavBtn active={activeTab === "dashboard"}
-                  onClick={() => { setActiveTab("dashboard"); pushUrl("/"); closePersonnelDd(); closeSchedulesDd(); closeParamsDd(); }}
-                  icon={LayoutDashboard}
-                >
-                  Genel Bakış</NavBtn></div>
-              )}
-
-              <div style={{ order: navOrder.indexOf("plan") !== -1 ? navOrder.indexOf("plan") : 1 }} draggable onDragStart={(e) => handleDragStart(e, "plan")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "plan")}><NavBtn active={activeTab === "plan"}
-                onClick={() => {
-                  setActiveTab("plan");
-                  if (typeof location !== "undefined") location.hash = "";
-                  pushUrl("/");
-                  closePersonnelDd();
-                  closeSchedulesDd();
-                  closeParamsDd();
-                }}
-                icon={LayoutDashboard}
-              >
-                {isBasicUser ? "Takvimim" : "Planlama"}</NavBtn></div>
-
-              {!isBasicUser && (
-                <>
-              {/* PERSONEL — admin & yetkili */}
-              {canSeePersonnel && (
-                <div style={{ order: navOrder.indexOf("personnel") !== -1 ? navOrder.indexOf("personnel") : 2 }} draggable onDragStart={(e) => handleDragStart(e, "personnel")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "personnel")} className="relative z-20" onMouseEnter={() => { clearTimeout(hoverTimers.current.personnel);
-                    openDetails(personnelDdRef);
-                    closeSchedulesDd();
-                    closeParamsDd();
-                  }}
-                  onMouseLeave={() => {
-                    hoverTimers.current.personnel = setTimeout(() => { closePersonnelDd(); }, 120);
-                  }}
-                >
-                  <details
-                    className="group"
-                    ref={personnelDdRef}
-                    onToggle={(e) => { if (e.currentTarget.open) { closeSchedulesDd(); closeParamsDd(); } }}
-                  >
-                    <summary
-                      className={`${navBase} ${activeTab === "personnel" ? navActive : navIdle}`}
-                      aria-haspopup="menu"
-                      aria-expanded={activeTab === "personnel" ? "true" : "false"}
-                      onClick={(e) => {
-                        setActiveTab("personnel");
-                        const open = personnelDdRef.current?.hasAttribute("open");
-                        e.currentTarget.setAttribute("aria-expanded", String(!open));
-                      }}
-                    >
-                      <Users2 className="h-4 w-4" />
-                      Personel
-                      <ChevronDown className="h-4 w-4 text-current/70" />
-                    </summary>
-
-                    <div role="menu" className="absolute top-full left-0 mt-3 w-72 rounded-2xl border border-slate-200 bg-white shadow-[0_24px_60px_-30px_rgba(15,23,42,0.45)] overflow-hidden z-20">
-                      {personnelSections.map((s) => (
-                        <DropdownItem key={s.id} onSelect={() => goPersonnel(s.id)}>
-                          {s.name}
-                        </DropdownItem>
-                      ))}
-                      <div className="border-t my-1" />
-                      <DropdownItem onSelect={() => goPersonnel()}>
-                        Personel sayfasını aç
-                      </DropdownItem>
-                      <div className="px-3 py-2 text-xs text-slate-500">
-                        Alt sekmeleri <b>Personel</b> içinde <i>Ekle / Düzenle / Sil</i> ile yönetebilirsiniz.
-                      </div>
-                    </div>
-                  </details>
-                </div>
-              )}
-
-              {/* ÇİZELGELER — admin & yetkili */}
-              {canSeeSchedules && (
-                <div style={{ order: navOrder.indexOf("schedules") !== -1 ? navOrder.indexOf("schedules") : 3 }} draggable onDragStart={(e) => handleDragStart(e, "schedules")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "schedules")} className="relative z-20" onMouseEnter={() => { clearTimeout(hoverTimers.current.schedules);
-                    openDetails(schedulesDdRef);
-                    closePersonnelDd();
-                    closeParamsDd();
-                  }}
-                  onMouseLeave={() => {
-                    hoverTimers.current.schedules = setTimeout(() => { closeSchedulesDd(); }, 120);
-                  }}
-                >
-                  <details className="group" ref={schedulesDdRef} onToggle={(e) => { if (e.currentTarget.open) { closePersonnelDd(); closeParamsDd(); } }}>
-                    <summary
-                      className={`${navBase} ${activeTab === "schedules" ? navActive : navIdle}`}
-                      aria-haspopup="menu"
-                      aria-expanded={schedulesDdRef.current?.hasAttribute("open") ? "true" : "false"}
-                      onClick={() => {
-                        setActiveTab("schedules");
-                        const open = schedulesDdRef.current?.hasAttribute("open");
-                        schedulesDdRef.current?.setAttribute("aria-expanded", String(!open));
-                      }}
-                    >
-                      <CalendarIcon className="h-4 w-4" />
-                      Çizelgeler
-                      <ChevronDown className="h-4 w-4 text-current/70" />
-                    </summary>
-                    <div role="menu" className="absolute top-full left-0 mt-3 w-96 rounded-2xl border border-slate-200 bg-white shadow-[0_24px_60px_-30px_rgba(15,23,42,0.45)] overflow-hidden z-20">
-                      <DropdownItem onSelect={() => goSchedules("calisma-cizelgesi")}>Çalışma Çizelgesi</DropdownItem>
-                      <DropdownItem onSelect={() => goSchedules("aylik-calisma-ve-mesai-saatleri-cizelgesi")}>Aylık Çalışma ve Mesai Saatleri Çizelgesi</DropdownItem>
-                      <DropdownItem onSelect={() => goSchedules("fazla-mesai-takip")}>Fazla Mesai Takip Formu</DropdownItem>
-                      <DropdownItem onSelect={() => goSchedules("toplu-izin-listesi")}>Toplu İzin Listesi</DropdownItem>
-                      <div className="border-t my-1" />
-                      <div className="px-3 py-2 text-xs text-slate-500">
-                        Sekmeleri <b>Çizelgeler</b> sayfasında <i>Ekle / Düzenle / Sil</i> ile yönetebilirsiniz.
-                      </div>
-                    </div>
-                  </details>
-                </div>
-              )}
-
-              {/* PARAMETRELER — yalnız admin */}
-              {canSeeParameters && (
-                <div style={{ order: navOrder.indexOf("parameters") !== -1 ? navOrder.indexOf("parameters") : 4 }} draggable onDragStart={(e) => handleDragStart(e, "parameters")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "parameters")} className="relative z-30" onMouseEnter={() => { clearTimeout(hoverTimers.current.params);
-                    openDetails(paramsDdRef);
-                    closePersonnelDd();
-                    closeSchedulesDd();
-                  }}
-                  onMouseLeave={() => {
-                    hoverTimers.current.params = setTimeout(() => { closeParamsDd(); }, 120);
-                  }}
-                >
-                  <details className="group" ref={paramsDdRef} onToggle={(e) => { if (e.currentTarget.open) { closePersonnelDd(); closeSchedulesDd(); } }}>
-                    <summary
-                      className={`${navBase} ${activeTab === "parameters" ? navActive : navIdle}`}
-                      aria-haspopup="menu"
-                      aria-expanded={paramsDdRef.current?.hasAttribute("open") ? "true" : "false"}
-                      onClick={() => {
-                        setActiveTab("parameters");
-                        const open = paramsDdRef.current?.hasAttribute("open");
-                        paramsDdRef.current?.setAttribute("aria-expanded", String(!open));
-                      }}
-                    >
-                      <Settings2 className="h-4 w-4" />
-                      Parametreler
-                      <ChevronDown className="h-4 w-4 text-current/70" />
-                    </summary>
-                    <div role="menu" className="absolute top-full left-0 mt-3 w-80 rounded-2xl border border-slate-200 bg-white shadow-[0_24px_60px_-30px_rgba(15,23,42,0.45)] overflow-hidden z-30">
-                      <DropdownItem onSelect={() => goParams("calisma-alanlari")}>Çalışma Alanları</DropdownItem>
-                      <DropdownItem onSelect={() => goParams("calisma-saatleri")}>Çalışma Saatleri</DropdownItem>
-                      <DropdownItem onSelect={() => goParams("izin-turleri")}>İzin Türleri</DropdownItem>
-                      <DropdownItem onSelect={() => goParams("servisler")}>Servisler</DropdownItem>
-                      <DropdownItem onSelect={() => goParams("tatil-takvimi")}>Tatil Takvimi</DropdownItem>
-                      <DropdownItem onSelect={() => goParams("nobet-kurallari")}>Nöbet Kuralları</DropdownItem>
-                      <DropdownItem onSelect={() => goParams("istek")}>İstek</DropdownItem>
-                      <div className="border-t my-1" />
-                      <div className="px-3 py-2 text-xs text-slate-500">Alt sayfalar <b>Parametreler</b> içinde sekmeli olarak açılır.</div>
-                    </div>
-                  </details>
-                </div>
-              )}
-
-              {/* KULLANICILAR — yalnız Admin */}
-              {canSeeUsersTab && (
-                <div style={{ order: navOrder.indexOf("users") !== -1 ? navOrder.indexOf("users") : 5 }} draggable onDragStart={(e) => handleDragStart(e, "users")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "users")}><NavBtn active={activeTab === "users"}
-                  onClick={() => { setActiveTab("users"); pushUrl("/kullanicilar"); }}
-                  icon={UserRound}
-                >
-                  Kullanıcılar</NavBtn></div>
-              )}
-
-              {/* İŞLEM GÜNLÜĞÜ — yalnız Admin */}
-              {canSeeUsersTab && (
-                <div style={{ order: navOrder.indexOf("auditlog") !== -1 ? navOrder.indexOf("auditlog") : 5 }}>
-                  <NavBtn active={activeTab === "auditlog"}
-                    onClick={() => { setActiveTab("auditlog"); pushUrl("/islem-gunlugu"); }}
-                    icon={() => <span style={{ fontSize: 14 }}>📋</span>}
-                  >
-                    İşlem Günlüğü
-                  </NavBtn>
-                </div>
-              )}
-
-              {/* AI ASİSTAN — Admin + Yetkili */}
-              {canSeeAI && (
-                <div style={{ order: navOrder.indexOf("ai") !== -1 ? navOrder.indexOf("ai") : 6 }}><NavBtn active={activeTab === "ai"}
-                  onClick={() => setActiveTab("ai")}
-                  icon={() => <span style={{ fontSize: 16 }}>🤖</span>}
-                >
-                  AI Asistan</NavBtn></div>
-              )}
-
-              {/* AI ÇİZELGE — Admin + Yetkili */}
-              {canSeeAIScheduler && (
-                <div style={{ order: navOrder.indexOf("aiScheduler") !== -1 ? navOrder.indexOf("aiScheduler") : 7 }} draggable onDragStart={(e) => handleDragStart(e, "aiScheduler")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "aiScheduler")}><NavBtn active={activeTab === "aiScheduler"}
-                  onClick={() => setActiveTab("aiScheduler")}
-                  icon={() => <span style={{ fontSize: 14 }}>✨</span>}
-                >
-                  AI Çizelge</NavBtn></div>
-              )}
-
-              {/* ADİLLİK RAPORU — Admin + Yetkili */}
-              {canSeeFairness && (
-                <div style={{ order: navOrder.indexOf("fairness") !== -1 ? navOrder.indexOf("fairness") : 8 }} draggable onDragStart={(e) => handleDragStart(e, "fairness")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "fairness")}><NavBtn active={activeTab === "fairness"}
-                  onClick={() => setActiveTab("fairness")}
-                  icon={() => <span style={{ fontSize: 14 }}>📊</span>}
-                >
-                  Adillik</NavBtn></div>
-              )}
-
-              {/* AI MALİYET — yalnız Admin */}
-              {canSeeAICost && (
-                <div style={{ order: navOrder.indexOf("aiCost") !== -1 ? navOrder.indexOf("aiCost") : 9 }} draggable onDragStart={(e) => handleDragStart(e, "aiCost")} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, "aiCost")}><NavBtn active={activeTab === "aiCost"}
-                  onClick={() => setActiveTab("aiCost")}
-                  icon={() => <span style={{ fontSize: 14 }}>💰</span>}
-                >
-                  AI Maliyet</NavBtn></div>
-              )}
-                </>
-              )}
-            
-              {/* TALEPLER VE PROFİLİM — flex'in en sağına */}
-              <div className="ml-auto flex gap-2" style={{ order: 999 }}>
-                <NavBtn
-                  active={activeTab === (isAdmin || isStaff ? "requests" : "myRequests")}
-                  onClick={() => {
-                    const target = (isAdmin || isStaff) ? "requests" : "myRequests";
-                    setActiveTab(target);
-                    pushUrl("/talepler");
-                    closePersonnelDd();
-                    closeSchedulesDd();
-                    closeParamsDd();
-                  }}
-                  icon={ClipboardList}
-                >
-                  Talepler
-                </NavBtn>
-                <NavBtn
-                  active={activeTab === "profile"}
-                  onClick={() => {
-                    setActiveTab("profile");
-                    pushUrl("/profilim");
-                    closePersonnelDd();
-                    closeSchedulesDd();
-                    closeParamsDd();
-                  }}
-                  icon={UserRound}
-                >
-                  Profilim
-                </NavBtn>
-              </div>
-            </nav>
-                </div>
               </div>
             </div>
           </div>
         </header>
 
-        <main className="flex-1 w-full px-4 py-6 md:px-6 space-y-6 overflow-auto">
+        <div className="flex-1 min-h-0 w-full px-4 py-5 md:px-6">
+          <div className="grid h-full min-h-0 gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
+            <aside className="min-h-0 overflow-auto rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_18px_42px_-34px_rgba(15,23,42,0.24)]">
+              <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Çalışma Alanı</div>
+                <div className="mt-2 text-lg font-semibold tracking-tight text-slate-950">{activeModuleLabel}</div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Operasyon modülleri solda, sık kullanılan aksiyonlar üstte tutulur. Bu yapı uzun kullanımda daha hızlı gezinme sağlar.
+                </p>
+              </div>
+
+              <div className="mt-5 space-y-5">
+                <SidebarGroup title="Operasyon">
+                  <SidebarNavButton active={activeTab === "plan"} icon={LayoutDashboard} onClick={openPlan}>
+                    {isBasicUser ? "Takvimim" : "Planlama"}
+                  </SidebarNavButton>
+
+                  {isBasicUser && (
+                    <>
+                      <SidebarNavButton
+                        active={activeTab === "announcements"}
+                        icon={() => <span className="text-sm">📣</span>}
+                        onClick={() => { setActiveTab("announcements"); pushUrl("/duyurular"); }}
+                      >
+                        Duyurular
+                      </SidebarNavButton>
+                      <SidebarNavButton
+                        active={activeTab === "myRequests"}
+                        icon={() => <span className="text-sm">📋</span>}
+                        onClick={() => { setActiveTab("myRequests"); pushUrl("/isteklerim"); }}
+                      >
+                        Taleplerim
+                      </SidebarNavButton>
+                    </>
+                  )}
+
+                  {canSeePersonnel && !isBasicUser && (
+                    <SidebarBranch
+                      active={activeTab === "personnel"}
+                      expanded={openBranches.personnel}
+                      icon={Users2}
+                      label="Personel"
+                      onClick={() => goPersonnel()}
+                      onToggle={() => toggleBranch("personnel")}
+                    >
+                      {personnelSections.map((section) => (
+                        <SidebarSubButton key={section.id} onClick={() => goPersonnel(section.id)}>
+                          {section.name}
+                        </SidebarSubButton>
+                      ))}
+                    </SidebarBranch>
+                  )}
+
+                  {canSeeSchedules && !isBasicUser && (
+                    <SidebarBranch
+                      active={activeTab === "schedules"}
+                      expanded={openBranches.schedules}
+                      icon={CalendarIcon}
+                      label="Çizelgeler"
+                      onClick={() => goSchedules()}
+                      onToggle={() => toggleBranch("schedules")}
+                    >
+                      <SidebarSubButton onClick={() => goSchedules("calisma-cizelgesi")}>
+                        Çalışma Çizelgesi
+                      </SidebarSubButton>
+                      <SidebarSubButton onClick={() => goSchedules("aylik-calisma-ve-mesai-saatleri-cizelgesi")}>
+                        Aylık Çalışma ve Mesai
+                      </SidebarSubButton>
+                      <SidebarSubButton onClick={() => goSchedules("fazla-mesai-takip")}>
+                        Fazla Mesai Takip
+                      </SidebarSubButton>
+                      <SidebarSubButton onClick={() => goSchedules("toplu-izin-listesi")}>
+                        Toplu İzin Listesi
+                      </SidebarSubButton>
+                    </SidebarBranch>
+                  )}
+                </SidebarGroup>
+
+                {!isBasicUser && (
+                  <SidebarGroup title="Yönetim">
+                    {canSeeParameters && (
+                      <SidebarBranch
+                        active={activeTab === "parameters"}
+                        expanded={openBranches.parameters}
+                        icon={Settings2}
+                        label="Parametreler"
+                        onClick={() => goParams("calisma-alanlari")}
+                        onToggle={() => toggleBranch("parameters")}
+                      >
+                        <SidebarSubButton onClick={() => goParams("calisma-alanlari")}>Çalışma Alanları</SidebarSubButton>
+                        <SidebarSubButton onClick={() => goParams("calisma-saatleri")}>Çalışma Saatleri</SidebarSubButton>
+                        <SidebarSubButton onClick={() => goParams("izin-turleri")}>İzin Türleri</SidebarSubButton>
+                        <SidebarSubButton onClick={goServices}>Servisler</SidebarSubButton>
+                        <SidebarSubButton onClick={() => goParams("tatil-takvimi")}>Tatil Takvimi</SidebarSubButton>
+                        <SidebarSubButton onClick={() => goParams("nobet-kurallari")}>Nöbet Kuralları</SidebarSubButton>
+                        <SidebarSubButton onClick={() => goParams("cizelge-yapisi")}>Çizelge Yapısı</SidebarSubButton>
+                        <SidebarSubButton onClick={() => goParams("istek")}>İstek</SidebarSubButton>
+                      </SidebarBranch>
+                    )}
+
+                    {canSeeUsersTab && (
+                      <>
+                        <SidebarNavButton active={activeTab === "users"} icon={UserRound} onClick={openUsers}>
+                          Kullanıcılar
+                        </SidebarNavButton>
+                        <SidebarNavButton
+                          active={activeTab === "auditlog"}
+                          icon={() => <span className="text-sm">📋</span>}
+                          onClick={openAuditLog}
+                        >
+                          İşlem Günlüğü
+                        </SidebarNavButton>
+                      </>
+                    )}
+                    {isAdmin && (
+                      <SidebarNavButton
+                        active={activeTab === "plannings"}
+                        icon={() => <span className="text-sm">📋</span>}
+                        onClick={() => setActiveTab("plannings")}
+                      >
+                        Planlama Yönetimi
+                      </SidebarNavButton>
+                    )}
+                    {isAdmin && (
+                      <SidebarNavButton
+                        active={activeTab === "occupancyReport"}
+                        icon={() => <span className="text-sm">📊</span>}
+                        onClick={() => setActiveTab("occupancyReport")}
+                      >
+                        Doluluk Raporu
+                      </SidebarNavButton>
+                    )}
+                    {isAdmin && (
+                      <SidebarNavButton
+                        active={activeTab === "leaveBalance"}
+                        icon={() => <span className="text-sm">📅</span>}
+                        onClick={() => setActiveTab("leaveBalance")}
+                      >
+                        İzin Bakiyesi
+                      </SidebarNavButton>
+                    )}
+                    {isAdmin && (
+                      <SidebarNavButton
+                        active={activeTab === "workingHoursSummary"}
+                        icon={() => <span className="text-sm">⏱️</span>}
+                        onClick={() => setActiveTab("workingHoursSummary")}
+                      >
+                        Çalışma Saatleri
+                      </SidebarNavButton>
+                    )}
+                    {isAdmin && (
+                      <SidebarNavButton
+                        active={activeTab === "leaveStats"}
+                        icon={() => <span className="text-sm">📋</span>}
+                        onClick={() => setActiveTab("leaveStats")}
+                      >
+                        İzin İstatistikleri
+                      </SidebarNavButton>
+                    )}
+                    {canSendAnnouncement && (
+                      <SidebarNavButton
+                        active={false}
+                        icon={() => <span className="text-sm">📢</span>}
+                        onClick={() => setAnnouncementOpen(true)}
+                      >
+                        Duyuru Gönder
+                      </SidebarNavButton>
+                    )}
+                  </SidebarGroup>
+                )}
+
+                {!isBasicUser && canSeeFairness && (
+                  <SidebarGroup title="Analiz">
+                    {canSeeFairness && (
+                      <SidebarNavButton
+                        active={activeTab === "fairness"}
+                        icon={() => <span className="text-sm">📊</span>}
+                        onClick={openFairness}
+                      >
+                        Adillik
+                      </SidebarNavButton>
+                    )}
+                  </SidebarGroup>
+                )}
+              </div>
+            </aside>
+
+            <main className="min-h-0 overflow-auto space-y-5">
+              <div className="rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_18px_42px_-34px_rgba(15,23,42,0.24)]">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Hızlı Kısayollar</div>
+                    <div className="mt-1 text-lg font-semibold tracking-tight text-slate-950">Sık kullanılan işlemler</div>
+                    <p className="mt-1 text-sm text-slate-600">Yardımcı işlemleri üstte tutup, ana modülleri solda bırakarak gezinmeyi sadeleştirdik.</p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {canSeeAI && (
+                      <QuickActionBtn active={activeTab === "ai"} icon={() => <span className="text-sm">🤖</span>} onClick={openAI}>
+                        AI Asistan
+                      </QuickActionBtn>
+                    )}
+                    <QuickActionBtn
+                      active={activeTab === (isAdmin || isStaff ? "requests" : "myRequests")}
+                      icon={ClipboardList}
+                      onClick={openRequests}
+                    >
+                      Talepler
+                    </QuickActionBtn>
+                    <QuickActionBtn active={activeTab === "profile"} icon={UserRound} onClick={openProfile}>
+                      Profilim
+                    </QuickActionBtn>
+                    {!isBasicUser && (
+                      <div className="min-w-[240px] rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <BackupButtons compact />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-6">
           {activeTab === "dashboard" && canSeeDashboard && (
             <DashboardPage
               activeYM={ymKey(getActiveYM())}
               peopleAll={peopleAll}
               onGoSchedules={() => setActiveTab("schedules")}
-              onGoAI={() => setActiveTab("ai")}
+              onGoAI={openAI}
             />
           )}
 
@@ -1069,22 +1058,36 @@ export default function HospitalRosterApp() {
           )}
 
           {activeTab === "myRequests" && <MyRequestsTab />}
+          {activeTab === "announcements" && isBasicUser && (
+            <div className="rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_18px_42px_-34px_rgba(15,23,42,0.24)]">
+              <AnnouncementsPanel />
+            </div>
+          )}
           {activeTab === "requests" && (isAdmin || isStaff) && <RequestsManagementTab />}
           {activeTab === "profile" && <UserProfile currentUser={user} onUpdate={refresh} />}
 
           {activeTab === "ai" && canSeeAI && (
-            <div style={{ padding: 24, maxWidth: 720, margin: '0 auto', height: 'calc(100vh - 120px)' }}>
+            <div className="p-6 max-w-3xl mx-auto" style={{ height: 'calc(100vh - 120px)' }}>
               <AIChatPanel style={{ height: '100%' }} />
             </div>
           )}
-        </main>
+
+          {activeTab === "plannings" && isAdmin && <PlanningManagementTab />}
+          {activeTab === "leaveBalance" && isAdmin && <LeaveBalanceTab />}
+          {activeTab === "occupancyReport" && isAdmin && <OccupancyReportPage />}
+          {activeTab === "workingHoursSummary" && isAdmin && <WorkingHoursSummaryPage />}
+          {activeTab === "leaveStats" && isAdmin && <LeaveStatsPage />}
+          {announcementOpen && <AnnouncementModal onClose={() => setAnnouncementOpen(false)} />}
+              </div>
+            </main>
+          </div>
+        </div>
 
         {/* Floating AI Chat — her yerden erişilebilir, AI tab'ında gizle */}
         {canSeeAI && activeTab !== "ai" && (
           <FloatingAIChat activeYM={ymKey(getActiveYM())} />
         )}
       </div>
-      </AppDataProvider>
     </ErrorBoundary>
   );
 }
@@ -1127,6 +1130,7 @@ function UserBadge({ user, onLogout, onChanged }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <NotificationBell />
         <button
           className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-100 transition-colors"
           onClick={() => setChangeOpen(true)}
@@ -1208,30 +1212,42 @@ function ChangePasswordModal({ open, onClose, force = false, onChanged }) {
   return (
     <Modal open={open} onClose={modalOnClose} title="Şifre Değiştir" maxWidth="max-w-md">
       <form onSubmit={handleSubmit} className="space-y-3">
-        <input
-          className={input}
-          type="password"
-          placeholder="Mevcut şifre"
-          value={oldPass}
-          onChange={(e) => setOldPass(e.target.value)}
-          autoComplete="current-password"
-        />
-        <input
-          className={input}
-          type="password"
-          placeholder="Yeni şifre (min 6)"
-          value={newPass}
-          onChange={(e) => setNewPass(e.target.value)}
-          autoComplete="new-password"
-        />
-        <input
-          className={input}
-          type="password"
-          placeholder="Yeni şifre (tekrar)"
-          value={newPass2}
-          onChange={(e) => setNewPass2(e.target.value)}
-          autoComplete="new-password"
-        />
+        <div className="space-y-1">
+          <label htmlFor="current-password" className="block text-[12px] font-medium text-slate-600">Mevcut Şifre</label>
+          <input
+            id="current-password"
+            className={input}
+            type="password"
+            placeholder="Mevcut şifre"
+            value={oldPass}
+            onChange={(e) => setOldPass(e.target.value)}
+            autoComplete="current-password"
+          />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="new-password" className="block text-[12px] font-medium text-slate-600">Yeni Şifre</label>
+          <input
+            id="new-password"
+            className={input}
+            type="password"
+            placeholder="Yeni şifre (min 6)"
+            value={newPass}
+            onChange={(e) => setNewPass(e.target.value)}
+            autoComplete="new-password"
+          />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="new-password-confirm" className="block text-[12px] font-medium text-slate-600">Yeni Şifre Tekrar</label>
+          <input
+            id="new-password-confirm"
+            className={input}
+            type="password"
+            placeholder="Yeni şifre (tekrar)"
+            value={newPass2}
+            onChange={(e) => setNewPass2(e.target.value)}
+            autoComplete="new-password"
+          />
+        </div>
 
         {force && (
           <div className="text-xs text-amber-700">İlk girişte şifreyi değiştirmeniz gerekiyor.</div>
@@ -1326,6 +1342,115 @@ function MyCalendarBox({ me, people = [], allLeaves = {}, workAreas = [], workin
         />
       </div>
     </div>
+  );
+}
+
+function SidebarGroup({ title, children }) {
+  return (
+    <section>
+      <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{title}</div>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+}
+
+function SidebarNavButton({ active, onClick, children, icon: Icon }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex min-h-[96px] w-full items-center gap-3 rounded-[22px] border px-4 py-4 text-left text-sm font-medium transition ${
+        active
+          ? "border-slate-900 bg-slate-950 text-white shadow-[0_14px_30px_-20px_rgba(15,23,42,0.8)]"
+          : "border-slate-200 bg-slate-50/80 text-slate-700 hover:border-slate-300 hover:bg-white"
+      }`}
+    >
+      <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
+        active ? "border-white/15 bg-white/10 text-white" : "border-slate-200 bg-white text-slate-500"
+      }`}>
+        {Icon ? <Icon className="h-4 w-4" /> : null}
+      </span>
+      <span className="truncate">{children}</span>
+    </button>
+  );
+}
+
+function SidebarBranch({ active, expanded, icon: Icon, label, onClick, onToggle, children }) {
+  return (
+    <div className="space-y-2">
+      <div className={`flex min-h-[96px] items-center gap-2 rounded-[22px] border px-4 py-4 transition ${
+        active ? "border-slate-900 bg-slate-950 text-white shadow-[0_14px_30px_-20px_rgba(15,23,42,0.8)]" : "border-slate-200 bg-slate-50/80 text-slate-700 hover:border-slate-300 hover:bg-white"
+      }`}>
+        <button
+          type="button"
+          onClick={onClick}
+          className={`flex min-w-0 flex-1 items-center gap-3 rounded-2xl text-left text-sm font-medium transition ${
+            active ? "text-white" : "text-slate-700"
+          }`}
+        >
+          <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
+            active ? "border-white/15 bg-white/10 text-white" : "border-slate-200 bg-white text-slate-500"
+          }`}>
+            {Icon ? <Icon className="h-4 w-4" /> : null}
+          </span>
+          <div className="min-w-0">
+            <div className="truncate text-[15px] font-semibold">{label}</div>
+            <div className={`mt-1 text-xs leading-5 ${active ? "text-slate-300" : "text-slate-500"}`}>Alt sayfalara hızlı geçiş</div>
+          </div>
+        </button>
+        <button
+          type="button"
+          aria-label={expanded ? `${label} bölümünü kapat` : `${label} bölümünü aç`}
+          aria-expanded={expanded ? "true" : "false"}
+          onClick={onToggle}
+          className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border transition ${
+            active
+              ? "border-white/10 bg-white/10 text-white hover:bg-white/15"
+              : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700"
+          }`}
+        >
+          <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
+        </button>
+      </div>
+      <div className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${expanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+        <div className="overflow-hidden">
+          <div className={`ml-4 space-y-1 rounded-[20px] border px-2 py-2 shadow-[0_10px_24px_-20px_rgba(15,23,42,0.18)] ${
+            active ? "border-slate-200 bg-slate-50/95" : "border-slate-200 bg-white"
+          }`}>
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SidebarSubButton({ onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="block w-full rounded-xl px-3 py-2 text-left text-[13px] text-slate-600 transition hover:bg-white hover:text-slate-900"
+    >
+      {children}
+    </button>
+  );
+}
+
+function QuickActionBtn({ active, onClick, children, icon: Icon }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex h-11 items-center gap-2 rounded-2xl border px-4 text-sm font-medium transition ${
+        active
+          ? "border-slate-900 bg-slate-950 text-white shadow-[0_14px_30px_-20px_rgba(15,23,42,0.8)]"
+          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+      }`}
+    >
+      {Icon ? <Icon className="h-4 w-4" /> : null}
+      {children}
+    </button>
   );
 }
 

@@ -9,6 +9,7 @@ import { LS } from "../utils/storage.js";
 import { useAppStore } from "../state/appStore";
 import ScheduleToolbar from "../components/ScheduleToolbar.jsx";
 import PersonScheduleCalendar from "../components/PersonScheduleCalendar.jsx";
+import { WorkspaceHero, WorkspacePanel, WorkspaceStatCard } from "../components/workspace/WorkspaceShell.jsx";
 import { API } from "../lib/api.js";
 import { generateSchedulerPlan, getMyRequests } from "../api/apiAdapter.js";
 import { invalidateScheduleCache } from "../store/monthlyScheduleModel.js";
@@ -741,8 +742,8 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
     [allLeaves, calendarPeople, year, month]
   );
 
-  const today = new Date();
   const leaveCountToday = useMemo(() => {
+    const today = new Date(); // useMemo içinde hesapla — stale closure riski yok
     if (today.getFullYear() !== year || today.getMonth() + 1 !== month) return null;
     return countPeopleOnSpecificLeaveDay(allLeaves, calendarPeople, year, month, today.getDate());
   }, [allLeaves, calendarPeople, year, month]);
@@ -826,7 +827,7 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
       }
     })();
     return () => { alive = false; };
-  }, [isStandardUser, forcedPerson, normalizedMatchedPerson, apiMatchedPerson, user]);
+  }, [isStandardUser, forcedPerson, normalizedMatchedPerson]); // apiMatchedPerson dep'ten çıkarıldı: içeride !apiMatchedPerson guard ile yönetiliyor; object referans değişimi sonsuz döngüye yol açar
 
   useEffect(() => {
     let alive = true;
@@ -860,7 +861,7 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
     ).toLowerCase();
     const inferred = /doktor|doctor|hekim|tabip/.test(hint) ? "Doctor" : "Nurse";
     setActiveRole(inferred);
-  }, [isStandardUser, normalizedMatchedPerson, fallbackPerson]);
+  }, [isStandardUser, normalizedMatchedPerson, fallbackPerson, setActiveRole]);
 
   const handleRunPlanner = useCallback(async () => {
     try {
@@ -975,68 +976,72 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
 
   return (
     <div className="p-4 md:p-5 space-y-5">
-      <section className="rounded-[24px] border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="border-b border-slate-200 px-4 py-4 md:px-6 md:py-5">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-            <div className="space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
-                <Sparkles className="h-3.5 w-3.5" />
-                {canManage ? "Planlama Yönetimi" : "Kişisel Planlama Görünümü"}
-              </div>
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-slate-900 md:text-[28px]">
-                  {canManage ? "Planlama Kontrol Merkezi" : "Kişisel Çalışma Takvimi"}
-                </h1>
-                <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
-                  Seçili dönem, servis kapsamı ve kişi planı tek çalışma yüzeyinde toplanır. Üstte bağlamı kontrol edip altta doğrudan takvime inersin.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
-                  <CalendarDays className="h-3.5 w-3.5 text-sky-600" />
-                  {MONTH_LABEL(year, month)}
-                </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
-                  <Building2 className="h-3.5 w-3.5 text-indigo-600" />
-                  {currentServiceName}
-                </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
-                  <Users className="h-3.5 w-3.5 text-emerald-600" />
-                  {visiblePeopleCount} kişi
-                </span>
-                <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${
-                  plannerTone === "rose"
-                    ? "border-rose-200 bg-rose-50 text-rose-700"
-                    : plannerTone === "amber"
-                      ? "border-amber-200 bg-amber-50 text-amber-700"
-                      : plannerTone === "emerald"
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        : "border-slate-200 bg-slate-50 text-slate-700"
-                }`}>
-                  <Activity className="h-3.5 w-3.5" />
-                  {plannerStatus === "loading" ? "Planlama çalışıyor" : plannerStatus === "done" ? "Plan hazır" : plannerStatus === "error" ? "Müdahale gerekli" : "Plan beklemede"}
-                </span>
-              </div>
-            </div>
+      <WorkspaceHero
+        badges={[
+          { icon: Sparkles, label: canManage ? "Planlama Yönetimi" : "Kişisel Planlama Görünümü", tone: "border-sky-200 bg-sky-50 text-sky-700" },
+        ]}
+        title={canManage ? "Planlama Kontrol Merkezi" : "Kişisel Çalışma Takvimi"}
+        description="Seçili dönem, servis kapsamı ve kişi planı tek çalışma yüzeyinde toplanır. Üstte bağlamı kontrol edip altta doğrudan takvime inersin."
+        metrics={[
+          { icon: CalendarDays, accent: "sky", label: "Dönem", value: MONTH_LABEL(year, month) },
+          { icon: Building2, accent: "emerald", label: "Servis", value: currentServiceName },
+          { icon: Users, accent: "violet", label: "Personel", value: `${visiblePeopleCount} kişi` },
+          {
+            icon: Activity,
+            accent: plannerTone === "rose" ? "amber" : plannerTone === "emerald" ? "emerald" : plannerTone === "amber" ? "amber" : "sky",
+            label: "Plan Durumu",
+            value: plannerStatus === "loading" ? "Planlama çalışıyor" : plannerStatus === "done" ? "Plan hazır" : plannerStatus === "error" ? "Müdahale gerekli" : "Plan beklemede",
+          },
+        ]}
+      />
 
-            <div className="w-full xl:max-w-[640px]">
-              <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 p-3">
-                <ScheduleToolbar
-                  title={`${canManage ? "Planlama" : "Takvimim"} • ${MONTH_LABEL(year, month)}`}
-                  year={year}
-                  month={month}
-                  setYear={setYear}
-                  setMonth={setMonth}
-                  onBuild={canManage ? handleRunPlanner : undefined}
-                  building={plannerStatus === "loading"}
-                  role={canManage ? activeRole : undefined}
-                  onRoleChange={canManage ? setActiveRole : undefined}
-                />
-              </div>
-            </div>
+      <WorkspacePanel
+        title="Planlama Bağlamı"
+        description={canManage
+          ? "Servis ve rol kırılımını buradan yönetebilir, alttaki takvimde sonucu anında görebilirsin."
+          : "Kişisel planın seçili ay ve vardiya tanımlarına göre aşağıda görüntülenir."}
+        aside={
+          <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 p-3">
+            <ScheduleToolbar
+              title={`${canManage ? "Planlama" : "Takvimim"} • ${MONTH_LABEL(year, month)}`}
+              year={year}
+              month={month}
+              setYear={setYear}
+              setMonth={setMonth}
+              onBuild={canManage ? handleRunPlanner : undefined}
+              building={plannerStatus === "loading"}
+              role={canManage ? activeRole : undefined}
+              onRoleChange={canManage ? setActiveRole : undefined}
+            />
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
+          {showServiceSelect && (
+            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <span className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">Servis</span>
+              <select
+                className="h-9 min-w-[180px] rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                value={selectedService}
+                onChange={(e) => setSelectedService(e.target.value)}
+              >
+                {serviceOptions.map((opt) => (
+                  <option key={opt.id ?? "_"} value={opt.id ?? ""}>
+                    {opt.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+            <span className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">Rol</span>
+            <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-slate-800 shadow-sm">
+              {activeRole === "Doctor" ? "Doktorlar" : "Hemşireler"}
+            </span>
           </div>
         </div>
-      </section>
+      </WorkspacePanel>
 
       {plannerStatus === "error" && (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
@@ -1106,36 +1111,25 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-sky-100 bg-sky-50/70 p-4">
-              <div className="text-xs font-medium uppercase tracking-[0.14em] text-sky-700">Görünen Personel</div>
-              <div className="mt-2 text-3xl font-semibold text-slate-900">{visiblePeopleCount}</div>
-              <div className="mt-1 text-xs text-slate-500">Seçili servis ve rol filtresine göre</div>
-            </div>
-            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
-              <div className="text-xs font-medium uppercase tracking-[0.14em] text-emerald-700">
-                {leaveCountToday === null ? "Bu Ay İzin Kaydı" : "Bugün İzinli"}
-              </div>
-              <div className="mt-2 text-3xl font-semibold text-slate-900">
-                {leaveCountToday === null ? monthlyLeaveCount : leaveCountToday}
-              </div>
-              <div className="mt-1 text-xs text-slate-500">
-                {leaveCountToday === null ? "Seçili aydaki toplam izin işareti" : "Bugünün kişi bazlı izin sayısı"}
-              </div>
-            </div>
-            <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-4">
-              <div className="text-xs font-medium uppercase tracking-[0.14em] text-amber-700">Bekleyen Talep</div>
-              <div className="mt-2 text-3xl font-semibold text-slate-900">{pendingRequestCount}</div>
-              <div className="mt-1 text-xs text-slate-500">
-                {requestError ? "Talep özeti okunamadı" : `${approvedRequestCount} talep sonuçlandı`}
-              </div>
-            </div>
-            <div className="rounded-2xl border border-violet-100 bg-violet-50/70 p-4">
-              <div className="text-xs font-medium uppercase tracking-[0.14em] text-violet-700">Plan Durumu</div>
-              <div className="mt-2 text-xl font-semibold text-slate-900">
-                {plannerStatus === "loading" ? "Oluşturuluyor" : plannerStatus === "done" ? "Hazır" : plannerStatus === "error" ? "Müdahale Gerekli" : "Beklemede"}
-              </div>
-              <div className="mt-1 text-xs text-slate-500">{roleLabel} · {currentServiceName}</div>
-            </div>
+            <WorkspaceStatCard title="Görünen Personel" value={visiblePeopleCount} caption="Seçili servis ve rol filtresine göre" accent="sky" />
+            <WorkspaceStatCard
+              title={leaveCountToday === null ? "Bu Ay İzin Kaydı" : "Bugün İzinli"}
+              value={leaveCountToday === null ? monthlyLeaveCount : leaveCountToday}
+              caption={leaveCountToday === null ? "Seçili aydaki toplam izin işareti" : "Bugünün kişi bazlı izin sayısı"}
+              accent="emerald"
+            />
+            <WorkspaceStatCard
+              title="Bekleyen Talep"
+              value={pendingRequestCount}
+              caption={requestError ? "Talep özeti okunamadı" : `${approvedRequestCount} talep sonuçlandı`}
+              accent="amber"
+            />
+            <WorkspaceStatCard
+              title="Plan Durumu"
+              value={plannerStatus === "loading" ? "Oluşturuluyor" : plannerStatus === "done" ? "Hazır" : plannerStatus === "error" ? "Müdahale Gerekli" : "Beklemede"}
+              caption={`${roleLabel} · ${currentServiceName}`}
+              accent="violet"
+            />
           </div>
 
           <div className="mt-4 grid gap-3 lg:grid-cols-[1.1fr_0.9fr]">
@@ -1308,6 +1302,14 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
       )}
 
       <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm overflow-hidden">
+        {/* Print stilleri */}
+        <style>{`
+          @media print {
+            body > * { display: none !important; }
+            body > div > main { display: block !important; }
+            .no-print { display: none !important; }
+          }
+        `}</style>
         <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-3 md:px-5">
           <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
             <div>
@@ -1316,8 +1318,17 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
                 Günlük atamalar, izinler ve kişi bazlı özet aynı yüzeyde gösterilir.
               </div>
             </div>
-            <div className="text-xs text-slate-500">
-              {currentServiceName} · {activeRole === "Doctor" ? "Doktor" : "Hemşire"} görünümü
+            <div className="flex items-center gap-3">
+              <div className="text-xs text-slate-500">
+                {currentServiceName} · {activeRole === "Doctor" ? "Doktor" : "Hemşire"} görünümü
+              </div>
+              <button
+                onClick={() => window.print()}
+                className="no-print flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 text-[13px] text-slate-600 hover:bg-slate-50"
+                title="Nöbet takvimini yazdır"
+              >
+                🖨️ Yazdır
+              </button>
             </div>
           </div>
         </div>

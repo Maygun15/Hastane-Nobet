@@ -488,10 +488,10 @@ const OvertimeTab = forwardRef(function OvertimeTab({
       .catch(() => []);
 
     if (truthAssignments.length) {
-      // Takas ile değiştirilmiş atamaları işaretle
+      // Takas/hızlı yerine atama ile değiştirilmiş atamaları işaretle
       const swapMap = new Map(); // personId → Set<YYYY-MM-DD>
       for (const a of truthAssignments) {
-        if (a.source !== 'swap') continue;
+        if (!['swap', 'quickReplace'].includes(a.source)) continue;
         const pid = String(a.personId || '').trim();
         const date = String(a.date || '').slice(0, 10);
         if (!pid || !date) continue;

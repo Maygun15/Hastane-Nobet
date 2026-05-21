@@ -1,11 +1,12 @@
 // src/App.jsx
-import React, { Suspense } from "react";
+import React, { Suspense, lazy } from "react";
 import { useAuth } from "./auth/AuthContext.jsx";
-import HospitalRosterApp from "./app/HospitalRosterApp.jsx";
-import AuthDemo from "./pages/AuthDemo.jsx";
 import useActiveYM from "./hooks/useActiveYM.js";
-import ResetPasswordPage from "./pages/ResetPassword.jsx"; // ← yeni: token’lı parola sıfırlama
 import OfflineIndicator from "./components/OfflineIndicator.jsx";
+
+const HospitalRosterApp = lazy(() => import("./app/HospitalRosterApp.jsx"));
+const AuthDemo          = lazy(() => import("./pages/AuthDemo.jsx"));
+const ResetPasswordPage = lazy(() => import("./pages/ResetPassword.jsx"));
 
 /* Görünmez köprü: legacy plannerYear/plannerMonth varsa store'a ilk aşamada uygular,
    store değişince de eski anahtarları günceller (useActiveYM bu işi yapıyor). */

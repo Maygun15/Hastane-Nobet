@@ -194,15 +194,19 @@ export function extractAssignmentsFromSchedule(scheduleData, year, month1, optio
   if (Array.isArray(directAssignments) && directAssignments.length > 0) {
     return directAssignments.map((a) => {
       if (!a) return null;
-      if (a.roleLabel) return a;
       const shiftId = String(a.shiftId || a.rowId || "").trim();
       const shiftCode = String(a.shiftCode || a.shift || a.code || "").trim().toUpperCase();
       const def = defById.get(shiftId) || defByCode.get(shiftCode) || null;
       if (!def) return a;
+      const defShiftCode = String(def.shiftCode || def.code || "").trim();
+      const hasUsefulRoleLabel = !!String(a.roleLabel || "").trim();
+      const looksLikeRowId =
+        /^\d{10,}$/.test(String(a.shiftCode || "").trim()) ||
+        /^\d{10,}$/.test(String(a.shiftId || "").trim());
       return {
         ...a,
-        roleLabel: def.label || def.area || def.name || shiftId,
-        shiftCode: shiftCode || String(def.shiftCode || def.code || "").trim(),
+        roleLabel: hasUsefulRoleLabel ? a.roleLabel : (def.label || def.area || def.name || shiftId),
+        shiftCode: looksLikeRowId ? (defShiftCode || shiftCode) : (shiftCode || defShiftCode),
       };
     }).filter(Boolean);
   }

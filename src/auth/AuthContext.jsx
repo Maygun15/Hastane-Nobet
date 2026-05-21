@@ -39,7 +39,7 @@ export function AuthProvider({ children }) {
     try {
       if (user) {
         // eslint-disable-next-line no-unused-vars
-        const { tc, password, passwordHash, nationalId, ...safe } = user;
+        const { tc, password, passwordHash, nationalId, phone, email, ...safe } = user;
         localStorage.setItem("authUser", JSON.stringify(safe));
       } else {
         localStorage.removeItem("authUser");

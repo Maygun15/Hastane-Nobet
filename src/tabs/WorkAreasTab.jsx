@@ -1,5 +1,6 @@
 // src/tabs/WorkAreasTab.jsx
 import React, { useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import IDCard from "../components/IDCard.jsx";
 import {
@@ -159,8 +160,8 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
   /* -------- CRUD -------- */
   const addArea = () => {
     const v = name.trim();
-    if (!v) return alert("Alan adı boş olamaz.");
-    if (areas.some((a) => norm(a) === norm(v))) return alert("Bu alan zaten var.");
+    if (!v) return toast.error("Alan adı boş olamaz.");
+    if (areas.some((a) => norm(a) === norm(v))) return toast.error("Bu alan zaten var.");
     setAreas((prev) => sortAreaNames([...prev, v]));
     setSelectedAreaKey(slugTR(v));
     setName("");
@@ -183,10 +184,10 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
 
   const saveEdit = () => {
     const v = editingValue.trim();
-    if (!v) return alert("Alan adı boş olamaz.");
+    if (!v) return toast.error("Alan adı boş olamaz.");
     // aynı isim var mı? (kendi satırı hariç)
     if (areas.some((a, i) => i !== editingIndex && norm(a) === norm(v))) {
-      return alert("Bu ad zaten mevcut.");
+      return toast.error("Bu ad zaten mevcut.");
     }
     setAreas((prev) => sortAreaNames(prev.map((a, i) => (i === editingIndex ? v : a))));
     setSelectedAreaKey(slugTR(v));
@@ -239,10 +240,10 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
 
         cancelEdit();
         setAreas(sortAreaNames(cleaned));
-        alert("Excel'den yükleme tamam.");
+        toast.success("Excel'den yükleme tamam.");
       } catch (err) {
         console.error(err);
-        alert(`Excel yüklenemedi: ${err?.message || "Beklenen sayfa: CalismaAlanlari, başlık: ALAN"}`);
+        toast.error(`Excel yüklenemedi: ${err?.message || "Beklenen sayfa: CalismaAlanlari, başlık: ALAN"}`);
       } finally {
         e.target.value = "";
       }

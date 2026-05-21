@@ -14,12 +14,13 @@
   color-scheme: light;
 
   /* Tipografi */
-  --app-font-size: 13px;       /* tablo metinleri */
-  --app-font-size-sm: 12px;    /* dipnot/ikincil */
-  --app-line-height: 1.35;
+  --app-font-size: 13px;
+  --app-font-size-sm: 12px;
+  --app-line-height: 1.4;
 
-  /* Köşe ve çerçeveler */
-  --app-radius: 14px;
+  /* Köşe — token sistemiyle hizalandı */
+  --app-radius: 12px;       /* card */
+  --app-radius-control: 8px; /* buton, input */
 }
 
 html, body, #root {
@@ -28,11 +29,10 @@ html, body, #root {
 
 body {
   margin: 0;
-  font-family:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, "Noto Sans",
-    "Apple Color Emoji", "Segoe UI Emoji";
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   line-height: var(--app-line-height);
+  background: #f7f8fc;
+  color: #0d1b3e;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -71,38 +71,48 @@ body {
 /* ===== Buton standardı ===== */
 .tl-btn {
   @apply inline-flex items-center justify-center select-none;
-  height: 34px;
-  padding: 0 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(0,0,0,0.07);
-  background: #fafafa;
-  transition: background 120ms ease;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: var(--app-radius-control);
+  border: 1px solid rgba(13,27,62,0.12);
+  background: #ffffff;
+  font-family: inherit;
+  font-size: 13px;
+  transition: background 120ms ease, box-shadow 120ms ease;
 }
-.tl-btn:hover { background: #f2f2f2; }
+.tl-btn:hover { background: #f1f4f9; }
 
 .tl-btn-primary {
-  background: #111827;  /* gray-900 */
+  background: #0d1b3e;
   color: #fff;
-  border-color: #111827;
+  border-color: #0d1b3e;
 }
-.tl-btn-primary:hover { filter: brightness(0.92); }
+.tl-btn-primary:hover { background: #152a5c; }
 
 /* ===== Basit yardımcılar (opsiyonel) ===== */
 .tl-input {
   @apply outline-none;
-  height: 34px;
-  padding: 0 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(0,0,0,0.07);
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--app-radius-control);
+  border: 1px solid #e2e8f0;
   background: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
+.tl-input:focus {
+  border-color: #1d4ed8;
+  box-shadow: 0 0 0 3px rgba(29,78,216,0.12);
+}
+
 .tl-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
-  border-radius: 10px;
-  border: 1px solid rgba(0,0,0,0.08);
+  padding: 3px 8px;
+  border-radius: var(--app-radius-control);
+  border: 1px solid rgba(13,27,62,0.10);
   background: #fff;
   font-size: 12px;
 }

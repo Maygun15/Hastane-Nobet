@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { UserCheck, X, Loader2, RefreshCw, AlertCircle } from "lucide-react";
-import { assignSchedule, getSwapSuggestions, unassignSchedule } from "../api/apiAdapter.js";
+import { assignSchedule, getSwapSuggestions } from "../api/apiAdapter.js";
 import { fetchScheduleTruth } from "../utils/scheduleTruth.js";
 
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -383,41 +383,26 @@ export default function QuickReplacePanel({
     if (!selectedDate || !selectedSlot || !departingPerson) return;
     setAssigning(candidate.id);
     setAssignError("");
-    const unassignPayload = {
-      sectionId,
-      serviceId: selectedSlot.serviceId || serviceId,
-      role: scheduleRole,
-      date: selectedDate,
-      shiftId: selectedSlot.rowId || selectedSlot.shiftId || selectedSlot.shiftCode,
-      shiftCode: selectedSlot.shiftCode,
-      personId: departingPerson.id,
-      personName: departingPerson.name,
-      roleLabel: selectedSlot.taskLabel,
-    };
     const assignPayload = {
       sectionId,
       serviceId: selectedSlot.serviceId || serviceId,
       role: scheduleRole,
       date: selectedDate,
+      rowId: selectedSlot.rowId || selectedSlot.shiftId || selectedSlot.shiftCode,
       shiftId: selectedSlot.rowId || selectedSlot.shiftId || selectedSlot.shiftCode,
       shiftCode: selectedSlot.shiftCode,
+      replacePersonId: departingPerson.id,
+      replacePersonName: departingPerson.name,
+      replaceShiftId: selectedSlot.rowId || selectedSlot.shiftId || selectedSlot.shiftCode,
+      replaceShiftCode: selectedSlot.shiftCode,
+      replaceRoleLabel: selectedSlot.taskLabel,
       personId: candidate.id,
       personName: candidate.name,
       roleLabel: selectedSlot.taskLabel,
     };
 
     try {
-      await unassignSchedule(unassignPayload);
-      try {
-        await assignSchedule(assignPayload);
-      } catch (assignErr) {
-        try {
-          await assignSchedule(unassignPayload);
-        } catch {
-          // best-effort rollback only
-        }
-        throw assignErr;
-      }
+      await assignSchedule(assignPayload);
       setAssignedIds((prev) => new Set([...prev, candidate.id]));
       onAssigned?.();
     } catch (err) {

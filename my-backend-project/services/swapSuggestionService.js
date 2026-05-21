@@ -279,13 +279,15 @@ async function suggestSwaps({
 
   const candidates = await Person.find(personQuery)
     .select('_id name serviceId meta')
+    .limit(2000)
     .lean();
 
   // SSOT: use Assignment collection for counting and conflict detection
   const assignQuery = { year: ym.year, month: ym.month };
   if (hospitalId) assignQuery.hospitalId = hospitalId;
   const monthAssignments = await Assignment.find(assignQuery)
-    .select('personId date')
+    .select('personId personName date')
+    .limit(10000)
     .lean();
 
   const assignCountByPerson = {};

@@ -1,5 +1,6 @@
 // src/tabs/HolidayCalendarTab.jsx
 import React, { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { http } from "../lib/api.js";
 const norm = (s) => (s ?? "").toString().trim();
 const isValidDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -159,7 +160,7 @@ export default function HolidayCalendarTab() {
   const upsert = async (e) => {
     e?.preventDefault?.();
     const date = norm(form.date);
-    if (!isValidDate(date)) return alert("Tarih formatı YYYY-MM-DD olmalı.");
+    if (!isValidDate(date)) return toast.error("Tarih formatı YYYY-MM-DD olmalı.");
     const kind =
       form.kind === "arife" ? "arife" :
       form.kind === "half" ? "half" :
@@ -170,7 +171,7 @@ export default function HolidayCalendarTab() {
       await loadYear(year);
       setForm({ date: "", kind: "full", name: "" });
     } catch (err) {
-      alert("Kayıt hatası: " + (err?.message || "Sunucu hatası"));
+      toast.error("Kayıt hatası: " + (err?.message || "Sunucu hatası"));
     }
   };
 
@@ -179,7 +180,7 @@ export default function HolidayCalendarTab() {
       await http.req(`/api/holidays/${date}`, { method: "DELETE" });
       await loadYear(year);
     } catch (err) {
-      alert("Silme hatası: " + (err?.message || "Sunucu hatası"));
+      toast.error("Silme hatası: " + (err?.message || "Sunucu hatası"));
     }
   };
 
@@ -199,7 +200,7 @@ export default function HolidayCalendarTab() {
   const addFixedTemplate = async () => {
     const y = Number(year);
     if (!Number.isFinite(y) || y < 2000 || y > 2100) {
-      return alert("Yıl geçerli değil (örn: 2026).");
+      return toast.error("Yıl geçerli değil (örn: 2026).");
     }
     const template = buildFixedHolidays(y);
     for (const t of template) {
@@ -211,7 +212,7 @@ export default function HolidayCalendarTab() {
   const generateYear = async () => {
     const y = Number(year);
     if (!Number.isFinite(y) || y < 2000 || y > 2100) {
-      return alert("Yıl geçerli değil (örn: 2026).");
+      return toast.error("Yıl geçerli değil (örn: 2026).");
     }
     setLoading(true);
     try {

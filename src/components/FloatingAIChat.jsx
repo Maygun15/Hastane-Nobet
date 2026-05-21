@@ -42,24 +42,12 @@ export default function FloatingAIChat({ activeYM, serviceName }) {
       <button
         data-ai-toggle
         onClick={() => setOpen((v) => !v)}
-        title="AI Nöbet Asistanı"
+        aria-label={open ? "AI Asistanı kapat" : "AI Asistanı aç"}
+        title={open ? "Kapat" : "AI Asistan"}
+        className="fixed bottom-7 right-7 z-[9999] w-14 h-14 rounded-full border-none cursor-pointer flex items-center justify-center text-[26px] transition-all duration-200"
         style={{
-          position: 'fixed',
-          bottom: 28,
-          right: 28,
-          zIndex: 9999,
-          width: 56,
-          height: 56,
-          borderRadius: '50%',
           background: open ? '#4f46e5' : '#6366f1',
-          border: 'none',
           boxShadow: '0 8px 32px -8px rgba(99,102,241,0.65)',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 26,
-          transition: 'all 0.2s',
           transform: open ? 'rotate(10deg) scale(1.05)' : pulse ? 'scale(1.12)' : 'scale(1)',
           outline: pulse && !open ? '3px solid rgba(99,102,241,0.35)' : 'none',
         }}
@@ -70,46 +58,27 @@ export default function FloatingAIChat({ activeYM, serviceName }) {
       {/* Slide-out panel */}
       <div
         ref={panelRef}
+        className="fixed right-0 bottom-0 top-0 z-[9998] w-[400px] max-w-[92vw] flex flex-col bg-white"
         style={{
-          position: 'fixed',
-          right: 0,
-          bottom: 0,
-          top: 0,
-          width: 400,
-          maxWidth: '92vw',
-          zIndex: 9998,
           transform: open ? 'translateX(0)' : 'translateX(110%)',
           transition: 'transform 0.28s cubic-bezier(0.32,0,0,1)',
           boxShadow: '-8px 0 48px -16px rgba(15,23,42,0.22)',
-          background: '#fff',
-          display: 'flex',
-          flexDirection: 'column',
         }}
       >
-        <div style={{
-          padding: '12px 16px',
-          borderBottom: '1px solid #e5e7eb',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: '#f9fafb',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 20 }}>🤖</span>
-            <span style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>AI Nöbet Asistanı</span>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50">
+          <div className="flex items-center gap-2">
+            <span className="text-[20px]">🤖</span>
+            <span className="font-bold text-[15px] text-slate-900">AI Nöbet Asistanı</span>
           </div>
           <button
             onClick={() => setOpen(false)}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: 18, color: '#6b7280', padding: '4px 8px', borderRadius: 8,
-            }}
+            className="bg-transparent border-none cursor-pointer text-[18px] text-slate-500 px-2 py-1 rounded-lg hover:bg-slate-100"
           >
             ✕
           </button>
         </div>
 
-        <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div className="flex-1 overflow-hidden">
           <AIChatPanel
             activeYM={activeYM}
             serviceName={serviceName}
@@ -122,11 +91,7 @@ export default function FloatingAIChat({ activeYM, serviceName }) {
       {open && (
         <div
           onClick={() => setOpen(false)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 9997,
-            background: 'rgba(15,23,42,0.25)',
-            display: window.innerWidth < 640 ? 'block' : 'none',
-          }}
+          className="fixed inset-0 z-[9997] bg-slate-900/25 sm:hidden"
         />
       )}
     </>

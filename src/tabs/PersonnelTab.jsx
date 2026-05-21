@@ -1,13 +1,12 @@
 // src/tabs/PersonnelTab.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { Building2, ShieldCheck, Stethoscope, UserRound, Users } from "lucide-react";
-import TopTabsBar from "../components/TopTabsBar.jsx";
 import PeopleTab from "./PeopleTab.jsx";
 import { ROLE } from "../constants/enums.js";
 import { LS } from "../utils/storage.js";
 import useServicesModel from "../hooks/useServicesModel.js";
 import useServiceScope from "../hooks/useServiceScope.js";
-import { useAppData } from "../context/AppDataContext.jsx";
+import { useAppStore } from "../state/appStore.js";
 import {
   normalizeWorkAreaMasterList,
   resolvePersonWorkAreaIds,
@@ -111,27 +110,19 @@ export default function PersonnelTab({
   nurses, setNurses,
   doctors, setDoctors,
 }) {
-  const appData = useAppData();
-  const effectiveWorkAreas = Array.isArray(workAreas)
-    ? workAreas
-    : (Array.isArray(appData.workAreas) ? appData.workAreas : []);
-  const effectiveWorkingHours = Array.isArray(workingHours)
-    ? workingHours
-    : (Array.isArray(appData.workingHours) ? appData.workingHours : []);
-  const effectiveNurses = Array.isArray(nurses)
-    ? nurses
-    : (Array.isArray(appData.nurses) ? appData.nurses : []);
-  const effectiveDoctors = Array.isArray(doctors)
-    ? doctors
-    : (Array.isArray(appData.doctors) ? appData.doctors : []);
-  const effectiveSetNurses =
-    typeof setNurses === "function"
-      ? setNurses
-      : (typeof appData.setNurses === "function" ? appData.setNurses : () => {});
-  const effectiveSetDoctors =
-    typeof setDoctors === "function"
-      ? setDoctors
-      : (typeof appData.setDoctors === "function" ? appData.setDoctors : () => {});
+  const storeWorkAreas    = useAppStore((s) => s.workAreas);
+  const storeWorkingHours = useAppStore((s) => s.workingHours);
+  const storeNurses       = useAppStore((s) => s.nurses);
+  const storeDoctors      = useAppStore((s) => s.doctors);
+  const storeSetNurses    = useAppStore((s) => s.setNurses);
+  const storeSetDoctors   = useAppStore((s) => s.setDoctors);
+
+  const effectiveWorkAreas    = Array.isArray(workAreas)    ? workAreas    : storeWorkAreas;
+  const effectiveWorkingHours = Array.isArray(workingHours) ? workingHours : storeWorkingHours;
+  const effectiveNurses       = Array.isArray(nurses)       ? nurses       : storeNurses;
+  const effectiveDoctors      = Array.isArray(doctors)      ? doctors      : storeDoctors;
+  const effectiveSetNurses    = typeof setNurses === "function"  ? setNurses  : storeSetNurses;
+  const effectiveSetDoctors   = typeof setDoctors === "function" ? setDoctors : storeSetDoctors;
 
   const servicesModel = useServicesModel();
   const scope = useServiceScope();
@@ -201,9 +192,6 @@ export default function PersonnelTab({
   };
 
   /* ===== TopTabsBar ===== */
-  const tabs = sections.map(s => ({ id: s.id, title: s.name }));
-  const getHref = (t) => `/personel?sec=${encodeURIComponent(t.id)}`;
-
   const masterWorkAreas = useMemo(
     () => normalizeWorkAreaMasterList(effectiveWorkAreas),
     [effectiveWorkAreas]
@@ -286,33 +274,42 @@ export default function PersonnelTab({
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
-        <aside className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
-          <TopTabsBar
-            tabs={tabs}
-            activeId={activeId}
-            onSelect={(id) => {
-              setActiveId(id);
-              setQueryParam("sec", id);
-            }}
-            onMove={move}
-            onAdd={(name) => {
-              const role = /doktor|doctor/i.test(name) ? "doctor" : "nurse";
-              const base = slugifyTR(name) || (role === "doctor" ? "doktor-grubu" : "hemsire-grubu");
-              const id = uniqueId(base, new Set(sections.map(s => s.id)));
-              persist([...sections, { id, name, role }], id);
-            }}
-            onRename={renameSection}
-            onRemove={removeSection}
-            getHref={getHref}
-            storageKey="TopTabsBar:Personnel"
-            variant="sidebar"
-            title="Personel Grupları"
-            subtitle="Ekipleri ayrı çalışma kümeleri halinde yönetin. Aktif grup sağdaki kayıt ekranını belirler."
-            addLabel="Grup Ekle"
-            inputPlaceholder="Yeni grup adı"
-          />
-        </aside>
+      <section className="space-y-4">
+        <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Aktif Personel Görünümü</div>
+              <div className="mt-1 text-sm text-slate-600">Sadece grubu seçin; kayıt ve düzenleme alanı aşağıda aynı şekilde çalışmaya devam eder.</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {sections.map((sectionItem) => {
+                const isActive = sectionItem.id === activeId;
+                return (
+                  <button
+                    key={sectionItem.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveId(sectionItem.id);
+                      setQueryParam("sec", sectionItem.id);
+                    }}
+                    className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-medium transition ${
+                      isActive
+                        ? "border-slate-950 bg-slate-950 text-white shadow-sm"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                    }`}
+                  >
+                    {sectionItem.role === "doctor" ? (
+                      <UserRound className={`h-4 w-4 ${isActive ? "text-white" : "text-slate-500"}`} />
+                    ) : (
+                      <Stethoscope className={`h-4 w-4 ${isActive ? "text-white" : "text-slate-500"}`} />
+                    )}
+                    {sectionItem.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
 
         <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
           <SectionContent

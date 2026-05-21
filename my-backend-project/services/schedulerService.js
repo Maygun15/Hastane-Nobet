@@ -19,6 +19,7 @@ const MONTHLY_SCHEDULER_INPUT_PROJECTION = {
   'data.rows': 1,
   'data.overrides': 1,
   'data.shiftOptions': 1,
+  'data.roster': 1,
 };
 
 function normalizeRuleCode(code) {
@@ -367,10 +368,41 @@ function buildGeneratedSchedulePayload({
 
 // MonthlySchedule remains the operational assignment snapshot read model.
 // Only assignment-shaped data is written back here for legacy/monthly readers.
-function buildMonthlyScheduleWriteback({ data = {} } = {}) {
+function assignmentsToNamed(assignments = []) {
+  const named = {};
+  for (const a of assignments) {
+    let day;
+    if (typeof a.day === 'number' && a.day >= 1 && a.day <= 31) {
+      day = String(a.day);
+    } else {
+      const d = new Date((String(a.date || '') + 'T00:00:00'));
+      if (!isNaN(d.getTime())) day = String(d.getDate());
+    }
+    if (!day) continue;
+    const rowKey = String(a.rowId || a.shiftId || a.shiftCode || '').trim();
+    if (!rowKey) continue;
+    const personName = String(a.personName || '').trim();
+    if (!personName) continue;
+    if (!named[day]) named[day] = {};
+    if (!named[day][rowKey]) named[day][rowKey] = [];
+    if (!named[day][rowKey].includes(personName)) named[day][rowKey].push(personName);
+  }
+  return named;
+}
+
+function buildMonthlyScheduleWriteback({ data = {}, existingRoster = {} } = {}) {
+  const assignments = Array.isArray(data?.assignments) ? data.assignments : [];
+  const roster =
+    existingRoster && typeof existingRoster === 'object' && !Array.isArray(existingRoster)
+      ? existingRoster
+      : {};
   return {
-    'data.assignments': Array.isArray(data?.assignments) ? data.assignments : [],
+    'data.assignments': assignments,
     'data.generatedAt': new Date().toISOString(),
+    'data.roster': {
+      ...roster,
+      namedAssignments: assignmentsToNamed(assignments),
+    },
   };
 }
 
@@ -569,7 +601,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     if (scheduleDoc?._id) {
       await MonthlySchedule.findByIdAndUpdate(
         scheduleDoc._id,
-        { $set: buildMonthlyScheduleWriteback({ data: persistedData }) },
+        { $set: buildMonthlyScheduleWriteback({ data: persistedData, existingRoster: scheduleDoc?.data?.roster }) },
         { new: true }
       );
     }
@@ -594,6 +626,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   try {
     await replaceAssignmentsForSchedule({
       scope: {
+        hospitalId,
         sectionId,
         serviceId,
         role,

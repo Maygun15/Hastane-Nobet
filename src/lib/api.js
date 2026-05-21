@@ -110,13 +110,28 @@ function withTimeout(promise, ms = 20000) {
   return Promise.race([promise.finally(() => clearTimeout(t)), timeout]);
 }
 
+function normalizeCompatPath(path = '') {
+  const raw = String(path || '');
+  if (!raw.startsWith('/api/schedules?')) return raw;
+  try {
+    const url = new URL(raw, 'http://localhost');
+    if (!url.searchParams.get('sectionId')) {
+      url.searchParams.set('sectionId', 'calisma-cizelgesi');
+    }
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return raw;
+  }
+}
+
 // tek path için istek
-async function req(path, { method = 'GET', body, headers, timeoutMs, retries } = {}) {
+async function req(path, { method = 'GET', body, headers, timeoutMs, retries, signal, credentials } = {}) {
+  const normalizedPath = normalizeCompatPath(path);
   const effectiveRetries = retries ?? (method === 'GET' ? 2 : 0);
   const base = getApiBase().replace(/\/+$/, "");
-  assertProdWriteAllowed(path, method);
-  const url = `${base}${path}`;
-  const isAuthPath = path.includes('/auth/refresh') || path.includes('/auth/login') || path.includes('/auth/me');
+  assertProdWriteAllowed(normalizedPath, method);
+  const url = `${base}${normalizedPath}`;
+  const isAuthPath = normalizedPath.includes('/auth/refresh') || normalizedPath.includes('/auth/login') || normalizedPath.includes('/auth/me');
 
   function buildOpts() {
     return {
@@ -127,6 +142,8 @@ async function req(path, { method = 'GET', body, headers, timeoutMs, retries } =
         ...(headers || {}),
       },
       body: body ? JSON.stringify(body) : undefined,
+      ...(credentials ? { credentials } : {}),
+      ...(signal ? { signal } : {}),
     };
   }
 

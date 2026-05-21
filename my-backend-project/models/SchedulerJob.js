@@ -22,11 +22,12 @@ const SchedulerJobSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    expireAfterSeconds: 60 * 60 * 24, // TTL 24h
   }
 );
 
-// TTL index on createdAt
+// TTL index: 24 saat sonra otomatik silinir
 SchedulerJobSchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 });
+// Durum ve hastane bazlı sorgular için
+SchedulerJobSchema.index({ hospitalId: 1, status: 1, createdAt: -1 });
 
 module.exports = mongoose.models.SchedulerJob || mongoose.model('SchedulerJob', SchedulerJobSchema);

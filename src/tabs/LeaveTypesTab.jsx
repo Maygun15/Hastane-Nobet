@@ -1,5 +1,6 @@
 // src/tabs/LeaveTypesTab.jsx
 import React, { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { LEAVE_RULES as DEFAULT_LEAVE_RULES } from "../constants/rules.js";
 
@@ -275,7 +276,7 @@ export default function LeaveTypesTab({ leaveTypes, setLeaveTypes }) {
       const conflict = base.find((t) => upTR(t.code) === codeKey && t.id !== id);
       if (conflict) {
         // farklı id ile aynı kod varsa: güncelleme kabul edilmesin
-        alert("Aynı kısaltma zaten mevcut.");
+        toast.error("Aynı kısaltma zaten mevcut.");
         return base;
       }
       const without = base.filter((t) => t.id !== id);
@@ -371,7 +372,7 @@ export default function LeaveTypesTab({ leaveTypes, setLeaveTypes }) {
 
       if (!parsed.length) {
         const rejectedSummary = summarizeRejectedRows(rejectedRows);
-        alert(buildImportMessage({ totalRows, validRows: 0, added: 0, updated: 0, rejectedSummary }));
+        toast.info(buildImportMessage({ totalRows, validRows: 0, added: 0, updated: 0, rejectedSummary }));
         return;
       }
 
@@ -401,10 +402,10 @@ export default function LeaveTypesTab({ leaveTypes, setLeaveTypes }) {
         return sortTR(Array.from(map.values()));
       });
       const rejectedSummary = summarizeRejectedRows(rejectedRows);
-      alert(buildImportMessage({ totalRows, validRows: parsed.length, added, updated, rejectedSummary }));
+      toast.success(buildImportMessage({ totalRows, validRows: parsed.length, added, updated, rejectedSummary }));
     } catch (err) {
       console.error(err);
-      alert("Dosya yüklenirken hata oluştu.");
+      toast.error("Dosya yüklenirken hata oluştu.");
     } finally {
       if (importRef.current) importRef.current.value = "";
     }

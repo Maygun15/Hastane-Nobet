@@ -124,6 +124,27 @@ async function parseSpreadsheetRows(file) {
 
 const requireAdmin = requireRole('admin');
 const requireAdminOrStaff = requireRole('admin', 'staff');
+let ensureUserIndexesPromise = null;
+
+async function ensureUserIndexes() {
+  if (ensureUserIndexesPromise) return ensureUserIndexesPromise;
+  ensureUserIndexesPromise = (async () => {
+    try {
+      const indexes = await User.collection.indexes();
+      const emailIndex = indexes.find((idx) => idx?.name === 'email_1' && idx?.unique);
+      if (emailIndex && !emailIndex.sparse) {
+        await User.collection.dropIndex('email_1');
+        await User.collection.createIndex({ email: 1 }, { name: 'email_1', unique: true, sparse: true, background: true });
+      }
+    } catch (err) {
+      const msg = String(err?.message || '');
+      if (!/index not found|ns does not exist|already exists/i.test(msg)) {
+        console.warn('[users] index reconcile skipped:', msg);
+      }
+    }
+  })();
+  return ensureUserIndexesPromise;
+}
 
 /* ---------------------------
    Basit alan kontrolü
@@ -207,39 +228,85 @@ router.put('/:userId/link-person', requireAdmin, async (req, res) => {
 ---------------------------- */
 router.post('/quick-create', requireAdminOrStaff, async (req, res) => {
   try {
+    await ensureUserIndexes();
     const { name, tc, phone, email, role, personId } = req.body || {};
     if (!name || !String(name).trim()) {
       return res.status(400).json({ message: 'Ad Soyad zorunlu.' });
     }
 
+    const cleanName = String(name).trim();
+    const cleanTc = tc ? String(tc).trim() : '';
+    const cleanPhone = phone ? String(phone).trim() : '';
+    const cleanEmail = email ? String(email).toLowerCase().trim() : '';
+
+    let person = null;
+    if (personId && String(personId).length === 24) {
+      person = await Person.findOne(withHospitalFilter(req, { _id: personId }));
+      if (!person) {
+        return res.status(404).json({ message: 'Personel kaydı bulunamadı' });
+      }
+      if (person.userId) {
+        return res.status(409).json({ message: 'Bu personel için zaten kullanıcı hesabı mevcut' });
+      }
+      const linkedUser = await User.findOne(withHospitalFilter(req, { personId })).lean();
+      if (linkedUser) {
+        return res.status(409).json({ message: 'Bu personel başka bir kullanıcı hesabına bağlı görünüyor' });
+      }
+    }
+
     const or = [];
-    if (email) or.push({ email: String(email).toLowerCase().trim() });
-    if (phone) or.push({ phone: String(phone).trim() });
-    if (tc) or.push({ tc: String(tc).trim() });
+    if (personId && String(personId).length === 24) or.push({ personId });
+    if (cleanEmail) or.push({ email: cleanEmail });
+    if (cleanPhone) or.push({ phone: cleanPhone });
+    if (cleanTc) or.push({ tc: cleanTc });
     if (or.length) {
       const exists = await User.findOne(withHospitalFilter(req, { $or: or })).lean();
-      if (exists) return res.status(409).json({ message: 'Bu e-posta/telefon/TC zaten kayıtlı olabilir' });
+      if (exists) {
+        if (personId && String(exists.personId || '') === String(personId)) {
+          return res.status(409).json({ message: 'Bu personel için zaten kullanıcı hesabı mevcut' });
+        }
+        return res.status(409).json({ message: 'Bu e-posta/telefon/TC zaten kayıtlı olabilir' });
+      }
+    }
+
+    const callerRole = String(req.user?.role || '').toLowerCase();
+    const requestedRole = role || 'user';
+    // staff cannot create admin or superadmin accounts
+    if (callerRole === 'staff' && ['admin', 'superadmin', 'authorized'].includes(requestedRole)) {
+      return res.status(403).json({ message: 'Bu rolü atama yetkiniz yok' });
     }
 
     const userData = {
-      name: String(name).trim(),
-      tc: tc ? String(tc).trim() : '',
-      phone: phone ? String(phone).trim() : '',
-      email: email ? String(email).toLowerCase().trim() : '',
-      role: role || 'user',
+      name: cleanName,
+      role: requestedRole,
       active: true,
       serviceIds: [],
     };
+    if (cleanTc) userData.tc = cleanTc;
+    if (cleanPhone) userData.phone = cleanPhone;
+    if (cleanEmail) userData.email = cleanEmail;
     if (personId && String(personId).length === 24) {
       userData.personId = personId;
     }
     const user = new User(userData);
-    const tempPassword = (tc ? String(tc).trim() : '') || randomTempPassword();
+    const tempPassword = randomTempPassword();
     await user.setPassword(tempPassword);
     user.mustChangePassword = true;
     await user.save();
 
-    return res.json({ ok: true, user: { id: String(user._id) } });
+    if (person) {
+      person.userId = user._id;
+      await person.save();
+    }
+
+    return res.json({
+      ok: true,
+      user: {
+        id: String(user._id),
+        personId: person ? String(person._id) : null,
+        mustChangePassword: true,
+      },
+    });
   } catch (err) {
     console.error('POST /api/users/quick-create ERR:', err);
     return res.status(500).json({ message: 'Kullanıcı oluşturulamadı' });
@@ -252,6 +319,7 @@ router.post('/quick-create', requireAdminOrStaff, async (req, res) => {
 ---------------------------- */
 router.post('/bulk-from-personnel', requireAdmin, async (req, res) => {
   try {
+    await ensureUserIndexes();
     const personIds = Array.isArray(req.body?.personIds) ? req.body.personIds : [];
     if (!personIds.length) return res.json({ created: 0, skipped: 0 });
 
@@ -261,23 +329,28 @@ router.post('/bulk-from-personnel', requireAdmin, async (req, res) => {
 
     for (const p of persons) {
       const or = [{ personId: p._id }];
-      if (p.tc) or.push({ tc: p.tc });
-      if (p.email) or.push({ email: p.email });
-      if (p.phone) or.push({ phone: p.phone });
+      const cleanTc = p.tc ? String(p.tc).replace(/\D+/g, '').trim() : '';
+      const cleanEmail = p.email ? String(p.email).toLowerCase().trim() : '';
+      const cleanPhone = p.phone ? String(p.phone).trim() : '';
+      if (cleanTc) or.push({ tc: cleanTc });
+      if (cleanEmail) or.push({ email: cleanEmail });
+      if (cleanPhone) or.push({ phone: cleanPhone });
       const exists = await User.findOne(withHospitalFilter(req, { $or: or })).lean();
       if (exists) { skipped++; continue; }
 
-      const user = new User({
+      const userPayload = {
         name: p.name || '',
-        tc: p.tc || '',
-        phone: p.phone || '',
-        email: p.email || '',
         role: 'user',
         active: true,
         serviceIds: p.serviceId ? [String(p.serviceId)] : [],
         personId: p._id,
-      });
-      const tempPassword = p.tc || randomTempPassword();
+      };
+      if (cleanTc) userPayload.tc = cleanTc;
+      if (cleanPhone) userPayload.phone = cleanPhone;
+      if (cleanEmail) userPayload.email = cleanEmail;
+
+      const user = new User(userPayload);
+      const tempPassword = randomTempPassword();
       await user.setPassword(tempPassword);
       user.mustChangePassword = true;
       await user.save();
@@ -769,6 +842,12 @@ router.post('/import.xlsx', requireAuth, uploadSpreadsheet, async (req, res) => 
           errors.push({ row: r, message: 'Yetkili sadece kendi servisinde kayıt açabilir' });
           continue;
         }
+      }
+
+      // Staff, admin rolü atayamaz — maksimum kendi rolüne kadar yükseltebilir
+      if (me.role === 'staff' && role === 'admin') {
+        errors.push({ row: r, message: 'Admin rolü atama yetkisi yok' });
+        continue;
       }
 
       let user = await User.findOne(withHospitalFilter(req, query)).select('+passwordHash +password');

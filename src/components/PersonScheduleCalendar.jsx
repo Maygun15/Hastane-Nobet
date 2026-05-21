@@ -512,6 +512,59 @@ function buildDefsIndex(defs) {
   return { byId, byShift };
 }
 
+function hasReadableShiftLabels(list = []) {
+  return (Array.isArray(list) ? list : []).some((item) => {
+    const raw = String(item?.shiftCode ?? item?.shift ?? item?.code ?? "").trim();
+    return !!raw && !/^\d{10,}$/.test(raw);
+  });
+}
+
+function normalizeAssignmentForDisplay(item, defsIndex) {
+  if (!item || typeof item !== "object") return item;
+  const safeIndex = defsIndex || { byId: new Map(), byShift: new Map() };
+  const shiftIdKey = String(item?.shiftId ?? item?.rowId ?? "").trim();
+  const shiftCodeKey = String(item?.shiftCode ?? item?.shift ?? item?.code ?? "").trim();
+  const roleLabel = String(item?.roleLabel ?? item?.role ?? item?.label ?? "").trim();
+
+  let def = null;
+  if (shiftIdKey && safeIndex.byId.has(shiftIdKey)) def = safeIndex.byId.get(shiftIdKey);
+  else if (shiftCodeKey && safeIndex.byId.has(shiftCodeKey)) def = safeIndex.byId.get(shiftCodeKey);
+  else if (shiftCodeKey && safeIndex.byShift.has(shiftCodeKey)) def = safeIndex.byShift.get(shiftCodeKey);
+
+  if (!def && roleLabel) {
+    for (const candidate of safeIndex.byId.values()) {
+      const defLabel = String(candidate?.label ?? candidate?.name ?? candidate?.area ?? "").trim();
+      const defShift = String(candidate?.shiftCode ?? candidate?.code ?? "").trim();
+      if (!defLabel || !defShift) continue;
+      if (defLabel === roleLabel && (!shiftCodeKey || /^\d{10,}$/.test(shiftCodeKey))) {
+        def = candidate;
+        break;
+      }
+    }
+  }
+
+  if (!def) return item;
+
+  const defShift = String(def?.shiftCode ?? def?.code ?? "").trim();
+  const defLabel = String(def?.label ?? def?.name ?? def?.area ?? "").trim();
+  return {
+    ...item,
+    shiftId: shiftIdKey || String(def?.id ?? def?.rowId ?? "").trim() || item?.shiftId,
+    shiftCode:
+      !shiftCodeKey || /^\d{10,}$/.test(shiftCodeKey)
+        ? (defShift || shiftCodeKey || item?.shiftCode)
+        : item?.shiftCode,
+    roleLabel: roleLabel || defLabel || item?.roleLabel,
+  };
+}
+
+function displayShiftToken(assg = {}) {
+  const raw = String(assg?.shiftCode || assg?.code || "").trim();
+  if (raw && !/^\d{10,}$/.test(raw)) return raw;
+  const label = String(assg?.roleLabel || assg?.rowLabel || assg?.label || "").trim();
+  return label || "-";
+}
+
 function collectAssignmentsFromRemote({ year, month0, personId, personCanon, assignments, defs }) {
   const map = new Map();
   if (!Array.isArray(assignments)) return map;
@@ -561,7 +614,7 @@ function collectAssignmentsFromRemote({ year, month0, personId, personCanon, ass
       if (!roleLabel && defLabel) roleLabel = defLabel;
     }
 
-    const assignment = {
+    const assignment = normalizeAssignmentForDisplay({
       day: dateStr,
       shiftId,
       shiftCode,
@@ -571,7 +624,7 @@ function collectAssignmentsFromRemote({ year, month0, personId, personCanon, ass
       note: item.note || undefined,
       pinned: !!item.pinned,
       source: "remote",
-    };
+    }, defIndex);
 
     if (!map.has(dayNum)) map.set(dayNum, []);
     map.get(dayNum).push(assignment);
@@ -699,6 +752,13 @@ export default function PersonScheduleCalendar({
   const [quickReplaceSelection, setQuickReplaceSelection] = useState(null);
   const [swappedDates, setSwappedDates] = useState(new Set());
   const [settingsRevision, setSettingsRevision] = useState(0);
+  const [googleCalendarStatus, setGoogleCalendarStatus] = useState({
+    loading: false,
+    connected: false,
+    lastSyncAt: null,
+    message: "",
+  });
+  const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false);
 
   // Tatil verisi: { "YYYY-MM-DD": { kind: "full"|"arife"|"half", name: string } }
   const [holidayMap, setHolidayMap] = useState({});
@@ -717,6 +777,32 @@ export default function PersonScheduleCalendar({
       .catch(() => {});
     return () => { active = false; };
   }, [year, month0]);
+
+  useEffect(() => {
+    if (canManage) return;
+    let active = true;
+    setGoogleCalendarStatus((s) => ({ ...s, loading: true }));
+    API.http.get("/api/calendar/google/status")
+      .then((data) => {
+        if (!active) return;
+        setGoogleCalendarStatus({
+          loading: false,
+          connected: !!data?.connected,
+          lastSyncAt: data?.lastSyncAt || null,
+          message: "",
+        });
+      })
+      .catch((err) => {
+        if (!active) return;
+        setGoogleCalendarStatus({
+          loading: false,
+          connected: false,
+          lastSyncAt: null,
+          message: err?.message || "Google Takvim durumu alınamadı",
+        });
+      });
+    return () => { active = false; };
+  }, [canManage]);
 
   useEffect(() => {
     setSelectedId(initialPersonId);
@@ -778,6 +864,22 @@ export default function PersonScheduleCalendar({
     return String(fallback || "").trim();
   }, [serviceId, selectedPerson]);
 
+  const effectiveScheduleRole = useMemo(() => {
+    const explicit = String(scheduleRole ?? "").trim();
+    if (explicit) return explicit;
+    const roleHint = String(
+      selectedPerson?.raw?.meta?.role ??
+        selectedPerson?.raw?.role ??
+        selectedPerson?.role ??
+        selectedPerson?.raw?.title ??
+        selectedPerson?.raw?.meta?.title ??
+        ""
+    ).toLowerCase();
+    if (/doktor|doctor|hekim|tabip/.test(roleHint)) return "Doctor";
+    if (/nurse|hemşire|hemsire|ebe|att|memur/.test(roleHint)) return "Nurse";
+    return "";
+  }, [scheduleRole, selectedPerson]);
+
   const filteredOptions = useMemo(() => {
     if (!searchQuery.trim()) return options;
     const q = canonName(searchQuery);
@@ -819,12 +921,12 @@ export default function PersonScheduleCalendar({
     (async () => {
       try {
         const explicitServiceKey = String(effectiveServiceId ?? "").trim();
-        const explicitRoleKey = String(scheduleRole ?? "").trim();
+        const explicitRoleKey = String(effectiveScheduleRole ?? "").trim();
         const candidates = Array.from(
           new Set([effectiveServiceId, String(serviceId ?? "").trim(), ""].filter(v => v !== undefined))
         );
         const roleCandidates = Array.from(
-          new Set([scheduleRole, "", "Nurse", "Doctor"].map((v) => String(v ?? "").trim()))
+          new Set([effectiveScheduleRole, "", "Nurse", "Doctor"].map((v) => String(v ?? "").trim()))
         );
         const targetPid = selectedPerson?.id ? String(selectedPerson.id) : "";
         const targetCanon = selectedPerson?.canon ? String(selectedPerson.canon) : "";
@@ -868,7 +970,9 @@ export default function PersonScheduleCalendar({
           const explicitMatches = countPersonMatches(explicitAssignments);
           const hasTarget = !!targetPid || !!targetCanon;
           const explicitUsable =
-            explicitAssignments.length > 0 && (!hasTarget || explicitMatches > 0);
+            explicitAssignments.length > 0 &&
+            (!hasTarget || explicitMatches > 0) &&
+            ((explicitCandidate?.defs || []).length > 0 || hasReadableShiftLabels(explicitAssignments));
           if (explicitUsable) {
             if (!active) return;
             setRemoteDefs(explicitCandidate?.defs || []);
@@ -916,8 +1020,8 @@ export default function PersonScheduleCalendar({
           const aServicePref = a.serviceId === effectiveServiceId ? 1 : 0;
           const bServicePref = b.serviceId === effectiveServiceId ? 1 : 0;
           if (bServicePref !== aServicePref) return bServicePref - aServicePref;
-          const aRolePref = a.role === scheduleRole ? 1 : 0;
-          const bRolePref = b.role === scheduleRole ? 1 : 0;
+          const aRolePref = a.role === effectiveScheduleRole ? 1 : 0;
+          const bRolePref = b.role === effectiveScheduleRole ? 1 : 0;
           if (bRolePref !== aRolePref) return bRolePref - aRolePref;
           return b.updatedAtTs - a.updatedAtTs;
         });
@@ -940,7 +1044,7 @@ export default function PersonScheduleCalendar({
     return () => {
       active = false;
     };
-  }, [canManage, sectionId, effectiveServiceId, scheduleRole, year, month, remoteRevision, serviceId]);
+  }, [canManage, sectionId, effectiveServiceId, effectiveScheduleRole, year, month, remoteRevision, serviceId]);
 
   const remoteAssignments = useMemo(() => {
     if (!selectedPerson) return new Map();
@@ -1097,13 +1201,14 @@ export default function PersonScheduleCalendar({
     list.map((assg, idx) => {
       const isEditable = canManage && assg?.source === "remote";
       const isPinned = !!assg?.pinned;
+      const visibleShift = displayShiftToken(assg);
       return (
         <div
-          key={assg.id ?? `${assg.shiftCode || ""}-${assg.roleLabel || ""}-${idx}`}
+          key={assg.id ?? `${visibleShift}-${assg.roleLabel || ""}-${idx}`}
           className={`rounded bg-blue-50 border border-blue-200 px-1 py-0.5 text-[11px] text-blue-700 mt-1 flex items-center justify-between gap-2 group overflow-hidden ${
             isEditable ? "cursor-pointer hover:bg-blue-100" : ""
           }`}
-          title={[assg.shiftCode || assg.code || "-", assg.roleLabel || ""].filter(Boolean).join(" · ")}
+          title={[visibleShift, assg.roleLabel || ""].filter(Boolean).join(" · ")}
           onClick={isEditable ? () => openEditModal(assg) : undefined}
           role={isEditable ? "button" : undefined}
           tabIndex={isEditable ? 0 : undefined}
@@ -1120,7 +1225,7 @@ export default function PersonScheduleCalendar({
         >
           <span className="flex min-w-0 items-center gap-1">
             {isPinned && <span title="Sabitlenmiş">📌</span>}
-            <span className="shrink-0 font-semibold">{assg.shiftCode || assg.code || "-"}</span>
+            <span className="shrink-0 font-semibold">{visibleShift}</span>
             {assg.roleLabel ? <span className="ml-1 truncate">{assg.roleLabel}</span> : null}
           </span>
           {isEditable && (
@@ -1295,6 +1400,69 @@ export default function PersonScheduleCalendar({
     }
   };
 
+  const handleConnectGoogleCalendar = async () => {
+    setGoogleCalendarBusy(true);
+    setGoogleCalendarStatus((s) => ({ ...s, message: "" }));
+    try {
+      const data = await API.http.post("/api/calendar/google/auth-url", {});
+      if (!data?.url) throw new Error("Google bağlantı adresi alınamadı");
+      window.location.href = data.url;
+    } catch (err) {
+      setGoogleCalendarStatus((s) => ({
+        ...s,
+        message: err?.message || "Google Takvim bağlantısı başlatılamadı",
+      }));
+      setGoogleCalendarBusy(false);
+    }
+  };
+
+  const handleSyncGoogleCalendar = async () => {
+    setGoogleCalendarBusy(true);
+    setGoogleCalendarStatus((s) => ({ ...s, message: "" }));
+    try {
+      const result = await API.http.post("/api/calendar/google/sync", {
+        year,
+        month: month0 + 1,
+        sectionId,
+      }, { timeoutMs: 60000 });
+      const count = Number(result?.created || 0) + Number(result?.updated || 0) + Number(result?.skipped || 0);
+      setGoogleCalendarStatus({
+        loading: false,
+        connected: true,
+        lastSyncAt: new Date().toISOString(),
+        message: `${count} nöbet Google Takvim ile eşitlendi.`,
+      });
+    } catch (err) {
+      setGoogleCalendarStatus((s) => ({
+        ...s,
+        message: err?.message || "Google Takvim senkronizasyonu başarısız",
+      }));
+    } finally {
+      setGoogleCalendarBusy(false);
+    }
+  };
+
+  const handleDisconnectGoogleCalendar = async () => {
+    if (!window.confirm("Google Takvim bağlantısı kaldırılsın mı? Google'daki mevcut etkinlikler silinmez.")) return;
+    setGoogleCalendarBusy(true);
+    try {
+      await API.http.delete("/api/calendar/google/disconnect");
+      setGoogleCalendarStatus({
+        loading: false,
+        connected: false,
+        lastSyncAt: null,
+        message: "Google Takvim bağlantısı kaldırıldı.",
+      });
+    } catch (err) {
+      setGoogleCalendarStatus((s) => ({
+        ...s,
+        message: err?.message || "Google Takvim bağlantısı kaldırılamadı",
+      }));
+    } finally {
+      setGoogleCalendarBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Başlık ve Personel Seçici */}
@@ -1368,6 +1536,53 @@ export default function PersonScheduleCalendar({
         <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-800 px-4 py-3 text-sm">
           Bu kullanıcıyla eşleşen bir personel kaydı bulunamadı. Personel listesinde kimlik bilgilerinizi
           güncelleyip tekrar deneyin.
+        </div>
+      )}
+
+      {!canManage && selectedPerson && (
+        <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4 text-sm text-slate-700">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-[220px]">
+              <div className="font-semibold text-slate-900">Google Takvim</div>
+              <div className="text-xs text-slate-600 mt-1">
+                Nöbetlerinizi Google Takvim’e tek yönlü aktarır. Hatırlatma: çalışmadan bir gün önce 16:00.
+              </div>
+              {googleCalendarStatus.lastSyncAt && (
+                <div className="text-xs text-slate-500 mt-1">
+                  Son senkron: {new Date(googleCalendarStatus.lastSyncAt).toLocaleString("tr-TR")}
+                </div>
+              )}
+              {googleCalendarStatus.message && (
+                <div className="text-xs text-sky-700 mt-2">{googleCalendarStatus.message}</div>
+              )}
+            </div>
+            {googleCalendarStatus.connected ? (
+              <>
+                <button
+                  onClick={handleSyncGoogleCalendar}
+                  disabled={googleCalendarBusy}
+                  className="px-3 py-2 rounded-xl bg-sky-600 text-white text-xs font-semibold hover:bg-sky-700 disabled:opacity-60"
+                >
+                  {googleCalendarBusy ? "Eşitleniyor..." : "Bu Ayı Eşitle"}
+                </button>
+                <button
+                  onClick={handleDisconnectGoogleCalendar}
+                  disabled={googleCalendarBusy}
+                  className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 text-xs font-semibold hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Bağlantıyı Kaldır
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={handleConnectGoogleCalendar}
+                disabled={googleCalendarBusy || googleCalendarStatus.loading}
+                className="px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 disabled:opacity-60"
+              >
+                {googleCalendarBusy ? "Bağlanıyor..." : "Google Takvim Bağla"}
+              </button>
+            )}
+          </div>
         </div>
       )}
 

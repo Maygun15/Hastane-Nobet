@@ -79,14 +79,32 @@ if (!SKIP_DB) {
     console.error('HATA: MONGODB_URI tanımlı değil');
     if (!ALLOW_DEV) process.exit(1);
   } else {
-    mongoose.connect(MONGODB_URI, { dbName: 'hastane', serverSelectionTimeoutMS: 10000 })
+    mongoose.set('autoIndex', !IS_PROD); // production'da index'leri startup'ta build etme
+
+    const mongoOpts = {
+      dbName: 'hastane',
+      serverSelectionTimeoutMS: 10000,
+      maxPoolSize: 50,
+      minPoolSize: 5,
+      maxIdleTimeMS: 45000,
+      retryWrites: true,
+      w: 'majority',
+    };
+
+    mongoose.connection.on('disconnected', () => {
+      console.warn('[DB] MongoDB bağlantısı kesildi, 5s sonra yeniden bağlanılıyor…');
+      setTimeout(() => mongoose.connect(MONGODB_URI, mongoOpts).catch(() => {}), 5000);
+    });
+    mongoose.connection.on('error', (err) => {
+      console.error('[DB] MongoDB bağlantı hatası:', err.message);
+    });
+
+    mongoose.connect(MONGODB_URI, mongoOpts)
       .then(async () => {
         console.log('✅ MongoDB bağlı');
         const conn = mongoose.connection;
         console.log('[DB] connected', {
           dbName: conn.name,
-          host: conn.host,
-          port: conn.port,
           readyState: conn.readyState,
           uri: redactMongoUri(MONGODB_URI),
           npmScript: process.env.npm_lifecycle_event || null,
@@ -162,7 +180,7 @@ function sanitizeObjectInPlace(obj) {
     return;
   }
   for (const key of Object.keys(obj)) {
-    if (key.startsWith('$') || key.includes('.')) {
+    if (key.startsWith('$') || key.includes('.') || key === '__proto__' || key === 'constructor' || key === 'prototype') {
       delete obj[key];
       continue;
     }
@@ -207,21 +225,8 @@ app.use('/api', globalApiLimiter);
 
 /* ============== HEALTH ============== */
 app.get('/', (_req, res) => res.send('Backend Sunucusu Başarıyla Çalışıyor!'));
-function buildHealthPayload() {
-  return {
-    ok: true,
-    ts: Date.now(),
-    env: {
-      allowDev: ALLOW_DEV,
-      frontendOrigin: [...ALLOWED_ORIGINS],
-      mongo: !!MONGODB_URI,
-      notificationsEnabled: NOTIFICATIONS_ENABLED,
-      smtpConfigured: isMailerConfigured(),
-    },
-  };
-}
-app.get('/health', (_req, res) => res.json(buildHealthPayload()));
-app.get('/api/health', (_req, res) => res.json(buildHealthPayload()));
+app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
 /* ============ AUTH HELPERS (JWT) ============ */
 const User = require(path.join(__dirname, 'models', 'User.js'));
@@ -283,13 +288,9 @@ async function auth(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }); // { uid }
     if (!decoded?.uid) return res.status(401).json({ message: 'Yetkisiz' });
 
-    // Dev login ile gelen 'dev1' için DB sorgusuna gerek yok
-    if (decoded.uid === 'dev1') {
-      req.user = { uid: 'dev1', role: 'superadmin', serviceIds: [], active: true, email: 'dev@local', hospitalId: null };
-      return next();
-    }
-
-    const u = await User.findById(decoded.uid).lean();
+    const u = await User.findById(decoded.uid)
+      .select('name email role serviceIds active hospitalId personId mustChangePassword tokenVersion')
+      .lean();
     if (!u) return res.status(401).json({ message: 'Kullanıcı bulunamadı' });
 
     req.user = {
@@ -302,6 +303,7 @@ async function auth(req, res, next) {
       active: !!u.active,
       email: u.email,
       hospitalId: u.hospitalId ? String(u.hospitalId) : null,
+      personId: u.personId ? String(u.personId) : null,
     };
     next();
   } catch {
@@ -444,9 +446,8 @@ app.post('/api/users/:id/deactivate',
 
 /* ============== AI ROUTES (ops.) ============== */
 try {
-  const aiRoutes = require('./src/api/ai.routes.js');   // /api/ai/*
-  const aiPing   = require('./src/api/ai/ping.js');     // /api/ai/ping
-  app.use('/api/ai', ...secureTenant, aiPing);
+  // ai.routes.js includes /ping — no need for the separate ping.js mount
+  const aiRoutes = require('./src/api/ai.routes.js');
   app.use('/api/ai', ...secureTenant, aiRoutes);
 } catch { /* opsiyonel */ }
 
@@ -494,6 +495,15 @@ try {
   app.use('/api/schedules', ...secureTenant, schedulesRoutes);
 } catch {}
 
+/* ============== GOOGLE CALENDAR ROUTER ============== */
+try {
+  const googleCalendarRoutes = require('./routes/googleCalendar.routes.js');
+  app.use('/api/calendar/google', googleCalendarRoutes.publicRouter);
+  app.use('/api/calendar/google', ...secureTenant, googleCalendarRoutes.secureRouter);
+} catch (e) {
+  console.error('GOOGLE CALENDAR ROUTE LOAD ERROR:', e);
+}
+
 /* ============== DUTY RULES ROUTES ============== */
 try {
   const dutyRulesRoutes = require('./routes/dutyRules.routes.js');
@@ -513,6 +523,18 @@ try {
 } catch (e) {
   console.error('LEAVES ROUTE LOAD ERROR:', e);
 }
+
+/* ============== LEAVE BALANCES ROUTES ============== */
+try {
+  const leaveBalancesRoutes = require('./routes/leavebalances.routes');
+  app.use('/api/leave-balances', ...secureTenant, leaveBalancesRoutes);
+} catch (e) { console.warn('[BOOT] leave-balances route yüklenemedi:', e?.message); }
+
+/* ============== REPORTS ROUTES ============== */
+try {
+  const reportsRoutes = require('./routes/reports.routes');
+  app.use('/api/reports', ...secureTenant, reportsRoutes);
+} catch (e) { console.warn('[BOOT] reports route yüklenemedi:', e?.message); }
 
 /* ============== PARAMETERS ROUTES ============== */
 try {
@@ -588,10 +610,16 @@ try {
 const holidayRoutes = require(path.join(__dirname, 'routes', 'holiday.js'));
 app.use('/api/holidays', ...secureTenant, holidayRoutes);
 
+/* ============== PLANNINGS ============== */
+try {
+  const planningsRoutes = require('./routes/plannings.routes.js');
+  app.use('/api/plannings', ...secureTenant, planningsRoutes);
+} catch (e) { console.warn('[BOOT] plannings route yüklenemedi:', e?.message); }
+
 /* ============== NOTIFICATIONS (SSE) ============== */
 try {
   const notificationsRoutes = require('./routes/notifications.routes.js');
-  app.use('/api/notifications', auth, ensureActive, notificationsRoutes);
+  app.use('/api/notifications', ...secureTenant, notificationsRoutes);
 } catch (e) { console.warn('[BOOT] notifications route yüklenemedi:', e?.message); }
 
 /* ============ ADMIN ÖRNEĞİ ============ */
@@ -605,7 +633,76 @@ app.get('/api/admin/audit-logs', ...secureTenant, requireRole('admin'), async (r
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
+
+    // userId → kullanıcı adı/email çözümlemesi
+    try {
+      const mongoose = require('mongoose');
+      const uniqueIds = [
+        ...new Set(
+          logs
+            .map((l) => l.userId)
+            .filter((id) => id && id !== 'anonymous' && mongoose.Types.ObjectId.isValid(id))
+        ),
+      ].map((id) => new mongoose.Types.ObjectId(id));
+
+      if (uniqueIds.length > 0) {
+        const users = await User.find({ _id: { $in: uniqueIds } })
+          .select('name email')
+          .lean();
+        const userMap = {};
+        for (const u of users) {
+          userMap[String(u._id)] = u.name || u.email || null;
+        }
+        for (const log of logs) {
+          if (log.userId && userMap[log.userId] != null) {
+            log.userName = userMap[log.userId];
+          }
+        }
+      }
+    } catch (enrichErr) {
+      console.warn('[audit-logs] kullanıcı adı çözümlenemedi:', enrichErr?.message);
+    }
+
     res.json({ logs, total: logs.length });
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
+});
+
+/* ============ REPORTS ============ */
+const Assignment = require('./models/Assignment');
+
+// GET /api/reports/occupancy?year=2025&month=5
+app.get('/api/reports/occupancy', ...secureTenant, requireRole('admin'), async (req, res) => {
+  try {
+    const year  = Number(req.query.year)  || new Date().getFullYear();
+    const month = Number(req.query.month) || new Date().getMonth() + 1;
+
+    const hid = mongoose.Types.ObjectId.isValid(String(req.hospitalId || ''))
+      ? new mongoose.Types.ObjectId(String(req.hospitalId))
+      : null;
+    if (!hid) return res.status(400).json({ message: 'hospitalId gerekli' });
+
+    const agg = await Assignment.aggregate([
+      { $match: { hospitalId: hid, year, month, status: 'active' } },
+      { $group: {
+          _id: '$serviceId',
+          totalAssignments: { $sum: 1 },
+          uniquePersons:    { $addToSet: '$personId' },
+          totalHours:       { $sum: '$hours' },
+          shifts:           { $addToSet: '$shiftCode' },
+      }},
+      { $project: {
+          serviceId:        '$_id',
+          totalAssignments: 1,
+          uniquePersonCount: { $size: '$uniquePersons' },
+          totalHours:        1,
+          shiftCount:        { $size: '$shifts' },
+      }},
+      { $sort: { totalAssignments: -1 } },
+    ]);
+
+    res.json({ year, month, data: agg });
   } catch (e) {
     res.status(500).json({ message: e.message });
   }

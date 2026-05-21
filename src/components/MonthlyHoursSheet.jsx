@@ -489,11 +489,11 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
     return Array.from(unique.values());
   }, [truthDayHoursIndex]);
 
-  // Takas ile değiştirilmiş (source:'swap') atamaların kişi+gün kümesi
+  // Takas/hızlı yerine atama ile değiştirilmiş atamaların kişi+gün kümesi
   const swappedPersonDays = useMemo(() => {
     const map = new Map(); // 'id:<pid>' | 'name:<canon>' → Set<YYYY-MM-DD>
     for (const a of truthAssignments) {
-      if (a.source !== 'swap') continue;
+      if (!['swap', 'quickReplace'].includes(a.source)) continue;
       const pid  = String(a.personId || '').trim();
       const name = canonName(a.personName || '');
       const date = String(a.date || '').slice(0, 10);

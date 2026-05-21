@@ -17,10 +17,13 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import IDCard from "../components/IDCard.jsx";
+import PersonProfileModal from "../components/PersonProfileModal.jsx";
 import { maskPhone, maskTC } from "../utils/format.js";
+import { toast } from "sonner";
 import { API, getToken, REQUIRE_BACKEND } from "../lib/api.js";
 import { useServices } from "../hooks/useServicesModel.js";
 import useServiceScope from "../hooks/useServiceScope.js";
+import { useAuth } from "../auth/AuthContext.jsx";
 
 /* --- yardımcılar --- */
 const cn = (...c) => c.filter(Boolean).join(" ");
@@ -182,6 +185,7 @@ export default function PeopleTab({
   const [showRawPhone, setShowRawPhone] = useState(false);
   const [tcError, setTcError] = useState("");
   const [resetting, setResetting] = useState(false);
+  const [profilePerson, setProfilePerson] = useState(null);
   const importRef = useRef(null);
 
   useEffect(() => {
@@ -266,9 +270,12 @@ export default function PeopleTab({
 
   const upsert = async (e) => {
     e.preventDefault();
-    if (!form.name.trim()) return;
+    if (!form.name.trim()) {
+      toast.error("Ad Soyad zorunludur");
+      return;
+    }
     if (REQUIRE_BACKEND && !getToken()) {
-      alert("Kaydetmek için giriş yapın.");
+      toast.error("Kaydetmek için giriş yapın.");
       return;
     }
 
@@ -289,7 +296,7 @@ export default function PeopleTab({
 
     const { person: saved, error } = await syncOneToBackend(row, editingId);
     if (REQUIRE_BACKEND && !saved) {
-      alert(error || "Sunucuya kaydedilemedi.");
+      toast.error(error || "Sunucuya kaydedilemedi.");
       return;
     }
     const nextId = saved?.id || id;
@@ -304,6 +311,8 @@ export default function PeopleTab({
       tc: saved?.tc || row.tc,
       phone: saved?.phone || row.phone,
       mail: saved?.email || row.mail,
+      userId: saved?.userId || row.userId || "",
+      hasUser: saved?.hasUser ?? row.hasUser ?? false,
       title: savedMeta.title || row.title,
       areas: Array.isArray(savedMeta.areas) ? savedMeta.areas : row.areas,
       workAreaIds: Array.isArray(savedMeta.workAreaIds) ? savedMeta.workAreaIds : row.workAreaIds,
@@ -319,6 +328,11 @@ export default function PeopleTab({
       );
       return updatedPeople;
     });
+    if (!editingId) {
+      toast.success(`${nextRow.name} eklendi`, {
+        description: "Nöbet planına dahil etmek için Çizelge sekmesine gidin.",
+      });
+    }
     reset();
     try { window.dispatchEvent(new Event("personnel:changed")); } catch {}
   };
@@ -350,15 +364,16 @@ export default function PeopleTab({
 
   const del = async (id) => {
     if (!id) return;
+    if (!window.confirm("Bu personeli silmek istediğinizden emin misiniz?")) return;
     if (REQUIRE_BACKEND && !getToken()) {
-      alert("Silmek için giriş yapın.");
+      toast.error("Silmek için giriş yapın.");
       return;
     }
     if (isMongoId(String(id))) {
       try {
         await API.http.delete(`/api/personnel/${id}`);
       } catch (e) {
-        alert("Sunucudan silinemedi. Tekrar deneyin.");
+        toast.error("Sunucudan silinemedi. Tekrar deneyin.");
         return;
       }
     }
@@ -473,7 +488,7 @@ export default function PeopleTab({
         sh = wb.Sheets[wb.SheetNames[0]];
         rows = XLSX.utils.sheet_to_json(sh, { defval: "" });
       } catch (parseErr) {
-        alert("Excel dosyası okunamadı: " + (parseErr?.message || "Geçersiz format"));
+        toast.error("Excel dosyası okunamadı: " + (parseErr?.message || "Geçersiz format"));
         if (importRef.current) importRef.current.value = "";
         return;
       }
@@ -531,7 +546,7 @@ export default function PeopleTab({
         })
         .filter(Boolean);
       if (!parsed.length) {
-        alert(
+        toast.error(
           "Excel başlıkları: ROL,SERVIS,UNVANI,T.C. KİMLİK NO,AD SOYAD,TELEFON NUMARASI,MAİL ADRESİ,ÇALIŞMA ALANLARI,VARDİYE KODLARI"
         );
         return;
@@ -546,7 +561,7 @@ export default function PeopleTab({
       // Backend'e bulk gönder
       const token = getToken();
       if (REQUIRE_BACKEND && !token) {
-        alert("Backend senkron için giriş gerekli.");
+        toast.error("Backend senkron için giriş gerekli.");
         if (importRef.current) importRef.current.value = "";
         return;
       }
@@ -571,11 +586,11 @@ export default function PeopleTab({
           const count = data?.count ?? bulkItems.length;
           setPeople(sortByKeyTR(parsed, "name"));
           if (importRef.current) importRef.current.value = "";
-          alert(`${parsed.length} kayıt yüklendi. Backend: ${count} kayıt işlendi.`);
+          toast.success(`${parsed.length} kayıt yüklendi. Backend: ${count} kayıt işlendi.`);
           try { window.dispatchEvent(new Event("personnel:changed")); } catch {}
         })
         .catch((err) => {
-          alert(err?.message || "Backend senkron başarısız");
+          toast.error(err?.message || "Backend senkron başarısız");
           if (importRef.current) importRef.current.value = "";
         });
     };
@@ -590,7 +605,7 @@ export default function PeopleTab({
 
     const token = getToken();
     if (REQUIRE_BACKEND && !token) {
-      alert("Backend senkron için giriş gerekli.");
+      toast.error("Backend senkron için giriş gerekli.");
       return;
     }
 
@@ -604,10 +619,10 @@ export default function PeopleTab({
       await API.http.post(`/api/personnel/bulk?${qs}`, { items: [], replaceAll: true, role, clear: true });
       setPeople([]);
       resetUi();
-      alert("Liste sıfırlandı.");
+      toast.success("Liste sıfırlandı.");
       try { window.dispatchEvent(new Event("personnel:changed")); } catch {}
     } catch (err) {
-      alert(err?.message || "Liste sıfırlanamadı.");
+      toast.error(err?.message || "Liste sıfırlanamadı.");
     } finally {
       setResetting(false);
     }
@@ -725,8 +740,8 @@ export default function PeopleTab({
               <div className="text-sm font-semibold text-slate-900">Kimlik ve görev bilgisi</div>
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 <div>
-                  <label className="text-xs font-medium text-slate-500">Servis</label>
-                  <select value={form.service} onChange={(e) => setForm((f) => ({ ...f, service: e.target.value }))} className={fieldClass}>
+                  <label htmlFor="person-service" className="text-xs font-medium text-slate-500">Servis</label>
+                  <select id="person-service" value={form.service} onChange={(e) => setForm((f) => ({ ...f, service: e.target.value }))} className={fieldClass}>
                     {serviceOptions.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
@@ -735,12 +750,13 @@ export default function PeopleTab({
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-500">Unvan</label>
-                  <input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} className={fieldClass} placeholder="Unvan" />
+                  <label htmlFor="person-title" className="text-xs font-medium text-slate-500">Unvan</label>
+                  <input id="person-title" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} className={fieldClass} placeholder="Unvan" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-500">Yıllık İzin Hakkı (gün)</label>
+                  <label htmlFor="person-annual-leave" className="text-xs font-medium text-slate-500">Yıllık İzin Hakkı (gün)</label>
                   <input
+                    id="person-annual-leave"
                     type="number"
                     min="0"
                     max="365"
@@ -751,9 +767,10 @@ export default function PeopleTab({
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-500">T.C. Kimlik No</label>
+                  <label htmlFor="person-tc" className="text-xs font-medium text-slate-500">T.C. Kimlik No</label>
                   <div className="relative">
                     <input
+                      id="person-tc"
                       value={showRawTC ? form.tc : (form.tc ? maskTC(form.tc) : "")}
                       readOnly={!showRawTC}
                       onBlur={() => setTcError(form.tc ? (isValidTC(form.tc) ? "" : "Geçersiz TC Kimlik No") : "")}
@@ -784,8 +801,10 @@ export default function PeopleTab({
                   {tcError ? <div className="mt-1 text-xs text-rose-600">{tcError}</div> : null}
                 </div>
                 <div className="md:col-span-2 xl:col-span-3">
-                  <label className="text-xs font-medium text-slate-500">Ad Soyad</label>
-                  <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className={fieldClass} placeholder="Ad Soyad" />
+                  <label htmlFor="person-name" className="text-xs font-medium text-slate-500">
+                    Ad Soyad<span className="text-rose-500 ml-0.5">*</span>
+                  </label>
+                  <input id="person-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className={fieldClass} placeholder="Ad Soyad" />
                 </div>
               </div>
           </section>
@@ -826,9 +845,10 @@ export default function PeopleTab({
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 <div>
-                  <label className="text-xs font-medium text-slate-500">Telefon</label>
+                  <label htmlFor="person-phone" className="text-xs font-medium text-slate-500">Telefon</label>
                   <div className="relative">
                     <input
+                      id="person-phone"
                       type="tel"
                       value={showRawPhone ? formatPhoneDisplay(form.phone || "") : (form.phone ? maskPhone(form.phone) : "")}
                       readOnly={!showRawPhone}
@@ -850,10 +870,10 @@ export default function PeopleTab({
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-500">Mail</label>
+                  <label htmlFor="person-mail" className="text-xs font-medium text-slate-500">Mail</label>
                   <div className="relative">
                     <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input value={form.mail} onChange={(e) => setForm((f) => ({ ...f, mail: e.target.value }))} className={`${fieldClass} pl-10`} placeholder="Mail" />
+                    <input id="person-mail" value={form.mail} onChange={(e) => setForm((f) => ({ ...f, mail: e.target.value }))} className={`${fieldClass} pl-10`} placeholder="Mail" />
                   </div>
                 </div>
               </div>
@@ -926,8 +946,22 @@ export default function PeopleTab({
               key={p.id}
               person={p}
               serviceOptions={serviceOptions}
+              onUserCreated={(payload) => {
+                setPeople((prev) =>
+                  prev.map((item) =>
+                    normId(item.id) === normId(p.id)
+                      ? {
+                          ...item,
+                          userId: String(payload?.userId || ""),
+                          hasUser: true,
+                        }
+                      : item
+                  )
+                );
+              }}
               onEdit={() => edit(p)}
               onDelete={() => del(p.id)}
+              onProfile={() => setProfilePerson(p)}
             />
           ))}
           {people.length === 0 && (
@@ -943,6 +977,14 @@ export default function PeopleTab({
           )}
         </div>
       </section>
+
+      {/* Profil modal */}
+      {profilePerson && (
+        <PersonProfileModal
+          person={profilePerson}
+          onClose={() => setProfilePerson(null)}
+        />
+      )}
 
       {/* Düzenle modal */}
       {editOpen && (
@@ -1011,19 +1053,26 @@ export default function PeopleTab({
   );
 }
 
-function PersonCard({ person: p, serviceOptions, onEdit, onDelete }) {
+function PersonCard({ person: p, serviceOptions, onEdit, onDelete, onProfile, onUserCreated }) {
   const [creating, setCreating] = useState(false);
   const hasToken = !!getToken();
+  const { user } = useAuth();
+  const canManageUsers = ["admin", "staff", "superadmin"].includes(String(user?.role || "").toLowerCase());
+  const hasLinkedUser = !!String(p.userId || "").trim() || !!p.hasUser;
 
   const handleCreateUser = async () => {
     if (!hasToken) {
-      alert("Kullanıcı oluşturmak için giriş gerekli.");
+      toast.error("Kullanıcı oluşturmak için giriş gerekli.");
       return;
     }
-    if (!window.confirm(`"${p.name}" için kullanıcı hesabı oluşturulsun mu?\nGeçici şifre: TC numarası (TC yoksa Hastane2026!)`)) return;
+    if (hasLinkedUser) {
+      toast.info("Bu personel için zaten kullanıcı hesabı mevcut.");
+      return;
+    }
+    if (!window.confirm(`"${p.name}" için giriş hesabı oluşturulsun mu?\nİlk şifre TC numarası olacak. TC yoksa sistem geçici şifre üretir.\nİlk girişte şifre değişimi istenecek.`)) return;
     setCreating(true);
     try {
-      await API.http.post("/api/users/quick-create", {
+      const res = await API.http.post("/api/users/quick-create", {
         name: p.name,
         tc: p.tc || p.nationalId || "",
         phone: p.phone || "",
@@ -1031,9 +1080,10 @@ function PersonCard({ person: p, serviceOptions, onEdit, onDelete }) {
         role: "user",
         personId: String(p.id || ""),
       });
-      alert(`✅ "${p.name}" için kullanıcı oluşturuldu.`);
+      onUserCreated?.({ userId: String(res?.user?.id || "") });
+      toast.success(`"${p.name}" için giriş hesabı oluşturuldu.`);
     } catch (e) {
-      alert(e?.message || "Kullanıcı oluşturulamadı.");
+      toast.error(e?.message || "Kullanıcı oluşturulamadı.");
     } finally {
       setCreating(false);
     }
@@ -1046,10 +1096,13 @@ function PersonCard({ person: p, serviceOptions, onEdit, onDelete }) {
       <div className="mb-2 flex items-center justify-between">
         <div className="font-semibold uppercase tracking-wide text-slate-800">{p.name}</div>
         <div className="flex gap-1">
-          <button onClick={onEdit} className="rounded-lg bg-slate-100 px-2 py-1 text-xs hover:bg-slate-200">
+          <button onClick={onProfile} aria-label="Personel profili" className="rounded-lg bg-sky-50 border border-sky-200 px-2 py-1 text-xs text-sky-700 hover:bg-sky-100 transition">
+            Profil
+          </button>
+          <button onClick={onEdit} aria-label="Personeli düzenle" className="rounded-lg bg-slate-100 px-2 py-1 text-xs hover:bg-slate-200">
             Düzenle
           </button>
-          <button onClick={onDelete} className="rounded-lg bg-slate-100 px-2 py-1 text-xs hover:bg-slate-200">
+          <button onClick={onDelete} aria-label="Personeli sil" className="rounded-lg bg-slate-100 px-2 py-1 text-xs hover:bg-slate-200">
             Sil
           </button>
         </div>
@@ -1061,14 +1114,31 @@ function PersonCard({ person: p, serviceOptions, onEdit, onDelete }) {
           <span className="text-[10px] text-emerald-900 font-semibold">{p.annualLeaveDays} gün</span>
         </div>
       )}
-      {hasToken && (
-        <button
-          onClick={handleCreateUser}
-          disabled={creating}
-          className={`mt-2 w-full rounded-lg border border-sky-200 bg-sky-50 px-2 py-1.5 text-xs font-medium text-sky-700 transition hover:bg-sky-100 disabled:cursor-wait disabled:opacity-60`}
-        >
-          {creating ? "Oluşturuluyor…" : "Kullanıcı Oluştur"}
-        </button>
+      {canManageUsers && (
+        hasLinkedUser ? (
+          <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs">
+            <div>
+              <div className="font-medium text-emerald-800">Kullanıcı mevcut</div>
+              <div className="text-emerald-700">Bu personele bir giriş hesabı bağlı.</div>
+            </div>
+            <span className="rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+              Aktif bağ
+            </span>
+          </div>
+        ) : (
+          <div className="mt-2 space-y-1.5">
+            <button
+              onClick={handleCreateUser}
+              disabled={creating}
+              className="w-full rounded-lg border border-sky-200 bg-sky-50 px-2 py-1.5 text-xs font-medium text-sky-700 transition hover:bg-sky-100 disabled:cursor-wait disabled:opacity-60"
+            >
+              {creating ? "Oluşturuluyor…" : "Giriş Hesabı Oluştur"}
+            </button>
+            <div className="px-1 text-[11px] text-slate-500">
+              İlk şifre TC numarası olacak, ilk girişte şifre değişimi istenecek.
+            </div>
+          </div>
+        )
       )}
     </div>
   );

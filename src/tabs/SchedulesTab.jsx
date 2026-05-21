@@ -499,6 +499,15 @@ function SectionContent({
   // Takas geçmişi — onaylanmış takas talepleri bu ay
   const [swapLog, setSwapLog] = useState([]);
   const [swapLogOpen, setSwapLogOpen] = useState(false);
+
+  // PlanTab yeni plan ürettiğinde DutyRowsEditor'ı yeniden yüklemeye zorlamak için
+  const [plannerGeneratedKey, setPlannerGeneratedKey] = useState(0);
+  useEffect(() => {
+    const onScheduleSaved = () => setPlannerGeneratedKey((k) => k + 1);
+    window.addEventListener("schedule:saved", onScheduleSaved);
+    return () => window.removeEventListener("schedule:saved", onScheduleSaved);
+  }, []);
+
   useEffect(() => {
     let active = true;
     http.get(`/api/requests?type=takas&status=approved`)
@@ -793,6 +802,7 @@ function SectionContent({
               workingHours={workingHours}
               personLeaves={allLeaves}
               swappedCells={swappedCells}
+              reloadKey={plannerGeneratedKey}
             />
           </div>
         </div>

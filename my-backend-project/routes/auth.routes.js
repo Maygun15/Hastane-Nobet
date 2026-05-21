@@ -9,12 +9,14 @@ const { sendMail, isConfigured } = require('../utils/mailer');
 const router  = express.Router();
 
 const path = require('path');
-const User = require(path.join(__dirname, '..', 'models', 'User.js'));
+const UserModel = require(path.join(__dirname, '..', 'models', 'User.js'));
+const User = UserModel;
+const hashToken = UserModel.hashToken;
 const Person = require(path.join(__dirname, '..', 'models', 'Person.js'));
 const Hospital = require(path.join(__dirname, '..', 'models', 'Hospital.js'));
 
 const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || JWT_SECRET + '_refresh';
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || (JWT_SECRET ? JWT_SECRET + '_refresh' : null);
 const NODE_ENV = String(process.env.NODE_ENV || '').toLowerCase();
 const IS_PROD = NODE_ENV === 'production';
 const ALLOW_DEV = !IS_PROD && ['1','true','yes'].includes(String(process.env.ALLOW_DEV_ENDPOINTS || '').toLowerCase());
@@ -22,6 +24,18 @@ const DEV_EMAIL = String(process.env.ADMIN_EMAIL || '').toLowerCase();
 const DEV_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
 const RATE_STORE = new Map();
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
+
+// Timing saldırısı için startup'ta bir kez üretilen gerçek bcrypt hash
+let DUMMY_HASH = null;
+(async () => { try { DUMMY_HASH = await bcrypt.hash('__warmup__', 10); } catch {} })();
+
+// Süresi dolmuş rate-limit kayıtlarını temizle (OOM önleme)
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of RATE_STORE) {
+    if (v.resetAt <= now) RATE_STORE.delete(k);
+  }
+}, 60_000).unref();
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
   IS_PROD ? fallback : (err?.message || fallback);
 
@@ -93,6 +107,17 @@ const resetApplyRateLimit = authRateLimit({
 
 /* ============ Helpers ============ */
 const normalize = (s) => (s ?? '').toString().trim();
+
+// Sabit-zaman davet kodu karşılaştırması — uzunluk bilgisi sızdırmaz
+function safeCompareInvite(input, expected) {
+  if (!input || !expected) return false;
+  const SIZE = 128;
+  const a = Buffer.alloc(SIZE);
+  const b = Buffer.alloc(SIZE);
+  Buffer.from(input).copy(a);
+  Buffer.from(expected).copy(b);
+  return crypto.timingSafeEqual(a, b) && input.length === expected.length;
+}
 const lc = (s) => normalize(s).toLowerCase();
 const ADMIN_INVITE_CODE = normalize(process.env.ADMIN_INVITE_CODE);
 const STAFF_INVITE_CODE = normalize(process.env.STAFF_INVITE_CODE);
@@ -128,10 +153,14 @@ async function getAuthUserFromRequest(req) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
   if (!token) return null;
-  const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-  if (!decoded?.uid) return null;
-  const user = await User.findById(decoded.uid);
-  return user || null;
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+    if (!decoded?.uid) return null;
+    const user = await User.findById(decoded.uid);
+    return user || null;
+  } catch {
+    return null; // expired/malformed → 401 yerine null döner, çağıran handler kontrol eder
+  }
 }
 
 function withValidation(chains = []) {
@@ -307,13 +336,15 @@ router.post('/login', ...loginValidation, async (req, res) => {
 
     if (!user) {
       bumpRateState(rateKey);
-      return res.status(401).json({ message: 'Kullanıcı bulunamadı' });
+      // Timing saldırısını önlemek için gerçek bcrypt hash ile karşılaştır
+      await bcrypt.compare(password, DUMMY_HASH || '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lHHy');
+      return res.status(401).json({ message: 'Kullanıcı adı veya şifre hatalı' });
     }
 
     const ok = await user.comparePassword(password);
     if (!ok) {
       bumpRateState(rateKey);
-      return res.status(401).json({ message: 'Şifre hatalı' });
+      return res.status(401).json({ message: 'Kullanıcı adı veya şifre hatalı' });
     }
 
     if (user.active === false) {
@@ -332,8 +363,6 @@ router.post('/login', ...loginValidation, async (req, res) => {
         id: String(user._id),
         name: user.name,
         email: user.email,
-        tc: user.tc,
-        phone: user.phone,
         role: user.role,
         active: user.active,
         mustChangePassword: !!user.mustChangePassword,
@@ -390,12 +419,13 @@ router.post('/password/request-reset', resetRequestRateLimit, ...requestResetVal
 
     const user = await User.findOne({ email }).select('+passwordHash +password');
     if (user) {
-      user.resetToken = crypto.randomBytes(20).toString('hex');
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      user.resetToken = hashToken(rawToken); // DB'de hash, e-postada raw
       user.resetTokenExp = new Date(Date.now() + 15 * 60 * 1000);
       await user.save();
 
       const base = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173').replace(/\/+$/, '');
-      const resetUrl = `${base}/reset/${user.resetToken}`;
+      const resetUrl = `${base}/reset/${rawToken}`;
 
       if (isConfigured() && user.email) {
         try {
@@ -434,7 +464,7 @@ router.post('/password/reset', resetApplyRateLimit, ...resetPasswordValidation, 
     }
 
     const user = await User.findOne({
-      resetToken: String(token),
+      resetToken: hashToken(String(token)), // DB'deki hash ile karşılaştır
       resetTokenExp: { $gt: new Date() },
     }).select('+passwordHash +password');
 
@@ -502,7 +532,8 @@ router.post('/admin/accept-invite', async (req, res) => {
       return res.status(404).json({ message: 'Admin davet akışı aktif değil' });
     }
     const code = normalize(req.body?.code);
-    if (!code || code !== ADMIN_INVITE_CODE) {
+    const codeOk = safeCompareInvite(code, ADMIN_INVITE_CODE);
+    if (!codeOk) {
       return res.status(400).json({ message: 'Geçersiz davet kodu' });
     }
     const user = await getAuthUserFromRequest(req);
@@ -531,7 +562,8 @@ router.post('/staff/accept-invite', async (req, res) => {
       return res.status(404).json({ message: 'Staff davet akışı aktif değil' });
     }
     const code = normalize(req.body?.code);
-    if (!code || code !== STAFF_INVITE_CODE) {
+    const codeOk = safeCompareInvite(code, STAFF_INVITE_CODE);
+    if (!codeOk) {
       return res.status(400).json({ message: 'Geçersiz davet kodu' });
     }
     const user = await getAuthUserFromRequest(req);
@@ -602,8 +634,6 @@ router.get('/me', async (req, res) => {
       id:                 String(user._id),
       name:               user.name,
       email:              user.email,
-      tc:                 user.tc,
-      phone:              user.phone,
       role:               user.role,
       active:             user.active,
       serviceIds:         user.serviceIds || [],

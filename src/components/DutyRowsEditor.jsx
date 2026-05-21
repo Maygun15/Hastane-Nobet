@@ -74,6 +74,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     personLeaves = {},
     mode = "full",
     swappedCells = null, // Set<"dayNum|ROWID|personName"> — takas yapılan hücreler
+    reloadKey = 0, // dışarıdan artırılarak yeniden yükleme tetiklenir (örn. PlanTab plan üretince)
   },
   ref
 ) {
@@ -161,6 +162,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const [loadingRemote, setLoadingRemote] = useState(false);
   const [saving, setSaving] = useState(false);
   const [lastSavedInfo, setLastSavedInfo] = useState(null);
+  const [manualChangeLog, setManualChangeLog] = useState([]);
   const [overrideDialog, setOverrideDialog] = useState({ open: false, errors: [], pendingPayload: null });
   const [rawGeneratedExplainability, setRawGeneratedExplainability] = useState(() => createEmptyExplainability());
   const [monthlyReadModelState, setMonthlyReadModelState] = useState(() => ({
@@ -1035,6 +1037,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           else if ("roster" in data) setRoster(null);
           setAiPlan("aiPlan" in data ? (data.aiPlan || null) : null);
           if ("pins" in data) setPins(data.pins || []);
+          setManualChangeLog(Array.isArray(data.changeLog) ? data.changeLog : []);
           if ("rules" in data) {
             const r = data.rules || [];
             setRules(r);
@@ -1067,6 +1070,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         } else {
           savedAssignmentsRef.current = [];
           setLastSavedInfo(null);
+          setManualChangeLog([]);
           setMonthlyReadModelState({ scheduleId: null, updatedAt: null, generatedAt: null });
           setAiPlan(readAiPlanFallback(year, month0));
           if (autoSaveTimerRef.current) {
@@ -1082,6 +1086,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         if (err?.status === 404) {
           savedAssignmentsRef.current = [];
           setLastSavedInfo(null);
+          setManualChangeLog([]);
           setMonthlyReadModelState({ scheduleId: null, updatedAt: null, generatedAt: null });
           setAiPlan(readAiPlanFallback(year, month0));
           if (autoSaveTimerRef.current) {
@@ -1104,7 +1109,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     return () => {
       cancelled = true;
     };
-  }, [sectionId, serviceKey, role, year, month1, replaceAllDefs, note]);
+  }, [sectionId, serviceKey, role, year, month1, replaceAllDefs, note, reloadKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1234,6 +1239,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         aiPlan,
         pins,
         rules,
+        changeLog: manualChangeLog,
         generatedAt: new Date().toISOString(),
       };
 
@@ -1300,6 +1306,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       } catch {}
       setAutoSaveStatus("saved");
       setAutoSaveError(null);
+      setManualChangeLog(Array.isArray(payload.changeLog) ? payload.changeLog : []);
       if (!silent) note("Çizelge kaydedildi.", "success");
       return saved;
     } catch (err) {
@@ -1311,7 +1318,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     } finally {
       setSaving(false);
     }
-  }, [sectionId, serviceKey, role, year, month1, rows, overrides, roster, preview, aiPlan, pins, rules, daysInMonth, note, makeSignature]);
+  }, [sectionId, serviceKey, role, year, month1, rows, overrides, roster, preview, aiPlan, pins, rules, manualChangeLog, daysInMonth, note, makeSignature]);
 
   useEffect(() => {
     if (autoSaveStatus !== "saved") return undefined;
@@ -1741,6 +1748,31 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const showRuleTools = mode !== "assignmentOnly";
   const showOverrideJsonTools = mode !== "assignmentOnly";
   const showPinTools = mode !== "configOnly";
+  const recentManualChanges = useMemo(
+    () =>
+      (Array.isArray(manualChangeLog) ? manualChangeLog : [])
+        .filter((item) => item && (item.type === "quickReplace" || item.type === "manualRemove"))
+        .slice(-8)
+        .reverse(),
+    [manualChangeLog]
+  );
+  const manualChangeCells = useMemo(() => {
+    const cells = new Set();
+    for (const item of recentManualChanges) {
+      const day = Number(item?.day || String(item?.date || "").slice(8, 10));
+      const rowId = String(item?.rowId || item?.shiftId || item?.shiftCode || "").trim();
+      if (!day || !rowId) continue;
+      cells.add(`${day}|${rowId}|`);
+      const toName = String(item?.to?.personName || "").trim();
+      const fromName = String(item?.from?.personName || "").trim();
+      if (toName) cells.add(`${day}|${rowId}|${toName}`);
+      if (fromName) cells.add(`${day}|${rowId}|${fromName}`);
+      cells.add(`${day}|${rowId.toUpperCase()}|`);
+      if (toName) cells.add(`${day}|${rowId.toUpperCase()}|${toName}`);
+      if (fromName) cells.add(`${day}|${rowId.toUpperCase()}|${fromName}`);
+    }
+    return cells;
+  }, [recentManualChanges]);
 
   /* ===================== ŞABLON YÖNETİMİ ===================== */
   const TEMPLATES_KEY = "dutyRowTemplates";
@@ -1883,6 +1915,33 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                 : ""}
             </span>
           )}
+        </div>
+      )}
+      {recentManualChanges.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-950">
+          <div className="flex items-center justify-between gap-3">
+            <div className="font-semibold">Manuel değişiklikler</div>
+            <div className="text-xs text-amber-700">{recentManualChanges.length} son kayıt gösteriliyor</div>
+          </div>
+          <div className="mt-2 grid gap-2 md:grid-cols-2">
+            {recentManualChanges.map((item) => {
+              const fromName = item?.from?.personName || "-";
+              const toName = item?.to?.personName || "-";
+              const actionText = item?.type === "manualRemove" ? "silindi" : "değiştirildi";
+              return (
+                <div key={item.id || `${item.date}-${item.rowId}-${fromName}-${toName}`} className="rounded-lg border border-amber-200 bg-white/70 px-3 py-2">
+                  <div className="font-medium">
+                    {item.date || "-"} · {item.roleLabel || item.shiftCode || item.shiftId || "Görev"} {actionText}
+                  </div>
+                  <div className="mt-0.5 text-xs text-amber-800">
+                    {fromName} → {toName}
+                    {item.changedByName ? ` · ${item.changedByName}` : ""}
+                    {item.changedAt ? ` · ${formatDateTime(item.changedAt)}` : ""}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -2189,19 +2248,26 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                           swappedCells.has(`${day}|${row.id}|${name}`) ||
                           swappedCells.has(`${day}|${String(row.id).toUpperCase()}|${name}`)
                         );
+                        const isManualChanged = name && (
+                          manualChangeCells.has(`${day}|${row.id}|${name}`) ||
+                          manualChangeCells.has(`${day}|${row.id}|`) ||
+                          manualChangeCells.has(`${day}|${String(row.id).toUpperCase()}|${name}`) ||
+                          manualChangeCells.has(`${day}|${String(row.id).toUpperCase()}|`)
+                        );
+                        const isMarkedChanged = isSwapped || isManualChanged;
                         return (
                           <td
                             key={`${row.id}-${slotIdx}-${day}`}
-                            title={isSwapped ? `⇆ Takas: ${name}` : (name || "")}
+                            title={isMarkedChanged ? `Güncellendi: ${name}` : (name || "")}
                             className={`px-2 py-2.5 text-center align-middle text-sm relative ${
-                              isSwapped
+                              isMarkedChanged
                                 ? "bg-orange-50 ring-1 ring-inset ring-orange-300"
                                 : isWeekend ? "bg-blue-50/70" : ""
                             } ${name ? "text-ink" : "text-slate-200"}`}
                           >
                             {name ? compactRosterDisplayName(name) : "·"}
-                            {isSwapped && (
-                              <span className="absolute top-0.5 right-0.5 text-[8px] text-orange-500 font-bold leading-none">⇆</span>
+                            {isMarkedChanged && (
+                              <span className="absolute top-0.5 right-0.5 text-[8px] text-orange-500 font-bold leading-none">↺</span>
                             )}
                           </td>
                         );

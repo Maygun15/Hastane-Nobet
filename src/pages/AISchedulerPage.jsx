@@ -119,6 +119,9 @@ export default function AISchedulerPage({ activeYM }) {
   const [submitting, setSubmitting] = useState(false);
   const pollRef = useRef(null);
 
+  // Onay adımı
+  const [pendingApproval, setPendingApproval] = useState(null);
+
   // Load services
   useEffect(() => {
     http.get('/api/services?size=100')
@@ -138,12 +141,17 @@ export default function AISchedulerPage({ activeYM }) {
     try {
       const data = await http.get(`/api/scheduler/jobs/${jId}`);
       setJobStatus(data);
-      if (data.status === 'done' || data.status === 'failed') stopPolling();
+      if (data.status === 'done' || data.status === 'failed') {
+        stopPolling();
+        if (data.status === 'done' && !dryRun) {
+          setPendingApproval(data);
+        }
+      }
     } catch (err) {
       setJobStatus((prev) => ({ ...(prev || {}), status: 'failed', error: err?.message || 'Polling hatası' }));
       stopPolling();
     }
-  }, [stopPolling]);
+  }, [stopPolling, dryRun]);
 
   useEffect(() => () => stopPolling(), [stopPolling]);
 
@@ -176,7 +184,11 @@ export default function AISchedulerPage({ activeYM }) {
         pollRef.current = setInterval(() => pollJob(data.jobId), 2500);
       } else if (data.ok && data.data) {
         // Sync fallback
-        setJobStatus({ status: 'done', result: data, quality: data.quality });
+        const syncResult = { status: 'done', result: data, quality: data.quality };
+        setJobStatus(syncResult);
+        if (!dryRun) {
+          setPendingApproval(syncResult);
+        }
       }
     } catch (err) {
       setJobStatus({ status: 'failed', error: err?.data?.message || err?.message || 'Bilinmeyen hata' });
@@ -189,6 +201,7 @@ export default function AISchedulerPage({ activeYM }) {
     stopPolling();
     setJobId(null);
     setJobStatus(null);
+    setPendingApproval(null);
   };
 
   const running = jobStatus?.status === 'queued' || jobStatus?.status === 'running' || submitting;
@@ -411,6 +424,43 @@ export default function AISchedulerPage({ activeYM }) {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Onay adımı */}
+      {pendingApproval && (
+        <div style={{
+          marginTop: 16, padding: '16px 20px', borderRadius: 16,
+          background: '#fffbeb', border: '1px solid #fcd34d',
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#92400e', marginBottom: 8 }}>
+            ⚠️ AI çizelgesi oluşturuldu — Onaylıyor musunuz?
+          </div>
+          <div style={{ fontSize: 12, color: '#b45309', marginBottom: 12 }}>
+            Bu çizelgeyi onaylamadan kaydetmeden önce lütfen inceleyin.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => { setPendingApproval(null); }}
+              style={{
+                padding: '8px 20px', borderRadius: 10, border: 'none',
+                background: '#059669', color: '#fff',
+                fontWeight: 700, fontSize: 13, cursor: 'pointer',
+              }}
+            >
+              ✓ Onayla ve Kaydet
+            </button>
+            <button
+              onClick={() => { setPendingApproval(null); reset(); }}
+              style={{
+                padding: '8px 20px', borderRadius: 10,
+                border: '1px solid #d1d5db', background: '#fff',
+                fontSize: 13, color: '#374151', cursor: 'pointer',
+              }}
+            >
+              ✗ Reddet
+            </button>
+          </div>
         </div>
       )}
 

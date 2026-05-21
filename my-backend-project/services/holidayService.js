@@ -4,6 +4,7 @@ const CalendarSetting = require('../models/CalendarSetting');
 const { getReligiousHolidays } = require('./religiousHolidayService');
 
 const NAGER_URL = (year) => `https://date.nager.at/api/v3/PublicHolidays/${year}/TR`;
+let ensureHolidayIndexesPromise = null;
 
 const norm = (s) => String(s || '').toLowerCase();
 const normalizeText = (s) =>
@@ -125,6 +126,32 @@ function dedupeHolidayDocs(docs = []) {
   return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+async function ensureHolidayIndexes() {
+  if (ensureHolidayIndexesPromise) return ensureHolidayIndexesPromise;
+
+  ensureHolidayIndexesPromise = (async () => {
+    try {
+      const indexes = await Holiday.collection.indexes();
+      const legacyDateIndex = indexes.find((idx) => idx?.name === 'date_1' && idx?.unique);
+      const scopedDateIndex = indexes.find((idx) => idx?.name === 'hospitalId_1_date_1' && idx?.unique);
+
+      // Older installations created a global unique `date_1` index. That blocks
+      // the scoped holiday model used by the current app and causes noisy E11000
+      // errors on every holiday refresh.
+      if (legacyDateIndex && scopedDateIndex) {
+        await Holiday.collection.dropIndex('date_1');
+      }
+    } catch (err) {
+      const msg = String(err?.message || '');
+      if (!/index not found|ns does not exist/i.test(msg)) {
+        console.warn('[holidays] index reconcile skipped:', msg);
+      }
+    }
+  })();
+
+  return ensureHolidayIndexesPromise;
+}
+
 function buildLocalHolidayFallback(year) {
   const y = Number(year);
   if (!Number.isFinite(y) || y < 2000 || y > 2100) return [];
@@ -149,6 +176,7 @@ function buildLocalHolidayFallback(year) {
 }
 
 async function generateHolidays(year, { hospitalId = null } = {}) {
+  await ensureHolidayIndexes();
   const y = Number(year);
   if (!Number.isFinite(y) || y < 2000 || y > 2100) {
     throw new Error('Yıl geçersiz');
@@ -235,6 +263,7 @@ async function generateHolidays(year, { hospitalId = null } = {}) {
 }
 
 async function listHolidays({ year, month, hospitalId = null } = {}) {
+  await ensureHolidayIndexes();
   const y = Number(year);
   const m = Number(month);
   const qHoliday = hospitalId ? { hospitalId } : {};

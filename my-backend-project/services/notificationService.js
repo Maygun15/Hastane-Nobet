@@ -290,9 +290,116 @@ async function sendShiftChanged({
   });
 }
 
+async function sendNewRequestNotification({ request, senderName }) {
+  if (!notificationsEnabled()) return;
+  try {
+    // In-app notification: admin ve yetkili rolleri için tüm kullanıcılara broadcast
+    const admins = await User.find({
+      role: { $in: ['admin', 'Admin', 'authorized', 'Authorized', 'manager', 'Manager'] },
+      ...(request.hospitalId ? { hospitalId: request.hospitalId } : {}),
+    }).select('_id email name').lean();
+
+    const typeLabel = { izin: 'İzin', takas: 'Takas', tercih: 'Tercih', diger: 'Diğer' }[request.type] || request.type;
+    const title = `Yeni ${typeLabel} Talebi`;
+    const body = `${senderName || 'Bir personel'} yeni bir ${typeLabel.toLowerCase()} talebi gönderdi.`;
+
+    for (const admin of admins) {
+      try {
+        const notif = await Notification.create({
+          userId: admin._id,
+          hospitalId: request.hospitalId || null,
+          type: 'request_new',
+          title,
+          message: body,
+          data: { requestId: request._id, requestType: request.type },
+          read: false,
+        });
+        broadcast(String(admin._id), 'notification', {
+          id: String(notif._id),
+          type: 'request_new',
+          title,
+          message: body,
+          body,
+          read: false,
+          createdAt: notif.createdAt || new Date().toISOString(),
+          data: { requestId: request._id, requestType: request.type },
+        });
+      } catch {}
+    }
+  } catch (e) {
+    console.warn('[notification] sendNewRequestNotification hata:', e?.message);
+  }
+}
+
+/**
+ * Hastanedeki tüm aktif kullanıcılara duyuru gönderir.
+ * @param {ObjectId} hospitalId
+ * @param {string} title
+ * @param {string} body
+ * @param {string} [type='announcement']
+ */
+async function broadcastAnnouncement(hospitalId, title, body, type = 'announcement', options = {}) {
+  try {
+    const mode = String(options?.mode || 'info').trim().toLowerCase();
+    const normalizedMode = ['info', 'ack', 'reply'].includes(mode) ? mode : 'info';
+    const users = await User.find({ hospitalId, active: true }).select('_id').lean();
+
+    if (!users.length) {
+      throw new Error('Aktif kullanıcı bulunamadı');
+    }
+
+    const docs = users.map(u => ({
+      hospitalId: String(hospitalId || ''),
+      userId: String(u._id),
+      title,
+      message: body,
+      type,
+      data: {
+        announcementMode: normalizedMode,
+        requireAck: normalizedMode === 'ack',
+        allowReply: normalizedMode === 'reply',
+      },
+      read: false,
+    }));
+    const inserted = await Notification.insertMany(docs, { ordered: false });
+    const insertedByUserId = new Map(
+      inserted.map((item) => [String(item.userId), item])
+    );
+
+    // SSE: her kullanıcıya bireysel broadcast yap
+    for (const u of users) {
+      try {
+        const item = insertedByUserId.get(String(u._id));
+        broadcast(String(u._id), 'notification', {
+          id: item?._id ? String(item._id) : undefined,
+          _id: item?._id ? String(item._id) : undefined,
+          type,
+          title,
+          message: body,
+          body,
+          data: item?.data || {
+            announcementMode: normalizedMode,
+            requireAck: normalizedMode === 'ack',
+            allowReply: normalizedMode === 'reply',
+          },
+          read: false,
+          createdAt: item?.createdAt || new Date().toISOString(),
+          ts: Date.now(),
+        });
+      } catch {}
+    }
+    return { targetedUsers: users.length, createdNotifications: inserted.length };
+  } catch (err) {
+    console.error('[broadcastAnnouncement]', err?.message || err);
+    throw err;
+  }
+}
+
 module.exports = {
   sendLeaveApproved,
   sendLeaveRejected,
   sendShiftChanged,
   saveAndBroadcast,
+  sendNewRequestNotification,
+  broadcastAnnouncement,
 };
