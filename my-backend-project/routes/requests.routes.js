@@ -431,6 +431,18 @@ async function executeSwap(request) {
     Person.findById(swapWithPersonId).lean(),
   ]);
 
+  // Personel adları çözümleniyor. Boş ad DB'ye yazılmasın; bu noktada fırlatılan
+  // hata, aşağıdaki tüm try/catch bloklarının dışında olduğu için admin onay
+  // akışındaki catch'e (→ 500 + durum geri alma) doğrudan ulaşır.
+  const resolvedFromName = (fromPerson?.name || '').trim() || (typeof fromName === 'string' ? fromName.trim() : '');
+  const resolvedToName   = (toPerson?.name || '').trim();
+  if (!resolvedFromName) {
+    throw new Error(`Takas başlatıcısının adı bulunamadı (personId: ${fromPid}). Personel kaydı eksik veya silinmiş.`);
+  }
+  if (!resolvedToName) {
+    throw new Error(`Takas yapılacak kişinin adı bulunamadı (personId: ${toPid}). Personel kaydı eksik veya silinmiş.`);
+  }
+
   const isSameDoc = myYm.year === tYm.year && myYm.month === tYm.month;
 
   const findAndSwap = async (doc, findDate, findPid, findShift, newPid, newName, findNameFallback = '') => {
@@ -453,11 +465,18 @@ async function executeSwap(request) {
     }
     if (idx === -1) return { doc, found: false, assignments };
 
+    // Boş ad DB'ye yazılmasın — bu noktaya ulaşıldıysa yukarıdaki guard'ı geçmiş
+    // olmalı; ama savunma amacıyla ikinci kez kontrol ediliyor.
+    const safeNewName = String(newName || '').trim();
+    if (!safeNewName) {
+      throw new Error(`Takas sırasında yeni kişi adı boş — ${findDate} / ${findShift} ataması iptal edildi.`);
+    }
+
     const oldName = String(assignments[idx].personName || '').trim();
     const rowId   = String(assignments[idx].rowId || assignments[idx].shiftId || findShift).trim();
     const day     = Number(String(findDate).slice(8, 10));
 
-    assignments[idx] = { ...assignments[idx], personId: newPid, personName: newName, source: 'swap', overrideReason: 'takas' };
+    assignments[idx] = { ...assignments[idx], personId: newPid, personName: safeNewName, source: 'swap', overrideReason: 'takas' };
 
     // namedAssignments güncelle (DutyRowsEditor bu formatı okur)
     if (oldName && rowId && day) {
@@ -485,11 +504,11 @@ async function executeSwap(request) {
     const doc = await MonthlySchedule.findOne({ sectionId, year: myYm.year, month: myYm.month });
     if (!doc) return false;
 
-    const r1 = await findAndSwap(doc, myDate, fromPid, myShift, toPid, toPerson?.name || '', fromPerson?.name || fromName || '');
+    const r1 = await findAndSwap(doc, myDate, fromPid, myShift, toPid, resolvedToName, resolvedFromName);
     if (!r1.found) return false;
     doc.data = { ...doc.data, assignments: r1.assignments };
 
-    const r2 = await findAndSwap(doc, tDate, toPid, tShift, fromPid, fromPerson?.name || fromName || '', toPerson?.name || '');
+    const r2 = await findAndSwap(doc, tDate, toPid, tShift, fromPid, resolvedFromName, resolvedToName);
     if (!r2.found) return false;
     doc.data = { ...doc.data, assignments: r2.assignments };
     doc.markModified('data');
@@ -525,12 +544,12 @@ async function executeSwap(request) {
         ]);
         if (!fromDoc || !toDoc) throw new Error('Çizelge bulunamadı');
 
-        const r1 = await findAndSwap(fromDoc, myDate, fromPid, myShift, toPid, toPerson?.name || '', fromPerson?.name || fromName || '');
+        const r1 = await findAndSwap(fromDoc, myDate, fromPid, myShift, toPid, resolvedToName, resolvedFromName);
         if (!r1.found) throw new Error('Vardiya bulunamadı (from)');
         fromDoc.data = { ...fromDoc.data, assignments: r1.assignments };
         fromDoc.markModified('data');
 
-        const r2 = await findAndSwap(toDoc, tDate, toPid, tShift, fromPid, fromPerson?.name || fromName || '', toPerson?.name || '');
+        const r2 = await findAndSwap(toDoc, tDate, toPid, tShift, fromPid, resolvedFromName, resolvedToName);
         if (!r2.found) throw new Error('Vardiya bulunamadı (to)');
         toDoc.data = { ...toDoc.data, assignments: r2.assignments };
         toDoc.markModified('data');
@@ -555,12 +574,12 @@ async function executeSwap(request) {
           ]);
           if (!fbFromDoc || !fbToDoc) { if (session) await session.endSession().catch(() => {}); return false; }
 
-          const fr1 = await findAndSwap(fbFromDoc, myDate, fromPid, myShift, toPid, toPerson?.name || '', fromPerson?.name || fromName || '');
+          const fr1 = await findAndSwap(fbFromDoc, myDate, fromPid, myShift, toPid, resolvedToName, resolvedFromName);
           if (!fr1.found) { if (session) await session.endSession().catch(() => {}); return false; }
           fbFromDoc.data = { ...fbFromDoc.data, assignments: fr1.assignments };
           fbFromDoc.markModified('data');
 
-          const fr2 = await findAndSwap(fbToDoc, tDate, toPid, tShift, fromPid, fromPerson?.name || fromName || '', toPerson?.name || '');
+          const fr2 = await findAndSwap(fbToDoc, tDate, toPid, tShift, fromPid, resolvedFromName, resolvedToName);
           if (!fr2.found) { if (session) await session.endSession().catch(() => {}); return false; }
           fbToDoc.data = { ...fbToDoc.data, assignments: fr2.assignments };
           fbToDoc.markModified('data');
