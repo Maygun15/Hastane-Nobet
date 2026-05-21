@@ -1,6 +1,7 @@
 const GeneratedSchedule = require('../models/GeneratedSchedule');
 const MonthlySchedule = require('../models/MonthlySchedule');
 const Person = require('../models/Person');
+const Setting = require('../models/Setting');
 const mongoose = require('mongoose');
 const { computeQualityScore } = require('./scheduleQuality');
 const { listHolidays } = require('./holidayService');
@@ -406,6 +407,53 @@ function buildMonthlyScheduleWriteback({ data = {}, existingRoster = {} } = {}) 
   };
 }
 
+// leavesV2 Setting dokümanından onaylı izin günlerini çeker.
+// Döndürdüğü format: { [personId]: string[] } — her string "YYYY-MM-DD".
+// Array olarak döner; çağıran taraf ihtiyacına göre Set'e çevirir.
+async function buildLeavesByPersonFromDb({ serviceId, year, month, hospitalId }) {
+  const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+  const filter = { key: 'leavesV2', serviceId: String(serviceId || '') };
+  if (hospitalId) filter.hospitalId = hospitalId;
+
+  const doc = await Setting.findOne(filter).lean();
+  if (!doc?.value || typeof doc.value !== 'object') return {};
+
+  const result = {};
+  for (const [pid, monthMap] of Object.entries(doc.value)) {
+    if (!pid || typeof monthMap !== 'object') continue;
+    const dayMap = monthMap[monthKey];
+    if (!dayMap || typeof dayMap !== 'object') continue;
+    const dates = [];
+    for (const dayStr of Object.keys(dayMap)) {
+      const d = Number(dayStr);
+      if (!Number.isFinite(d) || d < 1 || d > 31) continue;
+      dates.push(`${monthKey}-${String(d).padStart(2, '0')}`);
+    }
+    if (dates.length) result[pid] = dates;
+  }
+  return result;
+}
+
+// DB izin listesi (Array) ile payload override'larını (Array | Set) birleştirir.
+// Her iki kaynak da union'a girer — payload DB'yi ezmez, ikisi toplanır.
+// Sonuç: { [personId]: Set<"YYYY-MM-DD"> } — constraints.js Set.has() ile çalışır.
+function mergeLeavesByPerson(dbLeaves, payloadLeaves) {
+  const result = {};
+  const allPids = new Set([
+    ...Object.keys(dbLeaves),
+    ...Object.keys(payloadLeaves || {}),
+  ]);
+  for (const pid of allPids) {
+    const dbDates  = dbLeaves[pid] || [];
+    const pay      = payloadLeaves?.[pid];
+    const payDates = pay instanceof Set ? [...pay]
+                   : Array.isArray(pay) ? pay
+                   : [];
+    result[pid] = new Set([...dbDates, ...payDates]);
+  }
+  return result;
+}
+
 async function generateSchedule({ sectionId, serviceId = '', role = '', year, month, dryRun = false, userId, payload = {}, hospitalId = null }) {
   const query = hospitalId ? { hospitalId, sectionId, year, month } : { sectionId, year, month };
   if (serviceId) query.serviceId = serviceId;
@@ -439,7 +487,8 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     : await resolveStaff({ serviceId, role, hospitalId });
   const staff = staffPack.staff;
 
-  const leavesByPerson = payload.leavesByPerson || {};
+  const dbLeaves = await buildLeavesByPersonFromDb({ serviceId, year, month, hospitalId });
+  const leavesByPerson = mergeLeavesByPerson(dbLeaves, payload.leavesByPerson || {});
   const requestsByPerson = payload.requestsByPerson || {};
 
   const staffCount = Array.isArray(staff) ? staff.length : 0;

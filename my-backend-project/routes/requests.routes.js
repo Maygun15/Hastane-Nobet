@@ -90,7 +90,7 @@ async function applyLeaveRange(request) {
           leaveTypeId,
           leaveTypeName,
           year,
-          allocated: 0,
+          allocated: leaveType?.maxDaysPerYear ?? 0,
         },
       },
       { upsert: true, new: true }

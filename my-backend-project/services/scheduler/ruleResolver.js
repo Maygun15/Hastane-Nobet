@@ -10,6 +10,19 @@ const DEFAULT_RULES = {
   MAX_TASK_PER_PERSON: 0,
 };
 
+// DutyRule.basicRules (yapısal alan) → scheduler DEFAULT_RULES anahtarlarına dönüştür.
+// doc.rules bir array ({id,type,enabled,value}) olduğu için doğrudan spread edilemez.
+function basicRulesToSchedulerRules(basicRules = {}) {
+  const out = {};
+  if (basicRules.maxConsecutiveDays != null) out.MAX_CONSECUTIVE_DAYS = basicRules.maxConsecutiveDays;
+  if (basicRules.minRestHours != null) out.MIN_REST_HOURS = basicRules.minRestHours;
+  if (basicRules.noDoubleShiftPerDay != null) out.ONE_SHIFT_PER_DAY = basicRules.noDoubleShiftPerDay;
+  if (basicRules.nightShiftFollowUp != null) {
+    out.NIGHT_NEXT_DAY_OFF = basicRules.nightShiftFollowUp !== 'none';
+  }
+  return out;
+}
+
 const DEFAULT_WEIGHTS = {
   hourBalance: 2,
   shiftBalance: 3,
@@ -33,8 +46,8 @@ async function fetchDutyRules({ sectionId, serviceId = '', role = '', hospitalId
     if (doc) break;
   }
 
-  const rules = { ...DEFAULT_RULES, ...(doc?.rules || {}) };
-  const weights = { ...DEFAULT_WEIGHTS, ...(doc?.weights || {}) };
+  const rules = { ...DEFAULT_RULES, ...basicRulesToSchedulerRules(doc?.basicRules) };
+  const weights = { ...DEFAULT_WEIGHTS, ...(doc?.weights && !Array.isArray(doc.weights) ? doc.weights : {}) };
   return { doc, rules, weights };
 }
 
