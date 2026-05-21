@@ -17,6 +17,8 @@ const {
 const { replaceAssignmentsForSchedule } = require('../services/assignmentSyncService');
 const { suggestSwaps } = require('../services/swapSuggestionService');
 const { withHospitalFilter, isSuperAdminRole } = require('../middleware/hospital');
+const ScheduleRules = require('../models/ScheduleRules');
+const { validateAssignment } = require('../utils/rulesValidator');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
@@ -269,6 +271,129 @@ async function checkSwapConflicts(request) {
   }
 
   return null; // kural ihlali yok
+}
+
+/* ── Takas öncesi kural simülasyonu ──
+ * Her iki personelin takas sonrası takvim durumunu simüle eder ve
+ * ScheduleRules kural setine göre validateAssignment çalıştırır.
+ * Orijinal assignments dizisi mutate edilmez — slice() ile kopya alınır.
+ * Döndürdüğü: { valid: boolean, violations: Array<{person, errors}> }
+ */
+async function validateSwap(request) {
+  const {
+    fromPersonId, fromName,
+    swapWithPersonId,
+    swapSectionId, swapMyDate, swapMyShiftId,
+    swapTargetDate, swapTargetShiftId,
+    serviceId, hospitalId,
+  } = request;
+
+  if (!fromPersonId || !swapWithPersonId || !swapMyDate || !swapTargetDate) {
+    return { valid: true, violations: [] };
+  }
+
+  // ScheduleRules çek — yoksa veya devre dışıysa doğrudan geç
+  const sectionId = String(swapSectionId || '');
+  const rulesFilter = { sectionId };
+  if (serviceId) rulesFilter.serviceId = String(serviceId);
+  const rulesDoc = await ScheduleRules.findOne(rulesFilter).lean();
+  if (!rulesDoc?.enabled) return { valid: true, violations: [] };
+
+  function ym(d) {
+    const m = String(d).slice(0, 10).match(/^(\d{4})-(\d{2})/);
+    return m ? { year: Number(m[1]), month: Number(m[2]) } : null;
+  }
+  const myYm = ym(swapMyDate);
+  const tYm  = ym(swapTargetDate);
+  if (!myYm || !tYm) return { valid: true, violations: [] };
+
+  const fromPid  = String(fromPersonId);
+  const toPid    = String(swapWithPersonId);
+  const myDate   = String(swapMyDate).slice(0, 10);
+  const tDate    = String(swapTargetDate).slice(0, 10);
+  const myShift  = String(swapMyShiftId  || '').toUpperCase();
+  const tShift   = String(swapTargetShiftId || '').toUpperCase();
+
+  const [fromPerson, toPerson] = await Promise.all([
+    Person.findById(fromPersonId).lean(),
+    Person.findById(swapWithPersonId).lean(),
+  ]);
+  const fromDisplayName = fromPerson?.name || fromName || String(fromPersonId);
+  const toDisplayName   = toPerson?.name || String(swapWithPersonId);
+
+  // İlgili ay dokümanlarını çek (sadece assignments projeksiyonu)
+  const isSameDoc = myYm.year === tYm.year && myYm.month === tYm.month;
+  const [myDoc, tDoc] = await Promise.all([
+    MonthlySchedule.findOne({ sectionId, year: myYm.year, month: myYm.month })
+      .select({ 'data.assignments': 1 }).lean(),
+    isSameDoc
+      ? Promise.resolve(null)
+      : MonthlySchedule.findOne({ sectionId, year: tYm.year, month: tYm.month })
+          .select({ 'data.assignments': 1 }).lean(),
+  ]);
+
+  // Tüm atamaları immutable olarak birleştir
+  const myAssignments = Array.isArray(myDoc?.data?.assignments)
+    ? myDoc.data.assignments.slice()
+    : [];
+  const tAssignments = isSameDoc
+    ? myAssignments
+    : (Array.isArray(tDoc?.data?.assignments) ? tDoc.data.assignments.slice() : []);
+
+  // Kişi bazlı filtre: personId öncelikli, yoksa normalize isimle eşleş
+  function forPerson(list, pid, name) {
+    const canonName = swapCanonName(name);
+    return list.filter((a) => {
+      const apid = String(a?.personId || '').trim();
+      if (pid && apid) return apid === pid;
+      if (name) return swapCanonName(String(a?.personName || '')) === canonName;
+      return false;
+    });
+  }
+
+  // Takas sonrası simüle edilmiş listeler (orijinal kopyalanmış, mutate edilmiyor)
+  const fromCurrentList = forPerson(myAssignments, fromPid, fromDisplayName);
+  const toCurrentList   = forPerson(tAssignments,  toPid,   toDisplayName);
+
+  // Kişi A: myDate/myShift çıkar → tDate ekle
+  const simFromList = fromCurrentList
+    .filter((a) => {
+      const aDate  = String(a?.date || a?.day || '').slice(0, 10);
+      const aShift = String(a?.shiftId || a?.shiftCode || '').trim().toUpperCase();
+      return !(aDate === myDate && aShift === myShift);
+    })
+    .concat([{ personId: fromPid, personName: fromDisplayName, date: tDate }]);
+
+  // Kişi B: tDate/tShift çıkar → myDate ekle
+  const simToList = toCurrentList
+    .filter((a) => {
+      const aDate  = String(a?.date || a?.day || '').slice(0, 10);
+      const aShift = String(a?.shiftId || a?.shiftCode || '').trim().toUpperCase();
+      return !(aDate === tDate && aShift === tShift);
+    })
+    .concat([{ personId: toPid, personName: toDisplayName, date: myDate }]);
+
+  // Her iki kişi için kural kontrolü
+  const resultA = validateAssignment(
+    rulesDoc,
+    { personId: fromPid, personName: fromDisplayName, date: tDate },
+    simFromList,
+  );
+  const resultB = validateAssignment(
+    rulesDoc,
+    { personId: toPid, personName: toDisplayName, date: myDate },
+    simToList,
+  );
+
+  const violations = [];
+  if (!resultA.valid) {
+    violations.push({ person: fromDisplayName, personId: fromPid, errors: resultA.errors });
+  }
+  if (!resultB.valid) {
+    violations.push({ person: toDisplayName, personId: toPid, errors: resultB.errors });
+  }
+
+  return { valid: violations.length === 0, violations };
 }
 
 /* ── Takas onaylandığında atamaları değiştir ── */
@@ -638,7 +763,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(403).json({ message: 'Yetkiniz yok' });
     }
 
-    const { status, adminNote } = req.body;
+    const { status, adminNote, forceSwap = false } = req.body;
     if (!['approved', 'rejected', 'pending'].includes(status)) {
       return res.status(400).json({ message: 'Geçersiz durum' });
     }
@@ -666,6 +791,25 @@ router.put('/:id', requireAuth, async (req, res) => {
 
     // Takas onay ÖNCE kural kontrolü — status henüz değişmeden
     if (status === 'approved' && previousStatus !== 'approved' && isSwapRequest && !request.swapExecuted) {
+      // 1. ScheduleRules simülasyonu (maxShifts, minRest, maxConsecutive, restrictedDays)
+      try {
+        const swapVal = await validateSwap(request);
+        if (!swapVal.valid && !forceSwap) {
+          return res.status(400).json({
+            message: 'Takas kural ihlali içeriyor. Devam etmek için forceSwap: true gönderin.',
+            violations: swapVal.violations,
+            canForce: true,
+          });
+        }
+        if (!swapVal.valid && forceSwap) {
+          console.warn('[swap-validate] Kural ihlali forceSwap ile geçildi:', JSON.stringify(swapVal.violations));
+        }
+      } catch (valErr) {
+        console.error('[swap-validate] ERR:', valErr?.message || valErr);
+        // Kural kontrolü başarısız olsa bile takasın bloklanması istenmez; devam et
+      }
+
+      // 2. Aynı gün / gece ardışık çakışma kontrolü
       try {
         const conflict = await checkSwapConflicts(request);
         if (conflict) return res.status(422).json({ message: conflict });
