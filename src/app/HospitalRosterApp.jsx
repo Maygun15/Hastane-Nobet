@@ -3,15 +3,14 @@ import React, { useCallback, useEffect, useRef, useState, useMemo } from "react"
 import { toast, Toaster } from "sonner";
 import {
   Calendar as CalendarIcon,
-  ChevronDown,
   ClipboardList,
-  LayoutDashboard,
   LogOut,
   Settings2,
   ShieldCheck,
   UserRound,
-  Users2,
 } from "lucide-react";
+
+import AppSidebar from "../components/layout/Sidebar.jsx";
 
 import ErrorBoundary from "../ErrorBoundary.jsx";
 import Modal from "../components/common/Modal.jsx";
@@ -443,32 +442,9 @@ export default function HospitalRosterApp() {
     return () => window.removeEventListener("personnel:changed", onPersonnelChanged);
   }, [reloadPersonnel]);
 
-  /* ---- dropdown helpers ---- */
-  const personnelDdRef = useRef(null);
-  const schedulesDdRef = useRef(null);
-  const paramsDdRef = useRef(null);
-  const hoverTimers = useRef({ personnel: null, schedules: null, params: null });
-
-  const openDetails = (ref) => { if (ref.current && !ref.current.open) ref.current.setAttribute("open", ""); };
-  const closeDetails = (ref) => { if (ref.current && ref.current.open) ref.current.removeAttribute("open"); };
-  const closePersonnelDd = useCallback(() => closeDetails(personnelDdRef), []);
-  const closeSchedulesDd = useCallback(() => closeDetails(schedulesDdRef), []);
-  const closeParamsDd = useCallback(() => closeDetails(paramsDdRef), []);
-
-  /* ---- Navbar Personel dropdown (LS) ---- */
-  const [personnelSections, setPersonnelSections] = useState(
-    () => LS.get("personnelSections", DEFAULT_PERSONNEL_SECTIONS)
-  );
-  useEffect(() => {
-    const refreshPersonnelMenu = () => {
-      setPersonnelSections(LS.get("personnelSections", DEFAULT_PERSONNEL_SECTIONS));
-    };
-    window.addEventListener("personnelSectionsChanged", refreshPersonnelMenu);
-    window.addEventListener("storage", refreshPersonnelMenu);
-    return () => {
-      window.removeEventListener("personnelSectionsChanged", refreshPersonnelMenu);
-      window.removeEventListener("storage", refreshPersonnelMenu);
-    };
+  /* ---- Sidebar action handler ---- */
+  const handleSidebarAction = useCallback((action) => {
+    if (action === "openAnnouncementModal") setAnnouncementOpen(true);
   }, []);
 
   /* ---- URL -> aktif tab senkronu ---- */
@@ -476,6 +452,20 @@ export default function HospitalRosterApp() {
     const syncFromLocation = () => {
       const { pathname, hash } = window.location;
 
+      // ── Hash tabanlı rotalar (önce daha spesifik olanlar) ──────────────────
+      // Yeni: Analiz grubu
+      if (hash.startsWith("#/analiz/genel-bakis"))  { if (canSeeDashboard)   setActiveTab("dashboard");            return; }
+      if (hash.startsWith("#/analiz/ai-cizelge"))   { if (canSeeAIScheduler) setActiveTab("aiScheduler");          return; }
+      if (hash.startsWith("#/analiz/ai-maliyet"))   { if (canSeeAICost)      setActiveTab("aiCost");               return; }
+      if (hash.startsWith("#/analiz/adillik"))       { if (canSeeFairness)    setActiveTab("fairness");             return; }
+      // Yeni: Raporlar grubu
+      if (hash.startsWith("#/reports/occupancy"))    { if (isAdmin)           setActiveTab("occupancyReport");      return; }
+      if (hash.startsWith("#/reports/leave-balance")){ if (isAdmin)           setActiveTab("leaveBalance");         return; }
+      if (hash.startsWith("#/reports/working-hours")){ if (isAdmin)           setActiveTab("workingHoursSummary");  return; }
+      if (hash.startsWith("#/reports/leave-stats"))  { if (isAdmin)           setActiveTab("leaveStats");           return; }
+      // Yeni: Yönetim grubu
+      if (hash.startsWith("#/yonetim/planlama"))     { if (isAdmin)           setActiveTab("plannings");            return; }
+      // Mevcut: Parametreler + Çizelgeler
       if (hash.startsWith("#/parametreler") || pathname.startsWith("/parametreler")) {
         if (!canSeeParameters) return setActiveTab("plan");
         if (activeTab !== "parameters") setActiveTab("parameters");
@@ -486,6 +476,7 @@ export default function HospitalRosterApp() {
         if (activeTab !== "schedules") setActiveTab("schedules");
         return;
       }
+      // ── Pathname tabanlı rotalar ────────────────────────────────────────────
       if (pathname.startsWith("/personel")) {
         if (!canSeePersonnel) return setActiveTab("plan");
         if (activeTab !== "personnel") setActiveTab("personnel");
@@ -496,152 +487,54 @@ export default function HospitalRosterApp() {
         if (activeTab !== "users") setActiveTab("users");
         return;
       }
+      if (pathname.startsWith("/islem-gunlugu")) {
+        if (!canSeeUsersTab) return setActiveTab("plan");
+        if (activeTab !== "auditlog") setActiveTab("auditlog");
+        return;
+      }
       if (pathname.startsWith("/servisler") || hash.startsWith("#/servisler")) {
         if (!canSeeParameters) return setActiveTab("plan");
         if (activeTab !== "parameters") setActiveTab("parameters");
-        try {
-          if (!hash.startsWith("#/parametreler/servisler")) {
-            window.location.hash = "/parametreler/servisler";
-          }
-        } catch {}
+        try { if (!hash.startsWith("#/parametreler/servisler")) window.location.hash = "/parametreler/servisler"; } catch {}
         return;
       }
-      if (pathname.startsWith("/isteklerim")) {
-        if (activeTab !== "myRequests") setActiveTab("myRequests");
-        return;
-      }
-      if (pathname.startsWith("/duyurular")) {
-        if (activeTab !== "announcements") setActiveTab("announcements");
-        return;
-      }
-      if (pathname.startsWith("/profilim")) {
-        if (activeTab !== "profile") setActiveTab("profile");
-        return;
-      }
+      if (pathname.startsWith("/isteklerim"))  { if (activeTab !== "myRequests")    setActiveTab("myRequests");    return; }
+      if (pathname.startsWith("/duyurular"))   { if (activeTab !== "announcements") setActiveTab("announcements"); return; }
+      if (pathname.startsWith("/profilim"))    { if (activeTab !== "profile")       setActiveTab("profile");       return; }
       if (pathname.startsWith("/talepler")) {
-        if (isAdmin || isStaff) {
-          if (activeTab !== "requests") setActiveTab("requests");
-        } else {
-          if (activeTab !== "myRequests") setActiveTab("myRequests");
-        }
+        const target = (isAdmin || isStaff) ? "requests" : "myRequests";
+        if (activeTab !== target) setActiveTab(target);
         return;
       }
       if (activeTab !== "plan") setActiveTab("plan");
     };
     syncFromLocation();
-    window.addEventListener("urlchange", syncFromLocation);
-    window.addEventListener("popstate", syncFromLocation);
-    window.addEventListener("hashchange", syncFromLocation);
+    window.addEventListener("urlchange",   syncFromLocation);
+    window.addEventListener("popstate",    syncFromLocation);
+    window.addEventListener("hashchange",  syncFromLocation);
     return () => {
-      window.removeEventListener("urlchange", syncFromLocation);
-      window.removeEventListener("popstate", syncFromLocation);
-      window.removeEventListener("hashchange", syncFromLocation);
+      window.removeEventListener("urlchange",   syncFromLocation);
+      window.removeEventListener("popstate",    syncFromLocation);
+      window.removeEventListener("hashchange",  syncFromLocation);
     };
-  }, [activeTab, canSeePersonnel, canSeeSchedules, canSeeParameters, canSeeUsersTab, isAdmin, isStaff]);
+  }, [activeTab, canSeePersonnel, canSeeSchedules, canSeeParameters, canSeeUsersTab,
+      canSeeDashboard, canSeeAIScheduler, canSeeAICost, canSeeFairness, isAdmin, isStaff]);
 
-  /* ---- Nav helpers ---- */
-  const goSchedules = useCallback((secId) => {
-    setActiveTab("schedules");
-    if (typeof location !== "undefined") {
-      location.hash = secId ? `/cizelgeler/${encodeURIComponent(secId)}` : `/cizelgeler`;
-    }
-    closeSchedulesDd();
-  }, [closeSchedulesDd]);
-
-  const goPersonnel = useCallback((secId) => {
-    setActiveTab("personnel");
-    pushUrl(secId ? `/personel?sec=${encodeURIComponent(secId)}` : `/personel`);
-    closePersonnelDd();
-  }, [closePersonnelDd]);
-
-  const goParams = useCallback((subId) => {
-    setActiveTab("parameters");
-    if (typeof location !== "undefined") {
-      location.hash = `/parametreler/${subId}`;
-    }
-    closeParamsDd();
-  }, [closeParamsDd]);
-
-  const goServices = useCallback(() => {
-    setActiveTab("parameters");
-    if (typeof location !== "undefined") {
-      location.hash = "/parametreler/servisler";
-    }
-    closePersonnelDd();
-    closeSchedulesDd();
-    closeParamsDd();
-  }, [closePersonnelDd, closeSchedulesDd, closeParamsDd]);
-
-  const openDashboard = useCallback(() => {
-    setActiveTab("dashboard");
-    pushUrl("/");
-    closePersonnelDd();
-    closeSchedulesDd();
-    closeParamsDd();
-  }, [closePersonnelDd, closeSchedulesDd, closeParamsDd]);
-
-  const openPlan = useCallback(() => {
-    setActiveTab("plan");
-    if (typeof location !== "undefined") location.hash = "";
-    pushUrl("/");
-    closePersonnelDd();
-    closeSchedulesDd();
-    closeParamsDd();
-  }, [closePersonnelDd, closeSchedulesDd, closeParamsDd]);
-
-  const openUsers = useCallback(() => {
-    setActiveTab("users");
-    pushUrl("/kullanicilar");
-  }, []);
-
-  const openAuditLog = useCallback(() => {
-    setActiveTab("auditlog");
-    pushUrl("/islem-gunlugu");
-  }, []);
-
+  // Quick-action callbacks (sidebar dışı: header toolbar)
   const openRequests = useCallback(() => {
     const target = (isAdmin || isStaff) ? "requests" : "myRequests";
     setActiveTab(target);
     pushUrl("/talepler");
-    closePersonnelDd();
-    closeSchedulesDd();
-    closeParamsDd();
-  }, [isAdmin, isStaff, closePersonnelDd, closeSchedulesDd, closeParamsDd]);
+  }, [isAdmin, isStaff]);
 
   const openProfile = useCallback(() => {
     setActiveTab("profile");
     pushUrl("/profilim");
-    closePersonnelDd();
-    closeSchedulesDd();
-    closeParamsDd();
-  }, [closePersonnelDd, closeSchedulesDd, closeParamsDd]);
+  }, []);
 
   const openAI = useCallback(() => setActiveTab("ai"), []);
-  const openAIScheduler = useCallback(() => setActiveTab("aiScheduler"), []);
-  const openFairness = useCallback(() => setActiveTab("fairness"), []);
-  const openAICost = useCallback(() => setActiveTab("aiCost"), []);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
 
-  const activeModuleLabel = useMemo(() => {
-    if (activeTab === "dashboard") return "Genel Bakış";
-    if (activeTab === "plan") return isBasicUser ? "Takvimim" : "Planlama";
-    if (activeTab === "personnel") return "Personel";
-    if (activeTab === "schedules") return "Çizelgeler";
-    if (activeTab === "parameters") return "Parametreler";
-    if (activeTab === "users") return "Kullanıcılar";
-    if (activeTab === "auditlog") return "İşlem Günlüğü";
-    if (activeTab === "ai") return "AI Asistan";
-    if (activeTab === "aiScheduler") return "AI Çizelge";
-    if (activeTab === "fairness") return "Adillik";
-    if (activeTab === "aiCost") return "AI Maliyet";
-    if (activeTab === "announcements") return "Duyurular";
-    if (activeTab === "requests" || activeTab === "myRequests") return "Talepler";
-    if (activeTab === "profile") return "Profilim";
-    if (activeTab === "plannings") return "Planlama Yönetimi";
-    if (activeTab === "leaveBalance") return "İzin Bakiyesi";
-    if (activeTab === "occupancyReport") return "Doluluk Raporu";
-    return "Çalışma Alanı";
-  }, [activeTab, isBasicUser]);
 
   useEffect(() => {
     const labels = {
@@ -664,32 +557,6 @@ export default function HospitalRosterApp() {
     document.title = `${labels[activeTab] || "Hastane Nöbet"} | Hastane Nöbet Sistemi`;
   }, [activeTab]);
 
-  const [openBranches, setOpenBranches] = useState({
-    personnel: false,
-    schedules: false,
-    parameters: false,
-  });
-
-  useEffect(() => {
-    if (!["personnel", "schedules", "parameters"].includes(activeTab)) return;
-    setOpenBranches({
-      personnel: activeTab === "personnel",
-      schedules: activeTab === "schedules",
-      parameters: activeTab === "parameters",
-    });
-  }, [activeTab]);
-
-  const toggleBranch = useCallback((branch) => {
-    setOpenBranches((prev) => {
-      const willOpen = !prev[branch];
-      return {
-        personnel: false,
-        schedules: false,
-        parameters: false,
-        [branch]: willOpen,
-      };
-    });
-  }, []);
 
   /* ======================= RENDER ======================= */
   return (
@@ -751,190 +618,15 @@ export default function HospitalRosterApp() {
 
         <div className="flex-1 min-h-0 w-full px-4 py-5 md:px-6">
           <div className="grid h-full min-h-0 gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
-            <aside className="min-h-0 overflow-auto rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_18px_42px_-34px_rgba(15,23,42,0.24)]">
-              <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Çalışma Alanı</div>
-                <div className="mt-2 text-lg font-semibold tracking-tight text-slate-950">{activeModuleLabel}</div>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Operasyon modülleri solda, sık kullanılan aksiyonlar üstte tutulur. Bu yapı uzun kullanımda daha hızlı gezinme sağlar.
-                </p>
-              </div>
-
-              <div className="mt-5 space-y-5">
-                <SidebarGroup title="Operasyon">
-                  <SidebarNavButton active={activeTab === "plan"} icon={LayoutDashboard} onClick={openPlan}>
-                    {isBasicUser ? "Takvimim" : "Planlama"}
-                  </SidebarNavButton>
-
-                  {isBasicUser && (
-                    <>
-                      <SidebarNavButton
-                        active={activeTab === "announcements"}
-                        icon={() => <span className="text-sm">📣</span>}
-                        onClick={() => { setActiveTab("announcements"); pushUrl("/duyurular"); }}
-                      >
-                        Duyurular
-                      </SidebarNavButton>
-                      <SidebarNavButton
-                        active={activeTab === "myRequests"}
-                        icon={() => <span className="text-sm">📋</span>}
-                        onClick={() => { setActiveTab("myRequests"); pushUrl("/isteklerim"); }}
-                      >
-                        Taleplerim
-                      </SidebarNavButton>
-                    </>
-                  )}
-
-                  {canSeePersonnel && !isBasicUser && (
-                    <SidebarBranch
-                      active={activeTab === "personnel"}
-                      expanded={openBranches.personnel}
-                      icon={Users2}
-                      label="Personel"
-                      onClick={() => goPersonnel()}
-                      onToggle={() => toggleBranch("personnel")}
-                    >
-                      {personnelSections.map((section) => (
-                        <SidebarSubButton key={section.id} onClick={() => goPersonnel(section.id)}>
-                          {section.name}
-                        </SidebarSubButton>
-                      ))}
-                    </SidebarBranch>
-                  )}
-
-                  {canSeeSchedules && !isBasicUser && (
-                    <SidebarBranch
-                      active={activeTab === "schedules"}
-                      expanded={openBranches.schedules}
-                      icon={CalendarIcon}
-                      label="Çizelgeler"
-                      onClick={() => goSchedules()}
-                      onToggle={() => toggleBranch("schedules")}
-                    >
-                      <SidebarSubButton onClick={() => goSchedules("calisma-cizelgesi")}>
-                        Çalışma Çizelgesi
-                      </SidebarSubButton>
-                      <SidebarSubButton onClick={() => goSchedules("aylik-calisma-ve-mesai-saatleri-cizelgesi")}>
-                        Aylık Çalışma ve Mesai
-                      </SidebarSubButton>
-                      <SidebarSubButton onClick={() => goSchedules("fazla-mesai-takip")}>
-                        Fazla Mesai Takip
-                      </SidebarSubButton>
-                      <SidebarSubButton onClick={() => goSchedules("toplu-izin-listesi")}>
-                        Toplu İzin Listesi
-                      </SidebarSubButton>
-                    </SidebarBranch>
-                  )}
-                </SidebarGroup>
-
-                {!isBasicUser && (
-                  <SidebarGroup title="Yönetim">
-                    {canSeeParameters && (
-                      <SidebarBranch
-                        active={activeTab === "parameters"}
-                        expanded={openBranches.parameters}
-                        icon={Settings2}
-                        label="Parametreler"
-                        onClick={() => goParams("calisma-alanlari")}
-                        onToggle={() => toggleBranch("parameters")}
-                      >
-                        <SidebarSubButton onClick={() => goParams("calisma-alanlari")}>Çalışma Alanları</SidebarSubButton>
-                        <SidebarSubButton onClick={() => goParams("calisma-saatleri")}>Çalışma Saatleri</SidebarSubButton>
-                        <SidebarSubButton onClick={() => goParams("izin-turleri")}>İzin Türleri</SidebarSubButton>
-                        <SidebarSubButton onClick={goServices}>Servisler</SidebarSubButton>
-                        <SidebarSubButton onClick={() => goParams("tatil-takvimi")}>Tatil Takvimi</SidebarSubButton>
-                        <SidebarSubButton onClick={() => goParams("nobet-kurallari")}>Nöbet Kuralları</SidebarSubButton>
-                        <SidebarSubButton onClick={() => goParams("cizelge-yapisi")}>Çizelge Yapısı</SidebarSubButton>
-                        <SidebarSubButton onClick={() => goParams("istek")}>İstek</SidebarSubButton>
-                      </SidebarBranch>
-                    )}
-
-                    {canSeeUsersTab && (
-                      <>
-                        <SidebarNavButton active={activeTab === "users"} icon={UserRound} onClick={openUsers}>
-                          Kullanıcılar
-                        </SidebarNavButton>
-                        <SidebarNavButton
-                          active={activeTab === "auditlog"}
-                          icon={() => <span className="text-sm">📋</span>}
-                          onClick={openAuditLog}
-                        >
-                          İşlem Günlüğü
-                        </SidebarNavButton>
-                      </>
-                    )}
-                    {isAdmin && (
-                      <SidebarNavButton
-                        active={activeTab === "plannings"}
-                        icon={() => <span className="text-sm">📋</span>}
-                        onClick={() => setActiveTab("plannings")}
-                      >
-                        Planlama Yönetimi
-                      </SidebarNavButton>
-                    )}
-                    {isAdmin && (
-                      <SidebarNavButton
-                        active={activeTab === "occupancyReport"}
-                        icon={() => <span className="text-sm">📊</span>}
-                        onClick={() => setActiveTab("occupancyReport")}
-                      >
-                        Doluluk Raporu
-                      </SidebarNavButton>
-                    )}
-                    {isAdmin && (
-                      <SidebarNavButton
-                        active={activeTab === "leaveBalance"}
-                        icon={() => <span className="text-sm">📅</span>}
-                        onClick={() => setActiveTab("leaveBalance")}
-                      >
-                        İzin Bakiyesi
-                      </SidebarNavButton>
-                    )}
-                    {isAdmin && (
-                      <SidebarNavButton
-                        active={activeTab === "workingHoursSummary"}
-                        icon={() => <span className="text-sm">⏱️</span>}
-                        onClick={() => setActiveTab("workingHoursSummary")}
-                      >
-                        Çalışma Saatleri
-                      </SidebarNavButton>
-                    )}
-                    {isAdmin && (
-                      <SidebarNavButton
-                        active={activeTab === "leaveStats"}
-                        icon={() => <span className="text-sm">📋</span>}
-                        onClick={() => setActiveTab("leaveStats")}
-                      >
-                        İzin İstatistikleri
-                      </SidebarNavButton>
-                    )}
-                    {canSendAnnouncement && (
-                      <SidebarNavButton
-                        active={false}
-                        icon={() => <span className="text-sm">📢</span>}
-                        onClick={() => setAnnouncementOpen(true)}
-                      >
-                        Duyuru Gönder
-                      </SidebarNavButton>
-                    )}
-                  </SidebarGroup>
-                )}
-
-                {!isBasicUser && canSeeFairness && (
-                  <SidebarGroup title="Analiz">
-                    {canSeeFairness && (
-                      <SidebarNavButton
-                        active={activeTab === "fairness"}
-                        icon={() => <span className="text-sm">📊</span>}
-                        onClick={openFairness}
-                      >
-                        Adillik
-                      </SidebarNavButton>
-                    )}
-                  </SidebarGroup>
-                )}
-              </div>
-            </aside>
+            <AppSidebar
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              onAction={handleSidebarAction}
+              isAdmin={isAdmin}
+              isManager={isManager}
+              isAuthorized={isAuthorized}
+              isBasicUser={isBasicUser}
+            />
 
             <main className="min-h-0 overflow-auto space-y-5">
               <div className="rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_18px_42px_-34px_rgba(15,23,42,0.24)]">
@@ -1345,97 +1037,6 @@ function MyCalendarBox({ me, people = [], allLeaves = {}, workAreas = [], workin
   );
 }
 
-function SidebarGroup({ title, children }) {
-  return (
-    <section>
-      <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{title}</div>
-      <div className="space-y-2">{children}</div>
-    </section>
-  );
-}
-
-function SidebarNavButton({ active, onClick, children, icon: Icon }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex min-h-[96px] w-full items-center gap-3 rounded-[22px] border px-4 py-4 text-left text-sm font-medium transition ${
-        active
-          ? "border-slate-900 bg-slate-950 text-white shadow-[0_14px_30px_-20px_rgba(15,23,42,0.8)]"
-          : "border-slate-200 bg-slate-50/80 text-slate-700 hover:border-slate-300 hover:bg-white"
-      }`}
-    >
-      <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
-        active ? "border-white/15 bg-white/10 text-white" : "border-slate-200 bg-white text-slate-500"
-      }`}>
-        {Icon ? <Icon className="h-4 w-4" /> : null}
-      </span>
-      <span className="truncate">{children}</span>
-    </button>
-  );
-}
-
-function SidebarBranch({ active, expanded, icon: Icon, label, onClick, onToggle, children }) {
-  return (
-    <div className="space-y-2">
-      <div className={`flex min-h-[96px] items-center gap-2 rounded-[22px] border px-4 py-4 transition ${
-        active ? "border-slate-900 bg-slate-950 text-white shadow-[0_14px_30px_-20px_rgba(15,23,42,0.8)]" : "border-slate-200 bg-slate-50/80 text-slate-700 hover:border-slate-300 hover:bg-white"
-      }`}>
-        <button
-          type="button"
-          onClick={onClick}
-          className={`flex min-w-0 flex-1 items-center gap-3 rounded-2xl text-left text-sm font-medium transition ${
-            active ? "text-white" : "text-slate-700"
-          }`}
-        >
-          <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
-            active ? "border-white/15 bg-white/10 text-white" : "border-slate-200 bg-white text-slate-500"
-          }`}>
-            {Icon ? <Icon className="h-4 w-4" /> : null}
-          </span>
-          <div className="min-w-0">
-            <div className="truncate text-[15px] font-semibold">{label}</div>
-            <div className={`mt-1 text-xs leading-5 ${active ? "text-slate-300" : "text-slate-500"}`}>Alt sayfalara hızlı geçiş</div>
-          </div>
-        </button>
-        <button
-          type="button"
-          aria-label={expanded ? `${label} bölümünü kapat` : `${label} bölümünü aç`}
-          aria-expanded={expanded ? "true" : "false"}
-          onClick={onToggle}
-          className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border transition ${
-            active
-              ? "border-white/10 bg-white/10 text-white hover:bg-white/15"
-              : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700"
-          }`}
-        >
-          <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
-        </button>
-      </div>
-      <div className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${expanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
-        <div className="overflow-hidden">
-          <div className={`ml-4 space-y-1 rounded-[20px] border px-2 py-2 shadow-[0_10px_24px_-20px_rgba(15,23,42,0.18)] ${
-            active ? "border-slate-200 bg-slate-50/95" : "border-slate-200 bg-white"
-          }`}>
-            {children}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SidebarSubButton({ onClick, children }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="block w-full rounded-xl px-3 py-2 text-left text-[13px] text-slate-600 transition hover:bg-white hover:text-slate-900"
-    >
-      {children}
-    </button>
-  );
-}
 
 function QuickActionBtn({ active, onClick, children, icon: Icon }) {
   return (

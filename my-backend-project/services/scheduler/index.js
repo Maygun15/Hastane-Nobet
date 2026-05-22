@@ -91,10 +91,9 @@ async function generateMonthlyPlan({
     debug: debug || {},
     auditOptions,
   });
-  if (ruleEngineDoc) {
-    const engine = new RuleEngine(ruleEngineDoc);
-    context.ruleEngine = engine;
-  }
+  context.ruleEngine = new RuleEngine(
+    ruleEngineDoc || { basicRules: {}, leaveRules: null, taskRequirements: null }
+  );
   return runScheduler(context);
 }
 

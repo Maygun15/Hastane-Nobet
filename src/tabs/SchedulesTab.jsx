@@ -15,6 +15,7 @@ import {
 import { http } from "../lib/api.js";
 import { LS } from "../utils/storage.js";
 import DutyRowsEditor from "../components/DutyRowsEditor.jsx";
+import QuickReplacePanel from "../components/QuickReplacePanel.jsx";
 import ScheduleToolbar from "../components/ScheduleToolbar.jsx";
 import MonthlyHoursSheet from "../components/MonthlyHoursSheet.jsx";
 import OvertimeTab from "./OvertimeTab.jsx";
@@ -500,6 +501,20 @@ function SectionContent({
   const [swapLog, setSwapLog] = useState([]);
   const [swapLogOpen, setSwapLogOpen] = useState(false);
 
+  // Hızlı Yerine Atama paneli — DutyRowsEditor hücre tıklamalarından açılır
+  const [quickReplaceOpen, setQuickReplaceOpen] = useState(false);
+  const [quickReplaceSelection, setQuickReplaceSelection] = useState(null);
+  const [quickReplaceKey, setQuickReplaceKey] = useState(0);
+  useEffect(() => {
+    const handler = (e) => {
+      setQuickReplaceSelection(e.detail || null);
+      setQuickReplaceKey((k) => k + 1);
+      setQuickReplaceOpen(true);
+    };
+    window.addEventListener("quick-replace:open", handler);
+    return () => window.removeEventListener("quick-replace:open", handler);
+  }, []);
+
   // DutyRowsEditor'ı yeniden yüklemeye zorlar:
   // - schedule:saved   → PlanTab yeni plan üretince
   // - schedule:changed → QuickReplacePanel veya takas onayı sonrası
@@ -771,47 +786,61 @@ function SectionContent({
   switch (sectionId) {
     case "calisma-cizelgesi":
       return (
-        <div className="space-y-3">
-          {SwapLogBanner}
-          <ScheduleToolbar
-            title="Çalışma Çizelgesi"
-            {...commonToolbarProps}
-            onAi={() => editorRef.current?.ai?.() ?? commonToolbarProps.onAi()}
-            onBuild={handleBuild}
-            onExport={() => editorRef.current?.exportExcel?.() ?? commonToolbarProps.onExport()}
-          />
-          <SectionWorkspaceIntro sectionId={sectionId} />
-          <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-            <div className="font-medium">Yapılandırma bu ekrandan ayrıldı.</div>
-            <div className="mt-1 text-sky-800/80">
-              Görev satırları, gün bazlı sayı matrisi ve sayısal önizleme artık{" "}
-              <button
-                type="button"
-                onClick={() => { try { window.location.hash = "/parametreler/cizelge-yapisi"; } catch {} }}
-                className="font-semibold underline underline-offset-2"
-              >
-                Parametreler &gt; Çizelge Yapısı
-              </button>{" "}
-              altında yönetilir.
+        <>
+          <div className="space-y-3">
+            {SwapLogBanner}
+            <ScheduleToolbar
+              title="Çalışma Çizelgesi"
+              {...commonToolbarProps}
+              onAi={() => editorRef.current?.ai?.() ?? commonToolbarProps.onAi()}
+              onBuild={handleBuild}
+              onExport={() => editorRef.current?.exportExcel?.() ?? commonToolbarProps.onExport()}
+            />
+            <SectionWorkspaceIntro sectionId={sectionId} />
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+              <div className="font-medium">Yapılandırma bu ekrandan ayrıldı.</div>
+              <div className="mt-1 text-sky-800/80">
+                Görev satırları, gün bazlı sayı matrisi ve sayısal önizleme artık{" "}
+                <button
+                  type="button"
+                  onClick={() => { try { window.location.hash = "/parametreler/cizelge-yapisi"; } catch {} }}
+                  className="font-semibold underline underline-offset-2"
+                >
+                  Parametreler &gt; Çizelge Yapısı
+                </button>{" "}
+                altında yönetilir.
+              </div>
+            </div>
+            <div className="rounded-lg border bg-white p-4">
+              <DutyRowsEditor
+                ref={editorRef}
+                mode="assignmentOnly"
+                year={year}
+                month={month}
+                sectionId={sectionId}
+                serviceId={selectedServiceId}
+                role={activeRole}
+                peopleAll={peopleAll}
+                workingHours={workingHours}
+                personLeaves={allLeaves}
+                swappedCells={swappedCells}
+                reloadKey={plannerGeneratedKey}
+              />
             </div>
           </div>
-          <div className="rounded-lg border bg-white p-4">
-            <DutyRowsEditor
-              ref={editorRef}
-              mode="assignmentOnly"
-              year={year}
-              month={month}
-              sectionId={sectionId}
-              serviceId={selectedServiceId}
-              role={activeRole}
-              peopleAll={peopleAll}
-              workingHours={workingHours}
-              personLeaves={allLeaves}
-              swappedCells={swappedCells}
-              reloadKey={plannerGeneratedKey}
-            />
-          </div>
-        </div>
+          <QuickReplacePanel
+            key={quickReplaceKey}
+            open={quickReplaceOpen}
+            onClose={() => setQuickReplaceOpen(false)}
+            sectionId={sectionId}
+            serviceId={selectedServiceId || ""}
+            scheduleRole={activeRole || ""}
+            year={year}
+            month={month}
+            onAssigned={() => setPlannerGeneratedKey((k) => k + 1)}
+            initialSelection={quickReplaceSelection}
+          />
+        </>
       );
 
     case "aylik-calisma-ve-mesai-saatleri-cizelgesi":

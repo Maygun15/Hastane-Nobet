@@ -51,6 +51,24 @@ async function fetchDutyRules({ sectionId, serviceId = '', role = '', hospitalId
   return { doc, rules, weights };
 }
 
+// DutyRule dokümanı yokken RuleEngine'e verilecek minimum-safe obje.
+// leaveRules/taskRequirements null → checkPersonEligibility tüm kontrolleri güvenle atlar.
+const PERMISSIVE_SAFE_DOC = Object.freeze({
+  basicRules: {},
+  leaveRules: null,
+  taskRequirements: null,
+});
+
+async function getEffectiveRules({ sectionId, serviceId = '', role = '', hospitalId = null } = {}) {
+  const { doc, rules, weights } = await fetchDutyRules({ sectionId, serviceId, role, hospitalId });
+  return {
+    doc: doc ?? PERMISSIVE_SAFE_DOC,
+    rules,
+    weights,
+    isDefault: !doc,
+  };
+}
+
 async function resolveRules(params = {}) {
   const {
     sectionId,
@@ -81,6 +99,8 @@ async function resolveRules(params = {}) {
 module.exports = {
   DEFAULT_RULES,
   DEFAULT_WEIGHTS,
+  PERMISSIVE_SAFE_DOC,
   fetchDutyRules,
+  getEffectiveRules,
   resolveRules,
 };

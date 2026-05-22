@@ -1,5 +1,5 @@
 // src/components/PersonScheduleCalendar.jsx (UPDATED)
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { buildMonthDays } from "../utils/date.js";
 import { LS } from "../utils/storage.js";
 import { assignSchedule, unassignSchedule } from "../api/apiAdapter.js";
@@ -751,6 +751,7 @@ export default function PersonScheduleCalendar({
   const [quickReplaceOpen, setQuickReplaceOpen] = useState(false);
   const [quickReplaceSelection, setQuickReplaceSelection] = useState(null);
   const [swappedDates, setSwappedDates] = useState(new Set());
+  const pendingRefreshRef = useRef(null);
   const [settingsRevision, setSettingsRevision] = useState(0);
   const [googleCalendarStatus, setGoogleCalendarStatus] = useState({
     loading: false,
@@ -1038,7 +1039,12 @@ export default function PersonScheduleCalendar({
         // Mevcut veriyi koru — geçici hata anında takvimi boşaltma
         setRemoteError(err?.message || "Sunucudan nöbet verisi alınamadı.");
       } finally {
-        if (active) setRemoteLoading(false);
+        if (active) {
+          setRemoteLoading(false);
+          const resolve = pendingRefreshRef.current;
+          pendingRefreshRef.current = null;
+          resolve?.();
+        }
       }
     })();
     return () => {
@@ -1308,10 +1314,14 @@ export default function PersonScheduleCalendar({
   };
 
   const refreshRemote = () => {
+    const p = new Promise((resolve) => {
+      pendingRefreshRef.current = resolve;
+    });
     setRemoteRevision((v) => v + 1);
     try {
       window.dispatchEvent(new Event("planner:changed"));
     } catch {}
+    return p;
   };
 
   const buildAssignParams = () => {
@@ -1841,11 +1851,12 @@ export default function PersonScheduleCalendar({
         scheduleRole={scheduleRole}
         year={year}
         month={month0 + 1}
-        onAssigned={() => {
-          if (quickReplaceSelection?.date) {
-            setSwappedDates((prev) => new Set([...prev, quickReplaceSelection.date]));
+        onAssigned={async () => {
+          const dateToMark = quickReplaceSelection?.date;
+          await refreshRemote();
+          if (dateToMark) {
+            setSwappedDates((prev) => new Set([...prev, dateToMark]));
           }
-          refreshRemote();
         }}
         initialSelection={quickReplaceSelection}
         preferredPerson={selectedPerson ? { id: selectedPerson.id, name: selectedPerson.name } : null}

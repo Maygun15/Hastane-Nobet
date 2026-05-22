@@ -149,7 +149,7 @@ function isNightShiftDef(def) {
   const sh = Number(start.split(':')[0]);
   const eh = Number(end.split(':')[0]);
   if (!Number.isFinite(sh) || !Number.isFinite(eh)) return false;
-  return sh >= 18 || eh < sh; // geç başlayan veya geceyi geçen vardiya
+  return sh >= 22 || eh < sh; // 22:00+ başlayan veya gece yarısını geçen vardiya
 }
 
 /* Takas çalışma kuralı kontrolü — onaylamadan önce çağrılır */

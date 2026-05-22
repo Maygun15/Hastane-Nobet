@@ -2258,12 +2258,25 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                         return (
                           <td
                             key={`${row.id}-${slotIdx}-${day}`}
-                            title={isMarkedChanged ? `Güncellendi: ${name}` : (name || "")}
-                            className={`px-2 py-2.5 text-center align-middle text-sm relative ${
+                            title={isMarkedChanged ? `Güncellendi: ${name}` : (name ? name : "Atama yap")}
+                            className={`px-2 py-2.5 text-center align-middle text-sm relative cursor-pointer transition-colors ${
                               isMarkedChanged
-                                ? "bg-orange-50 ring-1 ring-inset ring-orange-300"
-                                : isWeekend ? "bg-blue-50/70" : ""
-                            } ${name ? "text-ink" : "text-slate-200"}`}
+                                ? "bg-orange-50 ring-1 ring-inset ring-orange-300 hover:bg-orange-100"
+                                : isWeekend ? "bg-blue-50/70 hover:bg-blue-100" : "hover:bg-sky-50"
+                            } ${name ? "text-ink" : "text-slate-300"}`}
+                            onClick={() => {
+                              window.dispatchEvent(new CustomEvent("quick-replace:open", {
+                                detail: {
+                                  date: `${year}-${String(month0 + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+                                  shiftId: String(row.id),
+                                  shiftCode: String(row.shiftCode || row.id || ""),
+                                  rowId: String(row.id),
+                                  taskLabel: String(row.label || ""),
+                                  personName: name,
+                                  autoSearch: !!name,
+                                },
+                              }));
+                            }}
                           >
                             {name ? compactRosterDisplayName(name) : "·"}
                             {isMarkedChanged && (
