@@ -304,31 +304,45 @@ router.post('/login', ...loginValidation, async (req, res) => {
       return res.status(400).json({ message: 'Kimlik ve şifre zorunlu' });
     }
 
-    // DB yoksa ve dev endpoints açıksa, hızlı dev login
-    const dbReady = mongoose.connection?.readyState === 1;
-    if (!dbReady && ALLOW_DEV && DEV_EMAIL && DEV_PASSWORD) {
-      const idLc = String(identifier || '').toLowerCase();
-      if (idLc === DEV_EMAIL && password === DEV_PASSWORD) {
-        clearRateState(rateKey);
-        const devUser = { _id: 'dev1', role: 'admin', personId: null };
-        const accessToken  = makeAccessToken(devUser);
-        const refreshToken = makeRefreshToken(devUser);
-        return res.json({
-          accessToken,
-          refreshToken,
-          token: accessToken,
-          user: {
-            id: 'dev1',
-            name: 'Dev Kullanıcı',
-            email: DEV_EMAIL,
-            role: 'admin',
-            active: true,
-            personId: null,
-            hospitalId: null,
-          },
-        });
+    // ── Dev login — SADECE geliştirme ortamında, DB erişilemediğinde ──────────
+    // Üretimde IS_PROD=true olduğundan ALLOW_DEV zaten false'tur; bu blok
+    // çalışamaz. Yine de belt+suspenders olarak IS_PROD hard-guard eklendi.
+    if (IS_PROD) {
+      // Üretimde buraya ulaşılması beklenmiyor; log bırak ve devam et
+      console.error('[security] Dev login path reached in production — blocked');
+    } else {
+      const dbReady = mongoose.connection?.readyState === 1;
+      if (!dbReady && ALLOW_DEV && DEV_EMAIL && DEV_PASSWORD) {
+        const idLc = String(identifier || '').toLowerCase();
+        if (idLc === DEV_EMAIL && password === DEV_PASSWORD) {
+          clearRateState(rateKey);
+
+          // Gerçek bir ObjectId kullan; 'dev1' string'i MongoDB sorgularında
+          // User.findById() ile çalışmaz ve auth middleware'ini atlayabilir.
+          // DEV_USER_ID env var yoksa bilinen dummy ObjectId kullan.
+          const DEV_OBJECT_ID = String(process.env.DEV_USER_ID || '000000000000000000000001');
+          const devUser = { _id: DEV_OBJECT_ID, role: 'admin', personId: null, hospitalId: null };
+          const accessToken  = makeAccessToken(devUser);
+          const refreshToken = makeRefreshToken(devUser);
+          console.warn(`[dev-login] Dev login kullanıldı — email: ${DEV_EMAIL} | id: ${DEV_OBJECT_ID}`);
+          return res.json({
+            accessToken,
+            refreshToken,
+            token: accessToken,
+            user: {
+              id:         DEV_OBJECT_ID,
+              name:       'Dev Kullanıcı',
+              email:      DEV_EMAIL,
+              role:       'admin',
+              active:     true,
+              personId:   null,
+              hospitalId: null,
+            },
+          });
+        }
       }
     }
+    // ── Dev login sonu ────────────────────────────────────────────────────────
 
     // identifier email ise email’e, değilse tc/phone’a bak
     const user = await User.findByIdentifier(identifier)

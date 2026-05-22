@@ -2,6 +2,43 @@
 const axios = require('axios');
 const AILog = require('../models/AILog');
 
+// ── KVKK: LLM'ye prompt göndermeden önce PII maskele ─────────────────────────
+/**
+ * Türkçe metindeki hassas kişisel veriyi maskeler:
+ *   TC Kimlik No   → [TC-GİZLİ]
+ *   Telefon        → 0555 *** ** **
+ *   Ad Soyad       → Ad S.   (büyük harfle başlayan iki kelimelik isim kalıbı)
+ *
+ * Kural: Şüpheli durumlarda maskele. Bazı teknik terimlerin maske yemesi
+ * kabul edilebilir; gerçek TC/telefon'un açıkta kalması kabul edilemez.
+ */
+function sanitizePrompt(text) {
+  if (!text || typeof text !== 'string') return text;
+
+  return text
+    // TC Kimlik No: tam 11 rakam (baştaki rakam 1-9 arası)
+    .replace(/\b[1-9]\d{10}\b/g, '[TC-GİZLİ]')
+    // TC Kimlik No: boşluk/tire ayrımlı (nnn nnn nnn nn)
+    .replace(/\b\d{3}[\s\-]\d{3}[\s\-]\d{3}[\s\-]\d{2}\b/g, '[TC-GİZLİ]')
+    // Türk telefon: 05xx, +90 5xx, 90 5xx — 10 hane
+    .replace(
+      /(\+?9[\s\-]?0[\s\-]?|0)(5\d{2})[\s\-]?(\d{3})[\s\-]?(\d{2})[\s\-]?(\d{2})/g,
+      (_, prefix, area) => `${prefix.replace(/\s|-/g, '')}${area} *** ** **`,
+    )
+    // "Ad Soyad" kalıbı: Türkçe büyük harfle başlayan iki kelime yan yana
+    // Sadece soyadı maskele: "Ayşe Kaya" → "Ayşe K."
+    .replace(
+      /\b([A-ZÇĞİÖŞÜÀ-ɏ][a-zçğışöüa-zÀ-ɏ]{1,})\s+([A-ZÇĞİÖŞÜÀ-ɏ][A-Za-zçğışöüa-zÀ-ɏ]{1,})\b/g,
+      (_, first, last) => `${first} ${last.charAt(0).toUpperCase()}.`,
+    );
+}
+
+function sanitizeMessages(messages) {
+  if (!Array.isArray(messages)) return messages;
+  return messages.map((m) => ({ ...m, content: sanitizePrompt(m.content) }));
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 const AI_PROVIDER   = (process.env.AI_PROVIDER || 'anthropic').toLowerCase();
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const OPENAI_KEY    = process.env.OPENAI_API_KEY    || '';
@@ -150,13 +187,18 @@ async function llmChat({ systemPrompt, messages, maxTokens = 512, action = 'chat
   let success = true;
   let errorCode = null;
 
+  // KVKK: Dış LLM servisine gönderilecek prompt/mesajlar maskelenir.
+  // AILog'a da yalnızca maskelenmiş içerik kaydedilir; ham metin saklanmaz.
+  const safeSystemPrompt = sanitizePrompt(systemPrompt);
+  const safeMessages     = sanitizeMessages(messages);
+
   try {
     if (AI_PROVIDER === 'openai') {
-      result = await callOpenAI({ systemPrompt, messages, maxTokens });
+      result = await callOpenAI({ systemPrompt: safeSystemPrompt, messages: safeMessages, maxTokens });
     } else if (AI_PROVIDER === 'gemini') {
-      result = await callGemini({ systemPrompt, messages, maxTokens });
+      result = await callGemini({ systemPrompt: safeSystemPrompt, messages: safeMessages, maxTokens });
     } else {
-      result = await callAnthropic({ systemPrompt, messages, maxTokens });
+      result = await callAnthropic({ systemPrompt: safeSystemPrompt, messages: safeMessages, maxTokens });
     }
     return result;
   } catch (err) {
@@ -181,6 +223,8 @@ async function llmChat({ systemPrompt, messages, maxTokens = 512, action = 'chat
         durationMs:       result?.durationMs || 0,
         success,
         errorCode,
+        // Yalnızca maskelenmiş içerik kaydedilir — KVKK uyumu
+        sanitizedSystemPrompt: safeSystemPrompt ? safeSystemPrompt.slice(0, 500) : undefined,
       });
     } catch { /* log kaydı başarısız olsa da işlemi engelleme */ }
   }

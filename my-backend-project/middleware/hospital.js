@@ -81,10 +81,43 @@ async function extractHospital(req, res, next) {
   const rawHospitalId = req.user?.hospitalId ? String(req.user.hospitalId).trim() : '';
 
   if (isSuperAdminRole(role)) {
-    req.hospitalId = rawHospitalId || null;
-    return next();
+    // Superadmin için da hospitalId zorunlu — izolasyon kırılmamalı.
+    // Sadece route seviyesinde açıkça `req.bypassHospitalFilter = true` atandıysa
+    // filtre atlanır (sistem geneli admin operasyonları için).
+    if (req.bypassHospitalFilter === true) {
+      req.hospitalId = null;
+      return next();
+    }
+
+    if (rawHospitalId) {
+      req.hospitalId = rawHospitalId;
+      return next();
+    }
+
+    // Superadmin body/query'den explicit hospitalId göndermiş olabilir
+    const explicitId = String(req.body?.hospitalId || req.query?.hospitalId || '').trim();
+    if (explicitId) {
+      req.hospitalId = explicitId;
+      return next();
+    }
+
+    // Tek-hastane deployment için default'a düş
+    try {
+      const fallbackId = await resolveDefaultHospitalId();
+      if (fallbackId) {
+        req.hospitalId = fallbackId;
+        return next();
+      }
+    } catch (err) {
+      console.error('[hospital] superadmin default resolve failed:', err?.message || err);
+    }
+
+    return res.status(403).json({
+      message: 'Superadmin için hospitalId zorunlu. İstek body/query içinde hospitalId gönderin ya da kullanıcıya hospitalId atayın.',
+    });
   }
 
+  // Normal kullanıcılar
   if (!rawHospitalId) {
     try {
       const fallbackHospitalId = await resolveDefaultHospitalId();
@@ -121,19 +154,20 @@ function getHospitalContext() {
 
 function withHospitalFilter(req, base = {}) {
   const filter = base && typeof base === 'object' ? { ...base } : {};
-  const role = normalizeRole(req.user?.role);
-  if (isSuperAdminRole(role)) return filter;
-  // Always force hospitalId — never allow caller-supplied value to override tenant scope
+  // bypassHospitalFilter yalnızca route seviyesinde açıkça atandığında filtre atlanır.
+  // Superadmin dahil tüm roller için hospitalId her zaman zorunlu.
+  if (req.bypassHospitalFilter === true) return filter;
   filter.hospitalId = req.hospitalId || null;
   return filter;
 }
 
 function withHospitalPipeline(req, pipeline = []) {
   const stages = Array.isArray(pipeline) ? [...pipeline] : [];
-  const role = normalizeRole(req.user?.role);
-  if (isSuperAdminRole(role)) return stages;
+  if (req.bypassHospitalFilter === true) return stages;
   if (!req.hospitalId) return [{ $match: { hospitalId: '__missing_hospital__' } }, ...stages];
-  const hasMatch = stages.some((stage) => stage?.$match && Object.prototype.hasOwnProperty.call(stage.$match, 'hospitalId'));
+  const hasMatch = stages.some(
+    (stage) => stage?.$match && Object.prototype.hasOwnProperty.call(stage.$match, 'hospitalId'),
+  );
   if (hasMatch) return stages;
   if (stages[0]?.$geoNear) {
     return [stages[0], { $match: { hospitalId: req.hospitalId } }, ...stages.slice(1)];

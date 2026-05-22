@@ -80,28 +80,34 @@ async function applyLeaveRange(request) {
     const leaveTypeName = leaveType?.name || leaveCode;
 
     const filter = { hospitalId: hid, personId: pid, leaveTypeId, year };
-    // upsert + $inc atomik: iki eş zamanlı onay çakışmaz
-    const updated = await LeaveBalance.findOneAndUpdate(
+
+    // TEK atomik pipeline update:
+    //   Adım 1 — $ifNull ile yeni döküman varsayılan değerleri + used artışı
+    //   Adım 2 — remaining = allocated - used (Adım 1'deki güncel değerler üzerinden)
+    // İki ayrı write arası race condition yok; allocated değişse de remaining doğru kalır.
+    await LeaveBalance.findOneAndUpdate(
       filter,
-      {
-        $inc: { used: totalDays },
-        $setOnInsert: {
-          hospitalId: hid,
-          personId: pid,
-          personName: request.fromName || '',
-          leaveTypeId,
-          leaveTypeName,
-          year,
-          allocated: leaveType?.maxDaysPerYear ?? 0,
+      [
+        {
+          $set: {
+            hospitalId:    { $ifNull: ['$hospitalId',    hid] },
+            personId:      { $ifNull: ['$personId',      pid] },
+            personName:    { $ifNull: ['$personName',    request.fromName || ''] },
+            leaveTypeId:   { $ifNull: ['$leaveTypeId',   leaveTypeId] },
+            leaveTypeName: { $ifNull: ['$leaveTypeName', leaveTypeName] },
+            year:          { $ifNull: ['$year',          year] },
+            allocated:     { $ifNull: ['$allocated',     leaveType?.maxDaysPerYear ?? 0] },
+            used:          { $add:    [{ $ifNull: ['$used', 0] }, totalDays] },
+          },
         },
-      },
+        {
+          $set: {
+            remaining: { $max: [0, { $subtract: ['$allocated', '$used'] }] },
+          },
+        },
+      ],
       { upsert: true, new: true }
     );
-    // remaining'i ayrı set et (allocated güncel olabilir)
-    await LeaveBalance.updateOne(filter, [
-      { $set: { remaining: { $subtract: ['$allocated', '$used'] } } },
-    ]);
-    void updated; // linter uyarısını bastır
   } catch (e) {
     console.error('[leave-balance-update] ERR:', e?.message || e);
   }
