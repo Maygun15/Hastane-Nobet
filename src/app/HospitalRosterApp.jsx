@@ -1,6 +1,7 @@
 // src/app/HospitalRosterApp.jsx
 import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { toast, Toaster } from "sonner";
+import { ThemeProvider } from "../context/ThemeContext.jsx";
 import {
   Calendar as CalendarIcon,
   ClipboardList,
@@ -561,6 +562,7 @@ export default function HospitalRosterApp() {
   /* ======================= RENDER ======================= */
   return (
     <ErrorBoundary>
+      <ThemeProvider moduleId="hastane">
       <Toaster richColors position="bottom-right" />
       <div className="w-screen h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_16%,#f8fafc_100%)] text-slate-800 flex flex-col">
         <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
@@ -780,6 +782,7 @@ export default function HospitalRosterApp() {
           <FloatingAIChat activeYM={ymKey(getActiveYM())} />
         )}
       </div>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }
