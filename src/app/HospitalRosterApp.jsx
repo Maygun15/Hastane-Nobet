@@ -487,7 +487,7 @@ export default function HospitalRosterApp() {
         if (activeTab !== "users") setActiveTab("users");
         return;
       }
-      if (pathname.startsWith("/islem-gunlugu")) {
+      if (pathname.startsWith("/islem-gunlugu") || hash.startsWith("#/islem-gunlugu")) {
         if (!canSeeUsersTab) return setActiveTab("plan");
         if (activeTab !== "auditlog") setActiveTab("auditlog");
         return;

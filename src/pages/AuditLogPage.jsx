@@ -32,8 +32,15 @@ export default function AuditLogPage() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
   const PER_PAGE = 50;
+
+  // 300ms debounce — sayfayı resetle
+  useEffect(() => {
+    const id = setTimeout(() => { setDebouncedQuery(query); setPage(1); }, 300);
+    return () => clearTimeout(id);
+  }, [query]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,14 +58,14 @@ export default function AuditLogPage() {
   useEffect(() => { load(); }, [load]);
 
   const filtered = useMemo(() => {
-    if (!query) return logs;
-    const q = query.toLocaleLowerCase("tr-TR");
+    if (!debouncedQuery) return logs;
+    const q = debouncedQuery.toLocaleLowerCase("tr-TR");
     return logs.filter(
       (l) =>
         String(l.user || l.userId || "").toLowerCase().includes(q) ||
         String(l.endpoint || "").toLowerCase().includes(q),
     );
-  }, [logs, query]);
+  }, [logs, debouncedQuery]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -88,7 +95,7 @@ export default function AuditLogPage() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
         <input
           value={query}
-          onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+          onChange={(e) => setQuery(e.target.value)}
           placeholder="Kullanıcı veya endpoint ile ara…"
           className="w-full pl-9 pr-3 py-2 text-sm border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sky-300"
         />
@@ -99,7 +106,7 @@ export default function AuditLogPage() {
         {loading ? (
           <div className="py-8 text-center text-sm text-slate-500">Yükleniyor…</div>
         ) : filtered.length === 0 ? (
-          <EmptyState query={query} />
+          <EmptyState query={debouncedQuery} />
         ) : (
           <table className="min-w-full text-xs divide-y divide-slate-100">
             <thead className="bg-slate-50 text-slate-500 text-left">
