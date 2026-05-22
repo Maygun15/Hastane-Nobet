@@ -1,9 +1,72 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 
 const Setting = require('../models/Setting');
 const Person = require('../models/Person');
+const LeaveBalance = require('../models/LeaveBalance');
+const LeaveType = require('../models/LeaveType');
 const { withHospitalFilter } = require('../middleware/hospital');
+
+/**
+ * İzin ekleme/silme işlemlerinde LeaveBalance.used alanını senkronize eder.
+ * Yalnızca LeaveType koleksiyonunda kayıtlı kodlar (gerçek izin türleri) için çalışır;
+ * vardiya kodları ('G', 'M' vb.) atlanır.
+ *
+ * @param {object} req   — hospitalId için
+ * @param {string} pid   — personId
+ * @param {string} code  — izin kodu (örn. 'YILLIK')
+ * @param {number} year
+ * @param {number} delta — +1 (ekle) veya -1 (sil)
+ */
+async function syncLeaveBalance(req, pid, code, year, delta) {
+  try {
+    const hid = req.hospitalId;
+    if (!hid || !pid || !code || !delta) return;
+
+    const upperCode = String(code).trim().toUpperCase();
+    const leaveType = await LeaveType.findOne(withHospitalFilter(req, { code: upperCode })).lean();
+    if (!leaveType) return; // Vardiya kodu veya bilinmeyen kod — atla
+
+    const leaveTypeId = String(leaveType._id);
+    const filter = {
+      hospitalId: hid,
+      personId:   String(pid),
+      leaveTypeId,
+      year:       Number(year),
+    };
+
+    if (delta > 0) {
+      // Yeni gün eklendi — upsert + atomik artırma
+      await LeaveBalance.findOneAndUpdate(
+        filter,
+        [
+          {
+            $set: {
+              hospitalId:    { $ifNull: ['$hospitalId',    hid] },
+              personId:      { $ifNull: ['$personId',      String(pid)] },
+              leaveTypeId:   { $ifNull: ['$leaveTypeId',   leaveTypeId] },
+              leaveTypeName: { $ifNull: ['$leaveTypeName', leaveType.name || upperCode] },
+              year:          { $ifNull: ['$year',          Number(year)] },
+              allocated:     { $ifNull: ['$allocated',     leaveType.maxDaysPerYear ?? 0] },
+              used:          { $add: [{ $ifNull: ['$used', 0] }, delta] },
+            },
+          },
+          { $set: { remaining: { $max: [0, { $subtract: ['$allocated', '$used'] }] } } },
+        ],
+        { upsert: true, new: true },
+      );
+    } else {
+      // Gün silindi — used negatife düşmesin
+      await LeaveBalance.updateOne(filter, [
+        { $set: { used: { $max: [0, { $subtract: ['$used', Math.abs(delta)] }] } } },
+        { $set: { remaining: { $subtract: ['$allocated', '$used'] } } },
+      ]);
+    }
+  } catch (err) {
+    console.error('[leaves] syncLeaveBalance ERR:', err?.message || err);
+  }
+}
 
 async function findLeavesDoc(req, serviceId = '') {
   const base = withHospitalFilter(req, { key: 'leavesV2', serviceId });
@@ -130,11 +193,24 @@ router.put('/', async (req, res) => {
     const value = doc.value && typeof doc.value === 'object' ? doc.value : {};
     value[personId] ??= {};
     value[personId][ym] ??= {};
-    value[personId][ym][String(day)] = note ? { code, note } : { code };
 
+    // Önceki kodu sakla — farklı ise bakiyeyi eski koddan geri al, yenisine ekle
+    const prevEntry = value[personId][ym][String(day)];
+    const prevCode  = prevEntry
+      ? (typeof prevEntry === 'string' ? prevEntry : prevEntry?.code)
+      : null;
+    const upperCode = String(code).trim().toUpperCase();
+
+    value[personId][ym][String(day)] = note ? { code, note } : { code };
     doc.value = value;
     doc.markModified('value');
     await doc.save();
+
+    // LeaveBalance senkronizasyonu (fire-and-forget, kaydetme engellenmesin)
+    if (prevCode !== upperCode) {
+      if (prevCode) void syncLeaveBalance(req, personId, prevCode, year, -1);
+      void syncLeaveBalance(req, personId, upperCode, year, +1);
+    }
 
     return res.json({ ok: true, key: doc.key, data: value[personId][ym] });
   } catch (e) {
@@ -164,13 +240,22 @@ router.delete('/', async (req, res) => {
 
     const ym = monthKey(year, month);
     const value = doc.value && typeof doc.value === 'object' ? doc.value : {};
-    if (value[personId]?.[ym]?.[String(day)]) {
+    const existingEntry = value[personId]?.[ym]?.[String(day)];
+
+    if (existingEntry) {
+      const deletedCode = typeof existingEntry === 'string'
+        ? existingEntry
+        : existingEntry?.code;
+
       delete value[personId][ym][String(day)];
       if (!Object.keys(value[personId][ym] || {}).length) delete value[personId][ym];
       if (!Object.keys(value[personId] || {}).length) delete value[personId];
       doc.value = value;
       doc.markModified('value');
       await doc.save();
+
+      // LeaveBalance'dan 1 gün geri al
+      if (deletedCode) void syncLeaveBalance(req, personId, deletedCode, year, -1);
     }
 
     return res.json({ ok: true });

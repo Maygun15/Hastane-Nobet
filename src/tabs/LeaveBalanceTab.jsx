@@ -1,11 +1,12 @@
 // src/tabs/LeaveBalanceTab.jsx
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   getLeaveBalances,
   createLeaveBalance,
   updateLeaveBalance,
   deleteLeaveBalance,
+  patchLeaveBalanceUse,
 } from "../api/apiAdapter.js";
 
 const THIS_YEAR = new Date().getFullYear();
@@ -60,6 +61,40 @@ export default function LeaveBalanceTab() {
   const [editItem, setEditItem] = useState(null);
   const [editAllocated, setEditAllocated] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+
+  // "İzin Kullan" modal state
+  const [useItem, setUseItem] = useState(null);
+  const [useDays, setUseDays] = useState("");
+  const [useSaving, setUseSaving] = useState(false);
+
+  const insufficientError = useMemo(() => {
+    if (!useItem || useDays === "") return null;
+    const days = Number(useDays);
+    if (!Number.isFinite(days) || days <= 0) return "Gün sayısı sıfırdan büyük olmalıdır";
+    if (useItem.remaining <= 0) return `İzin Yetersiz — ${useItem.personName || "Personel"} adına kullanılabilir bakiye bulunmuyor (Kalan: 0 gün)`;
+    if (days > useItem.remaining) return `İzin Yetersiz — ${days} gün talep edildi, yalnızca ${useItem.remaining} gün mevcut`;
+    return null;
+  }, [useItem, useDays]);
+
+  const openUse = (item) => { setUseItem(item); setUseDays(""); };
+  const closeUse = () => { setUseItem(null); setUseDays(""); };
+
+  const handleUse = async () => {
+    if (!useItem) return;
+    if (insufficientError) { toast.error(insufficientError); return; }
+    const days = Number(useDays);
+    setUseSaving(true);
+    try {
+      await patchLeaveBalanceUse(useItem._id, days);
+      toast.success(`${days} gün izin kullanımı kaydedildi`);
+      closeUse();
+      await load();
+    } catch (err) {
+      toast.error(err?.message || "İzin kullanım kaydı başarısız");
+    } finally {
+      setUseSaving(false);
+    }
+  };
 
   // Create modal state
   const [createOpen, setCreateOpen] = useState(false);
@@ -325,6 +360,18 @@ export default function LeaveBalanceTab() {
                         <div className="flex items-center justify-end gap-1">
                           <button
                             type="button"
+                            onClick={() => openUse(item)}
+                            title={item.remaining <= 0 ? "Bakiye yetersiz" : "İzin günü kullan"}
+                            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                              item.remaining <= 0
+                                ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                            }`}
+                          >
+                            Kullan
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => openEdit(item)}
                             className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                           >
@@ -512,6 +559,71 @@ export default function LeaveBalanceTab() {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* İzin Kullan Modal */}
+      <Modal open={!!useItem} onClose={closeUse} title="İzin Günü Kullan">
+        {useItem && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-sm text-slate-600 space-y-1">
+              <div>
+                <span className="font-medium text-slate-800">{useItem.personName || useItem.personId}</span>
+              </div>
+              <div>İzin Türü: <span className="font-medium">{useItem.leaveTypeName || useItem.leaveTypeId}</span></div>
+              <div className="flex gap-4">
+                <span>Hak Edilen: <strong>{useItem.allocated} gün</strong></span>
+                <span>Kullanılan: <strong>{useItem.used} gün</strong></span>
+                <span className={useItem.remaining <= 0 ? "text-red-600 font-semibold" : "text-emerald-600 font-semibold"}>
+                  Kalan: <strong>{useItem.remaining} gün</strong>
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[12px] font-semibold text-slate-600 mb-1.5">
+                Kullanılacak Gün Sayısı
+              </label>
+              <input
+                type="number"
+                min="1"
+                max={useItem.allocated}
+                value={useDays}
+                onChange={(e) => setUseDays(e.target.value)}
+                placeholder="Örn: 3"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+              />
+            </div>
+
+            {/* Validation feedback */}
+            {insufficientError ? (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                <svg className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/>
+                  <path d="M8 5v3.5M8 11h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+                <span>{insufficientError}</span>
+              </div>
+            ) : useDays !== "" && Number(useDays) > 0 ? (
+              <div className="text-xs text-slate-500">
+                İşlem sonrası kalan:{" "}
+                <strong className="text-emerald-600">
+                  {useItem.remaining - Number(useDays)} gün
+                </strong>
+              </div>
+            ) : null}
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button type="button" onClick={closeUse}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                Vazgeç
+              </button>
+              <button type="button" onClick={handleUse} disabled={useSaving || !!insufficientError || useDays === ""}
+                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
+                {useSaving ? "Kaydediliyor..." : "Onayla"}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
