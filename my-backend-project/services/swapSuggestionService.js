@@ -309,16 +309,16 @@ async function suggestSwaps({
     ? (assignCountByPerson[String(personId)] || 0)
     : (assignCountByPerson.__requesterByName || 0);
 
-  // Leaves: fetch for service
-  const leaveDocs = await Setting.find({
+  // Leaves: sadece ilgili servisin izin dokümanı — $in ile birden fazla servis
+  // çekip merge etmek servisler arası veri kirliliğine yol açıyordu (BUG-07).
+  const leaveDoc = await Setting.findOne({
     key: 'leavesV2',
-    serviceId: { $in: Array.from(new Set([String(serviceId || ''), ''])) },
+    serviceId: String(serviceId || ''),
     ...(hospitalId ? { hospitalId } : {}),
   }).lean();
-  const leaveValue = leaveDocs.reduce((acc, doc) => {
-    const value = doc?.value && typeof doc.value === 'object' ? doc.value : {};
-    return { ...acc, ...value };
-  }, {});
+  const leaveValue = leaveDoc?.value && typeof leaveDoc.value === 'object'
+    ? leaveDoc.value
+    : {};
   const dayNum = String(parseInt(date.slice(8, 10), 10));
   const monthKey = date.slice(0, 7);
 
