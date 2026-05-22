@@ -18,11 +18,13 @@ import {
   FileText,
   LayoutDashboard,
   Megaphone,
+  Menu,
   PieChart,
   Scale,
   Settings2,
   UserRound,
   Users2,
+  X,
 } from "lucide-react";
 
 import { MENU_CONFIG } from "../../config/menuConfig.js";
@@ -80,6 +82,9 @@ export default function Sidebar({
   isAuthorized,
   isBasicUser,
 }) {
+  // Mobil drawer açık mı?
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   // Hangi collapsible gruplar açık?
   const [openGroups, setOpenGroups] = useState({
     yonetim: true,
@@ -147,11 +152,13 @@ export default function Sidebar({
   function handleLeaf(item) {
     navigate(item.path);
     onTabChange(parentTabId(item.id));
+    setDrawerOpen(false);
   }
 
   function handleBranch(item) {
     navigate(item.path);
     onTabChange(item.id);
+    setDrawerOpen(false);
   }
 
   function handleAction(item) {
@@ -380,28 +387,80 @@ export default function Sidebar({
   const sidebarGroups = MENU_CONFIG.filter((g) => !g.isQuickAction);
 
   return (
-    <aside className="min-h-0 overflow-auto rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_18px_42px_-34px_rgba(15,23,42,0.24)]">
-      {/* Modül bilgi kutusu */}
-      <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-          Çalışma Alanı
-        </div>
-        <div className="mt-2 text-lg font-semibold tracking-tight text-slate-950">
-          {moduleLabel}
-        </div>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          Operasyon modülleri solda, sık kullanılan aksiyonlar üstte tutulur.
-        </p>
-      </div>
+    <>
+      {/* Mobil backdrop — tıklanınca drawer kapanır */}
+      {drawerOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm xl:hidden"
+          onClick={() => setDrawerOpen(false)}
+          aria-hidden="true"
+        />
+      )}
 
-      {/* Grup listesi */}
-      <div className="mt-5 space-y-5">
-        {sidebarGroups.map((group) =>
-          canSee(group.visibleTo) ? (
-            <GroupSection key={group.id} group={group} />
-          ) : null,
-        )}
-      </div>
-    </aside>
+      {/* Sidebar paneli
+          Mobil (< xl)  : fixed drawer, translate ile açılıp kapanır
+          Masaüstü (xl+): belge akışında, her zaman görünür            */}
+      <aside
+        className={[
+          // Mobil: sabit konumlu drawer
+          "fixed inset-y-0 left-0 z-50 w-[300px] overflow-y-auto p-4",
+          "transition-transform duration-300 ease-in-out",
+          drawerOpen ? "translate-x-0" : "-translate-x-full",
+          // Masaüstü override (xl+)
+          "xl:relative xl:inset-auto xl:z-auto xl:w-auto xl:translate-x-0 xl:min-h-0 xl:transition-none",
+          // Ortak görsel stiller
+          "rounded-[28px] border border-slate-200 bg-white/90",
+          "shadow-[0_18px_42px_-34px_rgba(15,23,42,0.24)]",
+        ].join(" ")}
+      >
+        {/* Mobil kapatma düğmesi (xl+ gizli) */}
+        <div className="mb-3 flex items-center justify-between xl:hidden">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Menü
+          </span>
+          <button
+            type="button"
+            aria-label="Menüyü kapat"
+            onClick={() => setDrawerOpen(false)}
+            className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 transition"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Modül bilgi kutusu */}
+        <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+            Çalışma Alanı
+          </div>
+          <div className="mt-2 text-lg font-semibold tracking-tight text-slate-950">
+            {moduleLabel}
+          </div>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Operasyon modülleri solda, sık kullanılan aksiyonlar üstte tutulur.
+          </p>
+        </div>
+
+        {/* Grup listesi */}
+        <div className="mt-5 space-y-5">
+          {sidebarGroups.map((group) =>
+            canSee(group.visibleTo) ? (
+              <GroupSection key={group.id} group={group} />
+            ) : null,
+          )}
+        </div>
+      </aside>
+
+      {/* Hamburger FAB — yalnızca mobilde görünür (xl+ gizli) */}
+      <button
+        type="button"
+        aria-label={drawerOpen ? "Menüyü kapat" : "Menüyü aç"}
+        aria-expanded={String(drawerOpen)}
+        onClick={() => setDrawerOpen((v) => !v)}
+        className="fixed bottom-5 right-5 z-50 xl:hidden flex h-14 w-14 items-center justify-center rounded-full bg-slate-900 text-white shadow-[0_8px_28px_-6px_rgba(15,23,42,0.45)] transition-transform duration-200 active:scale-95 hover:bg-slate-800"
+      >
+        {drawerOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+      </button>
+    </>
   );
 }

@@ -2171,7 +2171,10 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             </div>
           )}
 
-          <div className="overflow-auto rounded-card border border-slate-200 shadow-card">
+          <div
+            className="overflow-auto rounded-card border border-slate-200 shadow-card"
+            style={{ touchAction: 'pan-x pan-y', WebkitOverflowScrolling: 'touch' }}
+          >
             <table className="min-w-[1600px] border-separate border-spacing-0 text-sm">
               <thead className="sticky top-0 z-20">
                 <tr>
@@ -2355,7 +2358,10 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       {showConfigSections && (
       <div className="rounded-lg border bg-white">
         <div className="p-3 text-sm font-medium border-b">Ayın Günleri (Pzt→Paz)</div>
-        <div className="w-full overflow-auto">
+        <div
+          className="w-full overflow-auto"
+          style={{ touchAction: 'pan-x pan-y', WebkitOverflowScrolling: 'touch' }}
+        >
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50">

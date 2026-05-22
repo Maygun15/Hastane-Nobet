@@ -2,9 +2,30 @@
 <html lang="tr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Nöbet Yönetim Sistemi</title>
+
+    <!-- PWA: Web App Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- PWA: Tema rengi (Android Chrome başlık çubuğu) -->
+    <meta name="theme-color" content="#0f172a" />
+
+    <!-- PWA: iOS "Ana Ekrana Ekle" desteği -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Nöbet" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+
+    <!-- PWA: Microsoft / Windows tile -->
+    <meta name="msapplication-TileColor" content="#0f172a" />
+    <meta name="msapplication-tap-highlight" content="no" />
+
+    <!-- SEO + share meta -->
+    <meta name="description" content="Hastane nöbet çizelgesi yönetim ve analiz sistemi" />
+    <meta name="application-name" content="Hastane-Nobet" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
