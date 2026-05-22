@@ -13,7 +13,9 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const mongoose = require('mongoose');
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/hastane';
-const CLEAN = process.argv.includes('--clean');
+const CLEAN  = process.argv.includes('--clean');
+// --unfair: Adillik skorunu kasıtlı olarak düşük üret (sunum demo'su için)
+const UNFAIR = process.argv.includes('--unfair');
 
 const NOW = new Date();
 const YEAR  = Number(process.env.DEMO_YEAR)  || NOW.getFullYear();
@@ -71,7 +73,7 @@ function deterministicPick(candidates, seed) {
 //   • MAX_CONSECUTIVE_DAYS=2: ardışık 2 günden fazla nöbet yok (3+ yasak)
 //   • NIGHT_NEXT_DAY_OFF: gece nöbetinden sonra ertesi gün atama yok
 
-function buildSchedule(staff, year, month) {
+function buildSchedule(staff, year, month, unfair = false) {
   const totalDays = daysInMonth(year, month);
 
   // Kişi başı takip durumu
@@ -86,6 +88,12 @@ function buildSchedule(staff, year, month) {
 
   const nurses  = staff.filter(p => p.meta?.role === 'Hemşire');
   const doctors = staff.filter(p => p.meta?.role === 'Doktor');
+
+  // Unfair mod: belirli personeli gece & hafta sonu nöbetlerine yığar.
+  // Hemşirelerin son 2'si (Elif Şahin, Merve Çelik) tüm gece nöbetlerini üstlenir;
+  // doktorların ilk 2'si (Mehmet Öztürk, Ahmet Koç) hafta sonu nöbetine yığılır.
+  const nightTargets   = unfair ? new Set(nurses.slice(-2).map(p => p._id.toString())) : null;
+  const weekendTargets = unfair ? new Set(doctors.slice(0, 2).map(p => p._id.toString())) : null;
 
   function canWork(pid, today) {
     const s = st.get(pid);
@@ -108,7 +116,30 @@ function buildSchedule(staff, year, month) {
     if (isNight) s.nightBlock = addDays(today, 1);
   }
 
-  function pick(group, today, dayNum, used) {
+  function pick(group, today, dayNum, used, shift) {
+    if (unfair) {
+      const wd = new Date(today).getDay();
+      const isWeekendDay = wd === 0 || wd === 6;
+
+      // Gece nöbetini nightTargets'a yığ
+      if (shift?.isNight && nightTargets) {
+        const forced = group.filter(p => {
+          const pid = p._id.toString();
+          return nightTargets.has(pid) && !used.has(pid) && canWork(pid, today);
+        });
+        if (forced.length > 0) return deterministicPick(forced, dayNum);
+      }
+
+      // Hafta sonu gündüz nöbetini weekendTargets'a yığ
+      if (!shift?.isNight && isWeekendDay && weekendTargets) {
+        const forced = group.filter(p => {
+          const pid = p._id.toString();
+          return weekendTargets.has(pid) && !used.has(pid) && canWork(pid, today);
+        });
+        if (forced.length > 0) return deterministicPick(forced, dayNum);
+      }
+    }
+
     const eligible = group.filter(p => {
       const pid = p._id.toString();
       return !used.has(pid) && canWork(pid, today);
@@ -136,7 +167,7 @@ function buildSchedule(staff, year, month) {
     ];
 
     for (const [shift, group, seed] of plan) {
-      const person = pick(group, today, seed, used);
+      const person = pick(group, today, seed, used, shift);
       if (!person) {
         console.warn(`  [!] ${today} ${shift.code}: uygun personel bulunamadı, slot boş bırakıldı`);
         continue;
@@ -230,8 +261,12 @@ async function main() {
   console.log(`  Hemşire: ${nurses.length}, Doktor: ${doctors.length} → toplam ${allStaff.length} personel`);
 
   // ── Kısıt uyumlu çizelge üret ─────────────────────────────────────────────
-  console.log(`\n[demo] ${YEAR}-${MONTH} çizelgesi oluşturuluyor (kısıtlar aktif)…`);
-  const scheduleRows = buildSchedule(allStaff, YEAR, MONTH);
+  if (UNFAIR) {
+    console.log('\n⚠️  [demo] UNFAIR modu aktif: Elif Şahin & Merve Çelik gece nöbetlerine, Mehmet Öztürk & Ahmet Koç hafta sonu nöbetlerine yığılıyor.');
+    console.log('    Adillik skoru kasıtlı olarak düşük çıkacaktır — sunumda "sistem dengesizliği tespit ediyor" demo\'su için kullanın.\n');
+  }
+  console.log(`\n[demo] ${YEAR}-${MONTH} çizelgesi oluşturuluyor (kısıtlar aktif${UNFAIR ? ', UNFAIR modu' : ''})…`);
+  const scheduleRows = buildSchedule(allStaff, YEAR, MONTH, UNFAIR);
   console.log(`  Üretilen atama satırı: ${scheduleRows.length}`);
 
   // ── MonthlySchedule ───────────────────────────────────────────────────────
