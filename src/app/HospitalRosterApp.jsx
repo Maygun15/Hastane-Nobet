@@ -35,7 +35,7 @@ import { PERMISSIONS } from "../constants/roles.js";
 
 // Sayfalar
 import UsersTab from "../tabs/UsersTab.jsx";
-import AuditLogTab from "../tabs/AuditLogTab.jsx";
+import AuditLogPage from "../pages/AuditLogPage.jsx";
 import MyRequestsTab from "../tabs/MyRequestsTab.jsx";
 import RequestsManagementTab from "../tabs/RequestsManagementTab.jsx";
 import UserProfile from "../components/UserProfile.jsx";
@@ -746,7 +746,7 @@ export default function HospitalRosterApp() {
           )}
 
           {activeTab === "auditlog" && (
-            canSeeUsersTab ? <AuditLogTab /> : <NeedAdmin />
+            canSeeUsersTab ? <AuditLogPage /> : <NeedAdmin />
           )}
 
           {activeTab === "myRequests" && <MyRequestsTab />}

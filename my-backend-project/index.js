@@ -530,6 +530,12 @@ try {
   app.use('/api/leave-balances', ...secureTenant, leaveBalancesRoutes);
 } catch (e) { console.warn('[BOOT] leave-balances route yüklenemedi:', e?.message); }
 
+/* ============== AUDIT LOG ROUTES ============== */
+try {
+  const auditLogsRoutes = require('./routes/audit-logs.routes.js');
+  app.use('/api/audit-logs', ...secureTenant, requireRole('admin'), auditLogsRoutes);
+} catch (e) { console.warn('[BOOT] audit-logs route yüklenemedi:', e?.message); }
+
 /* ============== REPORTS ROUTES ============== */
 try {
   const reportsRoutes = require('./routes/reports.routes');
