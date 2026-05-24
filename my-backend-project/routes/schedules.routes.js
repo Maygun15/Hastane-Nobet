@@ -2229,6 +2229,47 @@ router.get('/person-calendar',
   }
 );
 
+/* =========================================================
+   POST /api/schedules/publish-notify
+   Çizelge yayınlama bildirimi: her personele kendi adillik skoruyla
+   profesyonel bir SSE + DB bildirimi gönderir.
+   Body: { sectionId, year, month, serviceId? }
+========================================================= */
+router.post('/publish-notify',
+  requireAuth,
+  requireRole('admin', 'authorized'),
+  async (req, res) => {
+    try {
+      const { year, month, serviceId } = req.body || {};
+      if (!year || !month) return res.status(400).json({ ok: false, message: 'year ve month zorunlu' });
+
+      const { computeMonthlyFairnessScores } = require('../services/fairnessEngine');
+      const { sendSchedulePublished } = require('../services/notificationService');
+
+      const result = await computeMonthlyFairnessScores({
+        hospitalId: req.hospitalId,
+        year:  Number(year),
+        month: Number(month),
+      });
+
+      void sendSchedulePublished({
+        hospitalId: req.hospitalId,
+        year:   Number(year),
+        month:  Number(month),
+        people: result.people,
+      });
+
+      return res.json({
+        ok: true,
+        message: `${result.people.length} personele nöbet çizelgesi bildirimi gönderildi`,
+        groupStats: result.groupStats,
+      });
+    } catch (err) {
+      return res.status(500).json({ ok: false, message: err?.message || 'Bildirim gönderilemedi' });
+    }
+  }
+);
+
 module.exports = router;
 
 /* =========================================================

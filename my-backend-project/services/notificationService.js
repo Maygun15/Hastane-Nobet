@@ -395,6 +395,47 @@ async function broadcastAnnouncement(hospitalId, title, body, type = 'announceme
   }
 }
 
+const TR_MONTHS_NS = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+
+/**
+ * Nöbet çizelgesi yayınlandığında her personele adillik skoru içeren
+ * profesyonel bir bildirim gönderir.
+ *
+ * @param {{ hospitalId, year, month, people: Array<{personId, personName, fairnessScore}> }} params
+ */
+async function sendSchedulePublished({ hospitalId, year, month, people = [] }) {
+  const monthLabel = TR_MONTHS_NS[(Number(month) - 1)] || `Ay ${month}`;
+  const yearNum    = Number(year);
+
+  for (const p of people) {
+    const score   = Number(p.fairnessScore ?? 100);
+    const userId  = p.userId || null;
+
+    // Hangi userId'yi kullanacağız: fairnessEngine personId bir Mongo ObjectId olabilir
+    // ya da personName, bu yüzden User koleksiyonuna bakmayı dene
+    let resolvedUserId = userId;
+    if (!resolvedUserId && p.personId) {
+      try {
+        const person = await Person.findById(String(p.personId)).select('userId').lean();
+        resolvedUserId = person?.userId ? String(person.userId) : null;
+      } catch {}
+    }
+
+    if (!resolvedUserId) continue;
+
+    const message = `${monthLabel} ${yearNum} nöbet dağılımınız, hastanemizin adil nöbet politikasına göre %${score} uyum sağlamıştır.`;
+
+    void saveAndBroadcast({
+      userId:     resolvedUserId,
+      hospitalId: String(hospitalId || ''),
+      type:       score >= 80 ? 'success' : score >= 55 ? 'warning' : 'info',
+      title:      `${monthLabel} ${yearNum} Nöbet Çizelgesi Yayınlandı`,
+      message,
+      data:       { year: yearNum, month: Number(month), fairnessScore: score },
+    });
+  }
+}
+
 module.exports = {
   sendLeaveApproved,
   sendLeaveRejected,
@@ -402,4 +443,5 @@ module.exports = {
   saveAndBroadcast,
   sendNewRequestNotification,
   broadcastAnnouncement,
+  sendSchedulePublished,
 };

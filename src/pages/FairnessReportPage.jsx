@@ -2,12 +2,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, BarChart2, CheckCircle2, Download,
-  FileDown, Moon, RefreshCw, Star, Sun, TrendingUp, Users,
+  FileDown, Info, Moon, RefreshCw, Star, Sun, TrendingUp, Users,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getMonthlySchedule } from '../api/apiAdapter.js';
+import { http } from '../lib/api.js';
 
 const TR_MONTHS = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
 
@@ -42,6 +43,59 @@ function scoreColor(score) {
 }
 function scoreLabel(score) {
   return score >= 80 ? 'Adil' : score >= 55 ? 'Orta' : 'Dengesiz';
+}
+
+// ── Ağırlıklı Adillik Hesaplama (frontend mirror of fairnessEngine.js) ─────────
+
+const FAIRNESS_WEIGHTS = { night: 1.5, weekend: 1.3, holiday: 2.0, regular: 1.0 };
+
+function computeWeightedLoad({ totalShifts, nightCount, weekendCount, holidayCount }) {
+  const regular = Math.max(0, totalShifts - nightCount - weekendCount - holidayCount);
+  return regular * FAIRNESS_WEIGHTS.regular
+    + nightCount   * FAIRNESS_WEIGHTS.night
+    + weekendCount * FAIRNESS_WEIGHTS.weekend
+    + holidayCount * FAIRNESS_WEIGHTS.holiday;
+}
+
+function computePersonFairnessScores(people) {
+  if (!people || people.length === 0) return [];
+  const loads   = people.map(computeWeightedLoad);
+  const mean    = loads.reduce((s, l) => s + l, 0) / loads.length;
+  const minLoad = Math.min(...loads);
+  const maxLoad = Math.max(...loads);
+  const spread  = maxLoad - minLoad;
+
+  const totalShifts  = people.reduce((s, p) => s + p.totalShifts,  0);
+  const totalNight   = people.reduce((s, p) => s + (p.nightCount   || 0), 0);
+  const totalWeekend = people.reduce((s, p) => s + (p.weekendCount || 0), 0);
+  const totalHoliday = people.reduce((s, p) => s + (p.holidayCount || 0), 0);
+  const idealNight   = totalShifts > 0 ? totalNight   / totalShifts : 0;
+  const idealWeekend = totalShifts > 0 ? totalWeekend / totalShifts : 0;
+  const idealHoliday = totalShifts > 0 ? totalHoliday / totalShifts : 0;
+
+  const nearness = (ratio, ideal) => {
+    if (ideal <= 0) return 100;
+    return Math.round(Math.max(0, (1 - Math.abs(ratio - ideal) / ideal) * 100));
+  };
+
+  return people.map((p, i) => {
+    const wLoad        = loads[i];
+    const fScore       = spread > 0 ? Math.round(Math.max(0, (1 - Math.abs(wLoad - mean) / spread) * 100)) : 100;
+    const nightRatio   = p.totalShifts > 0 ? (p.nightCount   || 0) / p.totalShifts : 0;
+    const weekendRatio = p.totalShifts > 0 ? (p.weekendCount || 0) / p.totalShifts : 0;
+    const holidayRatio = p.totalShifts > 0 ? (p.holidayCount || 0) / p.totalShifts : 0;
+    return {
+      ...p,
+      weightedLoad:    Math.round(wLoad * 10) / 10,
+      fairnessScore:   fScore,
+      nightRatioPct:   Math.round(nightRatio   * 100),
+      weekendRatioPct: Math.round(weekendRatio * 100),
+      holidayRatioPct: Math.round(holidayRatio * 100),
+      nightNearness:   nearness(nightRatio,   idealNight),
+      weekendNearness: nearness(weekendRatio, idealWeekend),
+      holidayNearness: nearness(holidayRatio, idealHoliday),
+    };
+  });
 }
 
 // ── Bileşenler ─────────────────────────────────────────────────────────────────
@@ -182,7 +236,20 @@ export default function FairnessReportPage({ activeYM }) {
   const [data, setData]   = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState(null);
-  const [sortBy, setSortBy]   = useState('count-desc');
+  const [sortBy, setSortBy]     = useState('count-desc');
+  const [publishing, setPublishing] = useState(false);
+
+  const publishSchedule = async () => {
+    setPublishing(true);
+    try {
+      const res = await http.post('/api/schedules/publish-notify', { year, month });
+      alert(`Bildirim gönderildi: ${res?.message || `${res?.groupStats?.personCount ?? '?'} personel`}`);
+    } catch (e) {
+      alert(e?.message || 'Bildirim gönderilemedi');
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -256,6 +323,11 @@ export default function FairnessReportPage({ activeYM }) {
     if (sortBy === 'count-asc')  return copy.sort((a, b) => a.count - b.count);
     return copy.sort((a, b) => (a.name > b.name ? 1 : -1));
   }, [data, sortBy]);
+
+  const personScores = useMemo(() => {
+    if (!data?.people) return [];
+    return computePersonFairnessScores(data.people).sort((a, b) => b.fairnessScore - a.fairnessScore);
+  }, [data]);
 
   const maxCount    = sortedPeople.reduce((m, p) => Math.max(m, p.count), 0);
   const shiftEntries = data ? Object.entries(data.byShift).sort((a, b) => b[1] - a[1]) : [];
@@ -412,6 +484,23 @@ export default function FairnessReportPage({ activeYM }) {
           >
             <RefreshCw size={13} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
             Yenile
+          </button>
+          <button
+            onClick={publishSchedule}
+            disabled={!data || publishing}
+            title="Personele adillik skorlu bildirim gönder"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+              borderRadius: 10, border: '1px solid #10b981',
+              background: data && !publishing ? '#10b981' : '#f9fafb',
+              color: data && !publishing ? '#fff' : '#9ca3af',
+              fontSize: 13, fontWeight: 600,
+              cursor: data && !publishing ? 'pointer' : 'not-allowed',
+              opacity: !data ? 0.5 : 1, transition: 'all .15s',
+            }}
+          >
+            <CheckCircle2 size={14} />
+            {publishing ? 'Gönderiliyor…' : 'Çizelgeyi Yayınla'}
           </button>
         </div>
       </div>
@@ -575,6 +664,120 @@ export default function FairnessReportPage({ activeYM }) {
               )}
             </div>
           </div>
+          {/* ── Adalet Metrikleri ─────────────────────────────────────────── */}
+          {personScores.length > 0 && (
+            <div style={{ marginTop: 18 }}>
+              {/* Başlık */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <BarChart2 size={16} color="#6366f1" />
+                <span style={{ fontSize: 15, fontWeight: 700, color: '#111827' }}>Adalet Metrikleri</span>
+              </div>
+
+              {/* Sistem Notu */}
+              <div style={{
+                display: 'flex', gap: 10, alignItems: 'flex-start',
+                background: '#eef2ff', border: '1px solid #c7d2fe',
+                borderRadius: 12, padding: '12px 16px', marginBottom: 16,
+              }}>
+                <Info size={15} color="#4f46e5" style={{ flexShrink: 0, marginTop: 1 }} />
+                <p style={{ fontSize: 12, color: '#3730a3', lineHeight: 1.6, margin: 0 }}>
+                  <strong>Sistem Notu:</strong> Bu puan; nöbet türlerinin zorluk derecesi, gece nöbeti dağılımı ve hafta sonu yükü
+                  kriterleri baz alınarak, tüm personel için eşitlik ilkesine göre otomatik hesaplanmıştır.
+                  Ağırlıklar: Gece nöbeti ×1.5 · Hafta sonu ×1.3 · Tatil günü ×2.0 · Standart nöbet ×1.0
+                </p>
+              </div>
+
+              {/* Kıyaslama Tablosu */}
+              <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc' }}>
+                      {['#','Ad Soyad','Nöbet Yükü Puanı','Gece Nöbeti Oranı','Hafta Sonu Yükü','Tatil Nöbeti','Durum'].map((h, i) => (
+                        <th key={i} style={{
+                          padding: '10px 14px', textAlign: i >= 2 ? 'center' : 'left',
+                          fontSize: 10, fontWeight: 700, color: '#6b7280',
+                          textTransform: 'uppercase', letterSpacing: '0.07em',
+                          borderBottom: '1px solid #e5e7eb',
+                        }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {personScores.map((p, i) => {
+                      const fColor = scoreColor(p.fairnessScore);
+                      const rowBg  = i % 2 === 1 ? '#f9fafb' : '#fff';
+
+                      const NearBar = ({ value, label }) => (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: scoreColor(value) }}>{value}%</div>
+                          <div style={{ width: 60, height: 4, background: '#f3f4f6', borderRadius: 2 }}>
+                            <div style={{ width: `${value}%`, height: '100%', background: scoreColor(value), borderRadius: 2 }} />
+                          </div>
+                          <div style={{ fontSize: 9, color: '#9ca3af' }}>{label}</div>
+                        </div>
+                      );
+
+                      return (
+                        <tr key={i} style={{ background: rowBg }}>
+                          <td style={{ padding: '10px 14px', color: '#9ca3af' }}>{i + 1}</td>
+                          <td style={{ padding: '10px 14px', fontWeight: 600, color: '#111827', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {p.name}
+                          </td>
+                          {/* Nöbet Yükü Puanı */}
+                          <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                              <MiniGauge score={p.fairnessScore} size={32} />
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: fColor, lineHeight: 1 }}>{p.fairnessScore}</div>
+                                <div style={{ fontSize: 9, color: '#9ca3af' }}>yük: {p.weightedLoad}</div>
+                              </div>
+                            </div>
+                          </td>
+                          {/* Gece Nöbeti Oranı — ideal yakınlığı */}
+                          <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                            <NearBar value={p.nightNearness} label={`${p.nightCount || 0} nöbet (${p.nightRatioPct}%)`} />
+                          </td>
+                          {/* Hafta Sonu Yükü */}
+                          <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                            <NearBar value={p.weekendNearness} label={`${p.weekendCount || 0} nöbet (${p.weekendRatioPct}%)`} />
+                          </td>
+                          {/* Tatil Nöbeti */}
+                          <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                            <NearBar value={p.holidayNearness} label={`${p.holidayCount || 0} nöbet (${p.holidayRatioPct}%)`} />
+                          </td>
+                          {/* Durum */}
+                          <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                            <span style={{
+                              display: 'inline-block', padding: '3px 10px', borderRadius: 20,
+                              fontSize: 11, fontWeight: 700,
+                              background: fColor + '18', color: fColor,
+                            }}>
+                              {scoreLabel(p.fairnessScore)}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Ağırlık açıklaması */}
+              <div style={{ display: 'flex', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
+                {[
+                  { label: 'Standart Nöbet', color: '#94a3b8', weight: '×1.0' },
+                  { label: 'Hafta Sonu',     color: '#f59e0b', weight: '×1.3' },
+                  { label: 'Gece Nöbeti',    color: '#6366f1', weight: '×1.5' },
+                  { label: 'Tatil Nöbeti',   color: '#10b981', weight: '×2.0' },
+                ].map(({ label, color, weight }) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#6b7280' }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 2, background: color, display: 'inline-block' }} />
+                    {label} <span style={{ fontWeight: 700, color }}>{weight}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
 

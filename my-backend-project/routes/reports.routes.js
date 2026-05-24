@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const Assignment = require('../models/Assignment');
 const Request = require('../models/Request');
 const { requireRole } = require('../middleware/authz');
+const { computeMonthlyFairnessScores } = require('../services/fairnessEngine');
 
 function toOid(id) {
   if (!id) return null;
@@ -101,6 +102,20 @@ router.get('/leave-stats', requireRole('admin', 'authorized', 'staff'), async (r
     res.json({ year, byStatus, byType });
   } catch (e) {
     res.status(500).json({ message: e.message });
+  }
+});
+
+// GET /api/reports/fairness-scores?year=&month=
+// Ağırlıklı adillik skorlarını döner: kişi başına weighted load + fairnessScore + oranlar
+router.get('/fairness-scores', requireRole('admin', 'authorized', 'staff'), async (req, res) => {
+  try {
+    const year  = Number(req.query.year)  || new Date().getFullYear();
+    const month = Number(req.query.month) || new Date().getMonth() + 1;
+    if (!req.hospitalId) return res.status(400).json({ ok: false, message: 'hospitalId gerekli' });
+    const result = await computeMonthlyFairnessScores({ hospitalId: req.hospitalId, year, month });
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
   }
 });
 
