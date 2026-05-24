@@ -88,12 +88,27 @@ async function computeMonthlyFairnessScores({ hospitalId, year, month }) {
     try { return new mongoose.Types.ObjectId(String(hospitalId)); } catch { return null; }
   })();
 
+  console.log('[fairnessEngine] computeMonthlyFairnessScores', {
+    rawHospitalId: hospitalId,
+    parsedOid: hoid ? hoid.toString() : null,
+    year: Number(year), month: Number(month),
+  });
+
+  // Hospitalsiz kontrol
+  const totalInMonth = await Assignment.countDocuments({ year: Number(year), month: Number(month), status: 'active' });
+  const withHospital = hoid
+    ? await Assignment.countDocuments({ hospitalId: hoid, year: Number(year), month: Number(month), status: 'active' })
+    : 0;
+  console.log('[fairnessEngine] Assignment sayısı —', { totalInMonth, withHospital });
+
   const assignments = await Assignment.find({
     ...(hoid ? { hospitalId: hoid } : { hospitalId: String(hospitalId) }),
     year: Number(year),
     month: Number(month),
     status: 'active',
   }).select('personId personName serviceId shiftCode shiftId startHour weekday date hours').lean();
+
+  console.log('[fairnessEngine] find() sonucu:', assignments.length, 'atama');
 
   // Group by personId
   const byPerson = new Map();
