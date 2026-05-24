@@ -2373,110 +2373,128 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
       />
     </div>
 
-    {/* ─── BASKIYA ÖZEL: A4 Yatay (Landscape) Tam Sayfa Nöbet Takvimi ─── */}
+    {/* ─── BASKIYA ÖZEL: A4 Yatay — Ekran görünümüyle birebir liste ─── */}
     <style>{`
       @media screen { .person-print-layout { display: none !important; } }
       @media print {
-        @page { size: A4 landscape; margin: 7mm 8mm; }
+        @page { size: A4 landscape; margin: 7mm 9mm; }
         html, body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .person-screen-only { display: none !important; }
         .person-print-layout {
-          display: block !important;
-          width: 100%;
+          display: block !important; width: 100%;
           font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           color: #0f172a;
         }
         /* ── Başlık ── */
         .ppl-header {
           display: flex; align-items: flex-end; justify-content: space-between;
-          border-bottom: 2px solid #334155; padding-bottom: 3mm; margin-bottom: 3mm;
+          border-bottom: 2px solid #1e293b; padding-bottom: 3mm; margin-bottom: 3.5mm;
         }
-        .ppl-header-title { font-size: 14pt; font-weight: 700; color: #0f172a; line-height: 1.2; }
-        .ppl-header-month { font-size: 10.5pt; font-weight: 500; color: #475569; margin-top: 1mm; }
-        .ppl-header-person { text-align: right; font-size: 8pt; color: #64748b; }
-        .ppl-header-person strong { display: block; font-size: 13pt; font-weight: 800; color: #0f172a; letter-spacing: 0.02em; }
-        /* ── Haftanın Günleri ── */
-        .ppl-weekdays {
-          display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 0;
+        .ppl-header-title { font-size: 13pt; font-weight: 800; color: #0f172a; line-height: 1.1; }
+        .ppl-header-month { font-size: 9.5pt; font-weight: 500; color: #475569; margin-top: 0.8mm; }
+        .ppl-header-person { text-align: right; }
+        .ppl-header-person-lbl { font-size: 7pt; color: #94a3b8; letter-spacing: 0.08em; text-transform: uppercase; }
+        .ppl-header-person-name { font-size: 12pt; font-weight: 800; color: #0f172a; letter-spacing: 0.01em; }
+        /* ── 2 Sütunlu Gün Listesi ── */
+        .ppl-daylist {
+          column-count: 2; column-gap: 7mm;
+          margin-bottom: 3.5mm;
+          border-top: 1px solid #e2e8f0;
         }
-        .ppl-weekday {
-          text-align: center; font-size: 9pt; font-weight: 700; color: #334155;
-          padding: 2mm 0; border-bottom: 2px solid #334155; letter-spacing: 0.05em;
+        /* ── Tek Gün Satırı ── */
+        .ppl-row {
+          break-inside: avoid;
+          display: flex; align-items: center; gap: 2.5mm;
+          border-bottom: 0.5px solid #e2e8f0;
+          padding: 1.2mm 1mm 1.2mm 0;
+          min-height: 5.8mm;
+          background: #fff;
         }
-        .ppl-weekday.wknd { color: #94a3b8; }
-        /* ── Takvim Izgarası ── */
-        .ppl-grid {
-          display: grid; grid-template-columns: repeat(7, 1fr);
-          border-top: 1px solid #cbd5e1; border-left: 1px solid #cbd5e1;
+        .ppl-row.is-wknd   { background: #f8fafc; }
+        .ppl-row.is-holiday { background: #fff7ed; }
+        .ppl-row.has-assg  { background: #f0f9ff; }
+        .ppl-row.has-leave { background: #fff1f2; }
+        .ppl-row.has-conflict { background: #fffbeb; }
+        /* Gün no + isim */
+        .ppl-row-daynum {
+          font-size: 9pt; font-weight: 700; color: #334155;
+          min-width: 5mm; text-align: right; line-height: 1;
         }
-        .ppl-cell {
-          border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1;
-          min-height: 28mm; position: relative; padding: 2mm 2mm 1.5mm;
-          background: #fff; page-break-inside: avoid;
+        .ppl-row.is-wknd .ppl-row-daynum { color: #94a3b8; }
+        .ppl-row.is-holiday .ppl-row-daynum { color: #c2410c; }
+        .ppl-row-dayname {
+          font-size: 7pt; color: #64748b; min-width: 6mm; font-weight: 500;
         }
-        .ppl-cell.outside-month { background: #f8fafc; }
-        .ppl-cell.is-wknd       { background: #f8fafc; }
-        .ppl-cell.is-holiday    { background: #fff7ed; }
-        .ppl-cell.has-assg      { background: #f0f9ff; }
-        .ppl-cell.has-leave     { background: #fff1f2; }
-        .ppl-cell.has-conflict  { background: #fffbeb; }
-        /* ── Gün Numarası ── */
-        .ppl-day-num {
-          font-size: 10pt; font-weight: 700; color: #334155; line-height: 1;
+        /* Tatil rozeti */
+        .ppl-row-hbadge {
+          font-size: 5pt; font-weight: 800; letter-spacing: 0.05em;
+          padding: 0.3mm 1.2mm; border-radius: 1mm;
+          background: #fed7aa; color: #92400e;
         }
-        .ppl-cell.is-wknd .ppl-day-num { color: #94a3b8; }
-        .ppl-cell.is-holiday .ppl-day-num { color: #c2410c; }
-        /* ── Tatil Adı ── */
-        .ppl-holiday-lbl {
-          font-size: 6pt; color: #c2410c; font-weight: 600;
-          margin-top: 0.8mm; white-space: normal; overflow: hidden;
-          max-width: 100%; line-height: 1.3;
-          display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        .ppl-row-hbadge.arife { background: #fde68a; color: #78350f; }
+        /* Tatil adı */
+        .ppl-row-hname {
+          font-size: 5.5pt; color: #c2410c; font-weight: 500; flex: 1;
+          overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
         }
-        /* ── Nöbet Kodu (ortalanmış) ── */
-        .ppl-badge {
-          position: absolute; top: 50%; left: 50%;
-          transform: translate(-50%, -42%);
-          text-align: center; width: 86%;
+        /* Nöbet kodu */
+        .ppl-row-shift {
+          font-size: 10pt; font-weight: 800; color: #0369a1;
+          min-width: 6mm; text-align: center; letter-spacing: 0.02em;
         }
-        .ppl-shift-code {
-          font-size: 13pt; font-weight: 800; color: #0369a1;
-          line-height: 1.15; word-break: break-word;
-          letter-spacing: 0.03em;
+        /* Görev/Alan etiketi */
+        .ppl-row-role {
+          font-size: 6pt; color: #64748b; font-weight: 600;
+          max-width: 22mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
         }
-        .ppl-shift-lbl {
-          font-size: 6.5pt; color: #64748b; margin-top: 0.8mm;
-          line-height: 1.3; word-break: break-word;
+        /* İzin kodu */
+        .ppl-row-leave {
+          font-size: 9.5pt; font-weight: 800; color: #be123c;
+          min-width: 6mm; text-align: center;
         }
-        /* ── İzin Kodu ── */
-        .ppl-leave-code {
-          font-size: 11pt; font-weight: 700; color: #be123c;
-          line-height: 1.2; word-break: break-word;
-        }
-        /* ── Çakışma ikaz rozeti ── */
-        .ppl-conflict-dot {
-          position: absolute; top: 2mm; right: 2mm;
-          width: 3mm; height: 3mm; border-radius: 50%;
-          background: #f59e0b;
+        /* Boş gün */
+        .ppl-row-empty { font-size: 8pt; color: #cbd5e1; }
+        /* Çakışma nokta */
+        .ppl-row-conflict {
+          width: 2.5mm; height: 2.5mm; border-radius: 50%;
+          background: #f59e0b; flex-shrink: 0;
         }
         /* ── Özet Şeridi ── */
         .ppl-summary {
-          margin-top: 4mm; border: 1.5px solid #cbd5e1; border-radius: 2mm;
-          padding: 3mm 8mm;
+          border: 1.5px solid #cbd5e1; border-radius: 2mm; padding: 2.5mm 6mm;
           display: flex; justify-content: space-around; align-items: center;
-          background: #f8fafc;
+          background: #f8fafc; margin-bottom: 2.5mm;
         }
         .ppl-summary-item { text-align: center; }
-        .ppl-summary-lbl  { font-size: 7.5pt; color: #64748b; margin-bottom: 0.5mm; letter-spacing: 0.03em; }
-        .ppl-summary-val  { font-size: 16pt; font-weight: 800; color: #0f172a; }
+        .ppl-summary-lbl  { font-size: 6.5pt; color: #64748b; margin-bottom: 0.4mm; letter-spacing: 0.04em; }
+        .ppl-summary-val  { font-size: 14pt; font-weight: 800; color: #0f172a; }
         .ppl-summary-val.pos { color: #0f766e; }
         .ppl-summary-val.neg { color: #be123c; }
-        .ppl-summary-sep  { width: 0.5px; height: 10mm; background: #cbd5e1; }
+        .ppl-summary-sep  { width: 0.5px; height: 8mm; background: #cbd5e1; }
+        /* ── Görev Dağılımı ── */
+        .ppl-areas {
+          display: flex; flex-wrap: wrap; gap: 1.5mm 5mm;
+          border: 1px solid #e2e8f0; border-radius: 2mm;
+          padding: 2mm 4mm; background: #f8fafc; margin-bottom: 2.5mm;
+        }
+        .ppl-areas-title { font-size: 6.5pt; font-weight: 700; color: #475569; margin-right: 3mm; align-self: center; }
+        .ppl-area-item { font-size: 7pt; color: #0f172a; }
+        .ppl-area-item strong { color: #0369a1; }
         /* ── Altbilgi ── */
         .ppl-footer {
-          margin-top: 2.5mm;
           display: flex; justify-content: space-between;
-          font-size: 7pt; color: #94a3b8;
+          font-size: 6.5pt; color: #94a3b8;
+        }
+        /* ── Renk Açıklaması ── */
+        .ppl-legend {
+          display: flex; gap: 4mm; flex-wrap: wrap; margin-bottom: 2.5mm;
+        }
+        .ppl-legend-item {
+          display: flex; align-items: center; gap: 1.2mm;
+          font-size: 6pt; color: #64748b;
+        }
+        .ppl-legend-dot {
+          width: 3mm; height: 3mm; border-radius: 0.7mm; flex-shrink: 0;
         }
       }
     `}</style>
@@ -2489,110 +2507,144 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
           <div className="ppl-header-month">{monthLabel}</div>
         </div>
         <div className="ppl-header-person">
-          Personel
-          <strong>{selectedPerson?.name || '—'}</strong>
+          <div className="ppl-header-person-lbl">Personel</div>
+          <div className="ppl-header-person-name">{selectedPerson?.name || '—'}</div>
         </div>
       </div>
 
-      {/* Haftanın günleri */}
-      <div className="ppl-weekdays">
-        {['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'].map((d, i) => (
-          <div key={d} className={`ppl-weekday${i >= 5 ? ' wknd' : ''}`}>{d}</div>
+      {/* 2 Sütunlu Gün Listesi */}
+      <div className="ppl-daylist">
+        {(() => {
+          const WD = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'];
+          return displayCells
+            .filter(c => c.inMonth)
+            .map(({ date: dt }) => {
+              const dayNum  = dt.getDate();
+              const dateStr = `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`;
+              const cellAssignments = assignmentsByDay.get(dayNum) || [];
+              const leaveRaw  = leavesForPerson[String(dayNum)] || leavesForPerson[dateStr];
+              const leaveCode = leaveRaw ? formatLeaveValue(leaveRaw) : '';
+              const holiday   = holidayMap[dateStr] || null;
+              const wd        = dt.getDay();
+              const isWknd    = wd === 0 || wd === 6;
+              const hasAssg   = cellAssignments.length > 0;
+              const hasConflict = hasAssg && !!leaveCode;
+              const primary   = cellAssignments[0];
+              const shiftToken = primary ? displayShiftToken(primary) : '';
+              const roleLabel  = primary ? String(primary?.roleLabel || primary?.rowLabel || '').trim() : '';
+              const showRole   = roleLabel && roleLabel !== shiftToken;
+              const holidayKind = String(holiday?.kind || '').toLowerCase();
+              const isArife = holidayKind === 'arife' || holidayKind === 'half';
+
+              let cls = 'ppl-row';
+              if (isWknd) cls += ' is-wknd';
+              if (holiday) cls += ' is-holiday';
+              if (hasConflict) cls += ' has-conflict';
+              else if (hasAssg) cls += ' has-assg';
+              else if (leaveCode) cls += ' has-leave';
+
+              return (
+                <div key={dateStr} className={cls}>
+                  <span className="ppl-row-daynum">{dayNum}</span>
+                  <span className="ppl-row-dayname">{WD[wd]}</span>
+                  {holiday && (
+                    <>
+                      <span className={`ppl-row-hbadge${isArife ? ' arife' : ''}`}>
+                        {isArife ? 'ARİFE' : 'TATİL'}
+                      </span>
+                      <span className="ppl-row-hname">{holiday.name}</span>
+                    </>
+                  )}
+                  {hasConflict && <span className="ppl-row-conflict" title="Nöbet + İzin çakışması" />}
+                  {hasAssg && (
+                    <>
+                      <span className="ppl-row-shift">{shiftToken || 'NÖBET'}</span>
+                      {showRole && <span className="ppl-row-role">{roleLabel}</span>}
+                    </>
+                  )}
+                  {!hasAssg && leaveCode && (
+                    <span className="ppl-row-leave">{leaveCode}</span>
+                  )}
+                  {!hasAssg && !leaveCode && !holiday && (
+                    <span className="ppl-row-empty">—</span>
+                  )}
+                </div>
+              );
+            });
+        })()}
+      </div>
+
+      {/* Renk Açıklaması */}
+      <div className="ppl-legend">
+        {[
+          { color: '#f0f9ff', label: 'Nöbet ataması' },
+          { color: '#fff1f2', label: 'İzin' },
+          { color: '#fffbeb', label: 'Nöbet + İzin çakışması' },
+          { color: '#fff7ed', label: 'Resmi tatil' },
+          { color: '#f8fafc', label: 'Hafta sonu' },
+        ].map(({ color, label }) => (
+          <div key={label} className="ppl-legend-item">
+            <div className="ppl-legend-dot" style={{ background: color, border: '0.5px solid #e2e8f0' }} />
+            {label}
+          </div>
         ))}
       </div>
 
-      {/* Takvim Izgarası */}
-      <div className="ppl-grid">
-        {displayCells.map(({ date: dt, inMonth }, idx) => {
-          if (!inMonth) {
-            return <div key={`out-${idx}`} className="ppl-cell outside-month" />;
-          }
-          const dayNum = dt.getDate();
-          const dateStr = `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`;
-          const cellAssignments = assignmentsByDay.get(dayNum) || [];
-          const leaveRaw = leavesForPerson[String(dayNum)] || leavesForPerson[dateStr];
-          const leaveCode = leaveRaw ? formatLeaveValue(leaveRaw) : '';
-          const holiday = holidayMap[dateStr] || null;
-          const isWknd = dt.getDay() === 0 || dt.getDay() === 6;
-          const hasAssg = cellAssignments.length > 0;
-          const hasConflict = hasAssg && !!leaveCode;
-          const primary = cellAssignments[0];
-          const shiftToken = primary ? displayShiftToken(primary) : '';
-          const roleLabel = primary ? String(primary?.roleLabel || primary?.rowLabel || '').trim() : '';
-          const showLabel = roleLabel && roleLabel !== shiftToken && roleLabel.length <= 22;
-
-          let cls = 'ppl-cell';
-          if (isWknd) cls += ' is-wknd';
-          if (holiday) cls += ' is-holiday';
-          if (hasConflict) cls += ' has-conflict';
-          else if (hasAssg) cls += ' has-assg';
-          else if (leaveCode) cls += ' has-leave';
-
-          return (
-            <div key={`d-${dayNum}`} className={cls}>
-              <div className="ppl-day-num">{dayNum}</div>
-              {holiday && (
-                <div className="ppl-holiday-lbl" title={holiday.name}>
-                  {holiday.name}
-                </div>
-              )}
-              {hasConflict && <div className="ppl-conflict-dot" title="Nöbet + İzin çakışması" />}
-              {hasAssg && (
-                <div className="ppl-badge">
-                  <div className="ppl-shift-code">{shiftToken || 'NÖBET'}</div>
-                  {showLabel && <div className="ppl-shift-lbl">{roleLabel}</div>}
-                </div>
-              )}
-              {!hasAssg && leaveCode && (
-                <div className="ppl-badge">
-                  <div className="ppl-leave-code">{leaveCode}</div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Ayın Özeti */}
+      {/* Özet */}
       {selectedPerson && (
         <div className="ppl-summary">
-          <div className="ppl-summary-item">
-            <div className="ppl-summary-lbl">Toplam Nöbet</div>
-            <div className="ppl-summary-val">
-              {[...assignmentsByDay.values()].reduce((s, a) => s + a.length, 0)}
-            </div>
-          </div>
-          <div className="ppl-summary-sep" />
-          <div className="ppl-summary-item">
-            <div className="ppl-summary-lbl">Gereken Saat</div>
-            <div className="ppl-summary-val">
-              {overtimeStats?.requiredFinal != null ? `${overtimeStats.requiredFinal}s` : '—'}
-            </div>
-          </div>
-          <div className="ppl-summary-sep" />
-          <div className="ppl-summary-item">
-            <div className="ppl-summary-lbl">Çalışılan Saat</div>
-            <div className="ppl-summary-val">
-              {overtimeStats?.worked != null ? `${overtimeStats.worked}s` : '—'}
-            </div>
-          </div>
-          <div className="ppl-summary-sep" />
-          <div className="ppl-summary-item">
-            <div className="ppl-summary-lbl">Fazla / Eksik</div>
-            <div className={`ppl-summary-val${overtimeStats?.overtime != null ? (overtimeStats.overtime >= 0 ? ' pos' : ' neg') : ''}`}>
-              {overtimeStats?.overtime != null
-                ? `${overtimeStats.overtime >= 0 ? '+' : ''}${overtimeStats.overtime}s`
-                : '—'}
-            </div>
-          </div>
+          {[
+            { lbl: 'Toplam Nöbet',    val: String([...assignmentsByDay.values()].reduce((s, a) => s + a.length, 0)), cls: '' },
+            { lbl: 'Aylık Gereken',   val: overtimeStats?.requiredBase != null ? `${overtimeStats.requiredBase}s` : '—', cls: '' },
+            { lbl: 'İzin Kredisi',    val: overtimeStats?.leaveCredit != null ? `${overtimeStats.leaveCredit}s` : '—', cls: '' },
+            { lbl: 'Kişinin Gerekeni',val: overtimeStats?.requiredFinal != null ? `${overtimeStats.requiredFinal}s` : '—', cls: '' },
+            { lbl: 'Çalıştığı Toplam',val: overtimeStats?.worked != null ? `${overtimeStats.worked}s` : '—', cls: '' },
+            {
+              lbl: 'Fazla Mesai',
+              val: overtimeStats?.overtime != null ? `${overtimeStats.overtime >= 0 ? '+' : ''}${overtimeStats.overtime}s` : '—',
+              cls: overtimeStats?.overtime != null ? (overtimeStats.overtime >= 0 ? ' pos' : ' neg') : '',
+            },
+          ].reduce((acc, item, i, arr) => {
+            acc.push(
+              <div key={item.lbl} className="ppl-summary-item">
+                <div className="ppl-summary-lbl">{item.lbl}</div>
+                <div className={`ppl-summary-val${item.cls}`}>{item.val}</div>
+              </div>
+            );
+            if (i < arr.length - 1) acc.push(<div key={`sep-${i}`} className="ppl-summary-sep" />);
+            return acc;
+          }, [])}
         </div>
       )}
 
+      {/* Görev / Alan Dağılımı */}
+      {(() => {
+        const areaMap = {};
+        for (const list of assignmentsByDay.values()) {
+          for (const a of list) {
+            const key = String(a?.roleLabel || a?.rowLabel || a?.shiftCode || '?').trim();
+            if (!areaMap[key]) areaMap[key] = { count: 0, hours: 0 };
+            areaMap[key].count++;
+            areaMap[key].hours += Number(a?.hours || 0);
+          }
+        }
+        const entries = Object.entries(areaMap).sort((a, b) => b[1].count - a[1].count);
+        if (!entries.length) return null;
+        return (
+          <div className="ppl-areas">
+            <span className="ppl-areas-title">Görev / Alan Dağılımı</span>
+            {entries.map(([area, { count, hours }]) => (
+              <span key={area} className="ppl-area-item">
+                <strong>{area}</strong> ({count} nöbet{hours > 0 ? `, ${hours}s` : ''})
+              </span>
+            ))}
+          </div>
+        );
+      })()}
+
       <div className="ppl-footer">
         <span>Hastane Nöbet Sistemi — Otomatik oluşturuldu</span>
-        <span>
-          {new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })}
-        </span>
+        <span>{new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
       </div>
     </div>
     </>
