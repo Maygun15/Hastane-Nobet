@@ -2373,34 +2373,35 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
       />
     </div>
 
-    {/* ─── BASKIYA ÖZEL: A4 Portre Nöbet Takvimi ──────────────────────── */}
+    {/* ─── BASKIYA ÖZEL: A4 Yatay (Landscape) Tam Sayfa Nöbet Takvimi ─── */}
     <style>{`
       @media screen { .person-print-layout { display: none !important; } }
       @media print {
-        @page { size: A4 portrait; margin: 10mm; }
+        @page { size: A4 landscape; margin: 7mm 8mm; }
         html, body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .person-screen-only { display: none !important; }
         .person-print-layout {
           display: block !important;
+          width: 100%;
           font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           color: #0f172a;
         }
         /* ── Başlık ── */
         .ppl-header {
           display: flex; align-items: flex-end; justify-content: space-between;
-          border-bottom: 2px solid #334155; padding-bottom: 4mm; margin-bottom: 3mm;
+          border-bottom: 2px solid #334155; padding-bottom: 3mm; margin-bottom: 3mm;
         }
-        .ppl-header-title { font-size: 13pt; font-weight: 700; color: #0f172a; line-height: 1.2; }
-        .ppl-header-month { font-size: 10pt; font-weight: 500; color: #475569; margin-top: 1mm; }
+        .ppl-header-title { font-size: 14pt; font-weight: 700; color: #0f172a; line-height: 1.2; }
+        .ppl-header-month { font-size: 10.5pt; font-weight: 500; color: #475569; margin-top: 1mm; }
         .ppl-header-person { text-align: right; font-size: 8pt; color: #64748b; }
-        .ppl-header-person strong { display: block; font-size: 11pt; font-weight: 700; color: #0f172a; }
+        .ppl-header-person strong { display: block; font-size: 13pt; font-weight: 800; color: #0f172a; letter-spacing: 0.02em; }
         /* ── Haftanın Günleri ── */
         .ppl-weekdays {
           display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 0;
         }
         .ppl-weekday {
-          text-align: center; font-size: 8pt; font-weight: 600; color: #334155;
-          padding: 1.5mm 0; border-bottom: 1.5px solid #334155;
+          text-align: center; font-size: 9pt; font-weight: 700; color: #334155;
+          padding: 2mm 0; border-bottom: 2px solid #334155; letter-spacing: 0.05em;
         }
         .ppl-weekday.wknd { color: #94a3b8; }
         /* ── Takvim Izgarası ── */
@@ -2410,7 +2411,7 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
         }
         .ppl-cell {
           border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1;
-          min-height: 24mm; position: relative; padding: 1.5mm 1.5mm 1mm;
+          min-height: 28mm; position: relative; padding: 2mm 2mm 1.5mm;
           background: #fff; page-break-inside: avoid;
         }
         .ppl-cell.outside-month { background: #f8fafc; }
@@ -2421,60 +2422,61 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
         .ppl-cell.has-conflict  { background: #fffbeb; }
         /* ── Gün Numarası ── */
         .ppl-day-num {
-          font-size: 8.5pt; font-weight: 700; color: #334155; line-height: 1;
+          font-size: 10pt; font-weight: 700; color: #334155; line-height: 1;
         }
         .ppl-cell.is-wknd .ppl-day-num { color: #94a3b8; }
         .ppl-cell.is-holiday .ppl-day-num { color: #c2410c; }
         /* ── Tatil Adı ── */
         .ppl-holiday-lbl {
-          font-size: 5pt; color: #c2410c; font-weight: 600;
-          margin-top: 0.5mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-          max-width: 100%; line-height: 1.2;
+          font-size: 6pt; color: #c2410c; font-weight: 600;
+          margin-top: 0.8mm; white-space: normal; overflow: hidden;
+          max-width: 100%; line-height: 1.3;
+          display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
         }
         /* ── Nöbet Kodu (ortalanmış) ── */
         .ppl-badge {
           position: absolute; top: 50%; left: 50%;
-          transform: translate(-50%, -45%);
-          text-align: center; width: 88%;
+          transform: translate(-50%, -42%);
+          text-align: center; width: 86%;
         }
         .ppl-shift-code {
-          font-size: 10.5pt; font-weight: 800; color: #0369a1;
+          font-size: 13pt; font-weight: 800; color: #0369a1;
           line-height: 1.15; word-break: break-word;
-          letter-spacing: 0.02em;
+          letter-spacing: 0.03em;
         }
         .ppl-shift-lbl {
-          font-size: 5.5pt; color: #64748b; margin-top: 0.5mm;
-          line-height: 1.2; word-break: break-word;
+          font-size: 6.5pt; color: #64748b; margin-top: 0.8mm;
+          line-height: 1.3; word-break: break-word;
         }
         /* ── İzin Kodu ── */
         .ppl-leave-code {
-          font-size: 9pt; font-weight: 700; color: #be123c;
+          font-size: 11pt; font-weight: 700; color: #be123c;
           line-height: 1.2; word-break: break-word;
         }
         /* ── Çakışma ikaz rozeti ── */
         .ppl-conflict-dot {
-          position: absolute; top: 1.5mm; right: 1.5mm;
+          position: absolute; top: 2mm; right: 2mm;
           width: 3mm; height: 3mm; border-radius: 50%;
           background: #f59e0b;
         }
         /* ── Özet Şeridi ── */
         .ppl-summary {
           margin-top: 4mm; border: 1.5px solid #cbd5e1; border-radius: 2mm;
-          padding: 2.5mm 5mm;
+          padding: 3mm 8mm;
           display: flex; justify-content: space-around; align-items: center;
           background: #f8fafc;
         }
         .ppl-summary-item { text-align: center; }
-        .ppl-summary-lbl  { font-size: 6.5pt; color: #64748b; margin-bottom: 0.5mm; }
-        .ppl-summary-val  { font-size: 13pt; font-weight: 800; color: #0f172a; }
+        .ppl-summary-lbl  { font-size: 7.5pt; color: #64748b; margin-bottom: 0.5mm; letter-spacing: 0.03em; }
+        .ppl-summary-val  { font-size: 16pt; font-weight: 800; color: #0f172a; }
         .ppl-summary-val.pos { color: #0f766e; }
         .ppl-summary-val.neg { color: #be123c; }
-        .ppl-summary-sep  { width: 0.5px; height: 8mm; background: #cbd5e1; }
+        .ppl-summary-sep  { width: 0.5px; height: 10mm; background: #cbd5e1; }
         /* ── Altbilgi ── */
         .ppl-footer {
           margin-top: 2.5mm;
           display: flex; justify-content: space-between;
-          font-size: 6pt; color: #94a3b8;
+          font-size: 7pt; color: #94a3b8;
         }
       }
     `}</style>
