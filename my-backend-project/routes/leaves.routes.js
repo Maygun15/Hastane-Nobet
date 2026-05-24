@@ -1,12 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const mongoose = require('mongoose');
 
 const Setting = require('../models/Setting');
 const Person = require('../models/Person');
 const LeaveBalance = require('../models/LeaveBalance');
 const LeaveType = require('../models/LeaveType');
+const Assignment = require('../models/Assignment');
 const { withHospitalFilter } = require('../middleware/hospital');
+const { checkConflict } = require('../services/validation.service');
 
 /**
  * İzin ekleme/silme işlemlerinde LeaveBalance.used alanını senkronize eder.
@@ -159,7 +160,8 @@ router.get('/', async (req, res) => {
 router.put('/', async (req, res) => {
   try {
     const role = String(req.user?.role || '').toLowerCase();
-    const serviceId = String(req.body?.serviceId || '').trim();
+    // Frontend her zaman serviceId='' gönderir; global boş bucket'ı kullan
+    const serviceId = '';
     const personId = String(req.body?.personId || '').trim();
     const year = Number(req.body?.year);
     const month = Number(req.body?.month);
@@ -184,17 +186,45 @@ router.put('/', async (req, res) => {
       }
     }
 
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const dateStr = `${year}-${pad2(month)}-${pad2(day)}`;
+    const force = String(req.body?.force || '').toLowerCase() === 'true' || req.body?.force === true;
+
+    // ── Çakışma Kontrolü (validation service üzerinden) ──────────────────────
+    if (!force) {
+      const conflicts = await checkConflict(String(person._id), dateStr, dateStr);
+      if (conflicts.length > 0) {
+        const shiftList = conflicts
+          .map((a) => String(a.shiftCode || a.roleLabel || 'Nöbet').trim())
+          .filter(Boolean)
+          .join(', ');
+        return res.status(409).json({
+          ok: false,
+          conflict: true,
+          error: 'Bu tarihler arasında personelin nöbeti bulunmaktadır. Lütfen önce nöbeti silin veya değiştirin.',
+          detail: `${dateStr} tarihinde aktif nöbet: ${shiftList}`,
+          assignments: conflicts.map((a) => ({
+            date: a.date,
+            shiftCode: a.shiftCode || '',
+            roleLabel: a.roleLabel || '',
+          })),
+        });
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Leave dokümanını oku (transaction dışı — okuma önce, yazma transaction içinde)
     let doc = await findLeavesDoc(req, serviceId);
     if (!doc) {
       doc = new Setting(withHospitalFilter(req, { key: 'leavesV2', serviceId, value: {} }));
     }
 
     const ym = monthKey(year, month);
-    const value = doc.value && typeof doc.value === 'object' ? doc.value : {};
+    const value = doc.value && typeof doc.value === 'object' ? { ...doc.value } : {};
     value[personId] ??= {};
     value[personId][ym] ??= {};
 
-    // Önceki kodu sakla — farklı ise bakiyeyi eski koddan geri al, yenisine ekle
+    // Önceki kodu sakla — bakiye senkronizasyonu için
     const prevEntry = value[personId][ym][String(day)];
     const prevCode  = prevEntry
       ? (typeof prevEntry === 'string' ? prevEntry : prevEntry?.code)
@@ -202,17 +232,26 @@ router.put('/', async (req, res) => {
     const upperCode = String(code).trim().toUpperCase();
 
     value[personId][ym][String(day)] = note ? { code, note } : { code };
+
+    // ── Nöbet sil (force) + izin kaydet ──────────────────────────────────────
+    if (force) {
+      // Çakışan aktif nöbetleri sil
+      await Assignment.deleteMany(
+        withHospitalFilter(req, { personId: String(person._id), date: dateStr, status: 'active' }),
+      );
+    }
     doc.value = value;
     doc.markModified('value');
     await doc.save();
+    // ─────────────────────────────────────────────────────────────────────────
 
-    // LeaveBalance senkronizasyonu (fire-and-forget, kaydetme engellenmesin)
+    // LeaveBalance senkronizasyonu (fire-and-forget, transaction dışı)
     if (prevCode !== upperCode) {
       if (prevCode) void syncLeaveBalance(req, personId, prevCode, year, -1);
       void syncLeaveBalance(req, personId, upperCode, year, +1);
     }
 
-    return res.json({ ok: true, key: doc.key, data: value[personId][ym] });
+    return res.json({ ok: true, key: doc.key, data: value[personId][ym], forced: force });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e.message || 'Leave kaydedilemedi' });
   }
@@ -225,7 +264,8 @@ router.delete('/', async (req, res) => {
       return res.status(403).json({ ok: false, error: 'Yetersiz yetki' });
     }
 
-    const serviceId = String(req.body?.serviceId || '').trim();
+    // Frontend her zaman serviceId='' gönderir; global boş bucket'ı kullan
+    const serviceId = '';
     const personId = String(req.body?.personId || '').trim();
     const year = Number(req.body?.year);
     const month = Number(req.body?.month);

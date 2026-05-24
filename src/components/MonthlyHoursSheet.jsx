@@ -1147,7 +1147,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
       </div>
 
       {/* Tablo */}
-      <div className="rounded-card border border-slate-200 bg-white overflow-auto shadow-card">
+      <div className="rounded-card border border-slate-200 bg-white overflow-x-auto shadow-card">
         <table className="min-w-full text-sm">
           <thead className="sticky top-0 z-10">
             <tr>
@@ -1166,20 +1166,20 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
             {(rows||[]).map((r,ri)=>(
               <tr key={r.tckn || r.adsoyad || ri} className="odd:bg-white even:bg-slate-50/50 hover:bg-blue-50/30 transition-colors">
                 <td className="px-2 py-1.5 border-r border-slate-100">
-                  <input className="border border-slate-200 rounded-chip px-2 py-1 w-16 text-sm" value={r?.sira ?? ""} onChange={(e)=>setField(ri,"sira",e.target.value)} />
+                  <input className="border border-slate-200 rounded-lg px-2 py-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 w-16 text-sm" value={r?.sira ?? ""} onChange={(e)=>setField(ri,"sira",e.target.value)} />
                 </td>
                 <td className="px-2 py-1.5 border-r border-slate-100">
-                  <input className="border border-slate-200 rounded-chip px-2 py-1 w-40 text-sm" value={r?.unvan ?? ""} onChange={(e)=>setField(ri,"unvan",e.target.value)} />
+                  <input className="border border-slate-200 rounded-lg px-2 py-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 w-40 text-sm" value={r?.unvan ?? ""} onChange={(e)=>setField(ri,"unvan",e.target.value)} />
                 </td>
                 <td className="px-2 py-1.5 border-r border-slate-100">
                   <input
-                    className="border border-slate-200 rounded-chip px-2 py-1 w-44 text-sm bg-slate-50 text-ink-muted"
+                    className="border border-slate-200 rounded-lg px-2 py-1.5 w-44 text-sm bg-slate-50/50 text-slate-500 cursor-default"
                     value={maskTC(r?.tckn ?? "")}
                     readOnly
                   />
                 </td>
                 <td className="px-2 py-1.5 border-r border-slate-100">
-                  <input className="border border-slate-200 rounded-chip px-2 py-1 w-56 text-sm" value={r?.adsoyad ?? ""} onChange={(e)=>setField(ri,"adsoyad",e.target.value)} />
+                  <input className="border border-slate-200 rounded-lg px-2 py-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 w-56 text-sm" value={r?.adsoyad ?? ""} onChange={(e)=>setField(ri,"adsoyad",e.target.value)} />
                 </td>
 
                 {(days||[]).map((d)=>{
@@ -1191,7 +1191,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
                     <td key={d.ymd} className={`px-1 py-1.5 text-center border-r border-slate-100 ${d.isWeekend ? "bg-blue-50" : ""} ${isSwapped ? "bg-orange-50" : ""}`}>
                       <div className="relative inline-block w-full">
                         <input
-                          className={`border rounded-chip px-1 py-1 text-center w-14 text-sm font-mono ${isSwapped ? "border-orange-300 bg-orange-50" : "border-slate-200"}`}
+                          className={`border rounded-lg px-2 py-1.5 text-center w-14 text-sm font-mono transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 ${isSwapped ? "border-orange-300 bg-orange-50" : "border-slate-200"}`}
                           placeholder={d.isWeekend ? "—" : ""}
                           value={r?.days?.[d.ymd] ?? ""}
                           onChange={(e)=>setCell(ri, d.ymd, e.target.value)}
@@ -1207,20 +1207,20 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
 
                 <td className="px-3 py-1.5 text-right font-semibold font-mono tabular-nums text-ink border-r border-slate-100">{fmt(r?.aylikCalistigiSaat)}</td>
                 <td className="px-2 py-1.5 border-r border-slate-100">
-                  <input className="border border-slate-200 rounded-chip px-2 py-1 text-right w-24 text-sm font-mono" value={r?.gecenAydanDevir ?? 0} onChange={(e)=>setField(ri,"gecenAydanDevir",num(e.target.value,0))}/>
+                  <input className="border border-slate-200 rounded-lg px-2 py-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 text-right w-24 text-sm font-mono" value={r?.gecenAydanDevir ?? 0} onChange={(e)=>setField(ri,"gecenAydanDevir",num(e.target.value,0))}/>
                 </td>
                 <td className="px-2 py-1.5 border-r border-slate-100">
-                  <input className="border border-slate-200 rounded-chip px-2 py-1 text-right w-24 text-sm font-mono" value={r?.gelecekAyaDevir ?? 0} onChange={(e)=>setField(ri,"gelecekAyaDevir",num(e.target.value,0))}/>
+                  <input className="border border-slate-200 rounded-lg px-2 py-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 text-right w-24 text-sm font-mono" value={r?.gelecekAyaDevir ?? 0} onChange={(e)=>setField(ri,"gelecekAyaDevir",num(e.target.value,0))}/>
                 </td>
                 <td className="px-2 py-1.5 border-r border-slate-100">
-                  <input className="border border-slate-200 rounded-chip px-2 py-1 text-right w-28 text-sm font-mono" value={r?.aylikCalisilacak ?? 168} onChange={(e)=>setField(ri,"aylikCalisilacak",num(e.target.value,168))}/>
+                  <input className="border border-slate-200 rounded-lg px-2 py-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 text-right w-28 text-sm font-mono" value={r?.aylikCalisilacak ?? 168} onChange={(e)=>setField(ri,"aylikCalisilacak",num(e.target.value,168))}/>
                 </td>
                 <td className="px-3 py-1.5 text-right font-semibold font-mono tabular-nums text-ink border-r border-slate-100">{fmt(r?.toplamCalisma)}</td>
                 <td className="px-2 py-1.5 border-r border-slate-100">
-                  <input className="border border-slate-200 rounded-chip px-2 py-1 text-right w-28 text-sm font-mono" value={r?.ucretNobet ?? 0} onChange={(e)=>setField(ri,"ucretNobet",num(e.target.value,0))}/>
+                  <input className="border border-slate-200 rounded-lg px-2 py-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 text-right w-28 text-sm font-mono" value={r?.ucretNobet ?? 0} onChange={(e)=>setField(ri,"ucretNobet",num(e.target.value,0))}/>
                 </td>
                 <td className="px-2 py-1.5">
-                  <input className="border border-slate-200 rounded-chip px-2 py-1 text-right w-32 text-sm font-mono" value={r?.birimDisi ?? 0} onChange={(e)=>setField(ri,"birimDisi",num(e.target.value,0))}/>
+                  <input className="border border-slate-200 rounded-lg px-2 py-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 text-right w-32 text-sm font-mono" value={r?.birimDisi ?? 0} onChange={(e)=>setField(ri,"birimDisi",num(e.target.value,0))}/>
                 </td>
               </tr>
             ))}

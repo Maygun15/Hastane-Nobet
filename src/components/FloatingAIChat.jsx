@@ -44,7 +44,7 @@ export default function FloatingAIChat({ activeYM, serviceName }) {
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? "AI Asistanı kapat" : "AI Asistanı aç"}
         title={open ? "Kapat" : "AI Asistan"}
-        className="fixed bottom-7 right-7 z-[9999] w-14 h-14 rounded-full border-none cursor-pointer flex items-center justify-center text-[26px] transition-all duration-200"
+        className="fixed bottom-7 right-7 z-[9998] w-14 h-14 rounded-full border-none cursor-pointer flex items-center justify-center text-[26px] transition-all duration-200"
         style={{
           background: open ? '#4f46e5' : '#6366f1',
           boxShadow: '0 8px 32px -8px rgba(99,102,241,0.65)',
@@ -58,7 +58,7 @@ export default function FloatingAIChat({ activeYM, serviceName }) {
       {/* Slide-out panel */}
       <div
         ref={panelRef}
-        className="fixed right-0 bottom-0 top-0 z-[9998] w-[400px] max-w-[92vw] flex flex-col bg-white"
+        className="fixed right-0 bottom-0 top-0 z-[9999] w-full md:w-[400px] max-w-[95vw] flex flex-col bg-white"
         style={{
           transform: open ? 'translateX(0)' : 'translateX(110%)',
           transition: 'transform 0.28s cubic-bezier(0.32,0,0,1)',

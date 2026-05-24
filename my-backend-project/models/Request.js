@@ -54,6 +54,8 @@ const RequestSchema = new mongoose.Schema({
   adminNote:    { type: String, default: '' },
   resolvedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   resolvedAt:   { type: Date, default: null },
+  // Onaylanan izin talebinin oluşturduğu izin kaydına referans
+  leaveRecordId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
   deletedAt:    { type: Date, default: null },
   deletedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   deletedReason:{ type: String, default: '' },

@@ -227,7 +227,7 @@ export default function TopBar() {
         <div className="hidden sm:flex items-center gap-2.5">
           <UserAvatar name={displayName} role={user.role} />
           <div className="min-w-0">
-            <div className="text-white text-[13px] font-medium leading-none truncate max-w-[140px]">
+            <div className="text-white text-[13px] font-medium leading-none truncate max-w-[140px]" title={displayName}>
               {displayName}
             </div>
             <div className="text-white/50 text-[10px] mt-0.5">{roleLabel}</div>

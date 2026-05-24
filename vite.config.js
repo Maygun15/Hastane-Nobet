@@ -25,9 +25,30 @@ export default defineConfig({
     include: ["src/**/*.test.{js,jsx}"],
   },
   server: {
+    host: "0.0.0.0",
     port: 5174,
+    strictPort: true,
     open: true,
+    hmr: {
+      protocol: "ws",
+      host: "localhost",
+      clientPort: 5174,
+    },
     proxy: {
+      // SSE stream için özel kural — compression devre dışı, timeout yok
+      '/api/notifications/stream': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        secure: false,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            proxyReq.setHeader('Accept-Encoding', 'identity');
+          });
+          proxy.on('error', (_err, _req, res) => {
+            try { res.end(); } catch {}
+          });
+        },
+      },
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,

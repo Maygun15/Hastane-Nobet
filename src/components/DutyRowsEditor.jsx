@@ -34,6 +34,7 @@ import {
   fetchPersonnel,
   validateBatchSchedule,
 } from "../api/apiAdapter.js";
+import { http } from "../lib/api.js";
 import { namedToAssignments, assignmentsToNamed } from "../utils/scheduleAdapter.js";
 import { createPlanWorkHourResolver } from "../utils/planWorkCalculator.js";
 import { runPlannerOnce } from "../lib/runPlannerOnce.js";
@@ -236,6 +237,46 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       };
     });
   }, [rows, roster, daysInMonth, shiftMetaByCode]);
+
+  /* Dinlenme kuralı ihlali: aynı personel arka arkaya 2 günde atanmışsa uyar */
+  const restViolationSet = useMemo(() => {
+    const set = new Set();
+    for (let dayIdx = 1; dayIdx < daysInMonth; dayIdx++) {
+      const prevNames = new Set();
+      for (const row of rosterDisplayRows) {
+        for (const nm of (row.namesByDay[dayIdx - 1] || [])) {
+          if (nm) prevNames.add(nm.trim().toLowerCase());
+        }
+      }
+      for (const row of rosterDisplayRows) {
+        for (const nm of (row.namesByDay[dayIdx] || [])) {
+          if (nm && prevNames.has(nm.trim().toLowerCase())) {
+            set.add(`${dayIdx + 1}|${nm.trim()}`);
+          }
+        }
+      }
+    }
+    return set;
+  }, [rosterDisplayRows, daysInMonth]);
+
+  /* Dinlenme kuralı ihlalleri — backend SSOT */
+  const [backendViolations, setBackendViolations] = useState([]);
+  const [violationsLoading, setViolationsLoading] = useState(false);
+
+  const fetchRestViolations = useCallback(async () => {
+    if (!year || !month1) return;
+    setViolationsLoading(true);
+    try {
+      const data = await http.get(`/api/duty-rules/rest-violations?year=${year}&month=${month1}`);
+      setBackendViolations(Array.isArray(data?.violations) ? data.violations : []);
+    } catch {
+      // Sessizce atla — uyarı kritik değil
+    } finally {
+      setViolationsLoading(false);
+    }
+  }, [year, month1]);
+
+  useEffect(() => { fetchRestViolations(); }, [fetchRestViolations]);
 
   /* Pinler (Sabitlenenler) */
   const [pins, setPins] = useState([]);
@@ -2065,9 +2106,6 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             )}
           </div>
         )}
-        <p className="mt-2 text-[11px] text-slate-500">
-          Not: Bu tablo <code>people/peopleV2</code>, <code>leaves/leavesV2</code>, <code>workAreas/workAreasV2</code> vb. anahtarlardan okunur; sonuç <code>scheduleRowsV2</code>’ye kaydedilir.
-        </p>
       </div>
       )}
 
@@ -2171,8 +2209,40 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             </div>
           )}
 
+          {/* Dinlenme Kuralı İhlali — Soft-error Banner */}
+          {backendViolations.length > 0 && (
+            <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 flex items-start gap-3">
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-white text-xs font-bold">!</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-amber-900">
+                  UYARI: {backendViolations.length} personel nöbet sonrası dinlenme süresinde!
+                </p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  Aşağıdaki personeller art arda iki günde aktif nöbete atanmış — 24 saat dinlenme kuralı ihlal edildi:
+                </p>
+                <ul className="mt-1.5 space-y-0.5">
+                  {backendViolations.slice(0, 5).map((v, i) => (
+                    <li key={i} className="text-xs text-amber-800 font-medium">
+                      • {v.personName} — {v.date1} ve {v.date2}
+                    </li>
+                  ))}
+                  {backendViolations.length > 5 && (
+                    <li className="text-xs text-amber-700">… ve {backendViolations.length - 5} ihlal daha</li>
+                  )}
+                </ul>
+              </div>
+              <button
+                onClick={fetchRestViolations}
+                disabled={violationsLoading}
+                className="shrink-0 text-xs text-amber-700 underline hover:text-amber-900 disabled:opacity-50"
+              >
+                {violationsLoading ? "…" : "Yenile"}
+              </button>
+            </div>
+          )}
+
           <div
-            className="overflow-auto rounded-card border border-slate-200 shadow-card"
+            className="overflow-x-auto rounded-card border border-slate-200 shadow-card"
             style={{ touchAction: 'pan-x pan-y', WebkitOverflowScrolling: 'touch' }}
           >
             <table className="min-w-[1600px] border-separate border-spacing-0 text-sm">
@@ -2258,13 +2328,20 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                           manualChangeCells.has(`${day}|${String(row.id).toUpperCase()}|`)
                         );
                         const isMarkedChanged = isSwapped || isManualChanged;
+                        const isRestViolation = !isMarkedChanged && !!name && restViolationSet.has(`${day}|${name.trim()}`);
                         return (
                           <td
                             key={`${row.id}-${slotIdx}-${day}`}
-                            title={isMarkedChanged ? `Güncellendi: ${name}` : (name ? name : "Atama yap")}
-                            className={`px-2 py-2.5 text-center align-middle text-sm relative cursor-pointer transition-colors ${
+                            title={
+                              isRestViolation ? `Dinlenme kuralı ihlali — ${name}` :
+                              isMarkedChanged ? `Güncellendi: ${name}` :
+                              (name ? name : "Atama yap")
+                            }
+                            className={`px-2 py-1.5 text-center align-middle text-sm relative cursor-pointer transition-colors ${
                               isMarkedChanged
                                 ? "bg-orange-50 ring-1 ring-inset ring-orange-300 hover:bg-orange-100"
+                                : isRestViolation
+                                ? "bg-amber-50 ring-1 ring-inset ring-amber-400 hover:bg-amber-100"
                                 : isWeekend ? "bg-blue-50/70 hover:bg-blue-100" : "hover:bg-sky-50"
                             } ${name ? "text-ink" : "text-slate-300"}`}
                             onClick={() => {
@@ -2284,6 +2361,9 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                             {name ? compactRosterDisplayName(name) : "·"}
                             {isMarkedChanged && (
                               <span className="absolute top-0.5 right-0.5 text-[8px] text-orange-500 font-bold leading-none">↺</span>
+                            )}
+                            {isRestViolation && (
+                              <span className="absolute bottom-0 left-0 right-0 text-[7px] text-amber-700 bg-amber-100 font-semibold leading-tight px-0.5 truncate">Dinlenme ihlali</span>
                             )}
                           </td>
                         );
@@ -2313,7 +2393,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             <select
               value={form.label}
               onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
-              className="w-full h-9 rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+              className="w-full h-9 rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
             >
               <option value="">Seçin…</option>
               {areaOptions.map((a) => (
@@ -2328,7 +2408,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             <select
               value={form.shiftCode}
               onChange={(e) => setForm((f) => ({ ...f, shiftCode: e.target.value }))}
-              className="w-full h-9 rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+              className="w-full h-9 rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
             >
               <option value="">Seçin…</option>
               {(shiftOptions || []).map((v) => (
@@ -2345,7 +2425,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
               min={0}
               value={form.defaultCount}
               onChange={(e) => setForm((f) => ({ ...f, defaultCount: Number(e.target.value || 0) }))}
-              className="w-full h-9 rounded-lg border-slate-300 text-sm text-center focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+              className="w-full h-9 rounded-lg border-slate-300 text-sm text-center focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
             />
           </div>
           <button onClick={addRow} className="h-9 px-4 rounded-lg bg-sky-600 text-white text-sm font-medium hover:bg-sky-700 transition-colors shadow-sm">
@@ -2398,7 +2478,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                       <input
                         type="number"
                         min={0}
-                        className="w-20 h-8 rounded border px-2 text-center"
+                        className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-center transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
                         value={Number(r.defaultCount || 0)}
                         onChange={(e) => {
                           const n = clampSingleSlotCount(e.target.value || 0);
@@ -2424,7 +2504,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                                   <input
                                     type="number"
                                     min={0}
-                                    className={`w-14 h-7 rounded border text-center ${locked ? "bg-slate-50 text-slate-400" : ""}`}
+                                    className={`w-14 rounded-lg border px-2 py-1.5 text-center transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 ${locked ? "border-slate-200 bg-slate-50/50 text-slate-500 cursor-not-allowed" : "border-slate-200"}`}
                                     value={value}
                                     onChange={(e) => {
                                       if (!locked) setCount(r.id, day, e.target.value);
@@ -2447,7 +2527,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                         <button
                           onClick={() => moveRow(r.id, "up")}
                           disabled={idx === 0}
-                          className="h-8 w-8 rounded border bg-white disabled:opacity-40"
+                          className="h-8 w-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors disabled:opacity-40"
                           title="Yukarı taşı"
                         >
                           <ArrowUp className="w-4 h-4" />
@@ -2455,24 +2535,24 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                         <button
                           onClick={() => moveRow(r.id, "down")}
                           disabled={idx === rows.length - 1}
-                          className="h-8 w-8 rounded border bg-white disabled:opacity-40"
+                          className="h-8 w-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors disabled:opacity-40"
                           title="Aşağı taşı"
                         >
                           <ArrowDown className="w-4 h-4" />
                         </button>
-                        <button className="h-8 w-8 rounded border bg-white" title="Kopyala" onClick={() => duplicateRow(r.id)}>
+                        <button className="h-8 w-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors" title="Kopyala" onClick={() => duplicateRow(r.id)}>
                           <Copy className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => setEditorRowId(isOpen ? null : r.id)}
-                          className={`h-8 w-8 rounded border ${isOpen ? "bg-slate-100" : "bg-white"}`}
+                          className={`h-8 w-8 rounded-lg border border-slate-200 transition-colors ${isOpen ? "bg-slate-100" : "bg-white hover:bg-slate-50"}`}
                           title="Satırı Düzenle"
                         >
                           <Settings className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => deleteRow(r.id)}
-                          className="h-8 w-8 rounded border bg-rose-50 text-rose-700"
+                          className="h-8 w-8 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors"
                           title="Sil"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -2489,7 +2569,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                             <div>
                               <label className="text-xs text-slate-500">Görev</label>
                               <select
-                                className="w-full h-9 rounded border px-2 mt-1"
+                                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 mt-1 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
                                 value={r.label}
                                 onChange={(e) => updateDef(r.id, { label: e.target.value })}
                               >
@@ -2504,7 +2584,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                             <div>
                               <label className="text-xs text-slate-500">Vardiya</label>
                               <select
-                                className="w-full h-9 rounded border px-2 mt-1"
+                                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 mt-1 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
                                 value={r.shiftCode}
                                 onChange={(e) => updateDef(r.id, { shiftCode: e.target.value })}
                               >
@@ -2521,7 +2601,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                               <input
                                 type="number"
                                 min={0}
-                                className="w-full h-9 rounded border px-2 mt-1"
+                                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 mt-1 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
                                 value={Number(r.defaultCount || 0)}
                                 onChange={(e) => {
                                   const n = clampSingleSlotCount(e.target.value || 0);
@@ -2538,7 +2618,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                                     key={i}
                                     type="number"
                                     min={0}
-                                    className="h-9 rounded border px-2 text-center"
+                                    className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-center transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
                                     value={isWeekendCol(i) && r.weekendOff ? 0 : val}
                                     onChange={(e) => !(isWeekendCol(i) && r.weekendOff) && setPatternValue(r.id, i, e.target.value)}
                                     disabled={isWeekendCol(i) && r.weekendOff}
@@ -2563,7 +2643,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                               <div className="mt-2 flex items-center gap-2">
                                 <label className="text-sm text-slate-600 shrink-0">Tatil politikası:</label>
                                 <select
-                                  className="h-8 rounded border px-2 text-sm"
+                                  className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
                                   value={r.holidayPolicy || 'none'}
                                   onChange={(e) => updateDef(r.id, { holidayPolicy: e.target.value })}
                                 >
@@ -2579,7 +2659,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                             <input
                               type="number"
                               min={0}
-                              className="w-20 h-9 rounded border px-2 text-center"
+                              className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-center transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
                               value={bulkVal}
                               onChange={(e) => setBulkVal(e.target.value)}
                             />

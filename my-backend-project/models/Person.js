@@ -43,6 +43,8 @@ personSchema.index({ hospitalId: 1, serviceId: 1 });
 personSchema.index({ hospitalId: 1, name: 1 });
 // Email lookup (kullanıcı bağlama)
 personSchema.index({ hospitalId: 1, email: 1 }, { sparse: true });
+// Auth lookup: userId + hospitalId (requests.routes.js Person.findOne({ userId }))
+personSchema.index({ hospitalId: 1, userId: 1 }, { sparse: true });
 applyHospitalScope(personSchema);
 
 module.exports = mongoose.models.Person || mongoose.model('Person', personSchema);

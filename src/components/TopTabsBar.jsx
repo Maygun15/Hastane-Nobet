@@ -285,7 +285,7 @@ export default function TopTabsBar({
                 className={`${baseCls} ${clickable} ${color}`}
                 title={isActive ? "Aktif sekme" : (disabled ? "Bu sekmeye erişiminiz yok" : "Sekmeye geç")}
               >
-                <span className="truncate max-w-[220px]">{t.title}</span>
+                <span className="truncate max-w-[220px]" title={t.title}>{t.title}</span>
                 {!disabled && (
                   <span className="flex items-center gap-1 ml-2">
                     <span

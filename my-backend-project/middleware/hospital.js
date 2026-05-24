@@ -152,6 +152,12 @@ function getHospitalContext() {
   return hospitalContext.getStore() || { hospitalId: null, role: '' };
 }
 
+// getHospitalContext() her zaman non-null döner (fallback nedeniyle).
+// Request context'inin gerçekten kurulup kurulmadığını anlamak için bu fonksiyon kullanılır.
+function hasHospitalContext() {
+  return hospitalContext.getStore() != null;
+}
+
 function withHospitalFilter(req, base = {}) {
   const filter = base && typeof base === 'object' ? { ...base } : {};
   // bypassHospitalFilter yalnızca route seviyesinde açıkça atandığında filtre atlanır.
@@ -179,6 +185,7 @@ module.exports = {
   applyHospitalContext,
   extractHospital,
   getHospitalContext,
+  hasHospitalContext,
   isSuperAdminRole,
   withHospitalFilter,
   withHospitalPipeline,

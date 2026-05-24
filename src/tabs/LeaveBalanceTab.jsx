@@ -1,13 +1,28 @@
 // src/tabs/LeaveBalanceTab.jsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MoreVertical } from "lucide-react";
 import { toast } from "sonner";
 import {
   getLeaveBalances,
   createLeaveBalance,
   updateLeaveBalance,
   deleteLeaveBalance,
-  patchLeaveBalanceUse,
 } from "../api/apiAdapter.js";
+import { setLeaveWithCheck } from "../lib/leaves.js";
+
+function getLeaveCode(item) {
+  try {
+    const raw = localStorage.getItem("leaveTypesV2");
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        const found = list.find((lt) => String(lt._id || lt.id || "") === String(item.leaveTypeId));
+        if (found?.code || found?.kisaltma) return (found.code || found.kisaltma).trim().toUpperCase();
+      }
+    }
+  } catch {}
+  return (item.leaveTypeName || "").trim().toUpperCase();
+}
 
 const THIS_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 6 }, (_, i) => THIS_YEAR - 2 + i);
@@ -56,6 +71,8 @@ export default function LeaveBalanceTab() {
   const [serviceFilter, setServiceFilter] = useState("");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const menuRef = useRef(null);
 
   // Edit modal state
   const [editItem, setEditItem] = useState(null);
@@ -65,7 +82,9 @@ export default function LeaveBalanceTab() {
   // "İzin Kullan" modal state
   const [useItem, setUseItem] = useState(null);
   const [useDays, setUseDays] = useState("");
+  const [useStartDate, setUseStartDate] = useState("");
   const [useSaving, setUseSaving] = useState(false);
+  const [useConflict, setUseConflict] = useState(null); // { detail, dates, code }
 
   const insufficientError = useMemo(() => {
     if (!useItem || useDays === "") return null;
@@ -76,21 +95,65 @@ export default function LeaveBalanceTab() {
     return null;
   }, [useItem, useDays]);
 
-  const openUse = (item) => { setUseItem(item); setUseDays(""); };
-  const closeUse = () => { setUseItem(null); setUseDays(""); };
+  const openUse = (item) => { setUseItem(item); setUseDays(""); setUseStartDate(""); setUseConflict(null); };
+  const closeUse = () => { setUseItem(null); setUseDays(""); setUseStartDate(""); setUseConflict(null); };
+
+  const buildDates = (startDateStr, days) => {
+    const dates = [];
+    const start = new Date(`${startDateStr}T00:00:00`);
+    for (let i = 0; i < days; i++) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      dates.push({ year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() });
+    }
+    return dates;
+  };
+
+  const saveLeaveDays = async ({ dates, code, force }) => {
+    if (!useItem) return;
+    const personId = String(useItem.personId || "").trim();
+    const personName = String(useItem.personName || "").trim();
+    for (const { year, month, day } of dates) {
+      await setLeaveWithCheck({ personId, personName, year, month, day, code, force });
+    }
+  };
 
   const handleUse = async () => {
     if (!useItem) return;
     if (insufficientError) { toast.error(insufficientError); return; }
+    if (!useStartDate) { toast.error("Başlangıç tarihi seçiniz"); return; }
     const days = Number(useDays);
+    const code = getLeaveCode(useItem);
+    if (!code) { toast.error("İzin türü kodu bulunamadı"); return; }
+    const dates = buildDates(useStartDate, days);
     setUseSaving(true);
+    setUseConflict(null);
     try {
-      await patchLeaveBalanceUse(useItem._id, days);
-      toast.success(`${days} gün izin kullanımı kaydedildi`);
+      await saveLeaveDays({ dates, code, force: false });
+      toast.success(`${days} gün izin kaydedildi`);
       closeUse();
       await load();
     } catch (err) {
-      toast.error(err?.message || "İzin kullanım kaydı başarısız");
+      if (err?.status === 409 && err?.data?.conflict) {
+        setUseConflict({ detail: err.data.detail || err.data.error || "Nöbet çakışması tespit edildi.", dates, code });
+      } else {
+        toast.error(err?.message || "İzin kaydı başarısız");
+      }
+    } finally {
+      setUseSaving(false);
+    }
+  };
+
+  const handleUseForce = async () => {
+    if (!useConflict || !useItem) return;
+    setUseSaving(true);
+    try {
+      await saveLeaveDays({ dates: useConflict.dates, code: useConflict.code, force: true });
+      toast.success(`${useConflict.dates.length} gün izin kaydedildi`);
+      closeUse();
+      await load();
+    } catch (err) {
+      toast.error(err?.message || "İzin kaydı başarısız");
     } finally {
       setUseSaving(false);
     }
@@ -106,6 +169,17 @@ export default function LeaveBalanceTab() {
     allocated: "",
   });
   const [createSaving, setCreateSaving] = useState(false);
+
+  useEffect(() => {
+    if (!openMenuId) return;
+    function handleOutside(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setOpenMenuId(null);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [openMenuId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -258,7 +332,7 @@ export default function LeaveBalanceTab() {
             <button
               type="button"
               onClick={openCreate}
-              className="inline-flex h-9 items-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800 transition-colors"
+              className="inline-flex h-9 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 transition-colors shadow-sm"
             >
               + Yeni Bakiye
             </button>
@@ -357,33 +431,43 @@ export default function LeaveBalanceTab() {
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="relative inline-block" ref={openMenuId === item._id ? menuRef : null}>
                           <button
                             type="button"
-                            onClick={() => openUse(item)}
-                            title={item.remaining <= 0 ? "Bakiye yetersiz" : "İzin günü kullan"}
-                            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                              item.remaining <= 0
-                                ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                                : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                            }`}
+                            onClick={() => setOpenMenuId(openMenuId === item._id ? null : item._id)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
                           >
-                            Kullan
+                            <MoreVertical className="h-4 w-4" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => openEdit(item)}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-                          >
-                            Düzenle
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(item)}
-                            className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors"
-                          >
-                            Sil
-                          </button>
+                          {openMenuId === item._id && (
+                            <div className="absolute right-0 top-9 z-20 min-w-[150px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                              <button
+                                type="button"
+                                onClick={() => { openUse(item); setOpenMenuId(null); }}
+                                className="flex w-full items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50"
+                              >
+                                <span className={`h-2 w-2 rounded-full ${item.remaining <= 0 ? "bg-amber-400" : "bg-emerald-400"}`} />
+                                İzin Kullan
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { openEdit(item); setOpenMenuId(null); }}
+                                className="flex w-full items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50"
+                              >
+                                <span className="h-2 w-2 rounded-full bg-blue-400" />
+                                Düzenle
+                              </button>
+                              <div className="my-1 border-t border-slate-100" />
+                              <button
+                                type="button"
+                                onClick={() => { handleDelete(item); setOpenMenuId(null); }}
+                                className="flex w-full items-center gap-2.5 px-3 py-2 text-[13px] text-red-600 hover:bg-red-50"
+                              >
+                                <span className="h-2 w-2 rounded-full bg-red-400" />
+                                Sil
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -579,19 +663,32 @@ export default function LeaveBalanceTab() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-[12px] font-semibold text-slate-600 mb-1.5">
-                Kullanılacak Gün Sayısı
-              </label>
-              <input
-                type="number"
-                min="1"
-                max={useItem.allocated}
-                value={useDays}
-                onChange={(e) => setUseDays(e.target.value)}
-                placeholder="Örn: 3"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[12px] font-semibold text-slate-600 mb-1.5">
+                  Başlangıç Tarihi
+                </label>
+                <input
+                  type="date"
+                  value={useStartDate}
+                  onChange={(e) => { setUseStartDate(e.target.value); setUseConflict(null); }}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                />
+              </div>
+              <div>
+                <label className="block text-[12px] font-semibold text-slate-600 mb-1.5">
+                  Gün Sayısı
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max={useItem.allocated}
+                  value={useDays}
+                  onChange={(e) => { setUseDays(e.target.value); setUseConflict(null); }}
+                  placeholder="Örn: 3"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                />
+              </div>
             </div>
 
             {/* Validation feedback */}
@@ -603,7 +700,7 @@ export default function LeaveBalanceTab() {
                 </svg>
                 <span>{insufficientError}</span>
               </div>
-            ) : useDays !== "" && Number(useDays) > 0 ? (
+            ) : useStartDate && useDays !== "" && Number(useDays) > 0 ? (
               <div className="text-xs text-slate-500">
                 İşlem sonrası kalan:{" "}
                 <strong className="text-emerald-600">
@@ -612,14 +709,34 @@ export default function LeaveBalanceTab() {
               </div>
             ) : null}
 
+            {/* Nöbet çakışma uyarısı */}
+            {useConflict && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+                <p className="text-sm font-medium text-amber-800">Bu tarihte aktif nöbet mevcut</p>
+                <p className="text-xs text-amber-700">{useConflict.detail}</p>
+                <button
+                  type="button"
+                  onClick={handleUseForce}
+                  disabled={useSaving}
+                  className="w-full rounded-lg bg-amber-600 px-3 py-2 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-60 transition-colors"
+                >
+                  {useSaving ? "Kaydediliyor…" : "Nöbeti Yoksay ve Tümünü Kaydet"}
+                </button>
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-2 pt-2">
               <button type="button" onClick={closeUse}
                 className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
                 Vazgeç
               </button>
-              <button type="button" onClick={handleUse} disabled={useSaving || !!insufficientError || useDays === ""}
-                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
-                {useSaving ? "Kaydediliyor..." : "Onayla"}
+              <button
+                type="button"
+                onClick={handleUse}
+                disabled={useSaving || !!insufficientError || useDays === "" || !useStartDate}
+                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {useSaving ? "Kaydediliyor..." : "İzni Kaydet"}
               </button>
             </div>
           </div>

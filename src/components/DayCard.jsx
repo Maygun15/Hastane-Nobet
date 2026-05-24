@@ -1,6 +1,6 @@
 // src/components/DayCard.jsx
 import React from "react";
-import { Plus, MoreVertical } from "lucide-react";
+import { CalendarX, Plus, MoreVertical } from "lucide-react";
 
 const dayNameTR = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
 
@@ -14,6 +14,7 @@ export default function DayCard({
   showCoverageStatus = true,
   isOutsideMonth = false,
   onAddShift,
+  onAddLeave,
   onRemoveShift,
   onEditShift,
   renderLeave,
@@ -31,7 +32,7 @@ export default function DayCard({
 
   return (
     <div
-      className={`relative min-h-[128px] rounded-xl border-2 p-2.5 flex flex-col transition-all ${
+      className={`print-compact-day relative min-h-[128px] rounded-xl border-2 p-2.5 flex flex-col transition-all ${
         isOutsideMonth
           ? "bg-slate-50/80 border-slate-200 text-slate-400"
           : hasConflict
@@ -127,27 +128,49 @@ export default function DayCard({
       </div>
 
       {/* Aksiyon Butonları */}
-      {!isOutsideMonth && !leaveCode && (
-        <div className="flex items-center gap-1 pt-1 border-t border-slate-100">
+      {!isOutsideMonth && (onAddShift || onAddLeave || onEditShift) && !leaveCode && (
+        <div className="no-print flex items-center gap-1 pt-1 border-t border-slate-100">
           {onAddShift && (
             <button
               onClick={onAddShift}
-              className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg bg-sky-100 hover:bg-sky-200 text-sky-700 text-xs font-medium transition-colors min-h-[36px]"
+              className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-2 rounded-lg bg-sky-100 hover:bg-sky-200 text-sky-700 text-xs font-medium transition-colors min-h-[32px]"
               title="Nöbet ekle"
             >
               <Plus className="w-3 h-3" />
               Nöbet
             </button>
           )}
+          {onAddLeave && (
+            <button
+              onClick={onAddLeave}
+              className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-2 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-medium transition-colors min-h-[32px]"
+              title="İzin ekle"
+            >
+              <CalendarX className="w-3 h-3" />
+              İzin
+            </button>
+          )}
           {onEditShift && (
             <button
               onClick={onEditShift}
-              className="px-2 py-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
+              className="px-2 py-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors min-h-[32px] min-w-[32px] flex items-center justify-center"
               title="İşlemler"
             >
               <MoreVertical className="w-3 h-3" />
             </button>
           )}
+        </div>
+      )}
+      {!isOutsideMonth && onAddLeave && leaveCode && (
+        <div className="no-print pt-1 border-t border-slate-100">
+          <button
+            onClick={onAddLeave}
+            className="w-full inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-[11px] font-medium transition-colors"
+            title="İzni düzenle"
+          >
+            <CalendarX className="w-3 h-3" />
+            İzni Düzenle
+          </button>
         </div>
       )}
 

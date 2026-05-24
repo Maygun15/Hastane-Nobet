@@ -1,6 +1,7 @@
 // routes/users.routes.js
-const express = require('express');
-const router  = express.Router();
+const express  = require('express');
+const router   = express.Router();
+const mongoose = require('mongoose');
 
 const crypto = require('crypto');
 const User    = require('../models/User');
@@ -206,19 +207,42 @@ router.get('/', requireAuth, async (req, res) => {
    PUT /api/users/:userId/link-person
 ---------------------------- */
 router.put('/:userId/link-person', requireAdmin, async (req, res) => {
+  const { personId } = req.body;
+  const session = await mongoose.startSession();
   try {
-    const { personId } = req.body;
-
-    await Person.updateMany(withHospitalFilter(req, { userId: req.params.userId }), { $set: { userId: null } });
-    await User.findOneAndUpdate(withHospitalFilter(req, { _id: req.params.userId }), { personId: null });
-
-    if (personId) {
-      await Person.findOneAndUpdate(withHospitalFilter(req, { _id: personId }), { userId: req.params.userId });
-      await User.findOneAndUpdate(withHospitalFilter(req, { _id: req.params.userId }), { personId });
-    }
+    await session.withTransaction(async () => {
+      await Person.updateMany(
+        withHospitalFilter(req, { userId: req.params.userId }),
+        { $set: { userId: null } },
+        { session }
+      );
+      await User.findOneAndUpdate(
+        withHospitalFilter(req, { _id: req.params.userId }),
+        { $set: { personId: null } },
+        { session }
+      );
+      if (personId) {
+        const linkedPerson = await Person.findOneAndUpdate(
+          withHospitalFilter(req, { _id: personId }),
+          { $set: { userId: req.params.userId } },
+          { session, new: true }
+        );
+        if (!linkedPerson) {
+          throw Object.assign(new Error('Personel bulunamadı veya bu hastaneye ait değil'), { status: 404 });
+        }
+        await User.findOneAndUpdate(
+          withHospitalFilter(req, { _id: req.params.userId }),
+          { $set: { personId } },
+          { session }
+        );
+      }
+    });
     res.json({ ok: true });
   } catch (err) {
+    console.error('PUT /link-person ERR:', err);
     res.status(500).json({ message: safeMessage(err) });
+  } finally {
+    session.endSession();
   }
 });
 
@@ -394,6 +418,19 @@ router.patch('/:id/profile', requireAuth, async (req, res) => {
       user.serviceIds = sid ? [sid] : [];
     }
     await user.save();
+
+    if (user.personId && (phone !== undefined || email !== undefined)) {
+      const personPatch = {};
+      if (phone !== undefined) personPatch.phone = phone || '';
+      if (email !== undefined) personPatch.email = email || '';
+      if (Object.keys(personPatch).length) {
+        await Person.findOneAndUpdate(
+          withHospitalFilter(req, { _id: user.personId }),
+          { $set: personPatch },
+          { new: false }
+        );
+      }
+    }
 
     return res.json({ ok: true });
   } catch (err) {
@@ -710,10 +747,18 @@ router.delete('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Kendi hesabını silemezsin' });
     }
 
-    const u = await User.findOneAndDelete(withHospitalFilter(req, { _id: id })).lean();
-    if (!u) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+    const exists = await User.findOne(withHospitalFilter(req, { _id: id })).lean();
+    if (!exists) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
 
-    try { await Person.deleteMany(withHospitalFilter(req, { userId: u._id })); } catch {}
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await User.findOneAndDelete(withHospitalFilter(req, { _id: id }), { session });
+        await Person.deleteMany(withHospitalFilter(req, { userId: exists._id }), { session });
+      });
+    } finally {
+      session.endSession();
+    }
 
     return res.json({ ok: true });
   } catch (err) {
@@ -852,6 +897,7 @@ router.post('/import.xlsx', requireAuth, uploadSpreadsheet, async (req, res) => 
 
       let user = await User.findOne(withHospitalFilter(req, query)).select('+passwordHash +password');
       const isNew = !user;
+      let rowTempPassword = null;
       if (!user) {
         user = new User({
           name: name || undefined,
@@ -865,11 +911,7 @@ router.post('/import.xlsx', requireAuth, uploadSpreadsheet, async (req, res) => 
         const tempPassword = crypto.randomBytes(4).toString('hex');
         await user.setPassword(tempPassword);
         user.mustChangePassword = true;
-        tempPasswords.push({
-          identifier: email || tc || phone,
-          tempPassword,
-          name: name || '',
-        });
+        rowTempPassword = { identifier: email || tc || phone, tempPassword, name: name || '' };
       } else {
         user.name = name || user.name;
         if (email) user.email = email;
@@ -880,35 +922,44 @@ router.post('/import.xlsx', requireAuth, uploadSpreadsheet, async (req, res) => 
         if (serviceIds.length) user.serviceIds = serviceIds;
       }
 
-      await user.save();
-
-      if (serviceId) {
-        const meta = {};
-        if (title) meta.title = title;
-        if (areaNames.length) {
-          meta.areas = areaNames;
-          meta.workAreas = areaNames;
-        }
-        if (shiftCodes.length) meta.shiftCodes = shiftCodes;
-        if (roleIn) meta.roleLabel = roleIn;
-
-        await Person.findOneAndUpdate(
-          withHospitalFilter(req, { userId: user._id, serviceId: String(serviceId) }),
-          {
-            $set: {
-              name: name || user.name || '',
-              tc: tc || user.tc || undefined,
-              phone: phone || user.phone || undefined,
-              email: email || user.email || undefined,
-              meta,
-            },
-          },
-          { upsert: true, new: true }
-        );
+      const meta = {};
+      if (title) meta.title = title;
+      if (areaNames.length) {
+        meta.areas = areaNames;
+        meta.workAreas = areaNames;
       }
+      if (shiftCodes.length) meta.shiftCodes = shiftCodes;
+      if (roleIn) meta.roleLabel = roleIn;
 
-      upserts++;
-      if (isNew) created++; else updated++;
+      const rowSession = await mongoose.startSession();
+      try {
+        await rowSession.withTransaction(async () => {
+          await user.save({ session: rowSession });
+          if (serviceId) {
+            await Person.findOneAndUpdate(
+              withHospitalFilter(req, { userId: user._id, serviceId: String(serviceId) }),
+              {
+                $set: {
+                  name: name || user.name || '',
+                  tc: tc || user.tc || undefined,
+                  phone: phone || user.phone || undefined,
+                  email: email || user.email || undefined,
+                  meta,
+                },
+              },
+              { upsert: true, new: true, session: rowSession }
+            );
+          }
+        });
+        if (rowTempPassword) tempPasswords.push(rowTempPassword);
+        upserts++;
+        if (isNew) created++; else updated++;
+      } catch (rowErr) {
+        console.error('import.xlsx row ERR:', rowErr);
+        errors.push({ row: r, message: safeMessage(rowErr, 'Satır kaydedilemedi') });
+      } finally {
+        rowSession.endSession();
+      }
     }
 
     res.json({ ok: true, upserts, created, updated, tempPasswords, errors });

@@ -15,7 +15,13 @@ const normalizeServiceId = (s) => {
 
 function buildSettingScopeFilter(req, key, serviceId) {
   const filter = { key, serviceId };
-  if (isSuperAdminRole(req.user?.role)) return filter;
+  if (isSuperAdminRole(req.user?.role)) {
+    // Superadmin with a specific hospital context → scope to that hospital
+    if (req.hospitalId) return { ...filter, hospitalId: req.hospitalId };
+    // No hospitalId (explicit cross-tenant admin query) → unscoped, but log it
+    console.warn('[settings] superadmin cross-tenant read', { key, serviceId, userId: req.user?.id || req.user?.uid });
+    return filter;
+  }
   if (!req.hospitalId) return withHospitalFilter(req, filter);
   return {
     ...filter,

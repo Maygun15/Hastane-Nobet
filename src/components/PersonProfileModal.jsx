@@ -88,21 +88,21 @@ export default function PersonProfileModal({ person, onClose }) {
               {/* Stat cards */}
               <div className="grid grid-cols-3 gap-3 mb-5">
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center">
-                  <div className="flex justify-center mb-1">
+                  <div className="flex justify-center items-center mb-1">
                     <Calendar className="h-4 w-4 text-sky-600" />
                   </div>
                   <div className="text-2xl font-bold text-slate-900">{totalCount}</div>
                   <div className="text-xs text-slate-500 mt-0.5">Toplam Nöbet</div>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center">
-                  <div className="flex justify-center mb-1">
+                  <div className="flex justify-center items-center mb-1">
                     <Activity className="h-4 w-4 text-emerald-600" />
                   </div>
                   <div className="text-2xl font-bold text-slate-900">{thisMonthCount}</div>
                   <div className="text-xs text-slate-500 mt-0.5">Bu Ay</div>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center">
-                  <div className="flex justify-center mb-1">
+                  <div className="flex justify-center items-center mb-1">
                     <Clock className="h-4 w-4 text-amber-600" />
                   </div>
                   <div className="text-2xl font-bold text-slate-900">{totalHours}</div>
@@ -132,7 +132,7 @@ export default function PersonProfileModal({ person, onClose }) {
                       {assignments.map((a, i) => (
                         <tr key={a._id || i} className="hover:bg-slate-50 transition">
                           <td className="px-4 py-2.5 text-slate-700 font-medium tabular-nums">{a.date || "-"}</td>
-                          <td className="px-4 py-2.5 text-slate-600">{a.serviceId || "-"}</td>
+                          <td className="px-4 py-2.5 text-slate-600 max-w-xs truncate" title={a.serviceId || "-"}>{a.serviceId || "-"}</td>
                           <td className="px-4 py-2.5">
                             {a.shiftCode ? (
                               <span className="inline-flex items-center rounded-full bg-sky-50 border border-sky-200 px-2 py-0.5 text-xs font-medium text-sky-700">
@@ -140,7 +140,7 @@ export default function PersonProfileModal({ person, onClose }) {
                               </span>
                             ) : "-"}
                           </td>
-                          <td className="px-4 py-2.5 text-slate-600 text-xs">{a.roleLabel || a.taskKey || "-"}</td>
+                          <td className="px-4 py-2.5 text-slate-600 text-xs max-w-xs truncate" title={a.roleLabel || a.taskKey || "-"}>{a.roleLabel || a.taskKey || "-"}</td>
                           <td className="px-4 py-2.5 text-right text-slate-700 tabular-nums">{a.hours || 0}</td>
                         </tr>
                       ))}

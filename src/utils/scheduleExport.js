@@ -42,3 +42,11 @@ export async function downloadExcel({ year, month, serviceId } = {}) {
     `nobetler-${year}-${String(month).padStart(2,'0')}.xlsx`
   );
 }
+
+export async function downloadIKExcel({ year, month } = {}) {
+  const pad2 = (n) => String(n).padStart(2, '0');
+  await downloadFile(
+    buildUrl('/api/schedules/export/excel-ik', { year, month }),
+    `ik-rapor-${year}-${pad2(month)}.xlsx`
+  );
+}

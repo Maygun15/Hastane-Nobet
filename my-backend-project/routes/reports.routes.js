@@ -39,6 +39,40 @@ router.get('/monthly-hours', requireRole('admin', 'authorized', 'staff'), async 
   }
 });
 
+// GET /api/reports/staff-performance?year=&month=&targetHours=
+// Returns per-person: totalShifts, totalHours, targetHours, targetDiff
+router.get('/staff-performance', requireRole('admin', 'authorized', 'staff'), async (req, res) => {
+  try {
+    const year  = Number(req.query.year)  || new Date().getFullYear();
+    const month = Number(req.query.month) || new Date().getMonth() + 1;
+    const targetHours = Number(req.query.targetHours) || 160;
+    const hid = toOid(req.hospitalId);
+    if (!hid) return res.status(400).json({ message: 'hospitalId gerekli' });
+
+    const agg = await Assignment.aggregate([
+      { $match: { hospitalId: hid, year, month, status: 'active' } },
+      { $group: {
+          _id: '$personId',
+          personName:   { $first: '$personName' },
+          serviceId:    { $first: '$serviceId' },
+          totalShifts:  { $sum: 1 },
+          totalHours:   { $sum: { $ifNull: ['$hours', 0] } },
+          nightShifts:  { $sum: { $cond: [{ $in: ['$shiftCode', ['N', 'V1', 'V2', 'SV']] }, 1, 0] } },
+          shiftCodes:   { $addToSet: '$shiftCode' },
+      }},
+      { $addFields: {
+          targetHours: targetHours,
+          targetDiff:  { $subtract: ['$totalHours', targetHours] },
+      }},
+      { $sort: { totalHours: -1 } },
+    ]);
+
+    res.json({ year, month, targetHours, data: agg });
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
+});
+
 // GET /api/reports/leave-stats?year=2025
 router.get('/leave-stats', requireRole('admin', 'authorized', 'staff'), async (req, res) => {
   try {

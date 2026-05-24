@@ -5,9 +5,12 @@ import { ThemeProvider } from "../context/ThemeContext.jsx";
 import {
   Calendar as CalendarIcon,
   ClipboardList,
+  Download,
   LogOut,
+  MoreVertical,
   Settings2,
   ShieldCheck,
+  Upload,
   UserRound,
 } from "lucide-react";
 
@@ -61,14 +64,31 @@ import { useDebouncedSetting } from "../hooks/useDebouncedSetting.js";
 import { fetchAllPages } from "../utils/fetchAllPages.js";
 import { useStoreEventBridge } from "../hooks/useStoreEventBridge.js";
 
-// Yedekleme butonları (yeni)
-import BackupButtons from "../components/BackupButtons.jsx";
+import { downloadBackup, restoreFromFile } from "../lib/backup.js";
 import PlanningManagementTab from "../tabs/PlanningManagementTab.jsx";
 import LeaveBalanceTab from "../tabs/LeaveBalanceTab.jsx";
 import OccupancyReportPage from "../pages/OccupancyReportPage.jsx";
 import WorkingHoursSummaryPage from "../pages/WorkingHoursSummaryPage.jsx";
 import LeaveStatsPage from "../pages/LeaveStatsPage.jsx";
 import AnnouncementModal from "../components/AnnouncementModal.jsx";
+
+let settingsBootstrapKey = "";
+let settingsBootstrapPromise = null;
+
+function loadSettingsSnapshotOnce(userId) {
+  const key = String(userId || "anonymous");
+  if (settingsBootstrapPromise && settingsBootstrapKey === key) return settingsBootstrapPromise;
+  settingsBootstrapKey = key;
+  settingsBootstrapPromise = Promise.all([
+    API.http.get(`/api/settings/workAreas?serviceId=`),
+    API.http.get(`/api/settings/workingHours?serviceId=`),
+    API.http.get(`/api/settings/leaveTypes?serviceId=`),
+    API.http.get(`/api/settings/requestBoxV1?serviceId=`),
+  ]).finally(() => {
+    settingsBootstrapPromise = null;
+  });
+  return settingsBootstrapPromise;
+}
 
 /* ---------------- URL yardımcıları ---------------- */
 function pushUrl(pathAndQuery) {
@@ -299,22 +319,16 @@ export default function HospitalRosterApp() {
   const lastSavedRequestBoxRef   = useRef(null);
 
   useEffect(() => {
-    const controller = new AbortController();
+    let alive = true;
     const token = getToken();
     if (!token) {
       settingsLoadedRef.current = true;
       return undefined;
     }
-    const fetchOpts = { signal: controller.signal };
     (async () => {
       try {
-        const [wa, wh, lt, rq] = await Promise.all([
-          API.http.get(`/api/settings/workAreas?serviceId=`, fetchOpts),
-          API.http.get(`/api/settings/workingHours?serviceId=`, fetchOpts),
-          API.http.get(`/api/settings/leaveTypes?serviceId=`, fetchOpts),
-          API.http.get(`/api/settings/requestBoxV1?serviceId=`, fetchOpts),
-        ]);
-        if (controller.signal.aborted) return;
+        const [wa, wh, lt, rq] = await loadSettingsSnapshotOnce(user?.id);
+        if (!alive) return;
         if (Array.isArray(wa?.value)) {
           const serialized = JSON.stringify(wa.value);
           lastSavedWorkAreasRef.current = serialized;
@@ -333,15 +347,15 @@ export default function HospitalRosterApp() {
           setRequestBox(rq.value);
         }
       } catch (err) {
-        if (err?.name === 'AbortError') return;
+        if (!alive) return;
         console.warn("Settings fetch failed:", err?.message || err);
       } finally {
-        if (!controller.signal.aborted) {
+        if (alive) {
           settingsLoadedRef.current = true;
         }
       }
     })();
-    return () => { controller.abort(); };
+    return () => { alive = false; };
   }, [user?.id]);
 
   /* ---- Backend ayar kayıtları (debounced + retry) ---- */
@@ -597,21 +611,14 @@ export default function HospitalRosterApp() {
                     </div>
                   </div>
 
-                  <div className="grid gap-3 lg:min-w-[460px]">
-                    {!isBasicUser && (
-                      <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 px-3 py-2.5">
-                        <BackupButtons compact />
-                      </div>
-                    )}
-
-                    <UserBadge
-                      user={user}
-                      onLogout={async () => {
-                        try { await logout?.(); } catch {}
-                      }}
-                      onChanged={refresh}
-                    />
-                  </div>
+                  <UserBadge
+                    user={user}
+                    isAdmin={isAdmin}
+                    onLogout={async () => {
+                      try { await logout?.(); } catch {}
+                    }}
+                    onChanged={refresh}
+                  />
                 </div>
               </div>
             </div>
@@ -631,39 +638,6 @@ export default function HospitalRosterApp() {
             />
 
             <main className="min-h-0 overflow-auto space-y-5">
-              <div className="rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-[0_18px_42px_-34px_rgba(15,23,42,0.24)]">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Hızlı Kısayollar</div>
-                    <div className="mt-1 text-lg font-semibold tracking-tight text-slate-950">Sık kullanılan işlemler</div>
-                    <p className="mt-1 text-sm text-slate-600">Yardımcı işlemleri üstte tutup, ana modülleri solda bırakarak gezinmeyi sadeleştirdik.</p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {canSeeAI && (
-                      <QuickActionBtn active={activeTab === "ai"} icon={() => <span className="text-sm">🤖</span>} onClick={openAI}>
-                        AI Asistan
-                      </QuickActionBtn>
-                    )}
-                    <QuickActionBtn
-                      active={activeTab === (isAdmin || isStaff ? "requests" : "myRequests")}
-                      icon={ClipboardList}
-                      onClick={openRequests}
-                    >
-                      Talepler
-                    </QuickActionBtn>
-                    <QuickActionBtn active={activeTab === "profile"} icon={UserRound} onClick={openProfile}>
-                      Profilim
-                    </QuickActionBtn>
-                    {!isBasicUser && (
-                      <div className="min-w-[240px] rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                        <BackupButtons compact />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
               <div className="space-y-6">
           {activeTab === "dashboard" && canSeeDashboard && (
             <DashboardPage
@@ -777,8 +751,8 @@ export default function HospitalRosterApp() {
           </div>
         </div>
 
-        {/* Floating AI Chat — her yerden erişilebilir, AI tab'ında gizle */}
-        {canSeeAI && activeTab !== "ai" && (
+        {/* Floating AI Chat — her zaman erişilebilir FAB */}
+        {canSeeAI && (
           <FloatingAIChat activeYM={ymKey(getActiveYM())} />
         )}
       </div>
@@ -787,15 +761,27 @@ export default function HospitalRosterApp() {
   );
 }
 
-/* ---------------- Sağ üst kullanıcı etiketi ---------------- */
-function UserBadge({ user, onLogout, onChanged }) {
+/* ---------------- Sağ üst kullanıcı etiketi + profil dropdown ---------------- */
+function UserBadge({ user, onLogout, onChanged, isAdmin }) {
   const [busy, setBusy] = React.useState(false);
   const [changeOpen, setChangeOpen] = React.useState(false);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const menuRef = React.useRef(null);
+  const fileInputRef = React.useRef(null);
   const forceChange = !!user?.mustChangePassword;
 
   React.useEffect(() => {
     if (forceChange) setChangeOpen(true);
   }, [forceChange]);
+
+  React.useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
 
   if (!user) return null;
   const email = user.email || user.username || user.name || "Kullanıcı";
@@ -805,14 +791,26 @@ function UserBadge({ user, onLogout, onChanged }) {
     role === "admin" ? "admin" :
     role === "authorized" || role === "manager" || role === "staff" ? "yetkili" : "user";
 
+  const handleLogout = async () => {
+    setMenuOpen(false);
+    if (!window.confirm("Çıkış yapmak istediğinize emin misiniz?")) return;
+    setBusy(true);
+    try {
+      await onLogout?.();
+    } finally {
+      setBusy(false);
+      try { window.history.pushState({}, "", "/"); window.dispatchEvent(new Event("urlchange")); } catch {}
+    }
+  };
+
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[22px] border border-slate-200 bg-white px-3 py-2.5">
+    <div className="flex items-center gap-2 rounded-[22px] border border-slate-200 bg-white px-3 py-2.5">
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
           <UserRound className="h-4 w-4" />
         </div>
         <div className="min-w-0">
-          <div className="truncate text-[13px] font-semibold text-slate-800 max-w-[240px]">{email}</div>
+          <div className="truncate text-[13px] font-semibold text-slate-800 max-w-[180px]">{email}</div>
           <div className="mt-1">
             <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium
               ${roleLabel === "admin" ? "bg-rose-100 text-rose-700"
@@ -824,36 +822,76 @@ function UserBadge({ user, onLogout, onChanged }) {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-1.5 ml-auto">
         <NotificationBell />
-        <button
-          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-100 transition-colors"
-          onClick={() => setChangeOpen(true)}
-          title="Şifre değiştir"
-        >
-          <Settings2 className="h-4 w-4" />
-          Şifre Değiştir
-        </button>
 
-        <button
-          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-60"
-          onClick={async () => {
-            if (busy) return;
-            if (!window.confirm("Çıkış yapmak istediğinize emin misiniz?")) return;
-            setBusy(true);
-            try {
-              await onLogout?.();
-            } finally {
-              setBusy(false);
-              try { window.history.pushState({}, "", "/"); window.dispatchEvent(new Event("urlchange")); } catch {}
-            }
-          }}
-          disabled={busy}
-          title="Çıkış yap"
-        >
-          <LogOut className="w-4 h-4" />
-          {busy ? "Çıkış yapılıyor…" : "Çıkış"}
-        </button>
+        {/* Profil menü butonu */}
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
+            title="Profil menüsü"
+          >
+            <MoreVertical className="h-4 w-4" />
+          </button>
+
+          {menuOpen && (
+            <div className="absolute right-0 top-full mt-2 w-56 rounded-2xl border border-slate-200 bg-white shadow-xl z-50 overflow-hidden py-1">
+              {/* Şifre Değiştir */}
+              <button
+                className="flex w-full items-center gap-2.5 px-4 py-2.5 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors"
+                onClick={() => { setMenuOpen(false); setChangeOpen(true); }}
+              >
+                <Settings2 className="h-4 w-4 text-slate-400" />
+                Şifre Değiştir
+              </button>
+
+              {isAdmin && (
+                <>
+                  <div className="my-1 border-t border-slate-100" />
+                  <div className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Sistem Yönetimi
+                  </div>
+                  <button
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors"
+                    onClick={() => { setMenuOpen(false); downloadBackup(); }}
+                  >
+                    <Download className="h-4 w-4 text-slate-400" />
+                    Yedeği İndir
+                  </button>
+                  <button
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors"
+                    onClick={() => { setMenuOpen(false); fileInputRef.current?.click(); }}
+                  >
+                    <Upload className="h-4 w-4 text-slate-400" />
+                    Yedekten Yükle
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) restoreFromFile(file);
+                      e.target.value = "";
+                    }}
+                  />
+                </>
+              )}
+
+              <div className="my-1 border-t border-slate-100" />
+              <button
+                className="flex w-full items-center gap-2.5 px-4 py-2.5 text-[13px] text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
+                onClick={handleLogout}
+                disabled={busy}
+              >
+                <LogOut className="h-4 w-4" />
+                {busy ? "Çıkış yapılıyor…" : "Çıkış Yap"}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <ChangePasswordModal open={changeOpen} onClose={() => setChangeOpen(false)} force={forceChange} onChanged={onChanged} />
@@ -1034,6 +1072,7 @@ function MyCalendarBox({ me, people = [], allLeaves = {}, workAreas = [], workin
           scheduleRole=""
           workAreas={workAreas}
           workingHours={workingHours}
+          leaveTypes={leaveTypes}
         />
       </div>
     </div>

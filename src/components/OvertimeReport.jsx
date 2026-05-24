@@ -24,6 +24,7 @@ import {
   createPlanShiftHourResolver,
   fetchGeneratedPlanAssignmentsForMonth,
 } from "../utils/overtimePlanTruth.js";
+import { exportToIKFormat } from "../api/apiAdapter.js";
 
 /* ================ Helpers ================ */
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -194,6 +195,7 @@ export default function OvertimeTab() {
   const [people, setPeople] = useState([]);
   const [holidays, setHolidays] = useState([]);
   const [leavesByPerson, setLeavesByPerson] = useState({}); // {personId: leaves[]}
+  const [ikExporting, setIkExporting] = useState(false);
   const [search, setSearch] = useState("");
   const fileRef = useRef(null);
   const dcount = daysInMonth(year, month);
@@ -514,6 +516,19 @@ export default function OvertimeTab() {
             }
           }} className="hidden" />
           <button onClick={exportExcel} className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"><FileSpreadsheet size={16} /> .xlsx Dışa Aktar</button>
+          <button
+            onClick={async () => {
+              setIkExporting(true);
+              try { await exportToIKFormat({ year, month }); }
+              catch (e) { alert(e?.message || "İK Excel indirilemedi"); }
+              finally { setIkExporting(false); }
+            }}
+            disabled={ikExporting}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+          >
+            <FileSpreadsheet size={16} />
+            {ikExporting ? "Hazırlanıyor…" : "İK Formatı"}
+          </button>
           <button onClick={gotoNext} className="p-2 rounded-xl hover:bg-slate-100"><ChevronRight size={18} /></button>
         </div>
       </div>
@@ -529,7 +544,8 @@ export default function OvertimeTab() {
       </div>
 
       {/* tablo */}
-      <div className="rounded-2xl border overflow-auto max-h-[calc(100vh-18rem)]">
+      {/* NOT: sticky left-[160px] "Adı Soyadı" sütununun offset'i, birinci sütunun min-w-[160px] değerine bağlıdır. Birinci sütun genişliği değiştirilirse bu değer de güncellenmeli. */}
+      <div className="rounded-2xl border overflow-x-auto max-h-[calc(100vh-18rem)]">
         <table className="min-w-full text-xs md:text-sm">
           <thead>
             <tr className="bg-slate-100 text-slate-700 text-sm sticky top-0 z-10">

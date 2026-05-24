@@ -763,3 +763,40 @@ export async function patchLeaveBalanceUse(id, days) {
 export async function deleteLeaveBalance(id) {
   return httpRequest(`/api/leave-balances/${id}`, { method: 'DELETE' });
 }
+
+// ─── İK EXPORT ──────────────────────────────────────────────────────────────
+
+export async function exportToIKFormat({ year, month, standardHours } = {}) {
+  const now = new Date();
+  const y = year  ?? now.getFullYear();
+  const m = month ?? now.getMonth() + 1;
+  const qs = new URLSearchParams({ year: y, month: m });
+  if (standardHours != null) qs.set('standardHours', standardHours);
+
+  const token = LS.get('token') || '';
+  const base  = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE) || '';
+  const url   = `${base}/api/schedules/export/excel-ik?${qs}`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    credentials: 'include',
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const err  = new Error(body?.message || `İK Excel indirilemedi (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+
+  const blob     = await res.blob();
+  const pad2     = (n) => String(n).padStart(2, '0');
+  const filename = `ik-rapor-${y}-${pad2(m)}.xlsx`;
+  const link     = document.createElement('a');
+  link.href      = URL.createObjectURL(blob);
+  link.download  = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
+}

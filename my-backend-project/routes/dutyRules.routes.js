@@ -436,4 +436,18 @@ router.post('/calculate-hours', requireRole('admin', 'yetkili'), async (req, res
   }
 });
 
+// GET /api/duty-rules/rest-violations?year=&month=
+// Ay içindeki tüm '24 saat dinlenme' ihlallerini döner (ardışık 2 günde aynı personel)
+router.get('/rest-violations', requireRole('admin', 'authorized', 'staff'), async (req, res) => {
+  try {
+    const year  = Number(req.query.year)  || new Date().getFullYear();
+    const month = Number(req.query.month) || new Date().getMonth() + 1;
+    const { findRestViolations } = require('../services/dutyRules');
+    const violations = await findRestViolations({ hospitalId: req.hospitalId, year, month });
+    res.json({ ok: true, year, month, count: violations.length, violations });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: safeMessage(err, 'İhlal sorgulaması başarısız') });
+  }
+});
+
 module.exports = router;

@@ -1929,6 +1929,150 @@ router.get('/export/excel', requireAuth, requireRole('admin', 'authorized'), asy
 });
 
 /* =========================================================
+   GET /api/schedules/export/excel-ik
+   Kurumsal İK Formatı — personel başına tek satır özet Excel
+   Kolonlar: Ad Soyad | Servis | Toplam Nöbet | Toplam Saat | İzin (türe göre) | Toplam İzin
+========================================================= */
+router.get('/export/excel-ik', requireAuth, requireRole('admin', 'authorized'), async (req, res) => {
+  try {
+    const year  = Number(req.query.year  || new Date().getFullYear());
+    const month = Number(req.query.month || new Date().getMonth() + 1);
+    const hid   = req.hospitalId;
+    if (!hid) return res.status(400).json({ ok: false, message: 'hospitalId eksik' });
+
+    const mongoose = require('mongoose');
+    const Setting  = require('../models/Setting');
+
+    // ── 1. Atamaları personel bazında topla ───────────────────────────────
+    const mongoose_oid = (id) => { try { return new mongoose.Types.ObjectId(String(id)); } catch { return null; } };
+    const hoid = mongoose_oid(hid);
+    const assignAgg = hoid
+      ? await Assignment.aggregate([
+          { $match: { hospitalId: hoid, year, month, status: 'active' } },
+          { $group: {
+              _id: '$personId',
+              personName:  { $first: '$personName' },
+              serviceId:   { $first: '$serviceId' },
+              totalShifts: { $sum: 1 },
+              totalHours:  { $sum: { $ifNull: ['$hours', 0] } },
+          }},
+          { $sort: { personName: 1 } },
+        ])
+      : [];
+
+    // ── 2. İzinleri personel bazında topla (leavesV2 Setting) ─────────────
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const ym   = `${year}-${pad2(month)}`;
+    const leaveDoc = await Setting.findOne({ hospitalId: hid, key: 'leavesV2', serviceId: '' }).lean();
+    const allLeaves = leaveDoc?.value && typeof leaveDoc.value === 'object' ? leaveDoc.value : {};
+
+    // personId → { total: N, byCode: { Y:2, R:1 ... } }
+    const leaveMap = {};
+    for (const [pid, byMonth] of Object.entries(allLeaves)) {
+      const monthData = byMonth?.[ym];
+      if (!monthData || typeof monthData !== 'object') continue;
+      const byCode = {};
+      for (const entry of Object.values(monthData)) {
+        const code = typeof entry === 'string' ? entry : entry?.code;
+        if (!code) continue;
+        byCode[code] = (byCode[code] || 0) + 1;
+      }
+      leaveMap[pid] = { total: Object.values(byCode).reduce((a, b) => a + b, 0), byCode };
+    }
+
+    // ── 3. Tüm benzersiz izin kodlarını bul (kolon başlıkları için) ───────
+    const allLeaveCodes = [...new Set(
+      Object.values(leaveMap).flatMap((l) => Object.keys(l.byCode))
+    )].sort();
+
+    // ── 4. Excel yaz ──────────────────────────────────────────────────────
+    const TR_MONTHS = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran',
+                       'Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+    const monthLabel = `${TR_MONTHS[month - 1]} ${year}`;
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Hastane Nöbet Sistemi';
+    const ws = wb.addWorksheet(`İK — ${monthLabel}`);
+
+    // Standart aylık saat (haftalık 40s × ortalama 4.33 hafta ≈ 173; veya sabit 160)
+    const standardMonthlyHours = Number(req.query.standardHours) || 160;
+
+    // Sabit kolonlar
+    const cols = [
+      { header: 'Ad Soyad',          key: 'personName',    width: 28 },
+      { header: 'Servis',             key: 'serviceId',     width: 18 },
+      { header: 'Toplam Nöbet',       key: 'shifts',        width: 14 },
+      { header: 'Toplam Saat',        key: 'hours',         width: 14 },
+      { header: 'Fazla Mesai Saati',  key: 'overtimeHours', width: 18 },
+      ...allLeaveCodes.map((c) => ({ header: `İzin (${c})`, key: `lv_${c}`, width: 12 })),
+      { header: 'Toplam İzin',        key: 'totalLeave',    width: 14 },
+    ];
+    ws.columns = cols;
+
+    // Başlık stili
+    ws.getRow(1).eachCell((cell) => {
+      cell.font  = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } };
+      cell.alignment = { horizontal: 'center' };
+    });
+
+    // Satırları yaz — ataması olanlar
+    const added = new Set();
+    assignAgg.forEach((a, i) => {
+      const lv = leaveMap[String(a._id)] || { total: 0, byCode: {} };
+      const row = {
+        personName:    a.personName || '—',
+        serviceId:     a.serviceId  || '—',
+        shifts:        a.totalShifts,
+        hours:         a.totalHours,
+        overtimeHours: Math.max(0, (a.totalHours || 0) - standardMonthlyHours),
+        totalLeave:    lv.total,
+        ...Object.fromEntries(allLeaveCodes.map((c) => [`lv_${c}`, lv.byCode[c] || 0])),
+      };
+      ws.addRow(row);
+      if (i % 2 === 1) {
+        ws.getRow(i + 2).eachCell((cell) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F5FF' } };
+        });
+      }
+      added.add(String(a._id));
+    });
+
+    // İzni olan ama ataması olmayanlar (sıfır nöbet)
+    let extraIdx = assignAgg.length;
+    for (const [pid, lv] of Object.entries(leaveMap)) {
+      if (added.has(pid)) continue;
+      const row = {
+        personName:    pid,
+        serviceId:     '—',
+        shifts:        0,
+        hours:         0,
+        overtimeHours: 0,
+        totalLeave:    lv.total,
+        ...Object.fromEntries(allLeaveCodes.map((c) => [`lv_${c}`, lv.byCode[c] || 0])),
+      };
+      ws.addRow(row);
+      if (extraIdx % 2 === 1) {
+        ws.getRow(extraIdx + 2).eachCell((cell) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F5FF' } };
+        });
+      }
+      extraIdx++;
+    }
+
+    ws.autoFilter = { from: 'A1', to: ws.getColumn(cols.length).letter + '1' };
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="ik-rapor-${year}-${pad2(month)}.xlsx"`);
+    await wb.xlsx.write(res);
+    return res.end();
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: err?.message || 'İK Excel oluşturma hatası' });
+  }
+});
+
+/* =========================================================
    GET /api/schedules/assignments
    Assignment koleksiyonundan aylık atama listesi döner.
    Tüm ekranlar için SSOT okuma ucu. scheduleRowsV2/generatedRosterFlat

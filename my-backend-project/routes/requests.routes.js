@@ -1,6 +1,7 @@
 // routes/requests.routes.js
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Request = require('../models/Request');
 const Person = require('../models/Person');
 const MonthlySchedule = require('../models/MonthlySchedule');
@@ -16,7 +17,7 @@ const {
 } = require('../services/notificationService');
 const { replaceAssignmentsForSchedule } = require('../services/assignmentSyncService');
 const { suggestSwaps } = require('../services/swapSuggestionService');
-const { withHospitalFilter, isSuperAdminRole } = require('../middleware/hospital');
+const { withHospitalFilter, isSuperAdminRole, getHospitalContext } = require('../middleware/hospital');
 const ScheduleRules = require('../models/ScheduleRules');
 const { validateAssignment } = require('../utils/rulesValidator');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
@@ -25,68 +26,86 @@ const safeMessage = (err, fallback = 'Sunucu hatası') =>
 const REQUEST_STATUS = new Set(['pending', 'approved', 'rejected', 'deleted']);
 const SOFT_DELETE_KEEP_DAYS = 180;
 
-/* ── İzin onaylandığında leaves/Setting'e yaz ── */
-async function applyLeaveRange(request) {
-  const { fromPersonId, targetDate, targetDateEnd, serviceId, message, leaveTypeCode } = request;
-  if (!fromPersonId || !targetDate) return;
+/* ── İzin onayını transaction içinde atomic yap ──
+ *
+ * Replica-set varsa gerçek MongoDB transaction kullanır; yoksa CAS-first
+ * sequential fallback ile çalışır ve başarısız yazma durumunda request
+ * durumunu previousStatus'a geri alır (compensation).
+ *
+ * Dönüş: { updated: RequestDoc|null, error: null|'CONFLICT'|string }
+ */
+async function approveLeaveWithTransaction(req, request, previousStatus, adminNote, actorUserId) {
+  const { fromPersonId, targetDate, targetDateEnd, serviceId, message, leaveTypeCode, hospitalId: hid } = request;
+
+  if (!fromPersonId || !targetDate || !hid) {
+    const upd = await Request.findOneAndUpdate(
+      withHospitalFilter(req, { _id: request._id, status: previousStatus }),
+      { $set: { status: 'approved', adminNote: adminNote || '', resolvedBy: actorUserId, resolvedAt: new Date() } },
+      { new: true }
+    );
+    return { updated: upd, error: upd ? null : 'CONFLICT' };
+  }
 
   const leaveCode = String(leaveTypeCode || 'YILLIK').trim().toUpperCase();
   const start = new Date(`${String(targetDate).slice(0, 10)}T00:00:00`);
   const end   = new Date(`${String(targetDateEnd || targetDate).slice(0, 10)}T00:00:00`);
-  if (isNaN(start) || isNaN(end) || end < start) return;
-  const MAX_LEAVE_DAYS = 365;
+  if (isNaN(start) || isNaN(end) || end < start) {
+    return { updated: null, error: 'Geçersiz tarih aralığı' };
+  }
   const dayDiff = Math.round((end - start) / 86_400_000);
-  if (dayDiff >= MAX_LEAVE_DAYS) return; // inclusive günler 365'i aşmamalı
+  if (dayDiff >= 365) return { updated: null, error: 'İzin aralığı çok uzun (max 365 gün)' };
 
-  // Günleri aya göre grupla
+  const totalDays = dayDiff + 1;
+  const year = start.getFullYear();
+  const pid  = String(fromPersonId);
+  // Frontend her zaman /api/leaves?serviceId= (boş) ile okur.
+  // request.serviceId ne olursa olsun, her zaman boş bucket'a yaz.
+  const sid  = '';
+
   const byMonth = {};
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const y = d.getFullYear();
-    const m = d.getMonth() + 1;
-    const day = d.getDate();
+    const y  = d.getFullYear();
+    const m  = d.getMonth() + 1;
     const mk = `${y}-${String(m).padStart(2, '0')}`;
-    (byMonth[mk] ??= []).push(day);
+    (byMonth[mk] ??= []).push(d.getDate());
   }
+  const entry = message ? { code: leaveCode, note: String(message).slice(0, 200) } : { code: leaveCode };
 
-  const pid = String(fromPersonId);
-  const sid = String(serviceId || '');
+  const leaveType     = await LeaveType.findOne({ hospitalId: hid, code: leaveCode }).lean();
+  const leaveTypeId   = leaveType ? String(leaveType._id) : leaveCode;
+  const leaveTypeName = leaveType?.name || leaveCode;
 
-  for (const [monthKey, days] of Object.entries(byMonth)) {
-    // hospitalScope plugin otomatik hospitalId ekler
-    let doc = await Setting.findOne({ key: 'leavesV2', serviceId: sid });
-    if (!doc) {
-      doc = new Setting({ key: 'leavesV2', serviceId: sid, value: {} });
+  const startStr = start.toISOString().slice(0, 10);
+  const endStr   = end.toISOString().slice(0, 10);
+
+  let updatedRequest;
+  let settingDocId;
+
+  async function writeLeaves(sess) {
+    for (const [monthKey, days] of Object.entries(byMonth)) {
+      const docFilter = { hospitalId: hid, key: 'leavesV2', serviceId: sid };
+      let doc = sess
+        ? await Setting.findOne(docFilter).session(sess)
+        : await Setting.findOne(docFilter);
+
+      if (!doc) {
+        doc = new Setting({ hospitalId: hid, key: 'leavesV2', serviceId: sid, value: {} });
+      }
+
+      const value = doc.value && typeof doc.value === 'object' ? { ...doc.value } : {};
+      value[pid] ??= {};
+      value[pid][monthKey] ??= {};
+      for (const day of days) value[pid][monthKey][String(day)] = entry;
+      doc.value = value;
+      doc.markModified('value');
+      await doc.save(sess ? { session: sess } : undefined);
+      settingDocId ??= doc._id;
     }
-    const value = doc.value && typeof doc.value === 'object' ? { ...doc.value } : {};
-    value[pid] ??= {};
-    value[pid][monthKey] ??= {};
-    const entry = message ? { code: leaveCode, note: String(message).slice(0, 200) } : { code: leaveCode };
-    for (const day of days) value[pid][monthKey][String(day)] = entry;
-    doc.value = value;
-    doc.markModified('value');
-    await doc.save();
   }
 
-  // LeaveBalance güncelle — atomik $inc ile race condition önlenir
-  try {
-    const totalDays = Math.round((end - start) / 86_400_000) + 1;
-    const year = start.getFullYear();
-    const hid = request.hospitalId;
-    if (!hid) throw new Error('hospitalId zorunlu (izin bakiyesi)');
-
-
-    const leaveType = await LeaveType.findOne({ hospitalId: hid, code: leaveCode });
-    const leaveTypeId = leaveType ? String(leaveType._id) : leaveCode;
-    const leaveTypeName = leaveType?.name || leaveCode;
-
-    const filter = { hospitalId: hid, personId: pid, leaveTypeId, year };
-
-    // TEK atomik pipeline update:
-    //   Adım 1 — $ifNull ile yeni döküman varsayılan değerleri + used artışı
-    //   Adım 2 — remaining = allocated - used (Adım 1'deki güncel değerler üzerinden)
-    // İki ayrı write arası race condition yok; allocated değişse de remaining doğru kalır.
+  async function writeBalance(sess) {
     await LeaveBalance.findOneAndUpdate(
-      filter,
+      { hospitalId: hid, personId: pid, leaveTypeId, year },
       [
         {
           $set: {
@@ -100,20 +119,118 @@ async function applyLeaveRange(request) {
             used:          { $add:    [{ $ifNull: ['$used', 0] }, totalDays] },
           },
         },
-        {
-          $set: {
-            remaining: { $max: [0, { $subtract: ['$allocated', '$used'] }] },
-          },
-        },
+        { $set: { remaining: { $max: [0, { $subtract: ['$allocated', '$used'] }] } } },
       ],
-      { upsert: true, new: true }
+      sess ? { upsert: true, new: true, session: sess } : { upsert: true, new: true }
     );
-  } catch (e) {
-    console.error('[leave-balance-update] ERR:', e?.message || e);
   }
+
+  async function casRequest(sess) {
+    const upd = await Request.findOneAndUpdate(
+      withHospitalFilter(req, { _id: request._id, status: previousStatus }),
+      {
+        $set: {
+          status:        'approved',
+          adminNote:     adminNote || '',
+          resolvedBy:    actorUserId,
+          resolvedAt:    new Date(),
+          leaveRecordId: settingDocId || null,
+        },
+      },
+      sess ? { new: true, session: sess } : { new: true }
+    );
+    if (!upd) throw Object.assign(new Error('Talep durumu değişti, lütfen sayfayı yenileyin'), { code: 'CONFLICT' });
+    updatedRequest = upd;
+  }
+
+  let session;
+  try {
+    session = await mongoose.startSession();
+    await session.withTransaction(async () => {
+      await writeLeaves(session);
+      await writeBalance(session);
+      await casRequest(session);
+    });
+  } catch (txErr) {
+    if (txErr?.code === 'CONFLICT') {
+      if (session) await session.endSession().catch(() => {});
+      return { updated: null, error: 'CONFLICT' };
+    }
+
+    const isNoReplicaSet = txErr?.codeName === 'IllegalOperation'
+      || txErr?.message?.includes('Transaction')
+      || txErr?.message?.includes('replica');
+
+    if (isNoReplicaSet) {
+      // Standalone MongoDB: CAS önce, ardından yazma (compensation pattern)
+      console.warn('[leave-approve] Transaction desteği yok, standalone fallback kullanılıyor');
+      try {
+        const upd = await Request.findOneAndUpdate(
+          withHospitalFilter(req, { _id: request._id, status: previousStatus }),
+          { $set: { status: 'approved', adminNote: adminNote || '', resolvedBy: actorUserId, resolvedAt: new Date() } },
+          { new: true }
+        );
+        if (!upd) {
+          if (session) await session.endSession().catch(() => {});
+          return { updated: null, error: 'CONFLICT' };
+        }
+        updatedRequest = upd;
+
+        await writeLeaves(null);
+        await writeBalance(null);
+
+        if (settingDocId) {
+          await Request.updateOne(
+            withHospitalFilter(req, { _id: request._id }),
+            { $set: { leaveRecordId: settingDocId } }
+          );
+          updatedRequest.leaveRecordId = settingDocId;
+        }
+      } catch (fbErr) {
+        // Compensation: Request durumunu geri al
+        if (updatedRequest) {
+          await Request.updateOne(
+            withHospitalFilter(req, { _id: request._id }),
+            { $set: { status: previousStatus, adminNote: '' } }
+          ).catch((e) => console.error('[leave-approve][fallback-revert] ERR:', e?.message || e));
+        }
+        // Compensation: writeLeaves tarafından yazılan izin günlerini geri al
+        if (settingDocId) {
+          try {
+            const lDoc = await Setting.findById(settingDocId);
+            if (lDoc?.value && typeof lDoc.value === 'object') {
+              const val = { ...lDoc.value };
+              for (const [mk, mDays] of Object.entries(byMonth)) {
+                if (val[pid]?.[mk]) {
+                  for (const d of mDays) delete val[pid][mk][String(d)];
+                  if (!Object.keys(val[pid][mk]).length) delete val[pid][mk];
+                }
+              }
+              if (val[pid] && !Object.keys(val[pid]).length) delete val[pid];
+              lDoc.value = val;
+              lDoc.markModified('value');
+              await lDoc.save();
+            }
+          } catch (revertLeavesErr) {
+            console.error('[leave-approve][fallback-revert-leaves] ERR:', revertLeavesErr?.message || revertLeavesErr);
+          }
+        }
+        if (session) await session.endSession().catch(() => {});
+        return { updated: null, error: 'İşlem sırasında hata oluştu, bakiye güncellenemedi' };
+      }
+    } else {
+      console.error('[leave-approve] Transaction rollback:', txErr?.message);
+      if (session) await session.endSession().catch(() => {});
+      return { updated: null, error: 'İşlem sırasında hata oluştu, bakiye güncellenemedi' };
+    }
+  }
+
+  if (session) await session.endSession().catch(() => {});
+
+  return { updated: updatedRequest, error: null };
 }
 
-/* ── İzin geri alındığında/reddedildiğinde LeaveBalance'ı geri al ── */
+/* ── İzin geri alındığında/reddedildiğinde LeaveBalance + leavesV2 geri al ── */
 async function revertLeaveBalance(request) {
   const { fromPersonId, targetDate, targetDateEnd, leaveTypeCode, hospitalId: hid } = request;
   if (!fromPersonId || !targetDate) return;
@@ -125,17 +242,43 @@ async function revertLeaveBalance(request) {
 
   const totalDays = Math.round((end - start) / 86_400_000) + 1;
   const year = start.getFullYear();
-  const pid = String(fromPersonId);
+  const pid  = String(fromPersonId);
 
-  const leaveType = await LeaveType.findOne({ hospitalId: hid, code: leaveCode });
+  // LeaveBalance geri al — negatife düşmesin
+  const leaveType   = await LeaveType.findOne({ hospitalId: hid, code: leaveCode });
   const leaveTypeId = leaveType ? String(leaveType._id) : leaveCode;
+  await LeaveBalance.updateOne(
+    { hospitalId: hid, personId: pid, leaveTypeId, year },
+    [
+      { $set: { used: { $max: [0, { $subtract: ['$used', totalDays] }] } } },
+      { $set: { remaining: { $subtract: ['$allocated', '$used'] } } },
+    ]
+  );
 
-  const filter = { hospitalId: hid, personId: pid, leaveTypeId, year };
-  // used negatife düşmesin — pipeline update ile atomik
-  await LeaveBalance.updateOne(filter, [
-    { $set: { used: { $max: [0, { $subtract: ['$used', totalDays] }] } } },
-    { $set: { remaining: { $subtract: ['$allocated', '$used'] } } },
-  ]);
+  // leavesV2 Setting'den izin günlerini sil
+  const byMonth = {};
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    (byMonth[mk] ??= []).push(d.getDate());
+  }
+  try {
+    const lDoc = await Setting.findOne({ hospitalId: hid, key: 'leavesV2', serviceId: '' });
+    if (lDoc?.value && typeof lDoc.value === 'object') {
+      const val = { ...lDoc.value };
+      for (const [mk, days] of Object.entries(byMonth)) {
+        if (val[pid]?.[mk]) {
+          for (const d of days) delete val[pid][mk][String(d)];
+          if (!Object.keys(val[pid][mk]).length) delete val[pid][mk];
+        }
+      }
+      if (val[pid] && !Object.keys(val[pid]).length) delete val[pid];
+      lDoc.value = val;
+      lDoc.markModified('value');
+      await lDoc.save();
+    }
+  } catch (err) {
+    console.error('[leave-revert] leavesV2 silme hatası:', err?.message || err);
+  }
 }
 
 /* ── Takas yardımcıları ── */
@@ -538,7 +681,6 @@ async function executeSwap(request) {
     }
   } else {
     // İki farklı ay dokümanı — okuma + yazma transaction içinde; write conflict'e karşı güvenli
-    const mongoose = require('mongoose');
     let session;
     let syncFromDoc, syncToDoc;
     try {
@@ -843,7 +985,29 @@ router.put('/:id', requireAuth, async (req, res) => {
       }
     }
 
-    // Atomic CAS: aynı anda iki onay gelirse ikincisi 409 alır
+    const isLeaveRequest = requestType === 'izin';
+    const hasStatusChange = previousStatus !== String(status);
+    const actorName = req.user?.name || req.user?.email || 'Yetkili';
+
+    // İzin onayı → transaction içinde atomic: CAS + Setting yazma + LeaveBalance güncelleme
+    if (isLeaveRequest && hasStatusChange && status === 'approved') {
+      const { updated, error } = await approveLeaveWithTransaction(
+        req, request, previousStatus, adminNote, req.user._id
+      );
+      if (error === 'CONFLICT') {
+        return res.status(409).json({ message: 'Talep durumu değişti, lütfen sayfayı yenileyin' });
+      }
+      if (error) {
+        return res.status(500).json({ message: error });
+      }
+      request = updated;
+      void sendLeaveApproved({ request, actorName }).catch((e) => {
+        console.error('[notify][leave-approved] ERR:', e?.message || e);
+      });
+      return res.json({ ok: true, request });
+    }
+
+    // Diğer durum değişiklikleri için standart atomic CAS
     const updatedRequest = await Request.findOneAndUpdate(
       withHospitalFilter(req, { _id: req.params.id, status: previousStatus }),
       { $set: { status, adminNote: adminNote || '', resolvedBy: req.user._id, resolvedAt: new Date() } },
@@ -852,21 +1016,10 @@ router.put('/:id', requireAuth, async (req, res) => {
     if (!updatedRequest) {
       return res.status(409).json({ message: 'Talep durumu değişti, lütfen sayfayı yenileyin' });
     }
-    request = updatedRequest; // CAS sonrası güncel dokümanı kullan
-
-    const isLeaveRequest = requestType === 'izin';
-    const hasStatusChange = previousStatus !== String(status);
-    const actorName = req.user?.name || req.user?.email || 'Yetkili';
+    request = updatedRequest;
 
     if (hasStatusChange && status === 'approved') {
-      if (isLeaveRequest) {
-        void applyLeaveRange(request).catch((e) => {
-          console.error('[leave-apply] ERR:', e?.message || e);
-        });
-        void sendLeaveApproved({ request, actorName }).catch((e) => {
-          console.error('[notify][leave-approved] ERR:', e?.message || e);
-        });
-      } else if (isSwapRequest && !request.swapExecuted) {
+      if (isSwapRequest && !request.swapExecuted) {
         try {
           const executed = await executeSwap(request);
           if (executed) {

@@ -130,7 +130,7 @@ function normalizeLeaves(raw) {
   return out;
 }
 
-function emitLeavesChanged() {
+export function emitLeavesChanged() {
   try { window.dispatchEvent(new Event("leaves:changed")); } catch {}
 }
 
@@ -158,7 +158,7 @@ export async function loadLeavesFromBackend() {
     })
     .catch((err) => {
       console.warn("Leaves fetch failed:", err?.message || err);
-      leavesLoaded = true;
+      // leavesLoaded intentionally NOT set — allows retry on next call
       return leavesCache;
     })
     .finally(() => {
@@ -232,6 +232,41 @@ export function setLeave({ personId, personName, year, month, day, code, note })
     body: { personId: pid, year: Y, month: M1, day: D, code: c, ...(note ? { note } : {}), serviceId: "" },
   }).catch((err) => console.warn("leave PUT failed:", err?.message));
 
+  emitLeavesChanged();
+}
+
+/**
+ * Çakışma kontrolü yaparak izin kaydeder. Optimistik değil — backend cevabı bekler.
+ * 409 çakışmada err.status===409 ve err.data.conflict===true ile fırlatır.
+ */
+export async function setLeaveWithCheck({ personId, personName, year, month, day, code, note, force = false }) {
+  void personName;
+  const pidRaw = personId ?? "";
+  const pid = typeof pidRaw === "string" ? pidRaw : String(pidRaw);
+  const Y = toInt(year);
+  const M1 = toInt(month);
+  const D = toInt(day);
+  const c = typeof code === "string" ? code.trim() : String(code ?? "").trim();
+
+  if (!pid || !Number.isFinite(Y) || !Number.isFinite(M1) || !Number.isFinite(D) || !c) {
+    throw new Error("Geçersiz parametre");
+  }
+  const token = getToken();
+  if (!token) throw new Error("Oturum açılı değil");
+
+  await API.http.req(`/api/leaves`, {
+    method: "PUT",
+    body: { personId: pid, year: Y, month: M1, day: D, code: c, ...(note ? { note } : {}), serviceId: "", ...(force ? { force: true } : {}) },
+  });
+
+  // Backend başarılı — şimdi yerel önbelleği güncelle
+  const ym = ymKey(Y, M1);
+  leavesCache[pid] ??= {};
+  leavesCache[pid][ym] ??= {};
+  leavesCache[pid][ym][String(D)] = note ? { code: c, note } : { code: c };
+  leavesLoaded = true;
+  leavesDirty = true;
+  scheduleSave();
   emitLeavesChanged();
 }
 

@@ -35,13 +35,10 @@ MonthlyScheduleSchema.index(
 );
 // BSON 16MB limitine karşı koruma — Mixed data alanı büyük hastanelerde şişebilir
 MonthlyScheduleSchema.pre('save', function checkBsonSize(next) {
-  try {
-    const bson = require('bson');
-    const size = bson.calculateObjectSize(this.toObject());
-    if (size > 12 * 1024 * 1024) { // 12MB — 16MB limitinin altında uyar
-      return next(new Error(`Çizelge belgesi çok büyük (${Math.round(size / 1024)}KB). Lütfen aralığı küçültün.`));
-    }
-  } catch { /* bson paketi yoksa atla */ }
+  const approxBytes = Buffer.byteLength(JSON.stringify(this.toObject()), 'utf8');
+  if (approxBytes > 12 * 1024 * 1024) {
+    return next(new Error(`Çizelge belgesi çok büyük (${Math.round(approxBytes / 1024 / 1024)}MB). Lütfen aralığı küçültün.`));
+  }
   return next();
 });
 

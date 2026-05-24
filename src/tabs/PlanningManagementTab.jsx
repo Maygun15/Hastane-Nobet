@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import {
   Calendar, ChevronRight, Clock, Flag, LayoutList, Plus,
   RefreshCw, Search, Trash2, X, CheckCircle2, Circle,
-  AlertCircle, BarChart2, Pencil, ChevronLeft, ChevronDown,
+  AlertCircle, BarChart2, Pencil, ChevronLeft,
 } from "lucide-react";
 import {
   getPlannings, getPlanning, createPlanning, updatePlanning, deletePlanning,
@@ -371,17 +371,16 @@ function PlanningCard({ p, selected, onSelect, onEdit, onDelete, deleting }) {
         <Badge meta={PRIORITY_META} value={p.priority} />
       </div>
       {(p.startDate || p.endDate) && (
-        <div className="flex items-center gap-1 text-[11px] text-slate-400 mb-3">
-          <Clock size={11} />{p.startDate} → {p.endDate}
+        <div className="flex items-center gap-1 text-[10px] text-slate-400 mb-2">
+          <Clock size={10} />
+          <span>{p.startDate}{p.endDate && p.startDate ? " → " : ""}{p.endDate}</span>
         </div>
       )}
-      <div className="space-y-1">
-        <div className="flex justify-between text-[11px] text-slate-500">
-          <span>{stats.total || 0} görev</span>
-          <span>{stats.progress || 0}%</span>
-        </div>
+      <div className="space-y-1.5">
         <ProgressBar value={stats.progress || 0} />
-        <div className="text-[10px] text-slate-400">{stats.completed || 0} tamamlandı · {(stats.total || 0) - (stats.completed || 0)} kaldı</div>
+        <div className="text-[10px] text-slate-400">
+          {stats.completed || 0}/{stats.total || 0} görev · %{stats.progress || 0} tamamlandı
+        </div>
       </div>
     </div>
   );
@@ -390,54 +389,82 @@ function PlanningCard({ p, selected, onSelect, onEdit, onDelete, deleting }) {
 // ─── Görev Satırı ────────────────────────────────────────────────────────────
 
 function TaskRow({ task, onStatusChange, onEdit, onDelete, saving }) {
-  const [open, setOpen] = useState(false);
   const isSaving = saving === task._id;
   const isCompleted = task.status === "completed";
+  const statusMeta = TASK_STATUS_META[task.status] || TASK_STATUS_META.todo;
 
   return (
     <div className={`rounded-xl border p-3 transition-colors ${isCompleted ? "bg-slate-50 border-slate-100" : "bg-white border-slate-200"}`}>
       <div className="flex items-start gap-2">
+        {/* Checkbox: hızlı todo↔completed toggle */}
         <button
           onClick={() => onStatusChange(task, isCompleted ? "todo" : "completed")}
           disabled={isSaving}
           className="mt-0.5 shrink-0 text-slate-300 hover:text-emerald-500 disabled:opacity-40 transition-colors"
+          title={isCompleted ? "Yapılacak olarak işaretle" : "Tamamlandı olarak işaretle"}
         >
-          {isCompleted ? <CheckCircle2 size={16} className="text-emerald-500" /> : <Circle size={16} />}
+          {isCompleted
+            ? <CheckCircle2 size={16} className="text-emerald-500" />
+            : <Circle size={16} />}
         </button>
+
         <div className="flex-1 min-w-0">
-          <div className={`text-[13px] font-medium ${isCompleted ? "line-through text-slate-400" : "text-slate-800"}`}>{task.title}</div>
-          {task.description && <div className="text-[11px] text-slate-400 mt-0.5 truncate">{task.description}</div>}
-          <div className="flex flex-wrap items-center gap-2 mt-1.5">
-            <Badge meta={TASK_STATUS_META} value={task.status} />
+          <div className={`text-[13px] font-medium ${isCompleted ? "line-through text-slate-400" : "text-slate-800"}`}>
+            {task.title}
+          </div>
+          {task.description && (
+            <div className="text-[11px] text-slate-400 mt-0.5 truncate">{task.description}</div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+            {/* Status: inline select, badge görünümünde */}
+            <select
+              value={task.status}
+              onChange={(e) => onStatusChange(task, e.target.value)}
+              disabled={isSaving}
+              title="Durumu değiştir"
+              className={`text-[11px] font-medium rounded-full px-2 py-0.5 cursor-pointer appearance-none border-0 focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:opacity-60 ${statusMeta.cls}`}
+            >
+              <option value="todo">Yapılacak</option>
+              <option value="in-progress">Devam Ediyor</option>
+              <option value="review">İncelemede</option>
+              <option value="completed">Tamamlandı</option>
+            </select>
+
             <Badge meta={PRIORITY_META} value={task.priority} />
-            {task.dueDate && <span className="text-[10px] text-slate-400 flex items-center gap-0.5"><Clock size={10} />{task.dueDate}</span>}
-            {task.assignedToName && <span className="text-[10px] text-slate-400">{task.assignedToName}</span>}
-            {task.estimatedHours && <span className="text-[10px] text-slate-400">{task.estimatedHours}s</span>}
+
+            {task.dueDate && (
+              <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
+                <Clock size={10} />{task.dueDate}
+              </span>
+            )}
+            {task.assignedToName && (
+              <span className="text-[10px] text-slate-400">{task.assignedToName}</span>
+            )}
+            {task.estimatedHours && (
+              <span className="text-[10px] text-slate-400">{task.estimatedHours}s</span>
+            )}
           </div>
         </div>
-        <div className="flex gap-1 shrink-0">
-          <button onClick={() => onEdit(task)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"><Pencil size={12} /></button>
-          <button onClick={() => onDelete(task)} className="p-1 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-500"><Trash2 size={12} /></button>
-          <button onClick={() => setOpen((v) => !v)} className="p-1 rounded hover:bg-slate-100 text-slate-400">
-            <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+
+        {/* Aksiyonlar: Düzenle + Sil */}
+        <div className="flex gap-1 shrink-0 mt-0.5">
+          <button
+            onClick={() => onEdit(task)}
+            className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"
+            title="Düzenle"
+          >
+            <Pencil size={12} />
+          </button>
+          <button
+            onClick={() => onDelete(task)}
+            className="p-1 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-500"
+            title="Sil"
+          >
+            <Trash2 size={12} />
           </button>
         </div>
       </div>
-      {open && (
-        <div className="mt-3 pl-6 space-y-1">
-          <select
-            value={task.status}
-            onChange={(e) => onStatusChange(task, e.target.value)}
-            disabled={isSaving}
-            className="text-[12px] border rounded px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
-          >
-            <option value="todo">Yapılacak</option>
-            <option value="in-progress">Devam Ediyor</option>
-            <option value="review">İncelemede</option>
-            <option value="completed">Tamamlandı</option>
-          </select>
-        </div>
-      )}
     </div>
   );
 }
@@ -445,52 +472,91 @@ function TaskRow({ task, onStatusChange, onEdit, onDelete, saving }) {
 // ─── Detay Paneli ────────────────────────────────────────────────────────────
 
 function DetailPanel({ planning, tasks, onAddTask, onEditTask, onDeleteTask, onStatusChange, savingTask }) {
+  const [activeTab, setActiveTab] = useState("tasks");
   const stats = planning.taskStats || {};
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-4 border-b space-y-3">
-        <h2 className="text-[15px] font-semibold text-slate-800">{planning.title}</h2>
-        {planning.description && <p className="text-[12px] text-slate-500">{planning.description}</p>}
-        <div className="flex flex-wrap gap-1">
-          <Badge meta={STATUS_META} value={planning.status} />
-          <Badge meta={PRIORITY_META} value={planning.priority} />
-        </div>
-        {(planning.startDate || planning.endDate) && (
-          <div className="text-[11px] text-slate-400 flex items-center gap-1">
-            <Clock size={11} />{planning.startDate} → {planning.endDate}
-          </div>
-        )}
-        <div className="space-y-1">
-          <div className="flex justify-between text-[11px] text-slate-500">
-            <span>{stats.total || 0} görev</span><span>{stats.progress || 0}%</span>
-          </div>
-          <ProgressBar value={stats.progress || 0} />
-        </div>
+      {/* Tab bar */}
+      <div className="flex border-b px-2 bg-slate-50/50">
+        {[["tasks", "Görevler"], ["summary", "Özet"]].map(([tab, label]) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-3 text-[12px] font-medium border-b-2 transition-colors ${
+              activeTab === tab
+                ? "border-blue-500 text-blue-600"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {label}
+            {tab === "tasks" && (
+              <span className="ml-1.5 text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full font-semibold">
+                {tasks.length}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
-      <div className="flex items-center justify-between px-4 py-3 border-b">
-        <span className="text-[13px] font-semibold text-slate-700">Görevler</span>
-        <button onClick={onAddTask} className="flex items-center gap-1 text-[12px] px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
-          <Plus size={12} /> Görev Ekle
-        </button>
-      </div>
+      {/* Tab: Görevler */}
+      {activeTab === "tasks" && (
+        <>
+          <div className="flex items-center justify-between px-4 py-2.5 border-b">
+            <span className="text-[12px] font-semibold text-slate-600 truncate max-w-[180px]" title={planning.title}>
+              {planning.title}
+            </span>
+            <button
+              onClick={onAddTask}
+              className="flex items-center gap-1 text-[12px] px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 shrink-0"
+            >
+              <Plus size={12} /> Görev Ekle
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {tasks.length === 0
+              ? <EmptyState message="Henüz görev yok" sub='Yukarıdan "Görev Ekle"' />
+              : tasks.map((t) => (
+                <TaskRow
+                  key={t._id}
+                  task={t}
+                  onStatusChange={onStatusChange}
+                  onEdit={onEditTask}
+                  onDelete={onDeleteTask}
+                  saving={savingTask}
+                />
+              ))
+            }
+          </div>
+        </>
+      )}
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
-        {tasks.length === 0
-          ? <EmptyState message="Henüz görev yok" sub="Yukarıdan ekleyin" />
-          : tasks.map((t) => (
-            <TaskRow
-              key={t._id}
-              task={t}
-              onStatusChange={onStatusChange}
-              onEdit={onEditTask}
-              onDelete={onDeleteTask}
-              saving={savingTask}
-            />
-          ))
-        }
-      </div>
+      {/* Tab: Özet */}
+      {activeTab === "summary" && (
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <h2 className="text-[15px] font-semibold text-slate-800 leading-snug">{planning.title}</h2>
+          {planning.description && (
+            <p className="text-[12px] text-slate-500 leading-relaxed">{planning.description}</p>
+          )}
+          <div className="flex flex-wrap gap-1.5">
+            <Badge meta={STATUS_META} value={planning.status} />
+            <Badge meta={PRIORITY_META} value={planning.priority} />
+          </div>
+          {(planning.startDate || planning.endDate) && (
+            <div className="flex items-center gap-2 text-[12px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+              <Clock size={13} className="text-slate-400 shrink-0" />
+              <span>{planning.startDate}{planning.endDate ? ` → ${planning.endDate}` : ""}</span>
+            </div>
+          )}
+          <div className="space-y-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+            <div className="flex items-center justify-between text-[12px]">
+              <span className="text-slate-500">{stats.completed || 0}/{stats.total || 0} görev tamamlandı</span>
+              <span className="font-semibold text-slate-700">%{stats.progress || 0}</span>
+            </div>
+            <ProgressBar value={stats.progress || 0} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -648,52 +714,76 @@ export default function PlanningManagementTab() {
   return (
     <div className="flex flex-col h-full gap-4">
 
-      {/* Başlık + Araç çubuğu */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="font-semibold text-[15px] text-slate-800">Planlama Yönetimi</div>
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Görünüm seçici */}
-          <div className="flex rounded-lg border overflow-hidden text-[12px]">
-            {[["list","Liste",<LayoutList size={12}/>],["calendar","Takvim",<Calendar size={12}/>],["timeline","Timeline",<BarChart2 size={12}/>]].map(([v, l, icon]) => (
-              <button key={v} onClick={() => setView(v)} className={`flex items-center gap-1 px-3 py-1.5 ${view === v ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}>{icon}{l}</button>
-            ))}
-          </div>
-
-          {/* Filtreler */}
-          <div className="relative">
-            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              className="pl-7 pr-3 py-1.5 text-[12px] border rounded-lg w-40 focus:outline-none focus:ring-2 focus:ring-blue-400"
-              placeholder="Ara..."
-              value={filters.search}
-              onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-            />
-          </div>
-          <select className="text-[12px] border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent" value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
-            <option value="">Tüm Durumlar</option>
-            <option value="draft">Taslak</option>
-            <option value="active">Aktif</option>
-            <option value="completed">Tamamlandı</option>
-            <option value="cancelled">İptal</option>
-          </select>
-          <select className="text-[12px] border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent" value={filters.priority} onChange={(e) => setFilters((f) => ({ ...f, priority: e.target.value }))}>
-            <option value="">Tüm Öncelikler</option>
-            <option value="low">Düşük</option>
-            <option value="medium">Orta</option>
-            <option value="high">Yüksek</option>
-            <option value="critical">Kritik</option>
-          </select>
-
-          <button onClick={loadPlannings} disabled={loading} className="p-1.5 rounded-lg border hover:bg-slate-50 text-slate-500 disabled:opacity-40">
-            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
-          </button>
-          <button
-            onClick={() => { setEditingPlanning(null); setShowPlanningModal(true); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[12px] font-medium hover:bg-blue-700"
-          >
-            <Plus size={13} /> Planlama
-          </button>
+      {/* ── Satır 1: Sayfa başlığı + Primary action ── */}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-[16px] font-semibold text-slate-800 leading-tight">Planlama Kontrol Merkezi</h1>
+          <p className="text-[12px] text-slate-400 mt-0.5">Proje planlama ve görev takibi</p>
         </div>
+        <button
+          onClick={() => { setEditingPlanning(null); setShowPlanningModal(true); }}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-[13px] font-medium hover:bg-blue-700 shadow-sm shrink-0"
+        >
+          <Plus size={14} /> Yeni Planlama
+        </button>
+      </div>
+
+      {/* ── Satır 2: Secondary controls ── */}
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200">
+        {/* Görünüm seçici */}
+        <div className="flex rounded-lg border border-slate-200 overflow-hidden text-[12px] bg-white">
+          {[["list","Liste",<LayoutList size={12}/>],["calendar","Takvim",<Calendar size={12}/>],["timeline","Timeline",<BarChart2 size={12}/>]].map(([v, l, icon]) => (
+            <button key={v} onClick={() => setView(v)} className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${view === v ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}>{icon}{l}</button>
+          ))}
+        </div>
+
+        <div className="w-px h-5 bg-slate-200 hidden sm:block" />
+
+        {/* Arama */}
+        <div className="relative">
+          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            className="pl-7 pr-3 py-1.5 text-[12px] border border-slate-200 rounded-lg w-36 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+            placeholder="Ara…"
+            value={filters.search}
+            onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+          />
+        </div>
+
+        {/* Durum filtresi */}
+        <select
+          className="text-[12px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+          value={filters.status}
+          onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
+        >
+          <option value="">Tüm Durumlar</option>
+          <option value="draft">Taslak</option>
+          <option value="active">Aktif</option>
+          <option value="completed">Tamamlandı</option>
+          <option value="cancelled">İptal</option>
+        </select>
+
+        {/* Öncelik filtresi */}
+        <select
+          className="text-[12px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+          value={filters.priority}
+          onChange={(e) => setFilters((f) => ({ ...f, priority: e.target.value }))}
+        >
+          <option value="">Tüm Öncelikler</option>
+          <option value="low">Düşük</option>
+          <option value="medium">Orta</option>
+          <option value="high">Yüksek</option>
+          <option value="critical">Kritik</option>
+        </select>
+
+        {/* Yenile */}
+        <button
+          onClick={loadPlannings}
+          disabled={loading}
+          className="ml-auto p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 disabled:opacity-40"
+        >
+          <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+        </button>
       </div>
 
       {/* Takvim / Timeline görünümleri */}

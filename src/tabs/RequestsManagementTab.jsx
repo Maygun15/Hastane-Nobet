@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { getMyRequests, updateRequest } from "../api/apiAdapter.js";
+import { loadLeavesFromBackend, emitLeavesChanged } from "../lib/leaves.js";
 
 const typeLabels = {
   izin: "İzin",
@@ -116,11 +117,18 @@ export default function RequestsManagementTab() {
 
   const approve = async (r) => {
     const id = r._id || r.id;
-    if (processing) return; // herhangi bir işlem devam ediyorsa bekle
+    if (processing) return;
     setProcessing(id);
     try {
       setError("");
       await updateRequest(id, { status: "approved", adminNote: "" });
+      // İzin talebi onaylandıysa leaves cache'ini tazele:
+      // 1) Backend'den yeni veriyi çek  2) MonthlyLeavesMatrixGeneric'e leaves:changed ilet
+      if ((r.type || "") === "izin") {
+        loadLeavesFromBackend()
+          .then(() => emitLeavesChanged())
+          .catch(() => {});
+      }
       await load();
     } catch (e) {
       setError(e?.message || "Onaylanamadı");

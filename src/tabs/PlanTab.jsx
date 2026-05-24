@@ -1,15 +1,14 @@
 // src/tabs/PlanTab.jsx
-import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { Activity, ArrowRight, BellRing, Building2, CalendarDays, ClipboardList, Settings2, ShieldCheck, Sparkles, UserCog, Users } from "lucide-react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { Activity, ArrowRight, BellRing, Building2, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, ListChecks, Loader2, Settings2, Sparkles, UserCog, Users } from "lucide-react";
 import { useAuth } from "../auth/AuthContext.jsx";
 import useServiceScope from "../hooks/useServiceScope.js";
 import useActiveYM from "../hooks/useActiveYM.js";
 import { buildNameUnavailability, getAllLeaves } from "../lib/leaves.js";
 import { LS } from "../utils/storage.js";
 import { useAppStore } from "../state/appStore";
-import ScheduleToolbar from "../components/ScheduleToolbar.jsx";
 import PersonScheduleCalendar from "../components/PersonScheduleCalendar.jsx";
-import { WorkspaceHero, WorkspacePanel, WorkspaceStatCard } from "../components/workspace/WorkspaceShell.jsx";
+import { WorkspaceHero, WorkspaceStatCard } from "../components/workspace/WorkspaceShell.jsx";
 import { API } from "../lib/api.js";
 import { generateSchedulerPlan, getMyRequests } from "../api/apiAdapter.js";
 import { invalidateScheduleCache } from "../store/monthlyScheduleModel.js";
@@ -517,10 +516,12 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
   // Rol seçimi — Zustand store üzerinden tüm sekmelerle paylaşılıyor
   const activeRole = useAppStore((s) => s.activeRole);
   const setActiveRole = useAppStore((s) => s.setActiveRole);
+  const leaveTypes = useAppStore((s) => s.leaveTypes);
   const [plannerStatus, setPlannerStatus] = useState("idle"); // idle | loading | error | done
   const [plannerError, setPlannerError] = useState("");
   const [requestItems, setRequestItems] = useState([]);
   const [requestError, setRequestError] = useState("");
+  const personCalendarRef = useRef(null);
 
   const peopleAll = useMemo(() => {
     const raw = Array.isArray(peopleAllProp) ? peopleAllProp : [];
@@ -995,53 +996,95 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
         ]}
       />
 
-      <WorkspacePanel
-        title="Planlama Bağlamı"
-        description={canManage
-          ? "Servis ve rol kırılımını buradan yönetebilir, alttaki takvimde sonucu anında görebilirsin."
-          : "Kişisel planın seçili ay ve vardiya tanımlarına göre aşağıda görüntülenir."}
-        aside={
-          <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 p-3">
-            <ScheduleToolbar
-              title={`${canManage ? "Planlama" : "Takvimim"} • ${MONTH_LABEL(year, month)}`}
-              year={year}
-              month={month}
-              setYear={setYear}
-              setMonth={setMonth}
-              onBuild={canManage ? handleRunPlanner : undefined}
-              building={plannerStatus === "loading"}
-              role={canManage ? activeRole : undefined}
-              onRoleChange={canManage ? setActiveRole : undefined}
-            />
+      {/* ── Operasyonel Giriş Noktası — tek gerçeklik kaynağı ── */}
+      <div className="rounded-[22px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+
+          {/* Dönem navigasyonu */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => { if (month === 1) { setYear(year - 1); setMonth(12); } else { setMonth(month - 1); } }}
+              className="rounded-xl border border-slate-200 p-1.5 hover:bg-slate-50 transition-colors"
+              title="Önceki ay"
+            >
+              <ChevronLeft className="h-4 w-4 text-slate-500" />
+            </button>
+            <span className="min-w-[148px] text-center text-sm font-semibold text-slate-800">
+              {MONTH_LABEL(year, month)}
+            </span>
+            <button
+              type="button"
+              onClick={() => { if (month === 12) { setYear(year + 1); setMonth(1); } else { setMonth(month + 1); } }}
+              className="rounded-xl border border-slate-200 p-1.5 hover:bg-slate-50 transition-colors"
+              title="Sonraki ay"
+            >
+              <ChevronRight className="h-4 w-4 text-slate-500" />
+            </button>
           </div>
-        }
-      >
-        <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
+
+          <div className="h-5 w-px bg-slate-200 hidden sm:block" />
+
+          {/* Servis seçimi */}
           {showServiceSelect && (
-            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <span className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">Servis</span>
+            <div className="flex items-center gap-2">
+              <Building2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
               <select
-                className="h-9 min-w-[180px] rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
                 value={selectedService}
                 onChange={(e) => setSelectedService(e.target.value)}
+                className="h-9 min-w-[160px] rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
               >
                 {serviceOptions.map((opt) => (
-                  <option key={opt.id ?? "_"} value={opt.id ?? ""}>
-                    {opt.name}
-                  </option>
+                  <option key={opt.id ?? "_"} value={opt.id ?? ""}>{opt.name}</option>
                 ))}
               </select>
-            </label>
+            </div>
           )}
 
-          <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-            <span className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">Rol</span>
-            <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-slate-800 shadow-sm">
-              {activeRole === "Doctor" ? "Doktorlar" : "Hemşireler"}
-            </span>
-          </div>
+          {/* Rol toggle — sadece yönetici */}
+          {canManage && (
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setActiveRole("Nurse")}
+                className={`px-3 py-1 text-xs font-medium rounded-lg transition-all ${
+                  activeRole !== "Doctor" ? "bg-white text-sky-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                Hemşire
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveRole("Doctor")}
+                className={`px-3 py-1 text-xs font-medium rounded-lg transition-all ${
+                  activeRole === "Doctor" ? "bg-white text-sky-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                Doktor
+              </button>
+            </div>
+          )}
+
+          {/* CTA — Çizelgeden Doldur */}
+          {canManage && (
+            <button
+              type="button"
+              onClick={plannerStatus === "loading" ? undefined : handleRunPlanner}
+              disabled={plannerStatus === "loading"}
+              className={`ml-auto flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
+                plannerStatus === "loading"
+                  ? "cursor-wait border-indigo-200 bg-indigo-50 text-indigo-400"
+                  : "border-sky-400 bg-sky-600 text-white hover:bg-sky-700 shadow-sm"
+              }`}
+            >
+              {plannerStatus === "loading"
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> Oluşturuluyor…</>
+                : <><ListChecks className="h-4 w-4" /> Çizelgeden Doldur</>
+              }
+            </button>
+          )}
         </div>
-      </WorkspacePanel>
+      </div>
 
       {plannerStatus === "error" && (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
@@ -1053,48 +1096,6 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
           Plan oluşturuldu. Takvim ve kişi özetleri yeni planla senkronlandı.
         </div>
       )}
-
-      <section className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-              <ShieldCheck className="h-4 w-4 text-sky-600" />
-              Görünüm Kapsamı
-            </div>
-            <p className="text-sm text-slate-500">
-              {canManage
-                ? "Servis ve rol kırılımını buradan yönetebilir, alttaki takvimde sonucu anında görebilirsin."
-                : "Kişisel planın seçili ay ve vardiya tanımlarına göre aşağıda görüntülenir."}
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
-            {showServiceSelect && (
-              <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <span className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">Servis</span>
-                <select
-                  className="h-9 min-w-[180px] rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                  value={selectedService}
-                  onChange={(e) => setSelectedService(e.target.value)}
-                >
-                  {serviceOptions.map((opt) => (
-                    <option key={opt.id ?? "_"} value={opt.id ?? ""}>
-                      {opt.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <span className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">Rol</span>
-              <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-slate-800 shadow-sm">
-                {activeRole === "Doctor" ? "Doktorlar" : "Hemşireler"}
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
         <div className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm md:p-5">
@@ -1301,16 +1302,202 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
         </div>
       )}
 
-      <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <section className="monthly-calendar-print-area rounded-[28px] border border-slate-200 bg-white shadow-sm overflow-hidden">
         {/* Print stilleri */}
         <style>{`
+          .print-only { display: none; }
           @media print {
-            body > * { display: none !important; }
-            body > div > main { display: block !important; }
+            @page { size: A4 landscape; margin: 4mm; }
+            html, body {
+              background: #fff !important;
+              width: 297mm !important;
+              height: 210mm !important;
+              min-height: 210mm !important;
+              margin: 0 !important;
+              overflow: hidden !important;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            #root,
+            #root > * {
+              width: 297mm !important;
+              height: 210mm !important;
+              max-height: 210mm !important;
+              overflow: hidden !important;
+            }
+            body * { visibility: hidden !important; }
+            .monthly-calendar-print-area,
+            .monthly-calendar-print-area * {
+              visibility: visible !important;
+            }
+            .monthly-calendar-print-area {
+              position: fixed !important;
+              top: 0 !important;
+              left: 0 !important;
+              width: 289mm !important;
+              max-width: 289mm !important;
+              height: 202mm !important;
+              max-height: 202mm !important;
+              border: 0 !important;
+              border-radius: 0 !important;
+              box-shadow: none !important;
+              overflow: hidden !important;
+              font-size: 8px !important;
+              transform: none !important;
+            }
+            .monthly-calendar-print-area .print-only {
+              display: block !important;
+            }
+            .monthly-calendar-print-area > .print-only {
+              display: none !important;
+            }
+            .monthly-calendar-print-area .calendar-print-exclude,
             .no-print { display: none !important; }
+            .monthly-calendar-print-area .person-calendar-body {
+              padding: 0 !important;
+            }
+            .monthly-calendar-print-area .person-calendar-body > div {
+              gap: 1mm !important;
+            }
+            .monthly-calendar-print-area .person-calendar-body .print-only {
+              display: flex !important;
+              align-items: center !important;
+              justify-content: space-between !important;
+              gap: 4mm !important;
+              padding: 0 0 0.8mm 0 !important;
+              margin: 0 !important;
+              border-bottom: 1px solid #e2e8f0 !important;
+            }
+            .monthly-calendar-print-area .person-calendar-body .print-only .text-base {
+              font-size: 9px !important;
+              line-height: 1.1 !important;
+            }
+            .monthly-calendar-print-area .person-calendar-body .print-only .text-xs {
+              font-size: 7px !important;
+              line-height: 1.1 !important;
+              margin-top: 1px !important;
+            }
+            .monthly-calendar-print-area .person-calendar-weekdays {
+              display: grid !important;
+              grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
+              gap: 2px !important;
+              margin-bottom: 0.4mm !important;
+              font-size: 7px !important;
+              line-height: 1.1 !important;
+            }
+            .monthly-calendar-print-area .person-calendar-grid {
+              display: grid !important;
+              grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
+              gap: 2px !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+            }
+            .monthly-calendar-print-area .print-compact-day {
+              min-height: 13.8mm !important;
+              max-height: 13.8mm !important;
+              padding: 1mm !important;
+              border-width: 1px !important;
+              border-radius: 4px !important;
+              box-shadow: none !important;
+              overflow: hidden !important;
+            }
+            .monthly-calendar-print-area .print-compact-day * {
+              line-height: 1.1 !important;
+            }
+            .monthly-calendar-print-area .print-compact-day .gap-2,
+            .monthly-calendar-print-area .print-compact-day .gap-1 {
+              gap: 1px !important;
+            }
+            .monthly-calendar-print-area .print-compact-day .mt-1,
+            .monthly-calendar-print-area .print-compact-day .mt-2,
+            .monthly-calendar-print-area .print-compact-day .space-y-1 > * + * {
+              margin-top: 1px !important;
+            }
+            .monthly-calendar-print-area .print-compact-day .pt-2 {
+              padding-top: 1px !important;
+            }
+            .monthly-calendar-print-area .print-compact-day .text-lg {
+              font-size: 8px !important;
+            }
+            .monthly-calendar-print-area .print-compact-day .text-[10px],
+            .monthly-calendar-print-area .print-compact-day .text-[11px],
+            .monthly-calendar-print-area .print-compact-day .text-xs {
+              font-size: 6px !important;
+            }
+            .monthly-calendar-print-area .print-compact-day button {
+              display: none !important;
+            }
+            .monthly-calendar-print-area .print-compact-day [class*="overflow-y-auto"] {
+              overflow: hidden !important;
+            }
+            .monthly-calendar-print-area .print-compact-day [class*="rounded"][class*="bg-blue"] {
+              max-height: 3.2mm !important;
+              padding: 0 1px !important;
+              overflow: hidden !important;
+              white-space: nowrap !important;
+              text-overflow: ellipsis !important;
+            }
+            .monthly-calendar-print-area .person-print-summary {
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+              margin-top: 1mm !important;
+              max-height: 54mm !important;
+              overflow: hidden !important;
+            }
+            .monthly-calendar-print-area .person-print-summary > div {
+              padding: 1.5mm !important;
+              border-width: 1px !important;
+              border-radius: 5px !important;
+            }
+            .monthly-calendar-print-area .person-print-summary h3 {
+              font-size: 7.5px !important;
+              line-height: 1.1 !important;
+            }
+            .monthly-calendar-print-area .person-print-summary .mb-3,
+            .monthly-calendar-print-area .person-print-summary .mb-4 {
+              margin-bottom: 1mm !important;
+            }
+            .monthly-calendar-print-area .person-print-summary .h-2 {
+              height: 2px !important;
+            }
+            .monthly-calendar-print-area .person-print-summary .grid {
+              grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+              gap: 1.5px !important;
+            }
+            .monthly-calendar-print-area .person-print-summary .grid > div {
+              padding: 1mm !important;
+            }
+            .monthly-calendar-print-area .person-print-summary .text-2xl {
+              font-size: 8.5px !important;
+              line-height: 1.1 !important;
+            }
+            .monthly-calendar-print-area .person-print-summary .text-xs,
+            .monthly-calendar-print-area .person-print-summary .text-[10px] {
+              font-size: 5.8px !important;
+              line-height: 1.1 !important;
+            }
+            .monthly-calendar-print-area .person-print-summary .mt-4 {
+              margin-top: 1mm !important;
+            }
+            .monthly-calendar-print-area .person-print-summary .pt-4 {
+              padding-top: 1mm !important;
+            }
+            .monthly-calendar-print-area .person-print-summary .gap-2 {
+              gap: 1.5px !important;
+            }
+            .monthly-calendar-print-area .person-print-summary span {
+              font-size: 5.8px !important;
+              padding: 0.5px 2px !important;
+            }
           }
         `}</style>
-        <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-3 md:px-5">
+        <div className="print-only px-1 pb-2">
+          <div className="text-lg font-bold text-slate-900">Aylık Çalışma Takvimi</div>
+          <div className="mt-1 text-sm text-slate-600">
+            {MONTH_LABEL(year, month)} · {currentServiceName} · {activeRole === "Doctor" ? "Doktor" : "Hemşire"}
+          </div>
+        </div>
+        <div className="no-print border-b border-slate-200 bg-slate-50/80 px-4 py-3 md:px-5">
           <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="text-sm font-semibold text-slate-800">Aylık Takvim Tuvali</div>
@@ -1323,17 +1510,25 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
                 {currentServiceName} · {activeRole === "Doctor" ? "Doktor" : "Hemşire"} görünümü
               </div>
               <button
-                onClick={() => window.print()}
+                onClick={() => personCalendarRef.current?.printSchedule?.()}
                 className="no-print flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 text-[13px] text-slate-600 hover:bg-slate-50"
-                title="Nöbet takvimini yazdır"
+                title="Seçili kişinin aylık nöbet çizelgesini yazdır"
               >
                 🖨️ Yazdır
+              </button>
+              <button
+                onClick={() => personCalendarRef.current?.emailSchedule?.()}
+                className="no-print flex items-center gap-1.5 px-3 py-2 rounded-lg border border-sky-200 bg-sky-50 text-[13px] font-medium text-sky-700 hover:bg-sky-100"
+                title="Seçili kişinin aylık nöbet çizelgesini e-posta ile gönder"
+              >
+                ✉️ E-posta Gönder
               </button>
             </div>
           </div>
         </div>
-        <div className="p-4 md:p-5">
+        <div className="person-calendar-body p-4 md:p-5">
         <PersonScheduleCalendar
+          ref={personCalendarRef}
           year={year}
           month={month}
           people={calendarPeople}
@@ -1345,6 +1540,7 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
           scheduleRole={activeRole}
           workAreas={workAreas}
           workingHours={workingHours}
+          leaveTypes={leaveTypes}
         />
         </div>
       </section>

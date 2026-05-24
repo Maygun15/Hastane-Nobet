@@ -4,13 +4,14 @@ const Setting         = require('../models/Setting');
 const Person          = require('../models/Person');
 const { upsertAssignment, removeAssignment } = require('./assignmentSyncService');
 
-// Kişi adı veya ID ile Person kaydını bul
-async function resolvePerson(nameOrId) {
+// Kişi adı veya ID ile Person kaydını bul (hospitalId ile izole)
+async function resolvePerson(nameOrId, hospitalId) {
   if (!nameOrId) return null;
   const s = String(nameOrId).trim();
-  if (/^[a-f0-9]{24}$/i.test(s)) return Person.findById(s).lean();
+  const hf = hospitalId ? { hospitalId } : {};
+  if (/^[a-f0-9]{24}$/i.test(s)) return Person.findOne({ _id: s, ...hf }).lean();
   const escaped = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return Person.findOne({ name: new RegExp(escaped, 'i') }).lean();
+  return Person.findOne({ name: new RegExp(escaped, 'i'), ...hf }).lean();
 }
 
 function parseYM(dateStr) {
@@ -19,7 +20,7 @@ function parseYM(dateStr) {
 }
 
 // ── Query: belirtilen kişi ve tarih için atamaları getir ──
-async function execQuerySchedule({ entities }) {
+async function execQuerySchedule({ entities, hospitalId }) {
   const { person, date, dateStart } = entities || {};
   const targetDate = date || dateStart;
   if (!targetDate) return { ok: false, message: 'Tarih belirtilmedi' };
@@ -27,7 +28,9 @@ async function execQuerySchedule({ entities }) {
   const ym = parseYM(targetDate);
   if (!ym) return { ok: false, message: 'Geçersiz tarih formatı' };
 
-  const docs = await MonthlySchedule.find({ year: ym.year, month: ym.month }).lean();
+  const scheduleFilter = { year: ym.year, month: ym.month };
+  if (hospitalId) scheduleFilter.hospitalId = hospitalId;
+  const docs = await MonthlySchedule.find(scheduleFilter).lean();
   const resolvedPerson = await resolvePerson(person);
 
   let assignments = [];
@@ -58,9 +61,9 @@ async function execQuerySchedule({ entities }) {
 }
 
 // ── Add leave: kişiye izin yaz ──
-async function execAddLeave({ entities }) {
+async function execAddLeave({ entities, hospitalId }) {
   const { person, date, dateStart, dateEnd, leaveType } = entities || {};
-  const resolvedPerson = await resolvePerson(person);
+  const resolvedPerson = await resolvePerson(person, hospitalId);
   if (!resolvedPerson) return { ok: false, message: `Kişi bulunamadı: ${person}` };
 
   const startStr = date || dateStart;
@@ -75,7 +78,9 @@ async function execAddLeave({ entities }) {
 
   const code = String(leaveType || 'YILLIK').trim().toUpperCase();
   const pid  = String(resolvedPerson._id);
-  const sid  = String(resolvedPerson.serviceId || '');
+  // Global bucket — always serviceId='' to match frontend reads
+  const sid  = '';
+  const hid  = hospitalId || resolvedPerson.hospitalId || null;
 
   // Günleri aya göre grupla
   const byMonth = {};
@@ -84,9 +89,10 @@ async function execAddLeave({ entities }) {
     (byMonth[mk] ??= []).push(d.getDate());
   }
 
+  const docFilter = { key: 'leavesV2', serviceId: sid, ...(hid ? { hospitalId: hid } : {}) };
   for (const [monthKey, days] of Object.entries(byMonth)) {
-    let doc = await Setting.findOne({ key: 'leavesV2', serviceId: sid });
-    if (!doc) doc = new Setting({ key: 'leavesV2', serviceId: sid, value: {} });
+    let doc = await Setting.findOne(docFilter);
+    if (!doc) doc = new Setting({ key: 'leavesV2', serviceId: sid, value: {}, ...(hid ? { hospitalId: hid } : {}) });
     const value = typeof doc.value === 'object' ? { ...doc.value } : {};
     value[pid] ??= {};
     value[pid][monthKey] ??= {};
@@ -101,9 +107,9 @@ async function execAddLeave({ entities }) {
 }
 
 // ── Remove leave: kişinin iznini sil ──
-async function execRemoveLeave({ entities }) {
+async function execRemoveLeave({ entities, hospitalId }) {
   const { person, date, dateStart, dateEnd } = entities || {};
-  const resolvedPerson = await resolvePerson(person);
+  const resolvedPerson = await resolvePerson(person, hospitalId);
   if (!resolvedPerson) return { ok: false, message: `Kişi bulunamadı: ${person}` };
 
   const startStr = date || dateStart;
@@ -113,7 +119,9 @@ async function execRemoveLeave({ entities }) {
   const start = new Date(`${startStr}T00:00:00`);
   const end   = new Date(`${endStr}T00:00:00`);
   const pid   = String(resolvedPerson._id);
-  const sid   = String(resolvedPerson.serviceId || '');
+  // Global bucket — always serviceId=''
+  const sid   = '';
+  const hid   = hospitalId || resolvedPerson.hospitalId || null;
 
   const byMonth = {};
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
@@ -121,8 +129,9 @@ async function execRemoveLeave({ entities }) {
     (byMonth[mk] ??= []).push(d.getDate());
   }
 
+  const docFilter = { key: 'leavesV2', serviceId: sid, ...(hid ? { hospitalId: hid } : {}) };
   for (const [monthKey, days] of Object.entries(byMonth)) {
-    const doc = await Setting.findOne({ key: 'leavesV2', serviceId: sid });
+    const doc = await Setting.findOne(docFilter);
     if (!doc?.value) continue;
     const value = { ...doc.value };
     for (const day of days) delete (value[pid]?.[monthKey] || {})[String(day)];
@@ -257,15 +266,15 @@ async function execRemoveShift({ entities }) {
 /**
  * Onaylanmış bir AI komutunu çalıştırır.
  */
-async function executeCommand({ intent, entities }) {
+async function executeCommand({ intent, entities, hospitalId }) {
   switch (intent) {
     case 'query_schedule':
     case 'query_person':
-      return execQuerySchedule({ entities });
+      return execQuerySchedule({ entities, hospitalId });
     case 'add_leave':
-      return execAddLeave({ entities });
+      return execAddLeave({ entities, hospitalId });
     case 'remove_leave':
-      return execRemoveLeave({ entities });
+      return execRemoveLeave({ entities, hospitalId });
     case 'assign_shift':
       return execAssignShift({ entities });
     case 'remove_shift':

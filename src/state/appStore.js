@@ -21,6 +21,14 @@ function lsInit(keys, fallback = []) {
   return fallback;
 }
 
+function stableJson(value) {
+  try {
+    return JSON.stringify(value ?? {});
+  } catch {
+    return "";
+  }
+}
+
 const initial = {
   ym: todayYM(),
   activeServiceId: "",   // Seçili servis — tüm sekmeler tarafından paylaşılır
@@ -126,7 +134,12 @@ export const useAppStore = create(
       setDoctors: (arr) => set({ doctors: Array.isArray(arr) ? arr : [] }),
       setWorkingHours: (arr) => set({ workingHours: Array.isArray(arr) ? arr : [] }),
       setLeaveTypes: (arr) => set({ leaveTypes: Array.isArray(arr) ? arr : [] }),
-      setPersonLeaves: (obj) => set({ personLeaves: (obj && typeof obj === "object") ? obj : {} }),
+      setPersonLeaves: (obj) =>
+        set((state) => {
+          const next = (obj && typeof obj === "object") ? obj : {};
+          if (stableJson(state.personLeaves) === stableJson(next)) return state;
+          return { personLeaves: next };
+        }),
 
       /* === RULES & LEAVE TYPES (örnek) === */
       upsertRules: (rules) =>

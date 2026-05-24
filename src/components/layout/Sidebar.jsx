@@ -1,6 +1,4 @@
 // src/components/layout/Sidebar.jsx
-// menuConfig.js'i okuyarak sidebar'ı render eder.
-// HospitalRosterApp.jsx'in eski inline <aside> bloğunun yerine geçer.
 import React, { useCallback, useEffect, useState } from "react";
 import {
   BarChart,
@@ -44,6 +42,12 @@ const DEFAULT_PERSONNEL_SECTIONS = [
   { id: "doktorlar",  name: "Doktorlar"  },
 ];
 
+// ── Stil sabitleri — Modern Minimalist SaaS ───────────────────────────────────
+const ITEM =
+  "flex w-full items-center gap-2.5 rounded-lg border-l-2 pl-2.5 pr-3 py-[7px] text-[13px] font-medium transition-colors";
+const ITEM_ACTIVE = "border-blue-500 bg-blue-50 text-blue-700";
+const ITEM_IDLE   = "border-transparent text-slate-600 hover:bg-slate-100/80 hover:text-slate-800";
+
 // ── Yardımcılar ───────────────────────────────────────────────────────────────
 function pushUrl(path) {
   try {
@@ -52,25 +56,9 @@ function pushUrl(path) {
   } catch {}
 }
 
-// "parameters:calisma-alanlari" → "parameters"
 function parentTabId(itemId) {
   return itemId.includes(":") ? itemId.split(":")[0] : itemId;
 }
-
-function resolveIcon(name) {
-  const Ic = ICON_MAP[name];
-  return Ic ? <Ic className="h-4 w-4" /> : null;
-}
-
-// ── Stil sabitleri (önceki SidebarNavButton/Branch ile birebir aynı) ───────────
-const BTN_BASE =
-  "flex w-full items-center gap-3 rounded-[22px] border px-4 py-4 text-left text-sm font-medium transition min-h-[96px]";
-const BTN_ACTIVE =
-  "border-slate-900 bg-slate-950 text-white shadow-[0_14px_30px_-20px_rgba(15,23,42,0.8)]";
-const BTN_IDLE =
-  "border-slate-200 bg-slate-50/80 text-slate-700 hover:border-slate-300 hover:bg-white";
-const ICON_ACTIVE = "border-white/15 bg-white/10 text-white";
-const ICON_IDLE   = "border-slate-200 bg-white text-slate-500";
 
 // ── Ana bileşen ───────────────────────────────────────────────────────────────
 export default function Sidebar({
@@ -82,17 +70,14 @@ export default function Sidebar({
   isAuthorized,
   isBasicUser,
 }) {
-  // Mobil drawer açık mı?
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Hangi collapsible gruplar açık?
   const [openGroups, setOpenGroups] = useState({
     yonetim: true,
     raporlar: false,
     analiz:   true,
   });
 
-  // Hangi branch'ler genişletilmiş?
   const [openBranches, setOpenBranches] = useState({});
 
   // Aktif tab değişince ilgili branch'i otomatik aç
@@ -110,7 +95,6 @@ export default function Sidebar({
     }
   }, [activeTab]);
 
-  // Dinamik personel bölümleri (LS'den gelir, değişince güncellenir)
   const [personnelSections, setPersonnelSections] = useState(
     () => LS.get("personnelSections", DEFAULT_PERSONNEL_SECTIONS),
   );
@@ -125,7 +109,7 @@ export default function Sidebar({
     };
   }, []);
 
-  // ── Rol filtresi ─────────────────────────────────────────────────────────────
+  // ── Rol filtresi ──────────────────────────────────────────────────────────────
   const canSee = useCallback(
     (visibleTo) => {
       if (!visibleTo) return true;
@@ -155,17 +139,10 @@ export default function Sidebar({
     setDrawerOpen(false);
   }
 
-  function handleBranch(item) {
-    navigate(item.path);
-    onTabChange(item.id);
-    setDrawerOpen(false);
-  }
-
   function handleAction(item) {
     onAction?.(item.action);
   }
 
-  // ── Branch'in alt-öğelerini belirle (Personel için LS merge) ─────────────────
   function childrenOf(item) {
     if (item.id === "personnel") {
       return personnelSections.map((s) => ({
@@ -179,57 +156,30 @@ export default function Sidebar({
     return item.children || [];
   }
 
-  // ── Modül etiketi (aside başlığındaki "Çalışma Alanı" kutusu) ─────────────────
-  const moduleLabel = React.useMemo(() => {
-    for (const group of MENU_CONFIG) {
-      for (const item of group.children || []) {
-        if (item.id === activeTab) return item.label;
-        for (const child of item.children || []) {
-          if (parentTabId(child.id) === activeTab) return item.label;
-        }
-      }
-    }
-    if (activeTab === "requests" || activeTab === "myRequests") return "Talepler";
-    if (activeTab === "profile")       return "Profilim";
-    if (activeTab === "ai")            return "AI Asistan";
-    if (activeTab === "announcements") return "Duyurular";
-    return "Çalışma Alanı";
-  }, [activeTab]);
-
   // ── Alt bileşenler ────────────────────────────────────────────────────────────
-  function IconBox({ name, active }) {
-    return (
-      <span
-        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
-          active ? ICON_ACTIVE : ICON_IDLE
-        }`}
-      >
-        {resolveIcon(name)}
-      </span>
-    );
-  }
-
   function LeafBtn({ item, active }) {
+    const Icon = ICON_MAP[item.icon];
     return (
       <button
         type="button"
         onClick={() => handleLeaf(item)}
-        className={`${BTN_BASE} ${active ? BTN_ACTIVE : BTN_IDLE}`}
+        className={`${ITEM} ${active ? ITEM_ACTIVE : ITEM_IDLE}`}
       >
-        <IconBox name={item.icon} active={active} />
+        {Icon && <Icon className="h-4 w-4 shrink-0" />}
         <span className="truncate">{item.label}</span>
       </button>
     );
   }
 
   function ActionBtn({ item }) {
+    const Icon = ICON_MAP[item.icon];
     return (
       <button
         type="button"
         onClick={() => handleAction(item)}
-        className={`${BTN_BASE} ${BTN_IDLE}`}
+        className={`${ITEM} ${ITEM_IDLE}`}
       >
-        <IconBox name={item.icon} active={false} />
+        {Icon && <Icon className="h-4 w-4 shrink-0" />}
         <span className="truncate">{item.label}</span>
       </button>
     );
@@ -239,86 +189,60 @@ export default function Sidebar({
     const active   = activeTab === item.id;
     const expanded = !!openBranches[item.id];
     const children = childrenOf(item).filter((c) => canSee(c.visibleTo));
+    const Icon = ICON_MAP[item.icon];
+
+    function toggle() {
+      navigate(item.path);
+      onTabChange(item.id);
+      setOpenBranches((prev) => ({ ...prev, [item.id]: !prev[item.id] }));
+      setDrawerOpen(false);
+    }
 
     return (
-      <div className="space-y-2">
-        {/* Branch başlık satırı */}
-        <div
-          className={`flex min-h-[96px] items-center gap-2 rounded-[22px] border px-4 py-4 transition ${
-            active ? BTN_ACTIVE : BTN_IDLE
-          }`}
+      <div>
+        <button
+          type="button"
+          onClick={toggle}
+          className={`${ITEM} ${active ? ITEM_ACTIVE : ITEM_IDLE}`}
         >
-          {/* Sol: ikon + etiket */}
-          <button
-            type="button"
-            onClick={() => handleBranch(item)}
-            className={`flex min-w-0 flex-1 items-center gap-3 text-left text-sm font-medium ${
-              active ? "text-white" : "text-slate-700"
-            }`}
-          >
-            <IconBox name={item.icon} active={active} />
-            <div className="min-w-0">
-              <div className="truncate text-[15px] font-semibold">{item.label}</div>
-              <div className={`mt-1 text-xs leading-5 ${active ? "text-slate-300" : "text-slate-500"}`}>
-                Alt sayfalara hızlı geçiş
-              </div>
-            </div>
-          </button>
-
-          {/* Sağ: açma/kapama düğmesi */}
+          {Icon && <Icon className="h-4 w-4 shrink-0" />}
+          <span className="flex-1 truncate text-left">{item.label}</span>
           {children.length > 0 && (
-            <button
-              type="button"
-              aria-label={expanded ? `${item.label} kapat` : `${item.label} aç`}
-              aria-expanded={String(expanded)}
-              onClick={() =>
-                setOpenBranches((prev) => ({ ...prev, [item.id]: !prev[item.id] }))
-              }
-              className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border transition ${
-                active
-                  ? "border-white/10 bg-white/10 text-white hover:bg-white/15"
-                  : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700"
+            <ChevronDown
+              className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${
+                expanded ? "rotate-180" : ""
               }`}
-            >
-              <ChevronDown
-                className={`h-4 w-4 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
-              />
-            </button>
+            />
           )}
-        </div>
+        </button>
 
-        {/* Alt öğeler (animasyonlu grid) */}
-        {children.length > 0 && (
-          <div
-            className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
-              expanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-            }`}
-          >
-            <div className="overflow-hidden">
-              <div
-                className={`ml-4 space-y-1 rounded-[20px] border px-2 py-2 shadow-[0_10px_24px_-20px_rgba(15,23,42,0.18)] ${
-                  active ? "border-slate-200 bg-slate-50/95" : "border-slate-200 bg-white"
-                }`}
-              >
-                {children.map((child) => (
-                  <button
-                    key={child.id}
-                    type="button"
-                    onClick={() => handleLeaf(child)}
-                    className="block w-full rounded-xl px-3 py-2 text-left text-[13px] text-slate-600 transition hover:bg-white hover:text-slate-900"
-                  >
-                    {child.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+        {/* Alt öğeler */}
+        {children.length > 0 && expanded && (
+          <div className="ml-[22px] mt-0.5 space-y-0.5 border-l border-slate-100 pl-2.5">
+            {children.map((child) => {
+              const childActive = activeTab === parentTabId(child.id);
+              return (
+                <button
+                  key={child.id}
+                  type="button"
+                  onClick={() => handleLeaf(child)}
+                  className={`flex w-full rounded-md px-2 py-1.5 text-left text-[12px] transition-colors ${
+                    childActive
+                      ? "font-medium text-blue-700 bg-blue-50/60"
+                      : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                  }`}
+                >
+                  {child.label}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
     );
   }
 
-  function GroupSection({ group }) {
+  function GroupSection({ group, showDivider }) {
     const visibleItems = (group.children || []).filter((item) =>
       canSee(item.visibleTo),
     );
@@ -328,67 +252,58 @@ export default function Sidebar({
     const isOpen = !isCollapsible || !!openGroups[group.id];
 
     return (
-      <section>
-        {/* Grup başlığı */}
-        <div className="mb-2 flex items-center justify-between px-2">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-            {group.label}
-          </span>
-          {isCollapsible && (
-            <button
-              type="button"
-              aria-label={isOpen ? `${group.label} kapat` : `${group.label} aç`}
-              onClick={() =>
-                setOpenGroups((prev) => ({ ...prev, [group.id]: !prev[group.id] }))
-              }
-              className="rounded-md p-0.5 text-slate-400 hover:text-slate-600 transition"
-            >
-              <ChevronDown
-                className={`h-3.5 w-3.5 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-          )}
-        </div>
+      <>
+        {showDivider && <div className="my-2 border-t border-slate-100" />}
+        <section>
+          {/* Grup başlığı */}
+          <div className="mb-1 flex items-center justify-between px-3 py-1">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              {group.label}
+            </span>
+            {isCollapsible && (
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenGroups((prev) => ({ ...prev, [group.id]: !prev[group.id] }))
+                }
+                className="rounded p-0.5 text-slate-300 transition hover:text-slate-500"
+              >
+                <ChevronDown
+                  className={`h-3 w-3 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+            )}
+          </div>
 
-        {/* Öğeler */}
-        <div
-          className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
-            isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-          }`}
-        >
-          <div className="overflow-hidden">
-            <div className="space-y-2 pb-1">
+          {/* Öğeler */}
+          {isOpen && (
+            <div className="space-y-0.5">
               {visibleItems.map((item) => {
                 if (item.type === "branch") {
                   return <BranchItem key={item.id} item={item} />;
                 }
                 if (item.type === "action") {
-                  return canSee(item.visibleTo) ? (
-                    <ActionBtn key={item.id} item={item} />
-                  ) : null;
+                  return canSee(item.visibleTo)
+                    ? <ActionBtn key={item.id} item={item} />
+                    : null;
                 }
-                // leaf
-                return canSee(item.visibleTo) ? (
-                  <LeafBtn
-                    key={item.id}
-                    item={item}
-                    active={activeTab === item.id}
-                  />
-                ) : null;
+                return canSee(item.visibleTo)
+                  ? <LeafBtn key={item.id} item={item} active={activeTab === item.id} />
+                  : null;
               })}
             </div>
-          </div>
-        </div>
-      </section>
+          )}
+        </section>
+      </>
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-  const sidebarGroups = MENU_CONFIG.filter((g) => !g.isQuickAction);
+  // ── Render ────────────────────────────────────────────────────────────────────
+  const sidebarGroups = MENU_CONFIG.filter((g) => !g.isQuickAction && canSee(g.visibleTo));
 
   return (
     <>
-      {/* Mobil backdrop — tıklanınca drawer kapanır */}
+      {/* Mobil backdrop */}
       {drawerOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm xl:hidden"
@@ -397,61 +312,40 @@ export default function Sidebar({
         />
       )}
 
-      {/* Sidebar paneli
-          Mobil (< xl)  : fixed drawer, translate ile açılıp kapanır
-          Masaüstü (xl+): belge akışında, her zaman görünür            */}
       <aside
         className={[
-          // Mobil: sabit konumlu drawer
-          "fixed inset-y-0 left-0 z-50 w-[300px] overflow-y-auto p-4",
+          "fixed inset-y-0 left-0 z-50 w-[260px] overflow-y-auto p-3",
           "transition-transform duration-300 ease-in-out",
           drawerOpen ? "translate-x-0" : "-translate-x-full",
-          // Masaüstü override (xl+)
-          "xl:relative xl:inset-auto xl:z-auto xl:w-auto xl:translate-x-0 xl:min-h-0 xl:transition-none",
-          // Ortak görsel stiller
+          "xl:relative xl:inset-auto xl:z-auto xl:w-[220px] xl:translate-x-0 xl:min-h-0 xl:transition-none",
           "rounded-[28px] border border-slate-200 bg-white/90",
           "shadow-[0_18px_42px_-34px_rgba(15,23,42,0.24)]",
         ].join(" ")}
       >
-        {/* Mobil kapatma düğmesi (xl+ gizli) */}
-        <div className="mb-3 flex items-center justify-between xl:hidden">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        {/* Mobil kapatma */}
+        <div className="mb-2 flex items-center justify-between xl:hidden">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
             Menü
           </span>
           <button
             type="button"
             aria-label="Menüyü kapat"
             onClick={() => setDrawerOpen(false)}
-            className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 transition"
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 transition"
           >
-            <X className="h-4 w-4" />
+            <X className="h-3.5 w-3.5" />
           </button>
         </div>
 
-        {/* Modül bilgi kutusu */}
-        <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-            Çalışma Alanı
-          </div>
-          <div className="mt-2 text-lg font-semibold tracking-tight text-slate-950">
-            {moduleLabel}
-          </div>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            Operasyon modülleri solda, sık kullanılan aksiyonlar üstte tutulur.
-          </p>
-        </div>
-
         {/* Grup listesi */}
-        <div className="mt-5 space-y-5">
-          {sidebarGroups.map((group) =>
-            canSee(group.visibleTo) ? (
-              <GroupSection key={group.id} group={group} />
-            ) : null,
-          )}
-        </div>
+        <nav className="space-y-0">
+          {sidebarGroups.map((group, idx) => (
+            <GroupSection key={group.id} group={group} showDivider={idx > 0} />
+          ))}
+        </nav>
       </aside>
 
-      {/* Hamburger FAB — yalnızca mobilde görünür (xl+ gizli) */}
+      {/* Hamburger FAB — yalnızca mobilde */}
       <button
         type="button"
         aria-label={drawerOpen ? "Menüyü kapat" : "Menüyü aç"}

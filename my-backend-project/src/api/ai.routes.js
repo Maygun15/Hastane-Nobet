@@ -60,7 +60,7 @@ router.post('/confirm-action', async (req, res) => {
 
     // assign_shift / remove_shift / swap_shifts gibi kompleks işlemler
     // için gerekli schedule bağlamı bu endpoint'te yok; executor bilgilendirir.
-    const result = await executeCommand({ intent, entities: entities || {} });
+    const result = await executeCommand({ intent, entities: entities || {}, hospitalId: req.hospitalId || null });
     if (sessionId) clearSession(String(sessionId).slice(0, 64));
 
     return res.json({ ok: result.ok, result });

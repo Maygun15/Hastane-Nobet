@@ -226,8 +226,9 @@ export default function PersonnelTab({
 
   return (
     <div className="space-y-5">
+      {/* Hero — WorkspaceHero uyumlu düz layout */}
       <section className="rounded-[30px] border border-slate-200 bg-white px-5 py-5 shadow-sm md:px-6">
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_340px]">
+        <div className="flex flex-col gap-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
@@ -239,91 +240,80 @@ export default function PersonnelTab({
                 Personel Yapılandırması
               </span>
             </div>
-            <div className="mt-4 flex items-start gap-4">
-              <div className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm md:flex">
-                <ActiveIcon className="h-7 w-7" />
-              </div>
-              <div className="min-w-0">
-                <h2 className="text-2xl font-semibold tracking-tight text-slate-950">{active?.name || "Personel"}</h2>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{activeMeta.description}</p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
-                    <Users className="h-4 w-4 text-sky-700" />
-                    Toplam {totalPersonnel} personel
-                  </span>
-                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
-                    <Building2 className="h-4 w-4 text-emerald-700" />
-                    {visibleServices} servis görünür
-                  </span>
+            <h2 className="mt-4 text-2xl font-semibold tracking-tight text-slate-950">{active?.name || "Personel"}</h2>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">{activeMeta.description}</p>
+          </div>
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+            {[
+              { accent: "sky",     label: "Toplam Personel", value: totalPersonnel,    Icon: Users       },
+              { accent: "emerald", label: "Servis",          value: visibleServices,   Icon: Building2   },
+              { accent: "violet",  label: "Aktif Grup",      value: active?.name || "-", Icon: ActiveIcon },
+              { accent: "amber",   label: "Kapsam",          value: scope.isAdmin ? "Tümü" : "Servis", Icon: ShieldCheck },
+            ].map(({ accent, label, value, Icon }) => {
+              const tones = {
+                sky:     "border-sky-200     text-sky-700     shadow-[0_10px_26px_-22px_rgba(14,165,233,0.7)]",
+                emerald: "border-emerald-200 text-emerald-700 shadow-[0_10px_26px_-22px_rgba(16,185,129,0.7)]",
+                violet:  "border-violet-200  text-violet-700  shadow-[0_10px_26px_-22px_rgba(124,58,237,0.65)]",
+                amber:   "border-amber-200   text-amber-700   shadow-[0_10px_26px_-22px_rgba(245,158,11,0.75)]",
+              };
+              return (
+                <div key={label} className={`rounded-[22px] border bg-white px-4 py-3 ${tones[accent]}`}>
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-current/10 bg-current/5">
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">{label}</div>
+                      <div className="mt-1 text-[15px] font-semibold leading-snug text-slate-950">{value}</div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Aktif Grup</div>
-              <div className="mt-2 text-lg font-semibold text-slate-900">{active?.name || "Personel"}</div>
-              <p className="mt-1 text-sm leading-5 text-slate-600">Çalışma alanı ve vardiya uygunluğu bu grup üstünden yönetilir.</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Operasyon Etkisi</div>
-              <div className="mt-2 text-sm font-medium text-slate-800">Planlama, çizelgeler ve kullanıcı bağlantıları bu kayıtları kullanır.</div>
-            </div>
+              );
+            })}
           </div>
         </div>
       </section>
 
-      <section className="space-y-4">
-        <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Aktif Personel Görünümü</div>
-              <div className="mt-1 text-sm text-slate-600">Sadece grubu seçin; kayıt ve düzenleme alanı aşağıda aynı şekilde çalışmaya devam eder.</div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {sections.map((sectionItem) => {
-                const isActive = sectionItem.id === activeId;
-                return (
-                  <button
-                    key={sectionItem.id}
-                    type="button"
-                    onClick={() => {
-                      setActiveId(sectionItem.id);
-                      setQueryParam("sec", sectionItem.id);
-                    }}
-                    className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-medium transition ${
-                      isActive
-                        ? "border-slate-950 bg-slate-950 text-white shadow-sm"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
-                    }`}
-                  >
-                    {sectionItem.role === "doctor" ? (
-                      <UserRound className={`h-4 w-4 ${isActive ? "text-white" : "text-slate-500"}`} />
-                    ) : (
-                      <Stethoscope className={`h-4 w-4 ${isActive ? "text-white" : "text-slate-500"}`} />
-                    )}
-                    {sectionItem.name}
-                  </button>
-                );
-              })}
-            </div>
+      {/* Operasyonel Giriş — grup toggle */}
+      <div className="rounded-[22px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500 shrink-0">Personel Grubu</span>
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+            {sections.map((sectionItem) => {
+              const isActive = sectionItem.id === activeId;
+              const SIcon = sectionItem.role === "doctor" ? UserRound : Stethoscope;
+              return (
+                <button
+                  key={sectionItem.id}
+                  type="button"
+                  onClick={() => { setActiveId(sectionItem.id); setQueryParam("sec", sectionItem.id); }}
+                  className={`inline-flex items-center gap-2 px-3 py-1.5 text-[12px] font-medium rounded-lg transition-all ${
+                    isActive ? "bg-white text-sky-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  <SIcon className="h-3.5 w-3.5" />
+                  {sectionItem.name}
+                </button>
+              );
+            })}
           </div>
+          <span className="ml-auto text-[12px] text-slate-400">{totalPersonnel} kişi</span>
         </div>
+      </div>
 
-        <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
-          <SectionContent
-            section={active}
-            workAreas={workAreaOptions}
-            workingHours={effectiveWorkingHours}
-            services={services}
-            nurses={normalizePeople(effectiveNurses, masterWorkAreas)}
-            setNurses={setNursesNormalized}
-            doctors={normalizePeople(effectiveDoctors, masterWorkAreas)}
-            setDoctors={setDoctorsNormalized}
-          />
-        </div>
-      </section>
+      {/* İçerik */}
+      <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+        <SectionContent
+          section={active}
+          workAreas={workAreaOptions}
+          workingHours={effectiveWorkingHours}
+          services={services}
+          nurses={normalizePeople(effectiveNurses, masterWorkAreas)}
+          setNurses={setNursesNormalized}
+          doctors={normalizePeople(effectiveDoctors, masterWorkAreas)}
+          setDoctors={setDoctorsNormalized}
+        />
+      </div>
     </div>
   );
 }

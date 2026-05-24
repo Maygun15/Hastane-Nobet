@@ -51,7 +51,7 @@ export default function PinningModal({
         </div>
 
         <div className="p-4 border-b bg-slate-50/50 space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <div className="flex flex-col gap-1">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 w-3 h-3" />

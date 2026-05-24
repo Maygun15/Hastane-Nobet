@@ -7,7 +7,7 @@ function cx(...parts) {
 export function WorkspaceHero({ badges = [], title, description, metrics = [] }) {
   return (
     <section className="rounded-[30px] border border-slate-200 bg-white px-5 py-5 shadow-sm md:px-6">
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+      <div className="flex flex-col gap-4">
         <div className="min-w-0">
           {badges.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
@@ -21,7 +21,7 @@ export function WorkspaceHero({ badges = [], title, description, metrics = [] })
                       badge.tone || "border-slate-200 bg-slate-50 text-slate-600"
                     )}
                   >
-                    {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
+                    {Icon ? <Icon className="h-4 w-4" /> : null}
                     {badge.label}
                   </span>
                 );
@@ -33,7 +33,7 @@ export function WorkspaceHero({ badges = [], title, description, metrics = [] })
         </div>
 
         {metrics.length > 0 ? (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
             {metrics.map((metric) => (
               <WorkspaceMetricCard
                 key={metric.label}
@@ -65,8 +65,8 @@ export function WorkspaceMetricCard({ icon: Icon, accent = "sky", label, value }
           {Icon ? <Icon className="h-4.5 w-4.5" /> : null}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-current/75">{label}</div>
-          <div className="mt-1 truncate text-[17px] font-semibold leading-6 text-slate-950">{value}</div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">{label}</div>
+          <div className="mt-1 text-[15px] font-semibold leading-snug text-slate-950">{value}</div>
         </div>
       </div>
     </div>

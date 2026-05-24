@@ -4,11 +4,20 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import {
   ArrowLeftRight,
+  Building2,
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
   Clock3,
+  FileDown,
   FileSpreadsheet,
+  FileUp,
+  ListChecks,
+  Loader2,
+  RefreshCw,
   ShieldCheck,
+  Sparkles,
   Stethoscope,
   Users,
 } from "lucide-react";
@@ -16,7 +25,6 @@ import { http } from "../lib/api.js";
 import { LS } from "../utils/storage.js";
 import DutyRowsEditor from "../components/DutyRowsEditor.jsx";
 import QuickReplacePanel from "../components/QuickReplacePanel.jsx";
-import ScheduleToolbar from "../components/ScheduleToolbar.jsx";
 import MonthlyHoursSheet from "../components/MonthlyHoursSheet.jsx";
 import OvertimeTab from "./OvertimeTab.jsx";
 import MonthlyLeavesMatrixGeneric from "./MonthlyLeavesMatrixGeneric.jsx";
@@ -474,6 +482,106 @@ const extractDay = (h) => {
 };
 
 /* =========================
+   Sıfırlama onay modalı + akıllı buton
+========================= */
+function ConfirmResetModal({ open, sectionTitle, onConfirm, onCancel }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+        <div className="mb-1 flex items-center gap-2 text-rose-600">
+          <RefreshCw size={16} />
+          <span className="text-[13px] font-semibold">Sıfırlama Onayı</span>
+        </div>
+        <p className="mt-2 text-sm text-slate-700">
+          <strong>{sectionTitle}</strong> sayfasındaki tüm veriler silinecek.
+          Bu işlem geri alınamaz.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            İptal
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-xl bg-rose-600 px-4 py-2 text-[12px] font-medium text-white hover:bg-rose-700 transition-colors"
+          >
+            Sıfırla
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SmartResetButton({ onReset, hasData, sectionTitle }) {
+  const [showConfirm, setShowConfirm] = useState(false);
+  const btn = "inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-medium transition-colors";
+  const disabled = !onReset || !hasData;
+  return (
+    <>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setShowConfirm(true)}
+        className={`${btn} border ${
+          disabled
+            ? "border-rose-200 bg-rose-50 text-rose-400 opacity-50 cursor-not-allowed"
+            : "border-red-500 bg-rose-50 text-rose-700 hover:bg-rose-100"
+        }`}
+      >
+        <RefreshCw size={13} /> Sıfırla
+      </button>
+      <ConfirmResetModal
+        open={showConfirm}
+        sectionTitle={sectionTitle}
+        onConfirm={() => { setShowConfirm(false); onReset?.(); }}
+        onCancel={() => setShowConfirm(false)}
+      />
+    </>
+  );
+}
+
+/* =========================
+   Standart Çizelge Aksiyon Şeridi
+========================= */
+// 4 sekmenin tamamında aynı buton sırası ve boyutları; handler'lar sekmeye göre değişir.
+function SectionHeader({ title, onAi, onBuild, onExport, onImport, onReset, building = false }) {
+  const btn = "inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-medium transition-colors";
+  const hasData = !!onReset;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+      <h2 className="text-[15px] font-semibold text-slate-800">{title}</h2>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={onAi} disabled={!onAi}
+          className={`${btn} bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-30 disabled:cursor-not-allowed`}>
+          <Sparkles size={13} /> Yapay Zeka
+        </button>
+        <button type="button" onClick={building ? undefined : onBuild} disabled={!onBuild || building}
+          className={`${btn} border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed`}>
+          {building
+            ? <><Loader2 size={13} className="animate-spin" /> Oluşturuluyor…</>
+            : <><ListChecks size={13} /> Çizelgeden Doldur</>}
+        </button>
+        <button type="button" onClick={onExport} disabled={!onExport}
+          className={`${btn} border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed`}>
+          <FileDown size={13} /> Excel'e Aktar
+        </button>
+        <button type="button" onClick={onImport} disabled={!onImport}
+          className={`${btn} border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed`}>
+          <FileUp size={13} /> Excel'den Yükle
+        </button>
+        <SmartResetButton onReset={onReset} hasData={hasData} sectionTitle={title} />
+      </div>
+    </div>
+  );
+}
+
+/* =========================
    Alt sekme içerikleri
 ========================= */
 function SectionContent({
@@ -713,19 +821,7 @@ function SectionContent({
     }
   }, [peopleAll, month, year]);
 
-  // Ortak toolbar: her sekmede aynı butonlar, sekmeye göre handler değişir
   const noop = () => {};
-  const commonToolbarProps = {
-    year,
-    month,
-    setYear,
-    setMonth,
-    onAi: noop,
-    onBuild: noop,
-    onExport: noop,
-    onImport: noop,
-    onReset: noop,
-  };
 
   const triggerTemplateImport = useCallback(() => {
     const input = templateFileRef.current;
@@ -789,28 +885,12 @@ function SectionContent({
         <>
           <div className="space-y-3">
             {SwapLogBanner}
-            <ScheduleToolbar
+            <SectionHeader
               title="Çalışma Çizelgesi"
-              {...commonToolbarProps}
-              onAi={() => editorRef.current?.ai?.() ?? commonToolbarProps.onAi()}
+              onAi={() => editorRef.current?.ai?.() ?? noop()}
               onBuild={handleBuild}
-              onExport={() => editorRef.current?.exportExcel?.() ?? commonToolbarProps.onExport()}
+              onExport={() => editorRef.current?.exportExcel?.() ?? noop()}
             />
-            <SectionWorkspaceIntro sectionId={sectionId} />
-            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-              <div className="font-medium">Yapılandırma bu ekrandan ayrıldı.</div>
-              <div className="mt-1 text-sky-800/80">
-                Görev satırları, gün bazlı sayı matrisi ve sayısal önizleme artık{" "}
-                <button
-                  type="button"
-                  onClick={() => { try { window.location.hash = "/parametreler/cizelge-yapisi"; } catch {} }}
-                  className="font-semibold underline underline-offset-2"
-                >
-                  Parametreler &gt; Çizelge Yapısı
-                </button>{" "}
-                altında yönetilir.
-              </div>
-            </div>
             <div className="rounded-lg border bg-white p-4">
               <DutyRowsEditor
                 ref={editorRef}
@@ -847,15 +927,13 @@ function SectionContent({
       return (
         <div className="space-y-3">
           {SwapLogBanner}
-          <ScheduleToolbar
+          <SectionHeader
             title="Aylık Çalışma ve Mesai Saatleri Çizelgesi"
-            {...commonToolbarProps}
-            onBuild={() => monthlyRef.current?.importFromRoster?.() ?? commonToolbarProps.onBuild()}
-            onExport={() => monthlyRef.current?.exportExcel?.() ?? commonToolbarProps.onExport()}
-            onImport={() => monthlyRef.current?.importExcel?.() ?? commonToolbarProps.onImport()}
-            onReset={() => monthlyRef.current?.reset?.() ?? commonToolbarProps.onReset()}
+            onBuild={() => monthlyRef.current?.importFromRoster?.()}
+            onExport={() => monthlyRef.current?.exportExcel?.()}
+            onImport={() => monthlyRef.current?.importExcel?.()}
+            onReset={() => monthlyRef.current?.reset?.()}
           />
-          <SectionWorkspaceIntro sectionId={sectionId} />
           <div className="rounded-lg border bg-white p-4">
             <MonthlyHoursSheet
               ref={monthlyRef}
@@ -880,14 +958,12 @@ function SectionContent({
       return (
         <div className="space-y-3">
           {SwapLogBanner}
-          <ScheduleToolbar
+          <SectionHeader
             title="Fazla Mesai Takip Formu"
-            {...commonToolbarProps}
-            onBuild={() => overtimeRef.current?.importFromRoster?.() ?? commonToolbarProps.onBuild()}
-            onExport={() => overtimeRef.current?.exportExcel?.() ?? commonToolbarProps.onExport()}
-            onReset={() => overtimeRef.current?.reset?.() ?? commonToolbarProps.onReset()}
+            onBuild={() => overtimeRef.current?.importFromRoster?.()}
+            onExport={() => overtimeRef.current?.exportExcel?.()}
+            onReset={() => overtimeRef.current?.reset?.()}
           />
-          <SectionWorkspaceIntro sectionId={sectionId} />
           <div className="rounded-lg border bg-white p-4">
             <OvertimeTab
               ref={overtimeRef}
@@ -909,9 +985,8 @@ function SectionContent({
     case "toplu-izin-listesi":
       return (
         <div className="space-y-3">
-          <ScheduleToolbar
+          <SectionHeader
             title="Toplu İzin Listesi"
-            {...commonToolbarProps}
             onExport={handleExportLeaves}
             onImport={triggerImportLeaves}
           />
@@ -922,7 +997,6 @@ function SectionContent({
             className="hidden"
             onChange={onFilePicked}
           />
-          <SectionWorkspaceIntro sectionId={sectionId} />
           <div className="rounded-lg border bg-white p-4">
             <MonthlyLeavesMatrixGeneric
               people={Array.isArray(peopleAll) ? peopleAll : []}
@@ -939,10 +1013,7 @@ function SectionContent({
     default:
       return (
         <div className="space-y-3">
-          <ScheduleToolbar
-            title={`Sekme: ${sectionId}`}
-            {...commonToolbarProps}
-          />
+          <SectionHeader title={`Sekme: ${sectionId}`} />
           <div className="rounded-lg border bg-white p-4">
             <div className="text-sm text-slate-600">Özel sekme içeriği (placeholder).</div>
           </div>
@@ -1158,128 +1229,130 @@ export default function SchedulesTab({ workAreas, workingHours, peopleAll: peopl
         ]}
       />
 
-      <section className="space-y-4">
-        <WorkspacePanel
-          title="Çizelge Türü"
-          description="Aktif çizelgeyi seçin, sonra aynı bağlam içinde ilgili çalışma alanına geçin."
-          aside={
-            <div>
-              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Çalışma Bağlamı</div>
-              <div className="mt-3 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
-                <div className="space-y-4">
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700">Servis</label>
-                    {scope.isAdmin ? (
-                      <select
-                        className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:bg-white"
-                        value={svc}
-                        onChange={(e) => setSvc(e.target.value)}
-                      >
-                        <option value="">Tümü</option>
-                        {(scope.allowedIds || []).map((id) => {
-                          const s = scope.servicesById.get(String(id));
-                          const name = s?.name || s?.code || id;
-                          return (
-                            <option key={id} value={id}>
-                              {name}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    ) : (
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-                        {selectedServiceName || "-"}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="mb-2 text-sm font-medium text-slate-700">Rol</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => setActiveRole("Nurse")}
-                        className={`h-11 rounded-2xl border text-sm font-medium transition ${
-                          activeRole === "Nurse"
-                            ? "border-slate-900 bg-slate-950 text-white"
-                            : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
-                        }`}
-                      >
-                        Hemşire
-                      </button>
-                      <button
-                        onClick={() => setActiveRole("Doctor")}
-                        className={`h-11 rounded-2xl border text-sm font-medium transition ${
-                          activeRole === "Doctor"
-                            ? "border-slate-900 bg-slate-950 text-white"
-                            : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
-                        }`}
-                      >
-                        Doktor
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-600">
-                    <div className="font-medium text-slate-800">Aktif bağlam</div>
-                    <div className="mt-1 leading-6">
-                      {activeMeta.shortLabel} · {scopeBadgeLabel || "Tümü"} · {monthLabel}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          }
-        >
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {sections.map((s) => {
-                const meta = getSectionMeta(s.id, s.name);
-                const Icon = meta.icon;
-                const isActive = s.id === activeId;
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => handleTabClick(s.id)}
-                    className={`w-full rounded-[22px] border px-3 py-3 text-left transition ${
-                      isActive
-                        ? "border-slate-900 bg-slate-950 text-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.75)]"
-                        : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white"
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border ${
-                        isActive ? "border-white/15 bg-white/10 text-white" : "border-slate-200 bg-white text-slate-700"
-                      }`}>
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className={`text-[11px] font-medium uppercase tracking-[0.16em] ${isActive ? "text-white/65" : "text-slate-500"}`}>
-                          {meta.eyebrow}
-                        </div>
-                        <div className={`mt-1 text-sm font-semibold ${isActive ? "text-white" : "text-slate-900"}`}>{s.name}</div>
-                        <p className={`mt-1 text-xs leading-5 ${isActive ? "text-white/72" : "text-slate-600"}`}>
-                          {meta.shortLabel}
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
+      {/* ── Operasyonel Giriş Noktası — tek gerçeklik kaynağı ── */}
+      <div className="rounded-[22px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Dönem navigasyonu */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => { if (month === 1) { setYear(year - 1); setMonth(12); } else { setMonth(month - 1); } }}
+              className="rounded-xl border border-slate-200 p-1.5 hover:bg-slate-50 transition-colors"
+              title="Önceki ay"
+            >
+              <ChevronLeft className="h-4 w-4 text-slate-500" />
+            </button>
+            <span className="min-w-[148px] text-center text-sm font-semibold text-slate-800">{monthLabel}</span>
+            <button
+              type="button"
+              onClick={() => { if (month === 12) { setYear(year + 1); setMonth(1); } else { setMonth(month + 1); } }}
+              className="rounded-xl border border-slate-200 p-1.5 hover:bg-slate-50 transition-colors"
+              title="Sonraki ay"
+            >
+              <ChevronRight className="h-4 w-4 text-slate-500" />
+            </button>
           </div>
-        </WorkspacePanel>
+
+          <div className="h-5 w-px bg-slate-200 hidden sm:block" />
+
+          {/* Servis seçimi — sadece admin */}
+          {scope.isAdmin && (
+            <div className="flex items-center gap-2">
+              <Building2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+              <select
+                value={svc}
+                onChange={(e) => setSvc(e.target.value)}
+                className="h-9 min-w-[160px] rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+              >
+                <option value="">Tümü</option>
+                {(scope.allowedIds || []).map((id) => {
+                  const srv = scope.servicesById.get(String(id));
+                  return <option key={id} value={id}>{srv?.name || srv?.code || id}</option>;
+                })}
+              </select>
+            </div>
+          )}
+          {!scope.isAdmin && (
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+              <Building2 className="h-3.5 w-3.5 text-slate-400" />
+              <span className="font-medium">{selectedServiceName || "-"}</span>
+            </div>
+          )}
+
+          {/* Rol toggle */}
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setActiveRole("Nurse")}
+              className={`px-3 py-1 text-xs font-medium rounded-lg transition-all ${
+                activeRole !== "Doctor" ? "bg-white text-sky-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              Hemşire
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveRole("Doctor")}
+              className={`px-3 py-1 text-xs font-medium rounded-lg transition-all ${
+                activeRole === "Doctor" ? "bg-white text-sky-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              Doktor
+            </button>
+          </div>
+
+          {/* Kapsam özeti */}
+          <span className="ml-auto text-[12px] text-slate-400">
+            {scopedPeople.length} kişi · {scopeBadgeLabel || "Tümü"}
+          </span>
+        </div>
+      </div>
+
+      <section className="space-y-4">
+        {/* Çizelge türü seçimi */}
+        <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500 mb-3">Çizelge Türü</div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {sections.map((s) => {
+              const meta = getSectionMeta(s.id, s.name);
+              const Icon = meta.icon;
+              const isActive = s.id === activeId;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => handleTabClick(s.id)}
+                  className={`w-full rounded-[22px] border px-3 py-3 text-left transition ${
+                    isActive
+                      ? "border-slate-900 bg-slate-950 text-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.75)]"
+                      : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border ${
+                      isActive ? "border-white/15 bg-white/10 text-white" : "border-slate-200 bg-white text-slate-700"
+                    }`}>
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className={`text-[11px] font-medium uppercase tracking-[0.16em] ${isActive ? "text-white/65" : "text-slate-500"}`}>
+                        {meta.eyebrow}
+                      </div>
+                      <div className={`mt-1 text-sm font-semibold ${isActive ? "text-white" : "text-slate-900"}`}>{s.name}</div>
+                      <p className={`mt-1 text-xs leading-5 ${isActive ? "text-white/72" : "text-slate-600"}`}>
+                        {meta.shortLabel}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         <div className="min-w-0 rounded-[30px] border border-slate-200 bg-white p-3 shadow-sm md:p-4">
           <div className="sticky top-3 z-10 mb-4 rounded-[24px] border border-slate-200 bg-white/92 px-4 py-3 shadow-sm backdrop-blur">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <div>
-                <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Tablo Çalışma Alanı</div>
-                <div className="mt-1 text-lg font-semibold text-slate-900">{active?.name || "Çizelgeler"}</div>
-              </div>
-              <div className="flex flex-wrap gap-2 text-sm text-slate-600">
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">Servis: <span className="font-medium text-slate-800">{scopeBadgeLabel || "Tümü"}</span></span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">Rol: <span className="font-medium text-slate-800">{roleLabel}</span></span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">Kişi: <span className="font-medium text-slate-800">{scopedPeople.length}</span></span>
-              </div>
-            </div>
+            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Tablo Çalışma Alanı</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">{active?.name || "Çizelgeler"}</div>
           </div>
 
           {visitedInOrder.map((id) => {

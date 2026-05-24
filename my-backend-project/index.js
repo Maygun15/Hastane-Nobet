@@ -228,6 +228,32 @@ app.get('/', (_req, res) => res.send('Backend Sunucusu Başarıyla Çalışıyor
 app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
+// Public health endpoint — UptimeRobot / dashboard monitoring (auth gerektirmez)
+app.get('/api/ping', async (_req, res) => {
+  const t0 = Date.now();
+  const dbState = mongoose.connection.readyState; // 0=off 1=ok 2=connecting 3=closing
+  let dbLatencyMs = null;
+  if (dbState === 1) {
+    try {
+      await mongoose.connection.db.admin().ping();
+      dbLatencyMs = Date.now() - t0;
+    } catch { /* bağlantı var ama ping başarısız — state zaten 1 değil */ }
+  }
+  const pool = mongoose.connection?.pool;
+  res.status(dbState === 1 ? 200 : 503).json({
+    status: dbState === 1 ? 'ok' : 'degraded',
+    ts: Date.now(),
+    uptime_s: Math.floor(process.uptime()),
+    memory_mb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+    db: {
+      state: dbState,
+      latency_ms: dbLatencyMs,
+      pool_total: pool?.totalConnectionCount ?? null,
+      pool_available: pool?.availableConnectionCount ?? null,
+    },
+  });
+});
+
 /* ============ AUTH HELPERS (JWT) ============ */
 const User = require(path.join(__dirname, 'models', 'User.js'));
 const AuditLog = require(path.join(__dirname, 'models', 'AuditLog.js'));
@@ -711,6 +737,73 @@ app.get('/api/reports/occupancy', ...secureTenant, requireRole('admin'), async (
     res.json({ year, month, data: agg });
   } catch (e) {
     res.status(500).json({ message: e.message });
+  }
+});
+
+/* ============ ADMIN: VERİTABANI TUTARLILIK KONTROLÜ ============ */
+app.get('/api/admin/check-consistency', ...secureTenant, requireRole('admin'), async (req, res) => {
+  try {
+    const Setting    = require('./models/Setting');
+
+    // 1. Tüm leavesV2 belgelerini çek ve (personId, date, leaveCode) üçlülerini topla
+    const leaveDocs = await Setting.find(withHospitalFilter(req, { key: 'leavesV2' })).lean();
+
+    const leaveIndex = {}; // "personId::date" → leaveCode
+    for (const doc of leaveDocs) {
+      const val = doc?.value;
+      if (!val || typeof val !== 'object') continue;
+      for (const [pid, byYm] of Object.entries(val)) {
+        if (!pid || typeof byYm !== 'object') continue;
+        for (const [ym, days] of Object.entries(byYm)) {
+          if (!days || typeof days !== 'object') continue;
+          for (const [day, entry] of Object.entries(days)) {
+            const leaveCode = typeof entry === 'string' ? entry : entry?.code;
+            if (!leaveCode) continue;
+            const date = `${ym}-${String(day).padStart(2, '0')}`;
+            leaveIndex[`${pid}::${date}`] = leaveCode;
+          }
+        }
+      }
+    }
+
+    const leaveDayCount = Object.keys(leaveIndex).length;
+    if (leaveDayCount === 0) {
+      return res.json({ ok: true, conflicts: [], total: 0, checkedLeaveDays: 0 });
+    }
+
+    // 2. Kişi bazında izin günlerini topla → tek sorguda Assignment'ları kontrol et
+    const personDateMap = {}; // personId → Set<date>
+    for (const key of Object.keys(leaveIndex)) {
+      const [pid, date] = key.split('::');
+      if (!personDateMap[pid]) personDateMap[pid] = new Set();
+      personDateMap[pid].add(date);
+    }
+
+    const conflicts = [];
+    for (const [pid, dateSet] of Object.entries(personDateMap)) {
+      const dates = [...dateSet];
+      const assignments = await Assignment.find(
+        withHospitalFilter(req, { personId: pid, date: { $in: dates }, status: 'active' }),
+      ).select('personId personName date shiftCode roleLabel sectionId serviceId').lean();
+
+      for (const assg of assignments) {
+        conflicts.push({
+          personId:   pid,
+          personName: assg.personName || '',
+          date:       assg.date,
+          leaveCode:  leaveIndex[`${pid}::${assg.date}`] || '',
+          shiftCode:  assg.shiftCode || assg.roleLabel || '',
+          sectionId:  assg.sectionId || '',
+          serviceId:  assg.serviceId || '',
+        });
+      }
+    }
+
+    conflicts.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+    return res.json({ ok: true, conflicts, total: conflicts.length, checkedLeaveDays: leaveDayCount });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: e.message });
   }
 });
 

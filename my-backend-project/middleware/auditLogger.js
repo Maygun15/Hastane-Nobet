@@ -26,6 +26,7 @@ module.exports = async function auditLogger(req, res, next) {
 
     AuditLog.create({
       userId,
+      hospitalId:   req.hospitalId || null,
       action:       `${req.method} ${req.path}`,
       endpoint:     req.path,
       method:       req.method,

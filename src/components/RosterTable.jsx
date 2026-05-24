@@ -407,7 +407,7 @@ const RosterTable = forwardRef(function RosterTable({
                 }`}
               >
                 <div className="text-xs font-bold">{d.d}</div>
-                <div className="text-[10px] font-normal opacity-75">
+                <div className="text-[10px] font-normal text-slate-500">
                   {d.dayName}
                 </div>
               </th>
@@ -508,7 +508,7 @@ const RosterTable = forwardRef(function RosterTable({
                       onContextMenu={(e) => handleContextMenu(e, cellData)}
                     >
                       {name ? (
-                        <span className={`inline-block w-full ${compact ? "px-0.5 py-0 text-[10px]" : "px-1 py-1 text-[11px]"} rounded bg-sky-100 text-sky-700 font-medium truncate`}>
+                        <span className={`inline-block w-full ${compact ? "px-0.5 py-0 text-[10px]" : "px-1 py-1 text-[11px]"} rounded bg-sky-100 text-sky-700 font-medium truncate`} title={name}>
                           {name}
                         </span>
                       ) : (
@@ -559,7 +559,7 @@ const RosterTable = forwardRef(function RosterTable({
                 </button>
               </div>
             </div>
-            <div className="p-4 space-y-3">
+            <div className="p-4 space-y-3 overflow-y-auto max-h-[calc(90vh-120px)]">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-500">Tarih</span>
                 <span className="text-sm font-medium text-slate-800">{selectedCell.date}</span>
@@ -733,7 +733,7 @@ const RosterTable = forwardRef(function RosterTable({
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="px-3 py-2 text-xs font-semibold text-slate-500 border-b mb-1 bg-slate-50 truncate max-w-[200px]">
+          <div className="px-3 py-2 text-xs font-semibold text-slate-500 border-b mb-1 bg-slate-50 truncate max-w-[200px]" title={contextMenu.data.personName}>
             {contextMenu.data.personName}
           </div>
           <button

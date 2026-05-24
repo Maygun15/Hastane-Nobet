@@ -1,8 +1,9 @@
 // src/components/PersonScheduleCalendar.jsx (UPDATED)
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { buildMonthDays } from "../utils/date.js";
 import { LS } from "../utils/storage.js";
 import { assignSchedule, unassignSchedule } from "../api/apiAdapter.js";
+import { setLeave, setLeaveWithCheck } from "../lib/leaves.js";
 import { API } from "../lib/api.js";
 import DayCard from "./DayCard.jsx";
 import MonthStats from "./MonthStats.jsx";
@@ -29,10 +30,98 @@ const SERVICE_SUPERVISOR_LABEL = "SERVİS SORUMLUSU";
 
 const AREA_STORAGE_KEYS = ["workAreasV2", "workAreas"];
 const WORKING_HOURS_KEYS = ["workingHoursV2", "workingHours"];
+const DEFAULT_LEAVE_TYPE_NAMES = {
+  AN: "Ay sonu nöbet izni",
+  B: "Boşluk isteği",
+  "Bİ": "Babalık izni",
+  "Dİ": "Doğum izni",
+  "Eİ": "Evlilik izni",
+  G: "Görev izni",
+  H: "Hafta tatili",
+  "İ": "İzin",
+  "İİ": "İdari izin",
+  KN: "Kesin nöbet",
+  R: "Rapor",
+  RE: "Refakat izni",
+  S: "Senelik izin",
+  "Sİ": "Sağlık izni",
+  "SÜ": "Süt izni",
+  "SÜ1": "Süt izni 1",
+  "SÜ2": "Süt izni 2",
+  "Üİ": "Ücretsiz izin",
+  Y: "Yıllık izin",
+};
+const INTERNAL_LEAVE_CODES = new Set(["ÇŞ", "KN"]);
+const PREFERRED_LEAVE_CODE_ORDER = ["Y", "R", "SÜ", "SÜ1", "SÜ2", "Eİ", "Bİ", "Dİ", "İ", "İİ", "Üİ", "RE", "Sİ", "B", "AN"];
 
 const SOURCE_PRIORITY = {
   remote: 3,
 };
+
+function normalizeLeaveCode(code = "") {
+  return String(code || "").trim().toLocaleUpperCase("tr-TR");
+}
+
+function normalizeLeaveType(type) {
+  if (!type) return null;
+  const code = normalizeLeaveCode(
+    type.code ??
+      type.kisaltma ??
+      type.abbr ??
+      type.short ??
+      type.KISALTMA ??
+      type.value ??
+      ""
+  );
+  if (!code) return null;
+  const name = String(
+    type.name ??
+      type.turAdi ??
+      type.title ??
+      type.label ??
+      type.TUR_ADI ??
+      type["TÜR_ADI"] ??
+      DEFAULT_LEAVE_TYPE_NAMES[code] ??
+      ""
+  ).trim();
+  const description = String(
+    type.description ??
+      type.desc ??
+      type.aciklama ??
+      type.açıklama ??
+      ""
+  ).trim();
+  return { code, name, description };
+}
+
+function buildLeaveTypeOptions(leaveTypes = []) {
+  const map = new Map();
+  const add = (item) => {
+    const normalized = normalizeLeaveType(item);
+    if (!normalized) return;
+    const current = map.get(normalized.code);
+    map.set(normalized.code, {
+      code: normalized.code,
+      name: normalized.name || current?.name || "",
+      description: normalized.description || current?.description || "",
+    });
+  };
+
+  Object.keys(LEAVE_RULES || {}).forEach((code) => {
+    add({ code, name: DEFAULT_LEAVE_TYPE_NAMES[normalizeLeaveCode(code)] || "" });
+  });
+  Object.entries(DEFAULT_LEAVE_TYPE_NAMES).forEach(([code, name]) => add({ code, name }));
+  (Array.isArray(leaveTypes) ? leaveTypes : []).forEach(add);
+
+  return Array.from(map.values())
+    .filter((item) => !INTERNAL_LEAVE_CODES.has(item.code))
+    .sort((a, b) => {
+      const ai = PREFERRED_LEAVE_CODE_ORDER.indexOf(a.code);
+      const bi = PREFERRED_LEAVE_CODE_ORDER.indexOf(b.code);
+      if (ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      return a.code.localeCompare(b.code, "tr", { sensitivity: "base" });
+    });
+}
 
 function buildDisplayCells(year, month0) {
   const first = new Date(year, month0, 1);
@@ -685,7 +774,7 @@ function collapseLeaves(allLeaves, personId, canon, ymKey, aliasIds = []) {
   return merged;
 }
 
-export default function PersonScheduleCalendar({
+const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
   year,
   month,
   people = [],
@@ -697,7 +786,8 @@ export default function PersonScheduleCalendar({
   scheduleRole = "",
   workAreas = [],
   workingHours = [],
-}) {
+  leaveTypes = [],
+}, ref) {
   const month0 = Math.max(0, Math.min(11, Number(month) - 1 || 0));
   const ymKey = `${year}-${pad2(month0 + 1)}`;
   const canManage = role.isAdmin || role.isAuthorized;
@@ -751,6 +841,13 @@ export default function PersonScheduleCalendar({
   const [quickReplaceOpen, setQuickReplaceOpen] = useState(false);
   const [quickReplaceSelection, setQuickReplaceSelection] = useState(null);
   const [swappedDates, setSwappedDates] = useState(new Set());
+  const [leaveClearedDates, setLeaveClearedDates] = useState(new Set());
+  const [leaveModal, setLeaveModal] = useState({ open: false, dayNum: null, dateStr: "" });
+  const [leaveModalCode, setLeaveModalCode] = useState("");
+  const [leaveModalNote, setLeaveModalNote] = useState("");
+  const [leaveModalSaving, setLeaveModalSaving] = useState(false);
+  const [leaveModalError, setLeaveModalError] = useState("");
+  const [leaveBackendConflict, setLeaveBackendConflict] = useState(null);
   const pendingRefreshRef = useRef(null);
   const [settingsRevision, setSettingsRevision] = useState(0);
   const [googleCalendarStatus, setGoogleCalendarStatus] = useState({
@@ -760,6 +857,19 @@ export default function PersonScheduleCalendar({
     message: "",
   });
   const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false);
+
+  const leaveTypeOptions = useMemo(() => {
+    const storedLeaveTypes = LS.get("leaveTypesV2", []);
+    return buildLeaveTypeOptions(
+      Array.isArray(leaveTypes) && leaveTypes.length ? leaveTypes : storedLeaveTypes
+    );
+  }, [leaveTypes, settingsRevision]);
+
+  const leaveTypeByCode = useMemo(() => {
+    const map = new Map();
+    leaveTypeOptions.forEach((item) => map.set(item.code, item));
+    return map;
+  }, [leaveTypeOptions]);
 
   // Tatil verisi: { "YYYY-MM-DD": { kind: "full"|"arife"|"half", name: string } }
   const [holidayMap, setHolidayMap] = useState({});
@@ -1202,6 +1312,10 @@ export default function PersonScheduleCalendar({
 
   const { cells } = useMemo(() => buildMonthDays(year, month0), [year, month0]);
   const displayCells = useMemo(() => buildDisplayCells(year, month0), [year, month0]);
+  const monthLabel = useMemo(
+    () => Intl.DateTimeFormat("tr-TR", { month: "long", year: "numeric" }).format(new Date(year, month0, 1)),
+    [year, month0]
+  );
 
   const renderAssignments = (list = []) =>
     list.map((assg, idx) => {
@@ -1278,6 +1392,146 @@ export default function PersonScheduleCalendar({
         {code}
       </div>
     ) : null;
+
+  const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+
+  const firstValidEmail = (candidates = []) =>
+    String(candidates.find((value) => isValidEmail(value)) || "").trim();
+
+  const getSelectedPersonEmail = () => {
+    const raw = selectedPerson?.raw || {};
+    return firstValidEmail([
+      selectedPerson?.email,
+      selectedPerson?.mail,
+      raw.email,
+      raw.mail,
+      raw.eMail,
+      raw.emailAddress,
+      raw["Mail"],
+      raw["MAIL"],
+      raw["E-posta"],
+      raw["EPOSTA"],
+      raw?.contact?.email,
+      raw?.user?.email,
+      raw?.account?.email,
+    ]);
+  };
+
+  const findLinkedUserEmail = async () => {
+    if (!selectedPerson) return "";
+    const selectedIds = new Set(
+      [
+        selectedPerson.id,
+        selectedPerson.raw?.id,
+        selectedPerson.raw?._id,
+        selectedPerson.raw?.personId,
+        ...(Array.isArray(selectedPerson.aliasIds) ? selectedPerson.aliasIds : []),
+        ...(Array.isArray(selectedPerson.raw?.aliasIds) ? selectedPerson.raw.aliasIds : []),
+      ]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    );
+    const selectedTc = String(selectedPerson.raw?.tc || selectedPerson.raw?.tcNo || selectedPerson.raw?.TCKN || "").replace(/\D+/g, "");
+    const selectedCanon = selectedPerson.canon || canonName(selectedPerson.name || "");
+
+    try {
+      const data = await API.http.get("/api/users");
+      const users = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
+      const linked = users.find((u) => {
+        const uidPerson = String(u?.personId || u?.person_id || u?.staffId || "").trim();
+        if (uidPerson && selectedIds.has(uidPerson)) return true;
+
+        const utc = String(u?.tc || u?.tcNo || u?.TCKN || "").replace(/\D+/g, "");
+        if (selectedTc && utc && selectedTc === utc) return true;
+
+        const userCanon = canonName(
+          u?.name || u?.fullName || u?.displayName || [u?.firstName, u?.lastName].filter(Boolean).join(" ")
+        );
+        return selectedCanon && userCanon && selectedCanon === userCanon;
+      });
+      return firstValidEmail([linked?.email, linked?.mail, linked?.eMail, linked?.emailAddress]);
+    } catch (err) {
+      console.warn("linked user email lookup failed:", err?.message || err);
+      return "";
+    }
+  };
+
+  const buildSelectedPersonScheduleText = () => {
+    if (!selectedPerson) return "";
+    const daysInMonth = new Date(year, month0 + 1, 0).getDate();
+    const lines = [
+      `${selectedPerson.name} - ${monthLabel} Nöbet Çizelgesi`,
+      "",
+    ];
+
+    for (let dayNum = 1; dayNum <= daysInMonth; dayNum += 1) {
+      const dateStr = `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`;
+      const dayLabel = new Date(year, month0, dayNum).toLocaleDateString("tr-TR", {
+        weekday: "short",
+      });
+      const leaveRaw = leavesForPerson[String(dayNum)] || leavesForPerson[dateStr];
+      const leaveText = formatLeaveValue(leaveRaw);
+      const holidayText = holidayMap[dateStr]?.name || "";
+      const assignmentText = (assignmentsByDay.get(dayNum) || [])
+        .map((assg) => {
+          const visibleShift = displayShiftToken(assg);
+          const rowLabel = String(
+            assg?.roleLabel ||
+              assg?.rowLabel ||
+              assg?.label ||
+              assg?.area ||
+              assg?.taskLabel ||
+              ""
+          ).trim();
+          const detail = rowLabel && rowLabel !== visibleShift ? rowLabel : "";
+          return [visibleShift, detail].filter(Boolean).join(" - ") || "Nöbet";
+        })
+        .filter(Boolean)
+        .join(", ");
+
+      const parts = [
+        assignmentText,
+        leaveText ? `İzin: ${leaveText}` : "",
+        holidayText ? `Tatil: ${holidayText}` : "",
+      ].filter(Boolean);
+
+      if (parts.length) {
+        lines.push(`${pad2(dayNum)} ${dayLabel}: ${parts.join(" | ")}`);
+      }
+    }
+
+    if (lines.length === 2) {
+      lines.push("Bu ay için kayıtlı nöbet bulunmuyor.");
+    }
+
+    return lines.join("\n");
+  };
+
+  const handleEmailSelectedSchedule = async () => {
+    if (!selectedPerson) {
+      window.alert?.("E-posta göndermek için önce personel seçin.");
+      return;
+    }
+    const email = getSelectedPersonEmail() || await findLinkedUserEmail();
+    if (!isValidEmail(email)) {
+      window.alert?.(`${selectedPerson.name} için geçerli e-posta adresi bulunamadı.`);
+      return;
+    }
+
+    const subject = `${selectedPerson.name} - ${monthLabel} nöbet çizelgesi`;
+    const body = buildSelectedPersonScheduleText();
+    window.location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      printSchedule: () => window.print(),
+      emailSchedule: handleEmailSelectedSchedule,
+      getSelectedPerson: () => selectedPerson,
+    }),
+    [selectedPerson, assignmentsByDay, leavesForPerson, holidayMap, monthLabel]
+  );
 
   const openAssignModal = (dayNum) => {
     if (!canManage || !selectedPerson) return;
@@ -1410,6 +1664,86 @@ export default function PersonScheduleCalendar({
     }
   };
 
+  // ── Planlama Takvimi İzin Modal ────────────────────────────────────────────
+  const openLeaveModal = (dayNum) => {
+    if (!canManage || !selectedPerson) return;
+    const dateStr = `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`;
+    const existing = leavesForPerson[String(dayNum)] || leavesForPerson[dateStr];
+    const existingCode = existing && typeof existing === "object" ? (existing.code || "") : (existing || "");
+    const defaultCode =
+      existingCode ||
+      leaveTypeByCode.get("Y")?.code ||
+      leaveTypeOptions[0]?.code ||
+      "Y";
+    setLeaveModalCode(defaultCode);
+    setLeaveModalNote(existing?.note || "");
+    setLeaveModalError("");
+    setLeaveBackendConflict(null);
+    setLeaveModal({ open: true, dayNum, dateStr });
+  };
+
+  const closeLeaveModal = () => {
+    setLeaveModal({ open: false, dayNum: null, dateStr: "" });
+    setLeaveModalCode("");
+    setLeaveModalNote("");
+    setLeaveModalError("");
+    setLeaveBackendConflict(null);
+  };
+
+  const handleConfirmLeave = async (clearDuty, opts = {}) => {
+    if (!selectedPerson || !leaveModal.dayNum) return;
+    const code = leaveModalCode.trim();
+    if (!code) { setLeaveModalError("İzin kodu seçmelisiniz."); return; }
+    setLeaveModalSaving(true);
+    setLeaveModalError("");
+    try {
+      await setLeaveWithCheck({
+        personId: selectedPerson.id,
+        personName: selectedPerson.name,
+        year,
+        month: month0 + 1,
+        day: leaveModal.dayNum,
+        code,
+        ...(leaveModalNote.trim() ? { note: leaveModalNote.trim() } : {}),
+        force: opts.force ?? clearDuty,
+      });
+
+      if (clearDuty) {
+        const dutyList = assignmentsByDay.get(leaveModal.dayNum) || [];
+        for (const assg of dutyList) {
+          const shiftId = String(assg?.shiftId || assg?.shiftCode || assg?.shift || assg?.code || "").trim();
+          if (!shiftId) continue;
+          try {
+            await unassignSchedule({
+              sectionId,
+              serviceId: remoteServiceIdUsed ?? effectiveServiceId,
+              role: remoteRoleUsed ?? scheduleRole,
+              date: leaveModal.dateStr,
+              shiftId,
+              personId: String(assg?.personId || selectedPerson.id).trim(),
+              personName: String(assg?.personName || selectedPerson.name || "").trim() || undefined,
+            });
+          } catch (err) {
+            console.warn("leave modal: unassign failed:", err?.message);
+          }
+        }
+        setLeaveClearedDates((prev) => new Set([...prev, leaveModal.dateStr]));
+        refreshRemote();
+      }
+
+      setLeaveBackendConflict(null);
+      closeLeaveModal();
+    } catch (err) {
+      if (err?.status === 409 && err?.data?.conflict) {
+        setLeaveBackendConflict(err.data);
+      } else {
+        setLeaveModalError(err?.message || "İzin kaydedilemedi.");
+      }
+    } finally {
+      setLeaveModalSaving(false);
+    }
+  };
+
   const handleConnectGoogleCalendar = async () => {
     setGoogleCalendarBusy(true);
     setGoogleCalendarStatus((s) => ({ ...s, message: "" }));
@@ -1474,9 +1808,20 @@ export default function PersonScheduleCalendar({
   };
 
   return (
-    <div className="space-y-4">
+    <>
+    <div className="person-screen-only space-y-4">
+      {selectedPerson && (
+        <div className="print-only border-b border-slate-200 pb-3">
+          <div className="text-base font-semibold text-slate-900">
+            Personel: {selectedPerson.name}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {Intl.DateTimeFormat("tr-TR", { month: "long", year: "numeric" }).format(new Date(year, month0))}
+          </div>
+        </div>
+      )}
       {/* Başlık ve Personel Seçici */}
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="no-print flex flex-wrap items-end gap-3">
         <div className="min-w-[140px]">
           <div className="text-xs text-slate-500">Dönem</div>
           <div className="text-base font-semibold text-slate-800">
@@ -1550,7 +1895,7 @@ export default function PersonScheduleCalendar({
       )}
 
       {!canManage && selectedPerson && (
-        <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4 text-sm text-slate-700">
+        <div className="no-print rounded-2xl border border-sky-100 bg-sky-50/60 p-4 text-sm text-slate-700">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex-1 min-w-[220px]">
               <div className="font-semibold text-slate-900">Google Takvim</div>
@@ -1597,14 +1942,14 @@ export default function PersonScheduleCalendar({
       )}
 
       {canManage && remoteError && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3 text-sm">
+        <div className="no-print rounded-lg border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3 text-sm">
           {remoteError}
         </div>
       )}
 
       {/* Takvim Loading */}
       {remoteLoading && (
-        <div className="flex items-center gap-2 rounded-lg border border-sky-100 bg-sky-50 px-4 py-2.5 text-sm text-sky-700">
+        <div className="no-print flex items-center gap-2 rounded-lg border border-sky-100 bg-sky-50 px-4 py-2.5 text-sm text-sky-700">
           <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
@@ -1614,7 +1959,7 @@ export default function PersonScheduleCalendar({
       )}
 
       {/* Takvim Başlığı */}
-      <div className="grid grid-cols-7 gap-1 text-xs font-semibold text-slate-500 px-1">
+      <div className="person-calendar-weekdays grid grid-cols-7 gap-1 text-xs font-semibold text-slate-500 px-1">
         {dayNameTR.map((name) => (
           <div key={name} className="text-center py-1">
             {name}
@@ -1623,7 +1968,7 @@ export default function PersonScheduleCalendar({
       </div>
 
       {/* Takvim Grid */}
-      <div className="grid grid-cols-7 gap-1">
+      <div className="person-calendar-grid grid grid-cols-7 gap-1">
         {displayCells.map(({ date: dt, inMonth }, idx) => {
           const dayNum = dt.getDate();
           if (!inMonth) {
@@ -1659,6 +2004,7 @@ export default function PersonScheduleCalendar({
           const dateStr = `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`;
           const holiday = holidayMap[dateStr] || null;
           const wasSwapped = swappedDates.has(dateStr);
+          const wasLeaveCleared = leaveClearedDates.has(dateStr);
 
           return (
             <div key={`day-${dayNum}`} className="relative">
@@ -1668,6 +2014,14 @@ export default function PersonScheduleCalendar({
                   className="absolute top-1 right-1 z-10 text-[9px] bg-amber-100 text-amber-700 border border-amber-300 rounded px-1 leading-4 font-semibold pointer-events-none select-none"
                 >
                   ↺
+                </span>
+              )}
+              {wasLeaveCleared && (
+                <span
+                  title="Nöbet izin nedeniyle temizlendi"
+                  className="absolute top-1 left-1 z-10 text-[9px] bg-rose-100 text-rose-700 border border-rose-300 rounded px-1 leading-4 font-semibold pointer-events-none select-none"
+                >
+                  İzin
                 </span>
               )}
               <DayCard
@@ -1681,6 +2035,7 @@ export default function PersonScheduleCalendar({
                 renderLeave={renderLeave}
                 renderAssignments={renderAssignments}
                 onAddShift={canManage ? () => openAssignModal(dayNum) : null}
+                onAddLeave={canManage ? () => openLeaveModal(dayNum) : null}
                 onRemoveShift={canManage ? (assg) => handleRemoveShift(assg, dayNum) : null}
                 onEditShift={null}
                 hasConflict={hasConflict}
@@ -1694,20 +2049,22 @@ export default function PersonScheduleCalendar({
 
       {/* Ayın Özeti */}
       {showStats && selectedPerson && (
-        <MonthStats
-          year={year}
-          month={month}
-          cells={cells}
-          assignments={assignmentsByDay}
-          planSummary={truthSummary}
-          requiredPerDay={2}
-          workingHours={shiftOptions}
-          overtimeStats={overtimeStats}
-        />
+        <div className="person-print-summary">
+          <MonthStats
+            year={year}
+            month={month}
+            cells={cells}
+            assignments={assignmentsByDay}
+            planSummary={truthSummary}
+            requiredPerDay={2}
+            workingHours={shiftOptions}
+            overtimeStats={overtimeStats}
+          />
+        </div>
       )}
 
       {/* Legend */}
-      <div className="text-xs text-slate-500 bg-white rounded-lg border border-slate-200 p-3">
+      <div className="calendar-print-exclude text-xs text-slate-500 bg-white rounded-lg border border-slate-200 p-3">
         <div>
           <span className="inline-block h-3 w-3 bg-rose-100 border border-rose-200 mr-2 align-middle rounded" />
           İzin kayıtları (Toplu İzin Listesi)
@@ -1833,6 +2190,158 @@ export default function PersonScheduleCalendar({
         </div>
       </Modal>
 
+      {/* ── Planlama Takvimi İzin Modal ── */}
+      {leaveModal.open && selectedPerson && (() => {
+        const conflictAssignments = assignmentsByDay.get(leaveModal.dayNum) || [];
+        const hasConflict = conflictAssignments.length > 0;
+        const selectedLeaveType = leaveTypeByCode.get(normalizeLeaveCode(leaveModalCode));
+        const inputCls = "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div className="mx-4 w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-xl">
+              <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+                <h2 className="text-[15px] font-semibold text-slate-900">İzin Girişi</h2>
+                <button
+                  type="button"
+                  onClick={closeLeaveModal}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M12 4L4 12M4 4l8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                </button>
+              </div>
+
+              <div className="px-6 py-5 space-y-4">
+                {/* Context */}
+                <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600 space-y-1">
+                  <div>Personel: <span className="font-semibold text-slate-800">{selectedPerson.name}</span></div>
+                  <div>Tarih: <span className="font-semibold text-slate-800">{leaveModal.dateStr}</span></div>
+                </div>
+
+                {/* Conflict warning */}
+                {hasConflict && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                    <div className="flex items-start gap-2 text-sm text-amber-800">
+                      <svg className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" viewBox="0 0 16 16" fill="none">
+                        <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/>
+                        <path d="M8 5v3.5M8 11h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      </svg>
+                      <span>
+                        <strong>Bu gün personelin nöbeti var.</strong><br />
+                        {conflictAssignments.map((a) => String(a?.shiftCode || a?.roleLabel || "")).filter(Boolean).join(", ")}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Leave code */}
+                <div>
+                  <label className="block text-[12px] font-semibold text-slate-600 mb-1.5">İzin Kodu</label>
+                  <select
+                    value={leaveModalCode}
+                    onChange={(e) => setLeaveModalCode(e.target.value)}
+                    className={inputCls}
+                  >
+                    {leaveTypeOptions.map((type) => (
+                      <option key={type.code} value={type.code}>
+                        {type.name ? `${type.code} - ${type.name}` : type.code}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedLeaveType?.name && (
+                    <div className="mt-2 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                      <span className="font-semibold text-slate-800">{selectedLeaveType.code}</span>
+                      <span> - {selectedLeaveType.name}</span>
+                      {selectedLeaveType.description && (
+                        <div className="mt-1 text-slate-500">{selectedLeaveType.description}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Note */}
+                <div>
+                  <label className="block text-[12px] font-semibold text-slate-600 mb-1.5">Not (isteğe bağlı)</label>
+                  <input
+                    type="text"
+                    value={leaveModalNote}
+                    onChange={(e) => setLeaveModalNote(e.target.value)}
+                    placeholder="Açıklama..."
+                    className={inputCls}
+                  />
+                </div>
+
+                {leaveModalError && (
+                  <div className="text-sm text-rose-600">{leaveModalError}</div>
+                )}
+
+                {leaveBackendConflict && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
+                    <p className="font-medium text-amber-800 mb-1">Bu tarihte aktif nöbet mevcut</p>
+                    <p className="text-amber-700 text-xs mb-2">{leaveBackendConflict.detail}</p>
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmLeave(false, { force: true })}
+                      disabled={leaveModalSaving}
+                      className="w-full rounded-lg bg-amber-600 px-3 py-2 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-60 transition-colors"
+                    >
+                      {leaveModalSaving ? "Kaydediliyor…" : "Nöbeti Yoksay ve İzni Kaydet"}
+                    </button>
+                  </div>
+                )}
+
+                {/* Actions */}
+                {hasConflict ? (
+                  <div className="space-y-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmLeave(false)}
+                      disabled={leaveModalSaving}
+                      className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60 transition-colors"
+                    >
+                      {leaveModalSaving ? "Kaydediliyor…" : "Sadece İzin Kaydet"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmLeave(true)}
+                      disabled={leaveModalSaving}
+                      className="w-full rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-60 transition-colors"
+                    >
+                      {leaveModalSaving ? "İşleniyor…" : "İzin Kaydet ve Nöbeti Boşalt"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closeLeaveModal}
+                      disabled={leaveModalSaving}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60 transition-colors"
+                    >
+                      İptal
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={closeLeaveModal}
+                      className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Vazgeç
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmLeave(false)}
+                      disabled={leaveModalSaving}
+                      className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                    >
+                      {leaveModalSaving ? "Kaydediliyor…" : "Kaydet"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <OverrideDialog
         open={overrideDialog.open}
         errors={overrideDialog.errors}
@@ -1863,5 +2372,229 @@ export default function PersonScheduleCalendar({
         preferredAssignments={displaySummaryAssignments}
       />
     </div>
+
+    {/* ─── BASKIYA ÖZEL: A4 Portre Nöbet Takvimi ──────────────────────── */}
+    <style>{`
+      @media screen { .person-print-layout { display: none !important; } }
+      @media print {
+        @page { size: A4 portrait; margin: 10mm; }
+        html, body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .person-screen-only { display: none !important; }
+        .person-print-layout {
+          display: block !important;
+          font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+          color: #0f172a;
+        }
+        /* ── Başlık ── */
+        .ppl-header {
+          display: flex; align-items: flex-end; justify-content: space-between;
+          border-bottom: 2px solid #334155; padding-bottom: 4mm; margin-bottom: 3mm;
+        }
+        .ppl-header-title { font-size: 13pt; font-weight: 700; color: #0f172a; line-height: 1.2; }
+        .ppl-header-month { font-size: 10pt; font-weight: 500; color: #475569; margin-top: 1mm; }
+        .ppl-header-person { text-align: right; font-size: 8pt; color: #64748b; }
+        .ppl-header-person strong { display: block; font-size: 11pt; font-weight: 700; color: #0f172a; }
+        /* ── Haftanın Günleri ── */
+        .ppl-weekdays {
+          display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 0;
+        }
+        .ppl-weekday {
+          text-align: center; font-size: 8pt; font-weight: 600; color: #334155;
+          padding: 1.5mm 0; border-bottom: 1.5px solid #334155;
+        }
+        .ppl-weekday.wknd { color: #94a3b8; }
+        /* ── Takvim Izgarası ── */
+        .ppl-grid {
+          display: grid; grid-template-columns: repeat(7, 1fr);
+          border-top: 1px solid #cbd5e1; border-left: 1px solid #cbd5e1;
+        }
+        .ppl-cell {
+          border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1;
+          min-height: 24mm; position: relative; padding: 1.5mm 1.5mm 1mm;
+          background: #fff; page-break-inside: avoid;
+        }
+        .ppl-cell.outside-month { background: #f8fafc; }
+        .ppl-cell.is-wknd       { background: #f8fafc; }
+        .ppl-cell.is-holiday    { background: #fff7ed; }
+        .ppl-cell.has-assg      { background: #f0f9ff; }
+        .ppl-cell.has-leave     { background: #fff1f2; }
+        .ppl-cell.has-conflict  { background: #fffbeb; }
+        /* ── Gün Numarası ── */
+        .ppl-day-num {
+          font-size: 8.5pt; font-weight: 700; color: #334155; line-height: 1;
+        }
+        .ppl-cell.is-wknd .ppl-day-num { color: #94a3b8; }
+        .ppl-cell.is-holiday .ppl-day-num { color: #c2410c; }
+        /* ── Tatil Adı ── */
+        .ppl-holiday-lbl {
+          font-size: 5pt; color: #c2410c; font-weight: 600;
+          margin-top: 0.5mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          max-width: 100%; line-height: 1.2;
+        }
+        /* ── Nöbet Kodu (ortalanmış) ── */
+        .ppl-badge {
+          position: absolute; top: 50%; left: 50%;
+          transform: translate(-50%, -45%);
+          text-align: center; width: 88%;
+        }
+        .ppl-shift-code {
+          font-size: 10.5pt; font-weight: 800; color: #0369a1;
+          line-height: 1.15; word-break: break-word;
+          letter-spacing: 0.02em;
+        }
+        .ppl-shift-lbl {
+          font-size: 5.5pt; color: #64748b; margin-top: 0.5mm;
+          line-height: 1.2; word-break: break-word;
+        }
+        /* ── İzin Kodu ── */
+        .ppl-leave-code {
+          font-size: 9pt; font-weight: 700; color: #be123c;
+          line-height: 1.2; word-break: break-word;
+        }
+        /* ── Çakışma ikaz rozeti ── */
+        .ppl-conflict-dot {
+          position: absolute; top: 1.5mm; right: 1.5mm;
+          width: 3mm; height: 3mm; border-radius: 50%;
+          background: #f59e0b;
+        }
+        /* ── Özet Şeridi ── */
+        .ppl-summary {
+          margin-top: 4mm; border: 1.5px solid #cbd5e1; border-radius: 2mm;
+          padding: 2.5mm 5mm;
+          display: flex; justify-content: space-around; align-items: center;
+          background: #f8fafc;
+        }
+        .ppl-summary-item { text-align: center; }
+        .ppl-summary-lbl  { font-size: 6.5pt; color: #64748b; margin-bottom: 0.5mm; }
+        .ppl-summary-val  { font-size: 13pt; font-weight: 800; color: #0f172a; }
+        .ppl-summary-val.pos { color: #0f766e; }
+        .ppl-summary-val.neg { color: #be123c; }
+        .ppl-summary-sep  { width: 0.5px; height: 8mm; background: #cbd5e1; }
+        /* ── Altbilgi ── */
+        .ppl-footer {
+          margin-top: 2.5mm;
+          display: flex; justify-content: space-between;
+          font-size: 6pt; color: #94a3b8;
+        }
+      }
+    `}</style>
+
+    <div className="person-print-layout" aria-hidden="true">
+      {/* Başlık */}
+      <div className="ppl-header">
+        <div>
+          <div className="ppl-header-title">Hastane Nöbet Sistemi</div>
+          <div className="ppl-header-month">{monthLabel}</div>
+        </div>
+        <div className="ppl-header-person">
+          Personel
+          <strong>{selectedPerson?.name || '—'}</strong>
+        </div>
+      </div>
+
+      {/* Haftanın günleri */}
+      <div className="ppl-weekdays">
+        {['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'].map((d, i) => (
+          <div key={d} className={`ppl-weekday${i >= 5 ? ' wknd' : ''}`}>{d}</div>
+        ))}
+      </div>
+
+      {/* Takvim Izgarası */}
+      <div className="ppl-grid">
+        {displayCells.map(({ date: dt, inMonth }, idx) => {
+          if (!inMonth) {
+            return <div key={`out-${idx}`} className="ppl-cell outside-month" />;
+          }
+          const dayNum = dt.getDate();
+          const dateStr = `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`;
+          const cellAssignments = assignmentsByDay.get(dayNum) || [];
+          const leaveRaw = leavesForPerson[String(dayNum)] || leavesForPerson[dateStr];
+          const leaveCode = leaveRaw ? formatLeaveValue(leaveRaw) : '';
+          const holiday = holidayMap[dateStr] || null;
+          const isWknd = dt.getDay() === 0 || dt.getDay() === 6;
+          const hasAssg = cellAssignments.length > 0;
+          const hasConflict = hasAssg && !!leaveCode;
+          const primary = cellAssignments[0];
+          const shiftToken = primary ? displayShiftToken(primary) : '';
+          const roleLabel = primary ? String(primary?.roleLabel || primary?.rowLabel || '').trim() : '';
+          const showLabel = roleLabel && roleLabel !== shiftToken && roleLabel.length <= 22;
+
+          let cls = 'ppl-cell';
+          if (isWknd) cls += ' is-wknd';
+          if (holiday) cls += ' is-holiday';
+          if (hasConflict) cls += ' has-conflict';
+          else if (hasAssg) cls += ' has-assg';
+          else if (leaveCode) cls += ' has-leave';
+
+          return (
+            <div key={`d-${dayNum}`} className={cls}>
+              <div className="ppl-day-num">{dayNum}</div>
+              {holiday && (
+                <div className="ppl-holiday-lbl" title={holiday.name}>
+                  {holiday.name}
+                </div>
+              )}
+              {hasConflict && <div className="ppl-conflict-dot" title="Nöbet + İzin çakışması" />}
+              {hasAssg && (
+                <div className="ppl-badge">
+                  <div className="ppl-shift-code">{shiftToken || 'NÖBET'}</div>
+                  {showLabel && <div className="ppl-shift-lbl">{roleLabel}</div>}
+                </div>
+              )}
+              {!hasAssg && leaveCode && (
+                <div className="ppl-badge">
+                  <div className="ppl-leave-code">{leaveCode}</div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Ayın Özeti */}
+      {selectedPerson && (
+        <div className="ppl-summary">
+          <div className="ppl-summary-item">
+            <div className="ppl-summary-lbl">Toplam Nöbet</div>
+            <div className="ppl-summary-val">
+              {[...assignmentsByDay.values()].reduce((s, a) => s + a.length, 0)}
+            </div>
+          </div>
+          <div className="ppl-summary-sep" />
+          <div className="ppl-summary-item">
+            <div className="ppl-summary-lbl">Gereken Saat</div>
+            <div className="ppl-summary-val">
+              {overtimeStats?.requiredFinal != null ? `${overtimeStats.requiredFinal}s` : '—'}
+            </div>
+          </div>
+          <div className="ppl-summary-sep" />
+          <div className="ppl-summary-item">
+            <div className="ppl-summary-lbl">Çalışılan Saat</div>
+            <div className="ppl-summary-val">
+              {overtimeStats?.worked != null ? `${overtimeStats.worked}s` : '—'}
+            </div>
+          </div>
+          <div className="ppl-summary-sep" />
+          <div className="ppl-summary-item">
+            <div className="ppl-summary-lbl">Fazla / Eksik</div>
+            <div className={`ppl-summary-val${overtimeStats?.overtime != null ? (overtimeStats.overtime >= 0 ? ' pos' : ' neg') : ''}`}>
+              {overtimeStats?.overtime != null
+                ? `${overtimeStats.overtime >= 0 ? '+' : ''}${overtimeStats.overtime}s`
+                : '—'}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="ppl-footer">
+        <span>Hastane Nöbet Sistemi — Otomatik oluşturuldu</span>
+        <span>
+          {new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })}
+        </span>
+      </div>
+    </div>
+    </>
   );
-}
+});
+
+export default PersonScheduleCalendar;

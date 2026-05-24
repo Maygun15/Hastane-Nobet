@@ -1,7 +1,7 @@
 // src/tabs/MonthlyLeavesMatrixGeneric.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { getAllLeaves, setLeave, unsetLeave } from "../lib/leaves.js";
-import { checkLeaveShiftConflict, removeShiftOnDay } from "../utils/conflictChecker.js";
+import { getAllLeaves, setLeaveWithCheck, unsetLeave } from "../lib/leaves.js";
+import { removeShiftOnDay } from "../utils/conflictChecker.js";
 
 /* ===== Görsel sabitler ===== */
 const MONTHS_TR = [
@@ -93,6 +93,10 @@ export default function MonthlyLeavesMatrixGeneric({
     }
   }, [typeCodes, defaultCode, lastCode]);
 
+  /* ---- Çakışma modalı ---- */
+  const [conflictModal, setConflictModal] = useState(null); // { pid, name, day, code, detail }
+  const [conflictSaving, setConflictSaving] = useState(false);
+
   /* ---- İzin verisini canlı tut ---- */
   const [version, setVersion] = useState(0);
   const [liveLeaves, setLiveLeaves] = useState(() => getAllLeaves());
@@ -152,31 +156,34 @@ export default function MonthlyLeavesMatrixGeneric({
 
   /* ---- Yaz / Sil ---- */
   const applySet = async (pid, name, d, code) => {
-    const conflict = checkLeaveShiftConflict({
-      personId: pid,
-      personName: name,
-      year,
-      month: m0 + 1,
-      day: d,
-      people,
-    });
-    if (conflict.hasConflict) {
-      const ok = window.confirm(`${conflict.message}\n\nYine de izin eklensin mi?`);
-      if (!ok) return;
-      try {
-        window.dispatchEvent(new CustomEvent("leave:conflict", { detail: conflict }));
-      } catch {}
-      await removeShiftOnDay({
-        personId: pid,
-        personName: name,
-        year,
-        month: m0 + 1,
-        day: d,
-        people,
-      });
+    try {
+      await setLeaveWithCheck({ personId: pid, personName: name, year, month: m0 + 1, day: d, code, force: false });
+      setVersion((v) => v + 1);
+    } catch (err) {
+      if (err?.status === 409 && err?.data?.conflict) {
+        setConflictModal({ pid, name, day: d, code, detail: err.data.detail || err.data.error || "Nöbet çakışması tespit edildi." });
+      } else {
+        alert(err?.message || "İzin kaydedilemedi");
+      }
     }
-    setLeave({ personId: pid, personName: name, year, month: m0 + 1, day: d, code });
-    setVersion((v) => v + 1);
+  };
+
+  const handleConflictResolve = async (clearDuty) => {
+    if (!conflictModal) return;
+    const { pid, name, day, code } = conflictModal;
+    setConflictSaving(true);
+    try {
+      await setLeaveWithCheck({ personId: pid, personName: name, year, month: m0 + 1, day, code, force: true });
+      if (clearDuty) {
+        await removeShiftOnDay({ personId: pid, personName: name, year, month: m0 + 1, day, people });
+      }
+      setConflictModal(null);
+      setVersion((v) => v + 1);
+    } catch (err) {
+      alert(err?.message || "İzin kaydedilemedi");
+    } finally {
+      setConflictSaving(false);
+    }
   };
   const applyUnset = (pid, name, d) => {
     unsetLeave({ personId: pid, personName: name, year, month: m0 + 1, day: d });
@@ -344,6 +351,47 @@ export default function MonthlyLeavesMatrixGeneric({
             <button onClick={() => setMenu(null)} className="px-3 py-2 rounded bg-white hover:bg-slate-100 text-sm">
               Kapat
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Nöbet Çakışma Modalı */}
+      {conflictModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-xl space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-amber-600 font-bold text-sm">!</span>
+              <h3 className="text-[15px] font-semibold text-slate-900">Nöbet Çakışması</h3>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              {conflictModal.detail}
+            </div>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => handleConflictResolve(false)}
+                disabled={conflictSaving}
+                className="w-full rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60 transition-colors"
+              >
+                {conflictSaving ? "Kaydediliyor…" : "Nöbeti Yoksay ve İzni Kaydet"}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConflictResolve(true)}
+                disabled={conflictSaving}
+                className="w-full rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-60 transition-colors"
+              >
+                {conflictSaving ? "İşleniyor…" : "İzin Kaydet ve Nöbeti Boşalt"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConflictModal(null)}
+                disabled={conflictSaving}
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60 transition-colors"
+              >
+                İptal
+              </button>
+            </div>
           </div>
         </div>
       )}

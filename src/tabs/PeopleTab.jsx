@@ -638,107 +638,88 @@ export default function PeopleTab({
   const roleLabel = role === ROLE.Doctor ? "Doktor" : "Hemşire";
   const fieldClass =
     "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100";
-  const sectionCardClass = "flex h-full flex-col rounded-2xl border border-slate-200 bg-slate-50/70 p-4";
+  const sectionCardClass = "flex h-full flex-col rounded-2xl border border-slate-200 bg-slate-50/70 p-3";
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[26px] border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
-                <ClipboardList className="h-3.5 w-3.5 text-sky-700" />
-                Personel Kayıt Akışı
-              </span>
-              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-                <Users className="h-3.5 w-3.5" />
-                {people.length} kayıt
-              </span>
-            </div>
-            <h3 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{label}</h3>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              Personel kimliğini, iletişim bilgisini, çalışma alanı yetkinliklerini ve uygun vardiya kodlarını tek form üzerinden yönetin.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2 text-sm">
-            <button onClick={downloadTemplate} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 transition hover:bg-slate-100">
-              <FileSpreadsheet className="h-4 w-4" />
-              Şablon
-            </button>
-            <button onClick={exportXLSX} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 transition hover:bg-slate-100">
-              <Download className="h-4 w-4" />
-              Dışa Aktar
-            </button>
-            <button onClick={() => setEditOpen(true)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 transition hover:bg-slate-100">
-              <PencilLine className="h-4 w-4" />
-              Kayıt Seç
-            </button>
-            <button
-              onClick={handleResetAll}
-              disabled={resetting}
-              className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 transition ${
-                resetting
-                  ? "cursor-wait border-rose-200 bg-rose-100 text-rose-400"
-                  : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
-              }`}
-            >
-              <RefreshCcw className="h-4 w-4" />
-              {resetting ? "Sıfırlanıyor..." : "Sıfırla"}
-            </button>
-            <button onClick={triggerImport} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-2 font-medium text-white transition hover:bg-sky-700">
-              <Upload className="h-4 w-4" />
-              Excel'den Yükle
-            </button>
-            <input ref={importRef} type="file" accept=".xls,.xlsx" className="hidden" onChange={importExcel} />
-          </div>
+      {/* Toolbar — SectionHeader stili */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <h3 className="text-[15px] font-semibold text-slate-800">{label}</h3>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">
+            <Users className="h-3 w-3" />
+            {people.length} kayıt
+          </span>
         </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Aktif Kayıt Türü</div>
-            <div className="mt-2 text-lg font-semibold text-slate-900">{roleLabel}</div>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Formdaki Servis</div>
-            <div className="mt-2 text-lg font-semibold text-slate-900">{activeServiceName}</div>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Çalışma Alanı Seçimi</div>
-            <div className="mt-2 text-lg font-semibold text-slate-900">{selectedAreaCount}</div>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Uygun Vardiya Kodu</div>
-            <div className="mt-2 text-lg font-semibold text-slate-900">{selectedShiftCount}</div>
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={downloadTemplate} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-medium text-slate-600 transition hover:bg-slate-100">
+            <FileSpreadsheet className="h-3.5 w-3.5" /> Şablon
+          </button>
+          <button onClick={exportXLSX} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-medium text-slate-600 transition hover:bg-slate-100">
+            <Download className="h-3.5 w-3.5" /> Dışa Aktar
+          </button>
+          <button onClick={() => setEditOpen(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-medium text-slate-600 transition hover:bg-slate-100">
+            <PencilLine className="h-3.5 w-3.5" /> Kayıt Seç
+          </button>
+          <button
+            onClick={handleResetAll}
+            disabled={resetting || people.length === 0}
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-medium transition ${
+              resetting
+                ? "cursor-wait border-rose-200 bg-rose-100 text-rose-400"
+                : people.length === 0
+                  ? "border-rose-200 bg-rose-50 text-rose-400 opacity-50 cursor-not-allowed"
+                  : "border-red-500 bg-rose-50 text-rose-700 hover:bg-rose-100"
+            }`}
+          >
+            <RefreshCcw className="h-3.5 w-3.5" />
+            {resetting ? "Sıfırlanıyor..." : "Sıfırla"}
+          </button>
+          <button onClick={triggerImport} className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-sky-700">
+            <Upload className="h-3.5 w-3.5" /> Excel'den Yükle
+          </button>
+          <input ref={importRef} type="file" accept=".xls,.xlsx" className="hidden" onChange={importExcel} />
         </div>
-      </section>
+      </div>
+
+      {/* Kompakt stat row */}
+      <div className="grid gap-2 grid-cols-2 md:grid-cols-4">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+          <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">Kayıt Türü</div>
+          <div className="mt-1 text-sm font-semibold text-slate-900">{roleLabel}</div>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+          <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">Formdaki Servis</div>
+          <div className="mt-1 text-sm font-semibold text-slate-900 truncate">{activeServiceName}</div>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+          <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">Çalışma Alanı</div>
+          <div className="mt-1 text-sm font-semibold text-slate-900">{selectedAreaCount} seçili</div>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+          <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">Vardiya Kodu</div>
+          <div className="mt-1 text-sm font-semibold text-slate-900">{selectedShiftCount} seçili</div>
+        </div>
+      </div>
 
       <form
         onSubmit={upsert}
-        className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"
+        className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm"
       >
-        <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
-              <ShieldCheck className="h-3.5 w-3.5 text-emerald-700" />
-              Kayıt Formu
-            </div>
-            <h4 className="mt-3 text-xl font-semibold text-slate-950">{editingId ? "Personel kaydını güncelle" : "Yeni personel kaydı oluştur"}</h4>
-            <p className="mt-1 text-sm leading-6 text-slate-600">
-              Önce temel kimlik alanlarını doldurun, ardından çalışma alanı ve vardiya uygunluklarını işaretleyin.
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            <div className="font-medium text-slate-900">{editingId ? "Düzenleme modu açık" : "Yeni kayıt modu"}</div>
-            <div className="mt-1">Kaydettiğiniz bilgi planlama, çizelgeler ve kullanıcı eşleşmeleri tarafından kullanılır.</div>
-          </div>
+        <div className="mb-3 flex items-center gap-2 border-b border-slate-100 pb-3">
+          <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+          <span className="text-[12px] font-semibold text-slate-700">
+            {editingId ? "Personel kaydını düzenle" : "Yeni personel kaydı"}
+          </span>
+          {editingId && (
+            <span className="ml-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">Düzenleme modu</span>
+          )}
         </div>
 
-        <div className="mt-5 grid gap-5 xl:grid-cols-2">
-          <section className={`${sectionCardClass} min-h-[220px]`}>
-              <div className="text-sm font-semibold text-slate-900">Kimlik ve görev bilgisi</div>
-              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 xl:grid-cols-2">
+          <section className={sectionCardClass}>
+              <div className="text-[12px] font-semibold text-slate-700">Kimlik ve görev bilgisi</div>
+              <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                 <div>
                   <label htmlFor="person-service" className="text-xs font-medium text-slate-500">Servis</label>
                   <select id="person-service" value={form.service} onChange={(e) => setForm((f) => ({ ...f, service: e.target.value }))} className={fieldClass}>
@@ -809,15 +790,12 @@ export default function PeopleTab({
               </div>
           </section>
 
-          <section className={`${sectionCardClass} min-h-[220px]`}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-900">Çalışma alanları</div>
-                <p className="mt-1 text-xs leading-5 text-slate-500">Personelin görev alabileceği alanları seçin.</p>
-              </div>
-              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600">{selectedAreaCount} seçili</span>
+          <section className={sectionCardClass}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[12px] font-semibold text-slate-700">Çalışma alanları</div>
+              <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">{selectedAreaCount} seçili</span>
             </div>
-            <div className="mt-4 flex flex-wrap gap-2 content-start">
+            <div className="mt-2 flex flex-wrap gap-1.5 content-start">
               {WA.length === 0 && <span className="text-xs text-slate-400">Önce çalışma alanı ekleyin.</span>}
               {WA.map((a) => (
                 <button
@@ -838,12 +816,12 @@ export default function PeopleTab({
             </div>
           </section>
 
-          <section className={`${sectionCardClass} min-h-[180px]`}>
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <Phone className="h-4 w-4 text-sky-700" />
+          <section className={sectionCardClass}>
+              <div className="flex items-center gap-2 text-[12px] font-semibold text-slate-700">
+                <Phone className="h-3.5 w-3.5 text-sky-600" />
                 İletişim bilgileri
               </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
                 <div>
                   <label htmlFor="person-phone" className="text-xs font-medium text-slate-500">Telefon</label>
                   <div className="relative">
@@ -879,15 +857,12 @@ export default function PeopleTab({
               </div>
           </section>
 
-          <section className={`${sectionCardClass} min-h-[180px]`}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Vardiya uygunluğu</div>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">Bu personelin atanabileceği vardiya kodlarını işaretleyin.</p>
-                </div>
-                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600">{selectedShiftCount} seçili</span>
+          <section className={sectionCardClass}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[12px] font-semibold text-slate-700">Vardiya uygunluğu</div>
+                <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">{selectedShiftCount} seçili</span>
               </div>
-              <div className="mt-4 flex flex-wrap gap-2 content-start">
+              <div className="mt-2 flex flex-wrap gap-1.5 content-start">
                 {(!Array.isArray(workingHours) || workingHours.length === 0) && (
                   <span className="text-xs text-slate-400">Önce “Çalışma Saatleri” sekmesinden kod tanımlayın.</span>
                 )}
@@ -911,7 +886,7 @@ export default function PeopleTab({
           </section>
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
           <button type="submit" className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-700">
             <UserPlus2 className="h-4 w-4" />
             {editingId ? "Kaydı Güncelle" : "Kaydı Ekle"}

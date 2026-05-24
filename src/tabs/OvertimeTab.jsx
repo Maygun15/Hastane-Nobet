@@ -783,7 +783,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({
 
   const summaryLabel = selectedServiceName || cfg.department || "TÜM SERVİSLER";
 
-  useImperativeHandle(ref, () => ({ importFromRoster: importFromDutyRoster, exportExcel, reset: resetMonth }));
+  useImperativeHandle(ref, () => ({ importFromRoster: importFromDutyRoster, exportExcel, reset: resetMonthSilent }));
 
   return (
     <div className="p-3 space-y-3">

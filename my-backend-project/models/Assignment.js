@@ -50,6 +50,8 @@ AssignmentSchema.index({ hospitalId: 1, sectionId: 1, serviceId: 1, year: 1, mon
 AssignmentSchema.index({ hospitalId: 1, sectionId: 1, serviceId: 1, date: 1 });
 // Durum + tarih sıralaması
 AssignmentSchema.index({ hospitalId: 1, status: 1, date: 1 });
+// Kesitler arası aylık agregasyon (sectionId olmadan hospitalId+year+month filtrelemesi)
+AssignmentSchema.index({ hospitalId: 1, year: 1, month: 1, sectionId: 1 });
 
 applyHospitalScope(AssignmentSchema);
 

@@ -117,7 +117,7 @@ export default function AnnouncementModal({ onClose }) {
             </div>
           </div>
 
-          <aside className="border-t border-slate-100 bg-slate-50/70 p-4 md:border-l md:border-t-0">
+          <aside className="border-t border-slate-100 bg-slate-50/70 p-4 md:border-l md:border-t-0 overflow-y-auto">
             <div className="text-[12px] font-semibold text-slate-800">Yanıt Takibi</div>
             <div className="mt-1 text-[11px] leading-4 text-slate-500">
               Okundu onayları ve kullanıcı cevapları burada listelenir.
@@ -136,7 +136,7 @@ export default function AnnouncementModal({ onClose }) {
               {!responsesLoading && responses.map((item) => (
                 <div key={item._id} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-[12px] font-semibold text-slate-800">
+                    <span className="truncate text-[12px] font-semibold text-slate-800" title={item.userName || item.userEmail || 'Kullanıcı'}>
                       {item.userName || item.userEmail || 'Kullanıcı'}
                     </span>
                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
@@ -145,7 +145,7 @@ export default function AnnouncementModal({ onClose }) {
                       {item.responseType === 'reply' ? 'Cevap' : 'Okundu'}
                     </span>
                   </div>
-                  <div className="mt-1 truncate text-[11px] text-slate-500">{item.title || 'Duyuru'}</div>
+                  <div className="mt-1 truncate text-[11px] text-slate-500" title={item.title || 'Duyuru'}>{item.title || 'Duyuru'}</div>
                   {item.message && (
                     <div className="mt-1 text-[11px] leading-4 text-slate-600">{item.message}</div>
                   )}

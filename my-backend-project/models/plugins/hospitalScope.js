@@ -1,10 +1,12 @@
-const { getHospitalContext, isSuperAdminRole } = require('../../middleware/hospital');
+const { getHospitalContext, hasHospitalContext, isSuperAdminRole } = require('../../middleware/hospital');
 
 function resolveContext() {
   const ctx = getHospitalContext();
   const role = String(ctx?.role || '').toLowerCase();
   const hospitalId = ctx?.hospitalId ? String(ctx.hospitalId) : '';
-  return { role, hospitalId };
+  // hasHospitalContext() AsyncLocalStorage store'un gerçekten kurulu olup olmadığını kontrol eder.
+  // getHospitalContext() her zaman non-null döndüğünden ctx != null kontrolü yetersizdir.
+  return { role, hospitalId, hasContext: hasHospitalContext() };
 }
 
 function applyHospitalScope(schema) {
@@ -25,8 +27,9 @@ function applyHospitalScope(schema) {
 
   for (const op of queryOps) {
     schema.pre(op, function scopeQuery(next) {
-      const { role, hospitalId } = resolveContext();
-      if (!hospitalId || isSuperAdminRole(role)) return next();
+      const { role, hospitalId, hasContext } = resolveContext();
+      if (!hasContext || isSuperAdminRole(role)) return next();
+      if (!hospitalId) return next(new Error('[hospitalScope] hospitalId eksik — sorgu reddedildi'));
 
       // Zaten doğru hospitalId ile filtreleniyorsa tekrar ekleme
       const filter = this.getFilter() || {};
@@ -78,8 +81,9 @@ function applyHospitalScope(schema) {
   }
 
   schema.pre('aggregate', function scopeAggregate(next) {
-    const { role, hospitalId } = resolveContext();
-    if (!hospitalId || isSuperAdminRole(role)) return next();
+    const { role, hospitalId, hasContext } = resolveContext();
+    if (!hasContext || isSuperAdminRole(role)) return next();
+    if (!hospitalId) return next(new Error('[hospitalScope] hospitalId eksik — sorgu reddedildi'));
 
     const pipeline = this.pipeline();
     // Herhangi bir $match aşamasında hospitalId varsa ekleme
@@ -98,8 +102,9 @@ function applyHospitalScope(schema) {
   });
 
   schema.pre('save', function scopeSave(next) {
-    const { role, hospitalId } = resolveContext();
-    if (!hospitalId || isSuperAdminRole(role)) return next();
+    const { role, hospitalId, hasContext } = resolveContext();
+    if (!hasContext || isSuperAdminRole(role)) return next();
+    if (!hospitalId) return next(new Error('[hospitalScope] hospitalId eksik — sorgu reddedildi'));
     if (!this.hospitalId) {
       this.hospitalId = hospitalId;
     } else if (String(this.hospitalId) !== hospitalId) {
@@ -109,8 +114,9 @@ function applyHospitalScope(schema) {
   });
 
   schema.pre('insertMany', function scopeInsertMany(next, docs) {
-    const { role, hospitalId } = resolveContext();
-    if (!hospitalId || isSuperAdminRole(role)) return next();
+    const { role, hospitalId, hasContext } = resolveContext();
+    if (!hasContext || isSuperAdminRole(role)) return next();
+    if (!hospitalId) return next(new Error('[hospitalScope] hospitalId eksik — sorgu reddedildi'));
     for (const doc of docs || []) {
       if (doc && !doc.hospitalId) doc.hospitalId = hospitalId;
     }
