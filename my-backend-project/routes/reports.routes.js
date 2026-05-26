@@ -5,7 +5,6 @@ const mongoose = require('mongoose');
 const Assignment = require('../models/Assignment');
 const Request = require('../models/Request');
 const { requireRole } = require('../middleware/authz');
-const { computeMonthlyFairnessScores } = require('../services/fairnessEngine');
 
 function toOid(id) {
   if (!id) return null;
@@ -48,27 +47,7 @@ router.get('/staff-performance', requireRole('admin', 'authorized', 'staff'), as
     const month = Number(req.query.month) || new Date().getMonth() + 1;
     const targetHours = Number(req.query.targetHours) || 160;
     const hid = toOid(req.hospitalId);
-
-    console.log('[staff-performance] DEBUG', {
-      rawHospitalId: req.hospitalId,
-      parsedOid: hid ? hid.toString() : null,
-      year, month,
-    });
-
     if (!hid) return res.status(400).json({ message: 'hospitalId gerekli' });
-
-    // Hospitalsiz kontrol: o ay toplam kayıt var mı?
-    const totalInMonth = await Assignment.countDocuments({ year, month, status: 'active' });
-    const withHospital = await Assignment.countDocuments({ hospitalId: hid, year, month, status: 'active' });
-    console.log('[staff-performance] Assignment sayısı —', { totalInMonth, withHospital });
-
-    // hospitalId tipi uyuşmazlığı testi: string olarak da dene
-    const withHospitalStr = await Assignment.countDocuments({ hospitalId: String(req.hospitalId), year, month, status: 'active' });
-    console.log('[staff-performance] String hospitalId ile:', { withHospitalStr });
-
-    // İlk 3 kaydın ham verisini logla
-    const sample = await Assignment.find({ year, month, status: 'active' }).limit(3).select('hospitalId personName year month status').lean();
-    console.log('[staff-performance] Örnek kayıtlar:', JSON.stringify(sample));
 
     const agg = await Assignment.aggregate([
       { $match: { hospitalId: hid, year, month, status: 'active' } },
@@ -88,10 +67,8 @@ router.get('/staff-performance', requireRole('admin', 'authorized', 'staff'), as
       { $sort: { totalHours: -1 } },
     ]);
 
-    console.log('[staff-performance] Aggregation sonucu:', agg.length, 'kişi');
     res.json({ year, month, targetHours, data: agg });
   } catch (e) {
-    console.error('[staff-performance] HATA:', e.message);
     res.status(500).json({ message: e.message });
   }
 });
@@ -124,20 +101,6 @@ router.get('/leave-stats', requireRole('admin', 'authorized', 'staff'), async (r
     res.json({ year, byStatus, byType });
   } catch (e) {
     res.status(500).json({ message: e.message });
-  }
-});
-
-// GET /api/reports/fairness-scores?year=&month=
-// Ağırlıklı adillik skorlarını döner: kişi başına weighted load + fairnessScore + oranlar
-router.get('/fairness-scores', requireRole('admin', 'authorized', 'staff'), async (req, res) => {
-  try {
-    const year  = Number(req.query.year)  || new Date().getFullYear();
-    const month = Number(req.query.month) || new Date().getMonth() + 1;
-    if (!req.hospitalId) return res.status(400).json({ ok: false, message: 'hospitalId gerekli' });
-    const result = await computeMonthlyFairnessScores({ hospitalId: req.hospitalId, year, month });
-    res.json({ ok: true, ...result });
-  } catch (e) {
-    res.status(500).json({ ok: false, message: e.message });
   }
 });
 

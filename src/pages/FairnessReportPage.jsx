@@ -7,10 +7,14 @@ import {
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { getMonthlySchedule } from '../api/apiAdapter.js';
 import { http } from '../lib/api.js';
+import { fetchMergedScheduleTruth } from '../utils/scheduleTruth.js';
+import { useAppStore } from '../state/appStore.js';
+import ComplianceGuardModal from '../components/ComplianceGuardModal.jsx';
 
 const TR_MONTHS = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+
+const NIGHT_CODES = new Set(['N', 'V1', 'V2', 'SV', 'G', 'GECE', 'NIGHT']);
 
 // Türkiye resmi & dini tatilleri (2025-2026; dini bayramlar tahmini)
 const TURKISH_HOLIDAYS = new Set([
@@ -237,12 +241,34 @@ export default function FairnessReportPage({ activeYM }) {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState(null);
   const [sortBy, setSortBy]     = useState('count-desc');
-  const [publishing, setPublishing] = useState(false);
+  const [publishing, setPublishing]             = useState(false);
+  const [complianceResult, setComplianceResult] = useState(null);
+  const [checkingCompliance, setCheckingCompliance] = useState(false);
 
-  const publishSchedule = async () => {
+  const activeServiceId = useAppStore(s => s.activeServiceId);
+
+  // Pre-publish: compliance check → soft-block modal
+  const handlePublishClick = async () => {
+    setCheckingCompliance(true);
+    try {
+      const res = await http.post('/api/compliance/pre-publish-check', { year, month });
+      if (res?.violations?.length > 0) {
+        setComplianceResult(res);   // show modal
+      } else {
+        await doPublish();           // clean — publish directly
+      }
+    } catch {
+      await doPublish();             // check failed — proceed anyway
+    } finally {
+      setCheckingCompliance(false);
+    }
+  };
+
+  const doPublish = async () => {
     setPublishing(true);
     try {
       const res = await http.post('/api/schedules/publish-notify', { year, month });
+      setComplianceResult(null);
       alert(`Bildirim gönderildi: ${res?.message || `${res?.groupStats?.personCount ?? '?'} personel`}`);
     } catch (e) {
       alert(e?.message || 'Bildirim gönderilemedi');
@@ -255,9 +281,15 @@ export default function FairnessReportPage({ activeYM }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await getMonthlySchedule({ sectionId: 'calisma-cizelgesi', year, month });
-      const assignments = res?.data?.assignments || [];
-      const issues      = res?.issues || res?.data?.issues || [];
+      const truth = await fetchMergedScheduleTruth({
+        sectionId: 'calisma-cizelgesi',
+        serviceId: activeServiceId || '',
+        roles: ['Nurse', 'Doctor'],
+        year,
+        month,
+        options: { preferScheduleReadModel: true },
+      });
+      const assignments = truth?.assignments || [];
 
       // Tek geçişte tüm kişi metriklerini topla
       const byPerson = {};
@@ -269,10 +301,9 @@ export default function FairnessReportPage({ activeYM }) {
         byPerson[key].count++;
         byPerson[key].hours += Number(a?.hours || 0);
 
-        // Gece tespiti: shiftCode G, shiftId 'gece' içeriyor ya da startHour >= 22
-        const sc      = (a?.shiftCode || a?.shiftId || '').toUpperCase();
-        const startH  = Number(a?.startHour ?? -1);
-        const isNight = sc === 'G' || sc === 'GECE' || (a?.shiftId || '').toLowerCase().includes('gece') || startH >= 22;
+        // Gece tespiti: sistemdeki gerçek gece kodları (N, V1, V2, SV ve legacy G/GECE)
+        const sc      = (a?.shiftCode || '').toUpperCase();
+        const isNight = NIGHT_CODES.has(sc);
 
         // Hafta sonu tespiti (weekday 0=Pazar, 6=Cumartesi)
         const wd         = a?.weekday != null ? Number(a.weekday) : new Date(a?.date || 0).getDay();
@@ -289,7 +320,13 @@ export default function FairnessReportPage({ activeYM }) {
 
       const byShift = {};
       for (const a of assignments) {
-        const k = a?.shiftId || a?.shiftCode || '—';
+        // Ham MongoDB ObjectId veya numeric timestamp ise gösterme — roleLabel veya shiftCode kullan
+        const rawId = String(a?.shiftId || '');
+        const isRawId = /^\d{10,}$/.test(rawId) || /^[a-f0-9]{24}$/i.test(rawId);
+        const k = a?.roleLabel
+          || (!isRawId ? rawId : null)
+          || a?.shiftCode
+          || '—';
         byShift[k] = (byShift[k] || 0) + 1;
       }
 
@@ -303,7 +340,7 @@ export default function FairnessReportPage({ activeYM }) {
       const weekendFairness = computeFairnessScore(people.map(p => p.weekendCount));
       const holidayFairness = computeFairnessScore(people.map(p => p.holidayCount));
 
-      const unfilledSlots = issues.filter(i => Number(i?.missing || 0) > 0).reduce((s, i) => s + Number(i.missing), 0);
+      const unfilledSlots = 0; // fetchMergedScheduleTruth issues içermez; ileride eklenebilir
       const totalHours    = people.reduce((s, p) => s + p.hours, 0);
 
       setData({ people, byShift, fairnessScore, nightFairness, weekendFairness, holidayFairness, ideal, totalShifts, totalHours, unfilledSlots });
@@ -312,7 +349,7 @@ export default function FairnessReportPage({ activeYM }) {
     } finally {
       setLoading(false);
     }
-  }, [year, month]);
+  }, [year, month, activeServiceId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -435,6 +472,16 @@ export default function FairnessReportPage({ activeYM }) {
 
   return (
     <div style={{ maxWidth: 1080, margin: '0 auto' }}>
+      {/* Compliance soft-block modal */}
+      {complianceResult && (
+        <ComplianceGuardModal
+          result={complianceResult}
+          publishing={publishing}
+          onProceed={doPublish}
+          onCancel={() => setComplianceResult(null)}
+        />
+      )}
+
       {/* Başlık */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
@@ -486,21 +533,21 @@ export default function FairnessReportPage({ activeYM }) {
             Yenile
           </button>
           <button
-            onClick={publishSchedule}
-            disabled={!data || publishing}
-            title="Personele adillik skorlu bildirim gönder"
+            onClick={handlePublishClick}
+            disabled={!data || publishing || checkingCompliance}
+            title="Uyumluluk kontrolü yaparak çizelgeyi yayınla"
             style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
               borderRadius: 10, border: '1px solid #10b981',
-              background: data && !publishing ? '#10b981' : '#f9fafb',
-              color: data && !publishing ? '#fff' : '#9ca3af',
+              background: data && !publishing && !checkingCompliance ? '#10b981' : '#f9fafb',
+              color: data && !publishing && !checkingCompliance ? '#fff' : '#9ca3af',
               fontSize: 13, fontWeight: 600,
-              cursor: data && !publishing ? 'pointer' : 'not-allowed',
+              cursor: data && !publishing && !checkingCompliance ? 'pointer' : 'not-allowed',
               opacity: !data ? 0.5 : 1, transition: 'all .15s',
             }}
           >
             <CheckCircle2 size={14} />
-            {publishing ? 'Gönderiliyor…' : 'Çizelgeyi Yayınla'}
+            {checkingCompliance ? 'Kontrol ediliyor…' : publishing ? 'Gönderiliyor…' : 'Çizelgeyi Yayınla'}
           </button>
         </div>
       </div>
