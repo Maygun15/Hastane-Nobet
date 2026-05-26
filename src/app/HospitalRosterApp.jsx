@@ -55,6 +55,7 @@ import AnnouncementsPanel from "../components/AnnouncementsPanel.jsx";
 
 // Normal kullanıcı takvimi
 import PersonScheduleCalendar from "../components/PersonScheduleCalendar.jsx";
+import PersonalShiftSummary from "../components/PersonalShiftSummary.jsx";
 import { getActiveYM, setActiveYM, ymKey } from "../utils/activeYM.js";
 import { apiChangePassword, API, getToken } from "../lib/api.js";
 import { getAllLeaves } from "../lib/leaves.js";
@@ -70,21 +71,71 @@ import LeaveBalanceTab from "../tabs/LeaveBalanceTab.jsx";
 import OccupancyReportPage from "../pages/OccupancyReportPage.jsx";
 import WorkingHoursSummaryPage from "../pages/WorkingHoursSummaryPage.jsx";
 import LeaveStatsPage from "../pages/LeaveStatsPage.jsx";
+import ComplianceReportPage from "../pages/ComplianceReportPage.jsx";
 import AnnouncementModal from "../components/AnnouncementModal.jsx";
 
 let settingsBootstrapKey = "";
 let settingsBootstrapPromise = null;
 
+const SETTINGS_BOOTSTRAP_KEYS = ["workAreas", "workingHours", "leaveTypes", "requestBoxV1"];
+const SETTINGS_CACHE_KEYS = {
+  workAreas: ["workAreas", "workAreasV2"],
+  workingHours: ["workingHours", "workingHoursV2"],
+  leaveTypes: ["leaveTypesV2", "leaveTypes", "izinTurleri"],
+  requestBoxV1: ["requestBoxV1"],
+};
+
+function extractSettingArray(payload, key) {
+  const candidates = [
+    payload,
+    payload?.value,
+    payload?.data,
+    payload?.data?.value,
+    payload?.items,
+    payload?.[key],
+    payload?.data?.[key],
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate;
+    if (candidate && typeof candidate === "object") {
+      if (Array.isArray(candidate.value)) return candidate.value;
+      if (Array.isArray(candidate.items)) return candidate.items;
+      if (Array.isArray(candidate[key])) return candidate[key];
+    }
+  }
+  return null;
+}
+
+function readCachedSettingArray(key) {
+  const keys = SETTINGS_CACHE_KEYS[key] || [key];
+  for (const cacheKey of keys) {
+    const value = LS.get(cacheKey, null);
+    const arr = extractSettingArray(value, key);
+    if (Array.isArray(arr)) return arr;
+  }
+  return null;
+}
+
+async function safeFetchSetting(key) {
+  try {
+    const payload = await API.http.get(`/api/settings/${key}?serviceId=`);
+    return { key, ok: true, value: extractSettingArray(payload, key), payload };
+  } catch (err) {
+    return { key, ok: false, value: null, err };
+  }
+}
+
 function loadSettingsSnapshotOnce(userId) {
   const key = String(userId || "anonymous");
   if (settingsBootstrapPromise && settingsBootstrapKey === key) return settingsBootstrapPromise;
   settingsBootstrapKey = key;
-  settingsBootstrapPromise = Promise.all([
-    API.http.get(`/api/settings/workAreas?serviceId=`),
-    API.http.get(`/api/settings/workingHours?serviceId=`),
-    API.http.get(`/api/settings/leaveTypes?serviceId=`),
-    API.http.get(`/api/settings/requestBoxV1?serviceId=`),
-  ]).finally(() => {
+  settingsBootstrapPromise = Promise.all(SETTINGS_BOOTSTRAP_KEYS.map(safeFetchSetting)).then((results) => (
+    results.reduce((acc, item) => {
+      acc[item.key] = item;
+      return acc;
+    }, {})
+  )).finally(() => {
     settingsBootstrapPromise = null;
   });
   return settingsBootstrapPromise;
@@ -327,28 +378,30 @@ export default function HospitalRosterApp() {
     }
     (async () => {
       try {
-        const [wa, wh, lt, rq] = await loadSettingsSnapshotOnce(user?.id);
+        const snapshot = await loadSettingsSnapshotOnce(user?.id);
         if (!alive) return;
-        if (Array.isArray(wa?.value)) {
-          const serialized = JSON.stringify(wa.value);
-          lastSavedWorkAreasRef.current = serialized;
-          setWorkAreas(wa.value);
-        }
-        if (Array.isArray(wh?.value)) {
-          lastSavedWorkingHoursRef.current = JSON.stringify(wh.value);
-          setWorkingHours(wh.value);
-        }
-        if (Array.isArray(lt?.value)) {
-          lastSavedLeaveTypesRef.current = JSON.stringify(lt.value);
-          setLeaveTypes(lt.value);
-        }
-        if (Array.isArray(rq?.value)) {
-          lastSavedRequestBoxRef.current = JSON.stringify(rq.value);
-          setRequestBox(rq.value);
-        }
+        const applySetting = (key, setter, lastSavedRef, currentValue) => {
+          const result = snapshot?.[key];
+          const value = Array.isArray(result?.value) ? result.value : readCachedSettingArray(key);
+          const nextValue = Array.isArray(value) ? value : (Array.isArray(currentValue) ? currentValue : []);
+          lastSavedRef.current = JSON.stringify(nextValue);
+          if (Array.isArray(value)) setter(value);
+          if (result?.ok === false) {
+            console.warn(`Settings fetch failed for "${key}":`, result.err?.message || result.err);
+          }
+        };
+
+        applySetting("workAreas", setWorkAreas, lastSavedWorkAreasRef, workAreas);
+        applySetting("workingHours", setWorkingHours, lastSavedWorkingHoursRef, workingHours);
+        applySetting("leaveTypes", setLeaveTypes, lastSavedLeaveTypesRef, leaveTypes);
+        applySetting("requestBoxV1", setRequestBox, lastSavedRequestBoxRef, requestBox);
       } catch (err) {
         if (!alive) return;
         console.warn("Settings fetch failed:", err?.message || err);
+        lastSavedWorkAreasRef.current = JSON.stringify(workAreas ?? []);
+        lastSavedWorkingHoursRef.current = JSON.stringify(workingHours ?? []);
+        lastSavedLeaveTypesRef.current = JSON.stringify(leaveTypes ?? []);
+        lastSavedRequestBoxRef.current = JSON.stringify(requestBox ?? []);
       } finally {
         if (alive) {
           settingsLoadedRef.current = true;
@@ -478,6 +531,7 @@ export default function HospitalRosterApp() {
       if (hash.startsWith("#/reports/leave-balance")){ if (isAdmin)           setActiveTab("leaveBalance");         return; }
       if (hash.startsWith("#/reports/working-hours")){ if (isAdmin)           setActiveTab("workingHoursSummary");  return; }
       if (hash.startsWith("#/reports/leave-stats"))  { if (isAdmin)           setActiveTab("leaveStats");           return; }
+      if (hash.startsWith("#/reports/compliance"))   { if (isAdmin)           setActiveTab("complianceReport");     return; }
       // Yeni: Yönetim grubu
       if (hash.startsWith("#/yonetim/planlama"))     { if (isAdmin)           setActiveTab("plannings");            return; }
       // Mevcut: Parametreler + Çizelgeler
@@ -536,10 +590,11 @@ export default function HospitalRosterApp() {
       canSeeDashboard, canSeeAIScheduler, canSeeAICost, canSeeFairness, isAdmin, isStaff]);
 
   // Quick-action callbacks (sidebar dışı: header toolbar)
-  const openRequests = useCallback(() => {
+  const openRequests = useCallback((status = "") => {
     const target = (isAdmin || isStaff) ? "requests" : "myRequests";
     setActiveTab(target);
-    pushUrl("/talepler");
+    const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+    pushUrl(`/talepler${suffix}`);
   }, [isAdmin, isStaff]);
 
   const openProfile = useCallback(() => {
@@ -559,6 +614,7 @@ export default function HospitalRosterApp() {
       schedules: "Çizelgeler",
       parameters: "Parametreler",
       users: "Kullanıcılar",
+      requests: "Talepler",
       ai: "AI Asistan",
       aiScheduler: "AI Çizelge",
       fairness: "Adillik",
@@ -568,6 +624,7 @@ export default function HospitalRosterApp() {
       occupancyReport: "Doluluk Raporu",
       workingHoursSummary: "Çalışma Saatleri",
       leaveStats: "İzin İstatistikleri",
+      complianceReport: "Mevzuat Uyumluluğu",
     };
     document.title = `${labels[activeTab] || "Hastane Nöbet"} | Hastane Nöbet Sistemi`;
   }, [activeTab]);
@@ -668,6 +725,7 @@ export default function HospitalRosterApp() {
                 allLeaves={personLeaves}
                 workAreas={workAreas}
                 workingHours={workingHours}
+                leaveTypes={leaveTypes}
               />
             ) : (
               <PlanTab
@@ -679,6 +737,7 @@ export default function HospitalRosterApp() {
                 personLeaves={personLeaves}
                 setPersonLeaves={setPersonLeaves}
                 workingHours={workingHours}
+                onOpenRequests={openRequests}
               />
             )
           )}
@@ -745,6 +804,7 @@ export default function HospitalRosterApp() {
           {activeTab === "occupancyReport" && isAdmin && <OccupancyReportPage />}
           {activeTab === "workingHoursSummary" && isAdmin && <WorkingHoursSummaryPage />}
           {activeTab === "leaveStats" && isAdmin && <LeaveStatsPage />}
+          {activeTab === "complianceReport" && isAdmin && <ComplianceReportPage />}
           {announcementOpen && <AnnouncementModal onClose={() => setAnnouncementOpen(false)} />}
               </div>
             </main>
@@ -1015,7 +1075,7 @@ function ChangePasswordModal({ open, onClose, force = false, onChanged }) {
 
 
 /* ---------------- Normal kullanıcı: “Takvimim” ---------------- */
-function MyCalendarBox({ me, people = [], allLeaves = {}, workAreas = [], workingHours = [] }) {
+function MyCalendarBox({ me, people = [], allLeaves = {}, workAreas = [], workingHours = [], leaveTypes = [] }) {
   const [ym, setYm] = useState(() => getActiveYM());
   const year = ym.year;
   const month = ym.month;
@@ -1060,6 +1120,7 @@ function MyCalendarBox({ me, people = [], allLeaves = {}, workAreas = [], workin
             Personel kaydınız bağlı değil. İzinlerin görünmesi için hesabınızı bir personele bağlayın.
           </div>
         )}
+        <PersonalShiftSummary me={me} people={people} year={year} month={month} />
         <PersonScheduleCalendar
           year={year}
           month={month}
