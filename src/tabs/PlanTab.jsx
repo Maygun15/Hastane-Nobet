@@ -13,6 +13,7 @@ import { API } from "../lib/api.js";
 import { generateSchedulerPlan, getMyRequests } from "../api/apiAdapter.js";
 import { invalidateScheduleCache } from "../store/monthlyScheduleModel.js";
 import { services as STATIC_SERVICES } from "../constants/enums.js";
+import SchedulerAuditPanel from "../components/SchedulerAuditPanel.jsx";
 
 const MONTH_LABEL = (year, month) =>
   `${Intl.DateTimeFormat("tr-TR", { month: "long" }).format(new Date(year, month - 1, 1))} ${year}`;
@@ -487,7 +488,7 @@ function withAliasIds(person, pool = []) {
   };
 }
 
-export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: peopleAllProp = [] }) {
+export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: peopleAllProp = [], onOpenRequests = null }) {
   const { user } = useAuth();
   const scope = useServiceScope();
   const normalizeServiceId = useCallback(
@@ -519,6 +520,7 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
   const leaveTypes = useAppStore((s) => s.leaveTypes);
   const [plannerStatus, setPlannerStatus] = useState("idle"); // idle | loading | error | done
   const [plannerError, setPlannerError] = useState("");
+  const [plannerIssues, setPlannerIssues] = useState([]);
   const [requestItems, setRequestItems] = useState([]);
   const [requestError, setRequestError] = useState("");
   const personCalendarRef = useRef(null);
@@ -799,6 +801,15 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
     } catch {}
   }, []);
 
+  const openRequests = useCallback((status = "") => {
+    if (typeof onOpenRequests === "function") {
+      onOpenRequests(status);
+      return;
+    }
+    const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+    navigateTo(`/talepler${suffix}`);
+  }, [navigateTo, onOpenRequests]);
+
   const openScheduleSection = useCallback((sectionId) => {
     try {
       window.location.hash = `#/cizelgeler/${encodeURIComponent(sectionId)}`;
@@ -868,6 +879,7 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
     try {
       setPlannerStatus("loading");
       setPlannerError("");
+      setPlannerIssues([]);
 
       const roleKey = activeRole;
       const serviceId = selectedService || "";
@@ -951,6 +963,7 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
         throw new Error("Scheduler sonucu alınamadı.");
       }
 
+      setPlannerIssues(Array.isArray(data.issues) ? data.issues : []);
       invalidateScheduleCache(year, month);
       try {
         const detail = {
@@ -1097,6 +1110,13 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
         </div>
       )}
 
+      {canManage && plannerStatus === "done" && plannerIssues.length > 0 && (
+        <SchedulerAuditPanel
+          issues={plannerIssues}
+          totalDays={new Date(year, month, 0).getDate()}
+        />
+      )}
+
       <section className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
         <div className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           <div className="flex items-start justify-between gap-4">
@@ -1124,6 +1144,8 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
               value={pendingRequestCount}
               caption={requestError ? "Talep özeti okunamadı" : `${approvedRequestCount} talep sonuçlandı`}
               accent="amber"
+              onClick={pendingRequestCount > 0 ? () => openRequests("pending") : () => openRequests()}
+              ariaLabel="Talep yönetimini aç"
             />
             <WorkspaceStatCard
               title="Plan Durumu"
@@ -1180,7 +1202,7 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
                 </button>
                 <button
                   type="button"
-                  onClick={() => navigateTo("/talepler")}
+                  onClick={() => openRequests(pendingRequestCount > 0 ? "pending" : "")}
                   className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left hover:border-sky-300 hover:bg-sky-50 transition"
                 >
                   <span>
