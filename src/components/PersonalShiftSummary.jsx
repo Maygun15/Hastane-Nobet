@@ -564,6 +564,35 @@ export default function PersonalShiftSummary({ me, people = [], year, month }) {
     }
   }, [stats, pdfData, me, year, month]);
 
+  const handleShare = useCallback(async () => {
+    if (!stats || stats.totalShifts === 0) {
+      toast.info("Paylaşılacak nöbet verisi yok.");
+      return;
+    }
+    const monthLabel = `${TR_MONTHS[(month - 1)] ?? ""} ${year}`;
+    const nextLine = stats.nextShift
+      ? `Sonraki nöbet: ${fmtTurkishDate(stats.nextShift.dateStr)}${stats.nextShift.shiftCode ? " " + stats.nextShift.shiftCode : ""}`
+      : "";
+    const lines = [
+      `${monthLabel} nöbet özetim:`,
+      `Toplam nöbet: ${stats.totalShifts}`,
+      `Toplam saat: ${stats.totalHours}`,
+      `Gece nöbeti: ${stats.nightShifts}`,
+      `Hafta sonu: ${stats.weekendShifts}`,
+    ];
+    if (nextLine) lines.push(nextLine);
+    const text = lines.join("\n");
+    try {
+      if (navigator.share) {
+        await navigator.share({ text });
+      } else {
+        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+      }
+    } catch (err) {
+      if (err?.name !== "AbortError") toast.error("Paylaşım başarısız oldu.");
+    }
+  }, [stats, month, year]);
+
   // Kişi çözümlenemiyorsa hiçbir şey gösterme
   if (!resolvedId) return null;
 
@@ -638,7 +667,14 @@ export default function PersonalShiftSummary({ me, people = [], year, month }) {
         </div>
       )}
 
-      <div className="flex justify-end mb-2">
+      <div className="flex justify-end gap-2 mb-2">
+        <button
+          onClick={handleShare}
+          disabled={!stats || stats.totalShifts === 0}
+          className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100 disabled:opacity-50"
+        >
+          Paylaş
+        </button>
         <button
           onClick={handleExportPdf}
           disabled={pdfBusy}
