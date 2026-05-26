@@ -204,6 +204,20 @@ function getUpcomingBanner(mine, nextShift) {
   return null;
 }
 
+function getRiskWarnings(stats) {
+  if (!stats) return [];
+  const warnings = [];
+  if (stats.totalHours > 220)
+    warnings.push("Aylık çalışma yükünüz yüksek");
+  if (stats.nightShifts >= 6)
+    warnings.push("Gece nöbeti yoğunluğu yüksek");
+  if (stats.weekendShifts >= 5)
+    warnings.push("Hafta sonu nöbet yoğunluğu yüksek");
+  if (stats.holidayShifts >= 2)
+    warnings.push("Resmi tatil nöbet yoğunluğu yüksek");
+  return warnings;
+}
+
 function getBusiestDay(mine) {
   const byDay = {};
   for (const a of mine) {
@@ -576,6 +590,7 @@ export default function PersonalShiftSummary({ me, people = [], year, month }) {
   } = stats;
 
   const banner = getUpcomingBanner(mineCache, nextShift);
+  const riskWarnings = getRiskWarnings(stats);
 
   const gcalValue = gcal.loading ? "…" : gcal.connected ? "Bağlı" : "Bağlı Değil";
   const gcalSub = gcal.connected && gcal.lastSyncAt
@@ -606,6 +621,20 @@ export default function PersonalShiftSummary({ me, people = [], year, month }) {
               ? "Bugün nöbetiniz var"
               : `Yaklaşan nöbetiniz var: ${fmtTurkishDate(banner.dateStr)}${banner.shiftCode ? ` • ${banner.shiftCode}` : ""}`}
           </span>
+        </div>
+      )}
+
+      {riskWarnings.length > 0 && (
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-semibold text-amber-800 mb-1.5">Yoğunluk Uyarıları</div>
+          <ul className="space-y-1">
+            {riskWarnings.map((w) => (
+              <li key={w} className="flex items-center gap-2 text-xs text-amber-800">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
+                {w}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
