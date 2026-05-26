@@ -5,12 +5,40 @@ import { fetchHolidayCalendar } from "../api/apiAdapter.js";
 import { API } from "../lib/api.js";
 import { useAppStore } from "../state/appStore.js";
 import { resolvePersonId, resolvePersonRef, canonName } from "../utils/personIdentity.js";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { toast } from "sonner";
 
 // ── Sabitler ──────────────────────────────────────────────────────────────────
 
 const NIGHT_CODES = new Set(["N", "V1", "V2", "SV", "G", "GECE", "NIGHT"]);
 const SHIFT_HOURS_FALLBACK = { N: 24, V2: 24, V1: 16, M: 8, M4: 8 };
 const TR_MONTHS = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
+const TR_DAYS   = ["Paz","Pzt","Sal","Çar","Per","Cum","Cmt"];
+
+function dayName(ymd) {
+  if (!ymd) return "";
+  return TR_DAYS[new Date(String(ymd).slice(0, 10)).getDay()] || "";
+}
+
+// Türkçe → ASCII dönüşümü — jsPDF'in Helvetica (Latin-1) fontu için zorunlu.
+// Önce Türkçeye özgü harfler (NFD öncesi), sonra kalan diakritikler NFD ile temizlenir.
+function forPdf(s) {
+  if (!s) return "";
+  return String(s)
+    .replace(/İ/g, "I").replace(/ı/g, "i")
+    .replace(/Ş/g, "S").replace(/ş/g, "s")
+    .replace(/Ğ/g, "G").replace(/ğ/g, "g")
+    .replace(/Ü/g, "U").replace(/ü/g, "u")
+    .replace(/Ö/g, "O").replace(/ö/g, "o")
+    .replace(/Ç/g, "C").replace(/ç/g, "c")
+    .replace(/[—–]/g, "-")
+    .replace(/[""]/g, '"')
+    .replace(/['']/g, "'")
+    .replace(/…/g, "...")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+}
 
 // ── Yardımcı fonksiyonlar ──────────────────────────────────────────────────────
 
@@ -89,6 +117,93 @@ function getNextShift(mine) {
   return { dateStr: future[0].d, shiftCode: future[0].a.shiftCode || "" };
 }
 
+// Kayıt zenginlik puanı: saat > 0 → 4, shiftCode dolu → 2, roleLabel dolu → 1
+function richScore(a) {
+  return (resolveHours(a) > 0 ? 4 : 0)
+    + (!!String(a.shiftCode || a.shiftId || a.shift || a.code || "").trim() ? 2 : 0)
+    + (!!String(a.roleLabel || a.rowLabel || a.label || "").trim() ? 1 : 0);
+}
+
+// Birden fazla servis bucket'ından gelen atamaları birleştirip tekilleştirir.
+// Key intentionally excludes roleLabel: aynı slot farklı etiketle gelirse duplicate sayılmaz.
+// Aynı date|person|shift grubunda en zengin kayıt tercih edilir.
+// Aynı gün|kişi için gerçek kayıt (saat>0 veya shift dolu) varsa placeholder kaldırılır.
+function normalizeForSummary(assignments) {
+  if (!Array.isArray(assignments)) return [];
+
+  // Adım 1 — date|person|shift grubunda en zengin kaydı tut
+  const groups = new Map();
+  for (const a of assignments) {
+    if (!a || typeof a !== "object") continue;
+    const date = String(a.date || a.day || "").slice(0, 10);
+    if (!date) continue;
+    const person = String(a.personId || a.pid || a.staffId || "").trim()
+      || canonName(a.personName || a.fullName || a.name || "");
+    const shift = String(a.shiftCode || a.shiftId || a.shift || a.code || "").trim().toUpperCase();
+    const key = `${date}|${person}|${shift}`;
+    const prev = groups.get(key);
+    if (!prev || richScore(a) > richScore(prev)) groups.set(key, a);
+  }
+
+  // Adım 2 — aynı date|person için gerçek kayıt varsa placeholder'ı çıkar
+  const realExists = new Set();
+  for (const a of groups.values()) {
+    if (richScore(a) > 0) {
+      const date = String(a.date || a.day || "").slice(0, 10);
+      const person = String(a.personId || a.pid || a.staffId || "").trim()
+        || canonName(a.personName || a.fullName || a.name || "");
+      realExists.add(`${date}|${person}`);
+    }
+  }
+
+  return Array.from(groups.values()).filter((a) => {
+    if (richScore(a) > 0) return true;
+    const date = String(a.date || a.day || "").slice(0, 10);
+    const person = String(a.personId || a.pid || a.staffId || "").trim()
+      || canonName(a.personName || a.fullName || a.name || "");
+    return !realExists.has(`${date}|${person}`);
+  });
+}
+
+// Mine filtresi sonrası dedup: tüm kayıtlar aynı kişiye ait.
+// Günde en fazla 1 nöbet olduğundan date bazında gruplama yeterli.
+// Aynı tarih için birden fazla kaynak (primary/fallback, farklı rol bucket'ları)
+// farklı shiftCode/format ile aynı nöbeti döndürebilir — zengin olanı tut.
+function normalizeMine(mine) {
+  if (!Array.isArray(mine) || mine.length === 0) return mine;
+  const byDate = new Map();
+  for (const a of mine) {
+    const date = String(a.date || a.day || "").slice(0, 10);
+    if (!date) continue;
+    const prev = byDate.get(date);
+    if (!prev || richScore(a) > richScore(prev)) byDate.set(date, a);
+  }
+  return Array.from(byDate.values());
+}
+
+function dayDiff(fromYmd, toYmd) {
+  const [fy, fm, fd] = fromYmd.split("-").map(Number);
+  const [ty, tm, td] = toYmd.split("-").map(Number);
+  return Math.round(
+    (Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86400000
+  );
+}
+
+function getUpcomingBanner(mine, nextShift) {
+  if (!Array.isArray(mine)) return null;
+  const todayYmd = new Date().toISOString().slice(0, 10);
+  const hasToday = mine.some(
+    (a) => String(a.date || a.day || "").slice(0, 10) === todayYmd
+  );
+  if (hasToday) return { type: "today" };
+  if (nextShift?.dateStr) {
+    const diff = dayDiff(todayYmd, nextShift.dateStr);
+    if (diff >= 1 && diff <= 3)
+      return { type: "soon", dateStr: nextShift.dateStr, shiftCode: nextShift.shiftCode || "" };
+  }
+  return null;
+}
+
 function getBusiestDay(mine) {
   const byDay = {};
   for (const a of mine) {
@@ -161,6 +276,28 @@ export default function PersonalShiftSummary({ me, people = [], year, month }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [gcal, setGcal] = useState({ loading: false, connected: false, lastSyncAt: null });
+  const [mineCache, setMineCache] = useState([]);
+  const [pdfBusy, setPdfBusy] = useState(false);
+
+  // PDF satır verisi — tekil, sıralı, sıfır-saatli boş kayıtlar temizlendi
+  const pdfData = useMemo(() => {
+    const seen = new Set();
+    return mineCache
+      .filter((a) => {
+        const h = resolveHours(a);
+        const code = String(a.shiftCode || "").trim();
+        if (h === 0 && !code) return false;
+        const key = `${String(a.date || a.day || "").slice(0, 10)}|${code.toUpperCase()}|${String(a.roleLabel || a.label || "").trim()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => {
+        const da = String(a.date || a.day || "");
+        const db = String(b.date || b.day || "");
+        return da < db ? -1 : da > db ? 1 : 0;
+      });
+  }, [mineCache]);
 
   // people listesi her render'da taranmasın
   const resolvedId = useMemo(
@@ -177,32 +314,48 @@ export default function PersonalShiftSummary({ me, people = [], year, month }) {
     if (!resolvedId) return;
     setLoading(true);
     try {
-      // Tek çekme — fetchMergedScheduleTruth çoğaltılmıyor
-      const [truth, holidays] = await Promise.all([
-        fetchMergedScheduleTruth({
-          sectionId: "calisma-cizelgesi",
-          serviceId: String(me?.serviceId || me?.service || activeServiceId || ""),
-          roles: ["", "Nurse", "Doctor", "Hemşire", "Doktor", "Personel"],
-          year,
-          month,
-          options: { preferScheduleReadModel: true },
-        }),
+      const primaryServiceId = String(me?.serviceId || me?.service || activeServiceId || "");
+      const fetchOpts = {
+        sectionId: "calisma-cizelgesi",
+        roles: ["", "Nurse", "Doctor", "Hemşire", "Doktor", "Personel"],
+        year,
+        month,
+        options: { preferScheduleReadModel: true },
+      };
+
+      const [primaryTruth, holidays] = await Promise.all([
+        fetchMergedScheduleTruth({ ...fetchOpts, serviceId: primaryServiceId }),
         fetchHolidayCalendar({ year, month }).catch(() => []),
       ]);
 
-      const all = truth?.assignments || [];
+      // PersonScheduleCalendar gibi serviceId="" de dene — çizelge farklı bucket'ta kayıtlı olabilir
+      let fallbackAssignments = [];
+      if (primaryServiceId) {
+        try {
+          const fallbackTruth = await fetchMergedScheduleTruth({ ...fetchOpts, serviceId: "" });
+          fallbackAssignments = fallbackTruth?.assignments || [];
+        } catch {
+          // fallback başarısız olursa primary ile devam et
+        }
+      }
+
+      const all = normalizeForSummary([...(primaryTruth?.assignments || []), ...fallbackAssignments]);
+
+      // PersonScheduleCalendar ile aynı OR mantığı:
+      // ID eşleşmesi VEYA canon isim eşleşmesi — ikisi birbirinden bağımsız
       const mine = all.filter((a) => {
         const aid = String(a.personId || a.pid || a.staffId || "").trim();
         if (aid && aid === resolvedId) return true;
-        // isim fallback
-        if (!aid && meCanon) {
+        if (meCanon) {
           const aCanon = canonName(a.personName || a.fullName || a.name || "");
-          return aCanon && aCanon === meCanon;
+          return !!(aCanon && aCanon === meCanon);
         }
         return false;
       });
 
-      setStats(computeStats(mine, holidays));
+      const mineDeduped = normalizeMine(mine);
+      setMineCache(mineDeduped);
+      setStats(computeStats(mineDeduped, holidays));
     } catch {
       setStats(null);
     } finally {
@@ -235,6 +388,168 @@ export default function PersonalShiftSummary({ me, people = [], year, month }) {
     load();
   }, [load]);
 
+  const handleExportPdf = useCallback(() => {
+    if (!stats || stats.totalShifts === 0) {
+      toast.info("Disa aktarilacak nobet verisi yok.");
+      return;
+    }
+    setPdfBusy(true);
+    try {
+      const personName = forPdf(
+        me?.personName || me?.fullName || me?.name || me?.displayName || me?.username || "Personel"
+      );
+      const monthLabel = forPdf(`${TR_MONTHS[(month - 1)] ?? ""} ${year}`);
+      const genDate = new Date().toLocaleDateString("tr-TR");
+
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const PW = doc.internal.pageSize.getWidth();
+      const PH = doc.internal.pageSize.getHeight();
+      const ML = 14;
+      const MR = PW - 14;
+      const CW = MR - ML;
+
+      // ── HEADER ──────────────────────────────────────────────────────────
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, PW, 38, "F");
+      doc.setFillColor(37, 99, 235);
+      doc.rect(0, 35, PW, 3, "F");
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(15);
+      doc.text("KISISEL NOBET OZETI", ML, 14);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(203, 213, 225);
+      doc.text(personName, ML, 22);
+
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(monthLabel, ML, 29);
+
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text("Hospital Roster System", MR, 13, { align: "right" });
+      doc.setFontSize(7);
+      doc.text("Kisisel Nobet Raporu", MR, 20, { align: "right" });
+
+      // ── ÖZET KUTULAR ────────────────────────────────────────────────────
+      const BOX_Y = 44;
+      const BOX_H = 22;
+      const summaryItems = [
+        { v: String(stats.totalShifts),                        l: "Toplam Nobet", bg: [219,234,254], fg: [30,64,175]   },
+        { v: String(stats.nightShifts),                        l: "Gece Nobeti",  bg: [243,232,255], fg: [109,40,217]  },
+        { v: `${stats.totalHours}s`,                           l: "Toplam Saat", bg: [220,252,231], fg: [21,128,61]   },
+        { v: String(stats.weekendShifts),                      l: "Hafta Sonu",  bg: [255,237,213], fg: [194,65,12]   },
+        { v: forPdf(monthIntensityLabel(stats.totalHours)),    l: "Yogunluk",    bg: [254,249,195], fg: [133,77,14]   },
+      ];
+      const bw = (CW - 2 * (summaryItems.length - 1)) / summaryItems.length;
+      summaryItems.forEach((item, i) => {
+        const bx = ML + i * (bw + 2);
+        doc.setFillColor(...item.bg);
+        doc.rect(bx, BOX_Y, bw, BOX_H, "F");
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.2);
+        doc.rect(bx, BOX_Y, bw, BOX_H, "S");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.setTextColor(...item.fg);
+        doc.text(item.v, bx + bw / 2, BOX_Y + 11, { align: "center" });
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(5.5);
+        doc.setTextColor(100, 116, 139);
+        doc.text(item.l, bx + bw / 2, BOX_Y + 18, { align: "center" });
+      });
+
+      // ── BÖLÜM BAŞLIĞI ────────────────────────────────────────────────────
+      const SEC_Y = BOX_Y + BOX_H + 7;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(51, 65, 85);
+      doc.text("NOBET LISTESI", ML, SEC_Y);
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.3);
+      doc.line(ML, SEC_Y + 1.5, MR, SEC_Y + 1.5);
+
+      // ── NÖBET TABLOSU ────────────────────────────────────────────────────
+      const tableBody = pdfData.length > 0
+        ? pdfData.map((a) => {
+            const ymd = String(a.date || a.day || "").slice(0, 10);
+            const h   = resolveHours(a);
+            const code = String(a.shiftCode || "").trim();
+            return [
+              ymd,
+              forPdf(dayName(ymd)),
+              forPdf(code) || "-",
+              h > 0 ? `${h}s` : "-",
+              forPdf(String(a.roleLabel || a.label || "").trim()) || "-",
+              NIGHT_CODES.has(code.toUpperCase()) ? "E" : "-",
+              isWeekend(ymd) ? "E" : "-",
+            ];
+          })
+        : [["Kayit yok", "-", "-", "-", "-", "-", "-"]];
+
+      autoTable(doc, {
+        startY: SEC_Y + 5,
+        head: [["Tarih", "Gun", "Vardiya", "Saat", "Gorev", "Gece", "H.Sonu"]],
+        body: tableBody,
+        theme: "striped",
+        styles: {
+          fontSize: 8,
+          font: "helvetica",
+          textColor: [30, 41, 59],
+          cellPadding: { top: 2.5, right: 3, bottom: 2.5, left: 3 },
+          lineColor: [226, 232, 240],
+          lineWidth: 0.15,
+        },
+        headStyles: {
+          fillColor: [30, 64, 175],
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+          fontSize: 7.5,
+          halign: "center",
+          cellPadding: { top: 3, right: 3, bottom: 3, left: 3 },
+        },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        columnStyles: {
+          0: { cellWidth: 25, fontStyle: "bold" },
+          1: { cellWidth: 13, halign: "center" },
+          2: { cellWidth: 20, halign: "center", fontStyle: "bold" },
+          3: { cellWidth: 14, halign: "center" },
+          4: { cellWidth: "auto" },
+          5: { cellWidth: 13, halign: "center" },
+          6: { cellWidth: 16, halign: "center" },
+        },
+        margin: { left: ML, right: 14, bottom: 18 },
+      });
+
+      // ── FOOTER — tüm sayfalar ─────────────────────────────────────────────
+      const totalPages = doc.getNumberOfPages();
+      for (let pg = 1; pg <= totalPages; pg++) {
+        doc.setPage(pg);
+        doc.setFillColor(248, 250, 252);
+        doc.rect(0, PH - 13, PW, 13, "F");
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.2);
+        doc.line(ML, PH - 13, MR, PH - 13);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.text(`Olusturuldu: ${genDate}`, ML, PH - 6);
+        doc.text("Hospital Roster System", PW / 2, PH - 6, { align: "center" });
+        doc.text(`Sayfa ${pg} / ${totalPages}  -  Kullaniciya ozel`, MR, PH - 6, { align: "right" });
+      }
+
+      doc.save(`Nobet_Ozeti_${personName}_${year}_${String(month).padStart(2, "0")}.pdf`);
+    } catch (err) {
+      toast.error("PDF olusturulamadi.");
+      console.error("[PersonalShiftSummary] PDF hatasi:", err);
+    } finally {
+      setPdfBusy(false);
+    }
+  }, [stats, pdfData, me, year, month]);
+
   // Kişi çözümlenemiyorsa hiçbir şey gösterme
   if (!resolvedId) return null;
 
@@ -260,6 +575,8 @@ export default function PersonalShiftSummary({ me, people = [], year, month }) {
     thisWeekHours, nextShift, busiestDay,
   } = stats;
 
+  const banner = getUpcomingBanner(mineCache, nextShift);
+
   const gcalValue = gcal.loading ? "…" : gcal.connected ? "Bağlı" : "Bağlı Değil";
   const gcalSub = gcal.connected && gcal.lastSyncAt
     ? `Son: ${new Date(gcal.lastSyncAt).toLocaleDateString("tr-TR")}`
@@ -267,6 +584,41 @@ export default function PersonalShiftSummary({ me, people = [], year, month }) {
 
   return (
     <>
+      {banner && (
+        <div
+          className={`mb-3 rounded-xl border px-4 py-3 flex items-center gap-3 text-sm font-medium ${
+            banner.type === "today"
+              ? "bg-amber-50 border-amber-300 text-amber-900"
+              : "bg-sky-50 border-sky-200 text-sky-800"
+          }`}
+        >
+          <span
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+              banner.type === "today"
+                ? "bg-amber-400 text-white"
+                : "bg-sky-200 text-sky-700"
+            }`}
+          >
+            {banner.type === "today" ? "!" : "↑"}
+          </span>
+          <span>
+            {banner.type === "today"
+              ? "Bugün nöbetiniz var"
+              : `Yaklaşan nöbetiniz var: ${fmtTurkishDate(banner.dateStr)}${banner.shiftCode ? ` • ${banner.shiftCode}` : ""}`}
+          </span>
+        </div>
+      )}
+
+      <div className="flex justify-end mb-2">
+        <button
+          onClick={handleExportPdf}
+          disabled={pdfBusy}
+          className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100 disabled:opacity-50"
+        >
+          {pdfBusy ? "Hazırlanıyor…" : "PDF İndir"}
+        </button>
+      </div>
+
       {/* Mevcut 4 kart — birebir korunur */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
         <StatCard
