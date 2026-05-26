@@ -37,8 +37,15 @@ import {
 import { http } from "../lib/api.js";
 import { namedToAssignments, assignmentsToNamed } from "../utils/scheduleAdapter.js";
 import { createPlanWorkHourResolver } from "../utils/planWorkCalculator.js";
+import {
+  resolveAssignmentPersonId,
+  resolveAssignmentPersonName,
+  resolvePersonId,
+  personNameOf as resolvePersonDisplayName,
+} from "../utils/personIdentity.js";
 import { runPlannerOnce } from "../lib/runPlannerOnce.js";
 import OverrideDialog from "./OverrideDialog.jsx";
+import SchedulerAuditPanel from "./SchedulerAuditPanel.jsx";
 import { toast } from "sonner";
 import {
   WD_TR, HEAD_TR, MONTHS_TR, DUTY_RULES_LS_KEY,
@@ -174,6 +181,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const serviceKey = serviceId == null ? "" : String(serviceId);
   const autoSaveTimerRef = useRef(null);
   const lastSavedSignatureRef = useRef(null);
+  const hasRemoteLoadedRef = useRef(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState("idle");
   const [autoSaveError, setAutoSaveError] = useState(null);
   const [staffLoading, setStaffLoading] = useState(true);
@@ -577,7 +585,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
     const rosterRes = {
       namedAssignments: namedBase,
-      issues: plannerRes?.dpResult?.issues || []
+      issues: plannerRes?.dpResult?.issues || [],
+      overrides: plannerRes?.dpResult?.overrides || [],
     };
 
     const rowMeta = new Map((rows || []).map((r) => [String(r.id), r]));
@@ -1075,7 +1084,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             ? mergeRosterNamedAssignments(rosterFromData, rosterFromAssignments)
             : (rosterFromData || rosterFromAssignments);
           if (rosterForUI) setRoster(rosterForUI);
-          else if ("roster" in data) setRoster(null);
+          else setRoster(null);
           setAiPlan("aiPlan" in data ? (data.aiPlan || null) : null);
           if ("pins" in data) setPins(data.pins || []);
           setManualChangeLog(Array.isArray(data.changeLog) ? data.changeLog : []);
@@ -1144,7 +1153,10 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           setAutoSaveError(err?.message || "Sunucudan çizelge yüklenemedi.");
         }
       } finally {
-        if (!cancelled) setLoadingRemote(false);
+        if (!cancelled) {
+          setLoadingRemote(false);
+          hasRemoteLoadedRef.current = true;
+        }
       }
     })();
     return () => {
@@ -1197,17 +1209,16 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         localStorage.setItem("peopleV2", JSON.stringify(safe));
 
         // Solver'ın kullandığı anahtarlara (nurses/doctors) yazıyoruz
-        const nurses = safe.filter((p) => {
-          const r = (p.role || "").toLowerCase();
-          const t = (p.title || "").toLowerCase();
-          return r === "nurse" || r === "hemşire" || t === "hemşire" || t.includes("hemşire");
-        });
-
+        // Kural: açıkça doktor olan → doctors; geri kalan HERKESİ nurses'a ekle
+        // (meta.role / title boş olan personel — örn. sadece isim kayıtlı — nurses'a düşer)
+        const DOCTOR_RE = /doktor|doctor|hekim|tabip/;
         const doctors = safe.filter((p) => {
-          const r = (p.role || "").toLowerCase();
+          const r = (p.role || p.meta?.role || "").toLowerCase();
           const t = (p.title || "").toLowerCase();
-          return r === "doctor" || r === "doktor" || t === "doktor" || t.includes("doktor");
+          return DOCTOR_RE.test(r) || DOCTOR_RE.test(t);
         });
+        const doctorIdSet = new Set(doctors.map((p) => String(p.id || "")));
+        const nurses = safe.filter((p) => !doctorIdSet.has(String(p.id || "")));
 
         localStorage.setItem("nurses", JSON.stringify(nurses));
         localStorage.setItem("doctors", JSON.stringify(doctors));
@@ -1462,10 +1473,23 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const buildRosterFromBackend = useCallback((assignments, issues, defsSource = rows, candidateAudit = [], issueDiagnostics = []) => {
     const named = {};
     const defsList = Array.isArray(defsSource) ? defsSource : [];
-    const knownPeople = staffForRole;
+    const knownPeopleMap = new Map();
+    [...(Array.isArray(staffForRole) ? staffForRole : []), ...(Array.isArray(peopleAll) ? peopleAll : [])].forEach((person) => {
+      const id = resolvePersonId(person);
+      const nameKey = canonName(resolvePersonDisplayName(person));
+      const key = id || nameKey;
+      if (key && !knownPeopleMap.has(key)) knownPeopleMap.set(key, person);
+    });
+    const knownPeople = Array.from(knownPeopleMap.values());
+    const knownIdNameMap = new Map();
     const knownNameSet = new Set(
       (Array.isArray(knownPeople) ? knownPeople : [])
-        .map((p) => canonName(p?.fullName || p?.name || ""))
+        .map((p) => {
+          const name = resolvePersonDisplayName(p);
+          const id = resolvePersonId(p);
+          if (id && name) knownIdNameMap.set(id, name);
+          return canonName(name);
+        })
         .filter(Boolean)
     );
     const rowLabelById = new Map(defsList.map((r) => [String(r.id), r.label || r.id]));
@@ -1495,13 +1519,20 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       if (!rowId) return;
       if (!named[day]) named[day] = {};
       if (!named[day][rowId]) named[day][rowId] = [];
-      const nm = a.personName || a.name || "";
+      const personId = resolveAssignmentPersonId(a);
+      const nm = resolveAssignmentPersonName(a) || knownIdNameMap.get(personId) || "";
+      if (personId && !nm) {
+        console.warn("Kayıtlı olmayan personel ataması:", personId);
+      }
       const canon = canonName(nm);
+      // personId olan atamalarda knownNameSet filtresi atlanır — başka servisten
+      // transfer edilmiş ya da geç yüklenen personelin atamalarını kesmez.
+      const hasExplicitId = !!personId;
       if (
         nm &&
         !isGroupLabel(nm) &&
         canon &&
-        (!knownNameSet.size || knownNameSet.has(canon))
+        (hasExplicitId || !knownNameSet.size || knownNameSet.has(canon))
       ) {
         named[day][rowId] = keepSingleAssignee([...named[day][rowId], nm]);
       }
@@ -1533,7 +1564,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     });
 
     return { namedAssignments: named, issues: issueList };
-  }, [rows, daysInMonth, role, staffForRole]);
+  }, [rows, daysInMonth, role, staffForRole, peopleAll]);
 
   const mergeRosterNamedAssignments = useCallback((baseRoster, addonRoster) => {
     const normalizedBase = normalizeRosterData(baseRoster);
@@ -2209,6 +2240,12 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             </div>
           )}
 
+          <SchedulerAuditPanel
+            issues={roster?.issues || []}
+            overrides={roster?.overrides || []}
+            totalDays={daysInMonth}
+          />
+
           {/* Dinlenme Kuralı İhlali — Soft-error Banner */}
           {backendViolations.length > 0 && (
             <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 flex items-start gap-3">
@@ -2382,6 +2419,15 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Boş durum — plan yok */}
+      {showAssignmentSections && !loadingRemote && hasRemoteLoadedRef.current && !roster && (
+        <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-6 text-sm text-slate-500 text-center">
+          Bu dönem için kişi ataması bulunamadı.{" "}
+          <strong className="text-slate-700">Çizelgeden Doldur</strong> ile plan oluşturabilir
+          ya da Excel'den içe aktarabilirsiniz.
         </div>
       )}
 
