@@ -35,31 +35,7 @@ export default defineConfig({
       clientPort: 5174,
     },
     proxy: {
-      // SSE stream için özel kural — compression devre dışı, timeout yok
-      '/api/notifications/stream': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-        secure: false,
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq) => {
-            proxyReq.setHeader('Accept-Encoding', 'identity');
-          });
-          proxy.on('error', (_err, _req, res) => {
-            try { res.end(); } catch {}
-          });
-        },
-      },
       '/api': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/login': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/me': {
         target: 'http://localhost:3000',
         changeOrigin: true,
         secure: false,

@@ -6,6 +6,15 @@ import App from "./App.jsx";
 import { AuthProvider } from "./auth/AuthContext.jsx";
 import "./index.css";
 
+if (import.meta.env.DEV && "serviceWorker" in navigator) {
+  navigator.serviceWorker
+    .getRegistrations()
+    .then((registrations) => {
+      registrations.forEach((registration) => registration.unregister());
+    })
+    .catch(() => {});
+}
+
 const Root = () => (
   <BrowserRouter>
     <AuthProvider>
@@ -19,25 +28,3 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <Root />
   </React.StrictMode>
 );
-
-// Service Worker kaydı (production build'de devreye girer)
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register('/service-worker.js')
-      .then((reg) => {
-        // Yeni sürüm tespit edilirse 1 dakika sonra sayfayı yenile
-        reg.addEventListener('updatefound', () => {
-          const worker = reg.installing;
-          if (!worker) return;
-          worker.addEventListener('statechange', () => {
-            if (worker.state === 'installed' && navigator.serviceWorker.controller) {
-              console.info('[SW] Yeni sürüm hazır. Sayfa yenilenecek…');
-              setTimeout(() => window.location.reload(), 60_000);
-            }
-          });
-        });
-      })
-      .catch(() => {/* SW kaydı başarısız — offline destek devre dışı */});
-  });
-}
