@@ -6,7 +6,6 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { http } from '../lib/api.js';
 import { fetchMergedScheduleTruth } from '../utils/scheduleTruth.js';
 import { useAppStore } from '../state/appStore.js';
@@ -15,6 +14,7 @@ import ComplianceGuardModal from '../components/ComplianceGuardModal.jsx';
 const TR_MONTHS = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
 
 const NIGHT_CODES = new Set(['N', 'V1', 'V2', 'SV', 'G', 'GECE', 'NIGHT']);
+const PDF_CANVAS = { width: 1600, height: 1131, scale: 2 };
 
 // Türkiye resmi & dini tatilleri (2025-2026; dini bayramlar tahmini)
 const TURKISH_HOLIDAYS = new Set([
@@ -53,6 +53,122 @@ function scoreColor(score) {
 }
 function scoreLabel(score) {
   return score >= 80 ? 'Adil' : score >= 55 ? 'Orta' : 'Dengesiz';
+}
+
+function escapeXml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function shortText(value, max = 34) {
+  const text = String(value ?? '—');
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function scoreTone(score) {
+  if (score >= 80) return { bg: '#ecfdf5', border: '#a7f3d0', fg: '#047857' };
+  if (score >= 55) return { bg: '#fffbeb', border: '#fde68a', fg: '#b45309' };
+  return { bg: '#fef2f2', border: '#fecaca', fg: '#b91c1c' };
+}
+
+function metricCard(x, y, w, label, value, accent) {
+  return `
+    <rect x="${x}" y="${y}" width="${w}" height="104" rx="24" fill="#ffffff" stroke="${accent}" stroke-width="2"/>
+    <text x="${x + 28}" y="${y + 36}" font-size="17" font-weight="800" letter-spacing="3" fill="#64748b">${escapeXml(label)}</text>
+    <text x="${x + 28}" y="${y + 78}" font-size="34" font-weight="900" fill="#0f172a">${escapeXml(value)}</text>
+  `;
+}
+
+function buildFairnessPdfSvg({ data, people, shiftEntries, monthLabel, year, pageIndex, pageCount }) {
+  const { width, height } = PDF_CANVAS;
+  const rows = people.slice(pageIndex * 22, pageIndex * 22 + 22);
+  const tone = scoreTone(data.fairnessScore);
+  const nowText = new Date().toLocaleString('tr-TR', { dateStyle: 'medium', timeStyle: 'short' });
+  const shiftSummary = shiftEntries.slice(0, 7).map(([name, count]) => `${name}: ${count}`).join('   •   ') || 'Vardiya dağılımı yok';
+  const rowH = 34;
+  const tableY = 382;
+  const tableRows = rows.map((p, i) => {
+    const y = tableY + 54 + i * rowH;
+    const fill = i % 2 === 0 ? '#ffffff' : '#f8fafc';
+    const pTone = scoreTone(p.fairnessScore ?? data.fairnessScore);
+    return `
+      <rect x="80" y="${y - 24}" width="1440" height="${rowH}" fill="${fill}"/>
+      <text x="104" y="${y}" font-size="18" font-weight="800" fill="#1e293b">${escapeXml(shortText(p.name, 36))}</text>
+      <text x="610" y="${y}" font-size="18" text-anchor="middle" fill="#334155">${escapeXml(p.count)}</text>
+      <text x="760" y="${y}" font-size="18" text-anchor="middle" fill="#334155">${escapeXml(p.nightCount || 0)}</text>
+      <text x="910" y="${y}" font-size="18" text-anchor="middle" fill="#334155">${escapeXml(p.weekendCount || 0)}</text>
+      <text x="1070" y="${y}" font-size="18" text-anchor="middle" fill="#334155">${escapeXml(p.holidayCount || 0)}</text>
+      <text x="1230" y="${y}" font-size="18" text-anchor="middle" fill="#334155">${escapeXml(p.hours)}</text>
+      <rect x="1350" y="${y - 24}" width="112" height="26" rx="13" fill="${pTone.bg}" stroke="${pTone.border}"/>
+      <text x="1406" y="${y - 6}" font-size="16" font-weight="900" text-anchor="middle" fill="${pTone.fg}">${escapeXml(p.fairnessScore ?? data.fairnessScore)}</text>
+    `;
+  }).join('');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+  <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <rect width="${width}" height="${height}" fill="#f8fafc"/>
+    <rect x="48" y="44" width="1504" height="1040" rx="34" fill="#ffffff" stroke="#dbe5f0"/>
+    <rect x="48" y="44" width="1504" height="168" rx="34" fill="#0f172a"/>
+    <text x="86" y="104" font-size="40" font-weight="900" fill="#ffffff">Adillik ve Dağılım Raporu</text>
+    <text x="88" y="148" font-size="22" fill="#cbd5e1">${escapeXml(monthLabel)} ${escapeXml(year)} • ${escapeXml(data.people.length)} personel • ${escapeXml(data.totalShifts)} toplam atama</text>
+    <text x="88" y="181" font-size="17" fill="#94a3b8">Oluşturulma: ${escapeXml(nowText)} • Sayfa ${pageIndex + 1}/${pageCount}</text>
+    <rect x="1195" y="76" width="292" height="88" rx="24" fill="${tone.bg}" stroke="${tone.border}" stroke-width="2"/>
+    <text x="1341" y="112" font-size="18" font-weight="800" text-anchor="middle" fill="${tone.fg}">GENEL SKOR</text>
+    <text x="1341" y="151" font-size="38" font-weight="900" text-anchor="middle" fill="${tone.fg}">${escapeXml(data.fairnessScore)} / 100</text>
+
+    ${metricCard(80, 248, 332, 'GECE DENGESİ', `${data.nightFairness} / 100`, '#bfdbfe')}
+    ${metricCard(432, 248, 332, 'HAFTA SONU', `${data.weekendFairness} / 100`, '#ddd6fe')}
+    ${metricCard(784, 248, 332, 'BAYRAM', `${data.holidayFairness} / 100`, '#fed7aa')}
+    ${metricCard(1136, 248, 384, 'TOPLAM SAAT', `${data.totalHours} saat`, '#bbf7d0')}
+
+    <rect x="80" y="382" width="1440" height="54" rx="18" fill="#eef6ff" stroke="#dbeafe"/>
+    <text x="104" y="416" font-size="18" font-weight="900" fill="#1e3a8a">Ad Soyad</text>
+    <text x="610" y="416" font-size="18" font-weight="900" text-anchor="middle" fill="#1e3a8a">Toplam</text>
+    <text x="760" y="416" font-size="18" font-weight="900" text-anchor="middle" fill="#1e3a8a">Gece</text>
+    <text x="910" y="416" font-size="18" font-weight="900" text-anchor="middle" fill="#1e3a8a">H. Sonu</text>
+    <text x="1070" y="416" font-size="18" font-weight="900" text-anchor="middle" fill="#1e3a8a">Bayram</text>
+    <text x="1230" y="416" font-size="18" font-weight="900" text-anchor="middle" fill="#1e3a8a">Saat</text>
+    <text x="1406" y="416" font-size="18" font-weight="900" text-anchor="middle" fill="#1e3a8a">Skor</text>
+    ${tableRows}
+
+    <line x1="80" y1="1012" x2="1520" y2="1012" stroke="#e2e8f0"/>
+    <text x="84" y="1050" font-size="18" font-weight="800" fill="#334155">Vardiya dağılımı</text>
+    <text x="244" y="1050" font-size="17" fill="#64748b">${escapeXml(shortText(shiftSummary, 150))}</text>
+    <text x="1520" y="1050" font-size="16" text-anchor="end" fill="#94a3b8">Hastane Nöbet Yönetim Sistemi • Gizlilik Dereceli</text>
+  </svg>`;
+}
+
+function svgToPngDataUrl(svg) {
+  return new Promise((resolve, reject) => {
+    const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = PDF_CANVAS.width * PDF_CANVAS.scale;
+        canvas.height = PDF_CANVAS.height * PDF_CANVAS.scale;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/png'));
+      } catch (err) {
+        reject(err);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('PDF görseli oluşturulamadı'));
+    };
+    img.src = url;
+  });
 }
 
 // ── Ağırlıklı Adillik Hesaplama (frontend mirror of fairnessEngine.js) ─────────
@@ -405,81 +521,28 @@ export default function FairnessReportPage({ activeYM }) {
     XLSX.writeFile(wb, `adillik-raporu-${year}-${String(month).padStart(2, '0')}.xlsx`);
   };
 
-  const exportToPdf = () => {
+  const exportToPdf = async () => {
     if (!data) return;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
-    doc.setFontSize(18);
-    doc.setTextColor(17, 24, 39);
-    doc.text('Adillik ve Dağılım Raporu', 14, 20);
-
-    doc.setFontSize(10);
-    doc.setTextColor(107, 114, 128);
-    doc.text(`${TR_MONTHS[month - 1]} ${year}  ·  ${data.people.length} personel  ·  ${data.totalShifts} toplam atama`, 14, 28);
-    doc.text(`Oluşturulma: ${new Date().toLocaleDateString('tr-TR')}`, 14, 33);
-
-    // Özet skorlar tablosu
-    autoTable(doc, {
-      startY: 38,
-      head: [['Metrik', 'Skor / Değer', 'Durum']],
-      body: [
-        ['Genel Adillik Skoru',         `${data.fairnessScore} / 100`,   scoreLabel(data.fairnessScore)],
-        ['Gece Nöbeti Dengesi',          `${data.nightFairness} / 100`,   scoreLabel(data.nightFairness)],
-        ['Hafta Sonu Dağılımı',          `${data.weekendFairness} / 100`, scoreLabel(data.weekendFairness)],
-        ['Bayram Nöbeti Dengesi',        `${data.holidayFairness} / 100`, scoreLabel(data.holidayFairness)],
-        ['Toplam Atama',                 String(data.totalShifts),        ''],
-        ['Kişi Başı Ortalama',           `${data.ideal.toFixed(1)} nöbet`,''],
-        ['Toplam Saat',                  `${data.totalHours} saat`,       ''],
-        ['Doldurulmayan Slot',           String(data.unfilledSlots),      data.unfilledSlots > 0 ? 'Dikkat' : 'Tamam'],
-      ],
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [99, 102, 241], textColor: 255 },
-      columnStyles: { 0: { fontStyle: 'bold' } },
-      didParseCell(hookData) {
-        if (hookData.column.index !== 2) return;
-        const v = hookData.cell.raw;
-        if (v === 'Dengesiz') hookData.cell.styles.textColor = [220, 38, 38];
-        else if (v === 'Adil') hookData.cell.styles.textColor = [16, 185, 129];
-        else if (v === 'Dikkat') hookData.cell.styles.textColor = [245, 158, 11];
-      },
-    });
-
-    // Kişi dağılım tablosu
-    const y2 = doc.lastAutoTable.finalY + 8;
-    doc.setFontSize(12);
-    doc.setTextColor(17, 24, 39);
-    doc.text('Kişi Bazlı Dağılım', 14, y2);
-
-    autoTable(doc, {
-      startY: y2 + 4,
-      head: [['Ad Soyad', 'Toplam', 'Gece', 'H. Sonu', 'Bayram', 'Saat (h)']],
-      body: sortedPeople.map(p => [
-        p.name,
-        p.count,
-        p.nightCount   || 0,
-        p.weekendCount || 0,
-        p.holidayCount || 0,
-        p.hours,
-      ]),
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [99, 102, 241], textColor: 255 },
-      alternateRowStyles: { fillColor: [249, 250, 251] },
-      didParseCell(hookData) {
-        if (hookData.section !== 'body') return;
-        const p = sortedPeople[hookData.row.index];
-        if (!p) return;
-        // Gece nöbeti 1.5x ortalamanın üstündeyse kırmızı vurgula
-        if (hookData.column.index === 2 && (p.nightCount || 0) > data.ideal * 1.5) {
-          hookData.cell.styles.textColor = [220, 38, 38];
-          hookData.cell.styles.fontStyle = 'bold';
-        }
-      },
-    });
-
+    const rows = personScores.length ? personScores : computePersonFairnessScores(sortedPeople);
+    const pageCount = Math.max(1, Math.ceil(rows.length / 22));
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
-    doc.setFontSize(8);
-    doc.setTextColor(156, 163, 175);
-    doc.text('Hastane Nöbet Yönetim Sistemi — Gizlilik Dereceli', 14, pageH - 8);
+
+    for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+      if (pageIndex > 0) doc.addPage();
+      const svg = buildFairnessPdfSvg({
+        data,
+        people: rows,
+        shiftEntries,
+        monthLabel: TR_MONTHS[month - 1],
+        year,
+        pageIndex,
+        pageCount,
+      });
+      const imageData = await svgToPngDataUrl(svg);
+      doc.addImage(imageData, 'PNG', 0, 0, pageW, pageH, undefined, 'FAST');
+    }
 
     doc.save(`adillik-raporu-${year}-${String(month).padStart(2, '0')}.pdf`);
   };

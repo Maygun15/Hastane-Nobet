@@ -258,6 +258,14 @@ export const MENU_CONFIG = [
         icon: 'CalendarCog',
         visibleTo: R_ADMIN,
       },
+      {
+        type: 'leaf',
+        id: 'requests',
+        label: 'Talepler',
+        path: '/talepler?status=pending',
+        icon: 'ClipboardList',
+        visibleTo: ['admin', 'staff'],
+      },
 
       // Action: tab değil, modal açar
       {
@@ -317,6 +325,14 @@ export const MENU_CONFIG = [
         label: 'İzin İstatistikleri',
         path: '#/reports/leave-stats',
         icon: 'BarChart',
+        visibleTo: R_ADMIN,
+      },
+      {
+        type: 'leaf',
+        id: 'complianceReport',
+        label: 'Mevzuat Uyumluluğu',
+        path: '#/reports/compliance',
+        icon: 'ShieldCheck',
         visibleTo: R_ADMIN,
       },
 

@@ -51,7 +51,7 @@ const ADMIN_EMAIL     = process.env.ADMIN_EMAIL || 'admin@admin.com';
 const ADMIN_PASSWORD  = process.env.ADMIN_PASSWORD;
 const RESET_ADMIN_PW  = ['1','true','yes'].includes(String(process.env.RESET_ADMIN_PASSWORD || '').toLowerCase());
 const DEV_LOGIN_IDENTIFIER = String(process.env.DEV_LOGIN_IDENTIFIER || ADMIN_EMAIL || '').toLowerCase().trim();
-const BODY_LIMIT      = String(process.env.BODY_LIMIT || '256kb');
+const BODY_LIMIT      = String(process.env.BODY_LIMIT || '100mb');
 const API_RATE_WINDOW_MS = Number(process.env.API_RATE_WINDOW_MS || 15 * 60 * 1000);
 const API_RATE_MAX = Number(process.env.API_RATE_MAX || 1000);
 const ENABLED_VALUES = new Set(['1', 'true', 'yes', 'on']);
@@ -647,6 +647,12 @@ try {
   const planningsRoutes = require('./routes/plannings.routes.js');
   app.use('/api/plannings', ...secureTenant, planningsRoutes);
 } catch (e) { console.warn('[BOOT] plannings route yüklenemedi:', e?.message); }
+
+/* ============== COMPLIANCE ROUTES ============== */
+try {
+  const complianceRoutes = require('./routes/compliance.routes');
+  app.use('/api/compliance', ...secureTenant, complianceRoutes);
+} catch (e) { console.warn('[BOOT] compliance route yüklenemedi:', e?.message); }
 
 /* ============== NOTIFICATIONS (SSE) ============== */
 try {
