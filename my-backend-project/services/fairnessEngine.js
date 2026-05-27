@@ -84,22 +84,22 @@ function fairnessScore(load, meanLoad, spreadLoad) {
  * }>}
  */
 async function computeMonthlyFairnessScores({ hospitalId, year, month }) {
+  const EMPTY_RESULT = {
+    year: Number(year),
+    month: Number(month),
+    groupStats: {
+      meanLoad: 0, spread: 0,
+      totalShifts: 0, totalNight: 0, totalWeekend: 0, totalHoliday: 0,
+      personCount: 0,
+      idealNightRatio: 0, idealWeekendRatio: 0, idealHolidayRatio: 0,
+    },
+    people: [],
+  };
+
+  try {
   const hoid = (() => {
     try { return new mongoose.Types.ObjectId(String(hospitalId)); } catch { return null; }
   })();
-
-  console.log('[fairnessEngine] computeMonthlyFairnessScores', {
-    rawHospitalId: hospitalId,
-    parsedOid: hoid ? hoid.toString() : null,
-    year: Number(year), month: Number(month),
-  });
-
-  // Hospitalsiz kontrol
-  const totalInMonth = await Assignment.countDocuments({ year: Number(year), month: Number(month), status: 'active' });
-  const withHospital = hoid
-    ? await Assignment.countDocuments({ hospitalId: hoid, year: Number(year), month: Number(month), status: 'active' })
-    : 0;
-  console.log('[fairnessEngine] Assignment sayısı —', { totalInMonth, withHospital });
 
   const assignments = await Assignment.find({
     ...(hoid ? { hospitalId: hoid } : { hospitalId: String(hospitalId) }),
@@ -107,8 +107,6 @@ async function computeMonthlyFairnessScores({ hospitalId, year, month }) {
     month: Number(month),
     status: 'active',
   }).select('personId personName serviceId shiftCode shiftId startHour weekday date hours').lean();
-
-  console.log('[fairnessEngine] find() sonucu:', assignments.length, 'atama');
 
   // Group by personId
   const byPerson = new Map();
@@ -190,6 +188,16 @@ async function computeMonthlyFairnessScores({ hospitalId, year, month }) {
     groupStats: { meanLoad: Math.round(meanLoad * 10) / 10, spread: Math.round(spread * 10) / 10, totalShifts, totalNight, totalWeekend, totalHoliday, personCount, idealNightRatio: Math.round(idealNightRatio * 100), idealWeekendRatio: Math.round(idealWeekendRatio * 100), idealHolidayRatio: Math.round(idealHolidayRatio * 100) },
     people: result,
   };
+  } catch (err) {
+    console.error('[fairnessEngine] computeMonthlyFairnessScores hata:', {
+      hospitalId: String(hospitalId ?? ''),
+      year: Number(year),
+      month: Number(month),
+      error: err?.message,
+      code: err?.code,
+    });
+    return EMPTY_RESULT;
+  }
 }
 
 module.exports = { computeMonthlyFairnessScores, weightedLoad, WEIGHTS };
