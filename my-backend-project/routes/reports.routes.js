@@ -11,13 +11,31 @@ function toOid(id) {
   try { return new mongoose.Types.ObjectId(String(id)); } catch { return null; }
 }
 
+function parseLimit(queryParam, defaultVal = 1000, max = 1000) {
+  const n = Number(queryParam);
+  if (!Number.isFinite(n) || n <= 0) return defaultVal;
+  return Math.min(Math.floor(n), max);
+}
+
+function warnMissingHospital(req, route) {
+  console.warn('[reports] hospitalId eksik:', {
+    route,
+    userId: req.user?.id || req.user?._id || '?',
+    ip: req.ip,
+  });
+}
+
 // GET /api/reports/monthly-hours?year=2025&month=5
 router.get('/monthly-hours', requireRole('admin', 'authorized', 'staff'), async (req, res) => {
   try {
     const year  = Number(req.query.year)  || new Date().getFullYear();
     const month = Number(req.query.month) || new Date().getMonth() + 1;
+    const limit = parseLimit(req.query.limit);
     const hid   = toOid(req.hospitalId);
-    if (!hid) return res.status(400).json({ message: 'hospitalId gerekli' });
+    if (!hid) {
+      warnMissingHospital(req, 'monthly-hours');
+      return res.status(400).json({ message: 'hospitalId gerekli' });
+    }
 
     const agg = await Assignment.aggregate([
       { $match: { hospitalId: hid, year, month, status: 'active' } },
@@ -31,6 +49,7 @@ router.get('/monthly-hours', requireRole('admin', 'authorized', 'staff'), async 
           shifts:           { $addToSet: '$shiftCode' },
       }},
       { $sort: { totalHours: -1 } },
+      { $limit: limit },
     ]);
 
     res.json({ year, month, data: agg });
@@ -46,8 +65,12 @@ router.get('/staff-performance', requireRole('admin', 'authorized', 'staff'), as
     const year  = Number(req.query.year)  || new Date().getFullYear();
     const month = Number(req.query.month) || new Date().getMonth() + 1;
     const targetHours = Number(req.query.targetHours) || 160;
+    const limit = parseLimit(req.query.limit);
     const hid = toOid(req.hospitalId);
-    if (!hid) return res.status(400).json({ message: 'hospitalId gerekli' });
+    if (!hid) {
+      warnMissingHospital(req, 'staff-performance');
+      return res.status(400).json({ message: 'hospitalId gerekli' });
+    }
 
     const agg = await Assignment.aggregate([
       { $match: { hospitalId: hid, year, month, status: 'active' } },
@@ -65,6 +88,7 @@ router.get('/staff-performance', requireRole('admin', 'authorized', 'staff'), as
           targetDiff:  { $subtract: ['$totalHours', targetHours] },
       }},
       { $sort: { totalHours: -1 } },
+      { $limit: limit },
     ]);
 
     res.json({ year, month, targetHours, data: agg });
@@ -78,7 +102,10 @@ router.get('/leave-stats', requireRole('admin', 'authorized', 'staff'), async (r
   try {
     const year = Number(req.query.year) || new Date().getFullYear();
     const hid  = toOid(req.hospitalId);
-    if (!hid) return res.status(400).json({ message: 'hospitalId gerekli' });
+    if (!hid) {
+      warnMissingHospital(req, 'leave-stats');
+      return res.status(400).json({ message: 'hospitalId gerekli' });
+    }
 
     const [byStatus, byType] = await Promise.all([
       Request.aggregate([
