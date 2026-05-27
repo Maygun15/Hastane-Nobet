@@ -97,6 +97,21 @@ function buildIssueDiagnostics({ issues = [], candidateAudit = [] } = {}) {
   });
 }
 
+function safeBuildIssueDiagnostics(params) {
+  try {
+    return buildIssueDiagnostics(params);
+  } catch (err) {
+    console.error('[schedulerService] buildIssueDiagnostics hata:', {
+      function: 'buildIssueDiagnostics',
+      issueCount: Array.isArray(params?.issues) ? params.issues.length : '?',
+      auditCount: Array.isArray(params?.candidateAudit) ? params.candidateAudit.length : '?',
+      error: err?.message,
+      code: err?.code,
+    });
+    return [];
+  }
+}
+
 function buildGeneratedScheduleData({
   useDraft = false,
   draftResult = null,
@@ -117,7 +132,7 @@ function buildGeneratedScheduleData({
     shadowAudit: useDraft ? null : (context?.shadowAudit || null),
     issueDiagnostics: useDraft
       ? []
-      : buildIssueDiagnostics({
+      : safeBuildIssueDiagnostics({
           issues: [...baseIssues, ...(validated?.issues || [])],
           candidateAudit: Array.isArray(context?.candidateAudit) ? context.candidateAudit : [],
         }),
