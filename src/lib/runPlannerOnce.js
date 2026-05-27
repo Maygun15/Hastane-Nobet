@@ -19,7 +19,8 @@ function applyHolidayPoliciesToTaskLines({ taskLines, days, holidayKindByDate })
 
     const counts = { ...(tl?.counts || {}) };
     for (const ymd of days || []) {
-      const dnum = Number(ymd.slice(-2));
+      const dnum = parseInt(ymd.slice(-2), 10);
+      if (!Number.isFinite(dnum) || dnum < 1 || dnum > 31) continue;
       const weekday = new Date(ymd).getDay();
       const isWeekend = weekday === 0 || weekday === 6;
       const kind = holidayKindByDate.get(ymd) || "";
@@ -228,6 +229,24 @@ const nextOf = (ymd) => {
 };
 const includesCode = (arr, code) => (arr||[]).some(c=>norm(c)===norm(code));
 
+// Şablon Kural 3: N/V2 kodlu vardiyalar arasında en az MIN_N_GAP gün olmalı
+const FULL_REST_CODES = new Set(["N", "V2"]);
+const MIN_N_GAP_DAYS = 2;
+const isFullRestCode = (shiftCode) => FULL_REST_CODES.has(norm(shiftCode || ""));
+
+const violatesNGap = (pid, day, assignments) => {
+  if (!isFullRestCode) return false; // caller checks isFullRestCode(tl.shiftCode) first
+  const [y, m, d] = day.split("-").map(Number);
+  const dayNum = d;
+  for (const a of assignments) {
+    if (String(a.personId) !== String(pid)) continue;
+    if (!isFullRestCode(a.shiftCode)) continue;
+    const [, , aD] = a.day.split("-").map(Number);
+    if (Math.abs(dayNum - aD) < MIN_N_GAP_DAYS) return true;
+  }
+  return false;
+};
+
 const forbidsNextDay = (shiftCode, shiftIndex) => {
   const def = shiftIndex?.[norm(shiftCode)];
   const is24h = def && timeToMin(def.start) === timeToMin(def.end);
@@ -350,6 +369,9 @@ function repairAfterCap({
         }
         if (blocked) continue;
 
+        // Kural 3: N/V2 arası minimum gap kontrolü
+        if (isFullRestCode(tl.shiftCode) && violatesNGap(pid, day, assignments)) continue;
+
         if (isNight(tl.label, tl.shiftCode) && (rules?.maxConsecutiveNights ?? 1) >= 0) {
           const daysSorted = [...days].sort();
           const idx = daysSorted.indexOf(day);
@@ -368,6 +390,57 @@ function repairAfterCap({
         have++; haveByKey.set(key, have);
         dayPersonCount.set(dayKey, dayCount+1);
         hoursByPerson.set(pid, (hoursByPerson.get(pid)||0)+slotH);
+      }
+
+      // Soft-constraint fallback: eligibleByLabel boşsa tüm kadrodan seç
+      // Sadece unavailableSet (izin + 24h yasağı) ve çakışma kontrolü uygulanır
+      if (have < need) {
+        const target = Math.max(0, rules?.targetMonthlyHours || 168);
+        const softCandidates = (staff || [])
+          .map(p => String(p?.id ?? p?._id ?? p))
+          .filter(pid => !!pid)
+          .filter(pid => !unavailableSet.has(`${pid}|${day}`))
+          .filter(pid => !hasRequestAvoid(requestAvoid, requestAvoidCanon, canonById, pid, day, tl.shiftCode))
+          .filter(pid => {
+            const prevYmd = prevOf(day);
+            const yesterdays = assignments.filter(a => a.personId === pid && a.day === prevYmd);
+            return !yesterdays.some(pa => forbidsNextDay(pa.shiftCode, shiftIndex));
+          })
+          .sort((p1, p2) => {
+            const d1 = target - (hoursByPerson.get(String(p1)) || 0);
+            const d2 = target - (hoursByPerson.get(String(p2)) || 0);
+            return d2 - d1;
+          });
+
+        for (const pidRaw of softCandidates) {
+          if (have >= need) break;
+          const pid = String(pidRaw);
+          const dayKey = `${day}|${pid}`;
+          const dayCount = dayPersonCount.get(dayKey) || 0;
+          if (dayCount >= (rules?.maxPerDayPerPerson ?? 1)) continue;
+          const hasSameLineAlready = assignments.some(
+            a => a.day === day && a.personId === pid && a.roleLabel === tl.label && a.shiftCode === tl.shiftCode
+          );
+          if (hasSameLineAlready) continue;
+
+          const defNew = shiftIndex?.[norm(tl.shiftCode)];
+          const newIntervals = intervalsForShiftOnDay(defNew);
+          const overlaps = assignments.some(a => {
+            if (a.day !== day || String(a.personId) !== pid) return false;
+            const defOld = shiftIndex?.[norm(a.shiftCode)];
+            const oldIntervals = intervalsForShiftOnDay(defOld);
+            for (const [ns, ne] of newIntervals) for (const [os, oe] of oldIntervals) {
+              if (intervalsOverlap(ns, ne, os, oe)) return true;
+            }
+            return false;
+          });
+          if (overlaps) continue;
+
+          assignments.push({ day, roleLabel: tl.label, shiftCode: tl.shiftCode, personId: pid, hours: slotH });
+          have++; haveByKey.set(key, have);
+          dayPersonCount.set(dayKey, dayCount + 1);
+          hoursByPerson.set(pid, (hoursByPerson.get(pid) || 0) + slotH);
+        }
       }
     }
   }
@@ -418,7 +491,10 @@ export async function runPlannerOnce({
   const personLeaves = personLeavesParam && typeof personLeavesParam === "object" ? personLeavesParam : {};
   const taskLines = Array.isArray(taskLinesParam) ? taskLinesParam : [];
   const dpRules = dpRulesParam || DEFAULT_RULES;
-  const staff = (staffAll||[]).filter(p => !activeServiceId || p.service===activeServiceId);
+  const staff = (staffAll||[]).filter(p =>
+    !activeServiceId ||
+    String(p.serviceId || p.service || p.meta?.serviceId || p.meta?.service || "") === String(activeServiceId)
+  );
 
   if (!activeServiceId) throw new Error("Önce bir servis seçin.");
   if (!workingHours?.length) throw new Error("Önce Çalışma Saatleri tanımlayın.");
