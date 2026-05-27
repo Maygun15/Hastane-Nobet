@@ -32,13 +32,19 @@ const TURKISH_HOLIDAYS = new Set([
 
 // ── Yardımcılar ────────────────────────────────────────────────────────────────
 
+// NaN / Infinity / undefined → fallback değere dönüştürür.
+function safeN(v, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function computeFairnessScore(counts) {
   const nonZero = counts.filter(c => c > 0);
   if (nonZero.length < 2) return 100;
   const mean = nonZero.reduce((s, c) => s + c, 0) / nonZero.length;
   if (!mean) return 100;
   const variance = nonZero.reduce((s, c) => s + (c - mean) ** 2, 0) / nonZero.length;
-  const cv = Math.sqrt(variance) / mean;
+  const cv = safeN(Math.sqrt(safeN(variance)) / mean);
   return Math.round(Math.max(0, 1 - cv) * 100);
 }
 
@@ -54,16 +60,26 @@ function scoreLabel(score) {
 const FAIRNESS_WEIGHTS = { night: 1.5, weekend: 1.3, holiday: 2.0, regular: 1.0 };
 
 function computeWeightedLoad({ totalShifts, nightCount, weekendCount, holidayCount }) {
-  const regular = Math.max(0, totalShifts - nightCount - weekendCount - holidayCount);
+  const t = Math.max(0, safeN(totalShifts));
+  const n = Math.max(0, safeN(nightCount));
+  const w = Math.max(0, safeN(weekendCount));
+  const h = Math.max(0, safeN(holidayCount));
+  const regular = Math.max(0, t - n - w - h);
   return regular * FAIRNESS_WEIGHTS.regular
-    + nightCount   * FAIRNESS_WEIGHTS.night
-    + weekendCount * FAIRNESS_WEIGHTS.weekend
-    + holidayCount * FAIRNESS_WEIGHTS.holiday;
+    + n * FAIRNESS_WEIGHTS.night
+    + w * FAIRNESS_WEIGHTS.weekend
+    + h * FAIRNESS_WEIGHTS.holiday;
 }
 
 function computePersonFairnessScores(people) {
   if (!people || people.length === 0) return [];
-  const loads   = people.map(computeWeightedLoad);
+  // byPerson nesneleri 'count' alanı kullanır; computeWeightedLoad 'totalShifts' bekler.
+  const loads = people.map(p => computeWeightedLoad({
+    totalShifts:  safeN(p.totalShifts ?? p.count),
+    nightCount:   safeN(p.nightCount),
+    weekendCount: safeN(p.weekendCount),
+    holidayCount: safeN(p.holidayCount),
+  }));
   const mean    = loads.reduce((s, l) => s + l, 0) / loads.length;
   const minLoad = Math.min(...loads);
   const maxLoad = Math.max(...loads);
