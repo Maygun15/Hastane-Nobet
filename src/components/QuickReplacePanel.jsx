@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { UserCheck, X, Loader2, RefreshCw, AlertCircle } from "lucide-react";
+import { UserCheck, X, Loader2, RefreshCw, AlertCircle, ShieldAlert } from "lucide-react";
 import { assignSchedule, getSwapSuggestions } from "../api/apiAdapter.js";
 import { fetchScheduleTruth } from "../utils/scheduleTruth.js";
 
@@ -7,6 +7,30 @@ const pad2 = (n) => String(n).padStart(2, "0");
 
 function daysInMonth(year, month1) {
   return new Date(year, month1, 0).getDate();
+}
+
+// Bir vardiya dinlenme gerektiriyor mu? (8 saatten uzun veya gece geçen)
+function isLongOrNightShift(assignment) {
+  const hours = Number(assignment?.hours ?? 0);
+  if (hours > 8) return true;
+  const code = String(assignment?.shiftCode || '').toUpperCase();
+  if (['N', 'V1', 'V2', 'SV', 'GECE'].includes(code)) return true;
+  // Saat bazlı kontrol: bitiş ≤ başlangıç → gece geçiyor
+  const start = String(assignment?.startHour ?? assignment?.startTime ?? '');
+  const end   = String(assignment?.endHour   ?? assignment?.endTime   ?? '');
+  if (start && end) {
+    const sh = parseInt(start, 10);
+    const eh = parseInt(end, 10);
+    if (!isNaN(sh) && !isNaN(eh) && eh <= sh) return true;
+  }
+  return false;
+}
+
+// Bir önceki ve bir sonraki günün tarih string'ini döner
+function adjacentDate(dateStr, offset) {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + offset);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 function slotKeyOf(slot = {}) {
@@ -113,6 +137,7 @@ export default function QuickReplacePanel({
   const [assigning, setAssigning] = useState("");
   const [assignError, setAssignError] = useState("");
   const [assignedIds, setAssignedIds] = useState(new Set());
+  const [overrideDialog, setOverrideDialog] = useState(null); // { candidate, message, conflictType }
 
   useEffect(() => {
     if (!open) return;
@@ -129,6 +154,7 @@ export default function QuickReplacePanel({
     setSearchError("");
     setAssignError("");
     setAssignedIds(new Set());
+    setOverrideDialog(null);
     setPendingAutoSearch(false);
   }, [open]);
 
@@ -379,10 +405,44 @@ export default function QuickReplacePanel({
     };
   }, [candidates, recommendedCandidates, samePositionAlternatives]);
 
-  const handleAssign = async (candidate) => {
+  const handleAssign = async (candidate, forceOverride = false) => {
     if (!selectedDate || !selectedSlot || !departingPerson) return;
-    setAssigning(candidate.id);
     setAssignError("");
+
+    // ── Dinlenme Hali Kontrolü (force ile atlanır) ──────────────────
+    if (!forceOverride) {
+      const prevDate = adjacentDate(selectedDate, -1);
+      const nextDate = adjacentDate(selectedDate, +1);
+
+      const candidateAssignments = (truthAssignments || []).filter(
+        (a) => String(a.personId || a.personName || '') === String(candidate.id || candidate.name || '')
+          || String(a.personName || '') === String(candidate.name || '')
+      );
+
+      const prevLong = candidateAssignments.find(
+        (a) => String(a.date || '').slice(0, 10) === prevDate && isLongOrNightShift(a)
+      );
+      const nextAssignment = candidateAssignments.find(
+        (a) => String(a.date || '').slice(0, 10) === nextDate
+      );
+      const todayIsLong = isLongOrNightShift({ shiftCode: selectedSlot.shiftCode, hours: selectedSlot.hours });
+
+      if (prevLong) {
+        setAssignError(
+          `⛔ ${candidate.name} dün (${prevDate}) uzun/gece nöbeti yaptı — dinlenme hali bitmeden atama yapılamaz.`
+        );
+        return;
+      }
+      if (todayIsLong && nextAssignment) {
+        setAssignError(
+          `⛔ ${candidate.name} bu uzun/gece nöbetinin ardından ertesi gün (${nextDate}) zaten atanmış — dinlenme hali ihlal edilir.`
+        );
+        return;
+      }
+    }
+    // ───────────────────────────────────────────────────────────────
+
+    setAssigning(candidate.id);
     const assignPayload = {
       sectionId,
       serviceId: selectedSlot.serviceId || serviceId,
@@ -399,15 +459,31 @@ export default function QuickReplacePanel({
       personId: candidate.id,
       personName: candidate.name,
       roleLabel: selectedSlot.taskLabel,
+      ...(forceOverride ? { force: true, overrideReason: "admin_manual_override" } : {}),
     };
 
     try {
       await assignSchedule(assignPayload);
       setAssignedIds((prev) => new Set([...prev, candidate.id]));
+      setOverrideDialog(null);
       window.dispatchEvent(new CustomEvent('schedule:changed', { detail: { source: 'quickReplace', date: selectedDate } }));
       onAssigned?.();
     } catch (err) {
-      setAssignError(err?.message || "Yerine atama başarısız.");
+      if (err?.status === 409 && !forceOverride) {
+        // Kapasite doluysa force da işe yaramaz — doğrudan hata göster
+        const isCapacity = err?.data?.errors?.[0]?.type === 'SHIFT_CAPACITY';
+        if (isCapacity) {
+          setAssignError(err?.message || "Bu satır dolu.");
+        } else {
+          setOverrideDialog({
+            candidate,
+            message: err?.data?.message || err?.message || "Kural ihlali tespit edildi.",
+            conflictType: err?.data?.conflictType || "RULE_VIOLATION",
+          });
+        }
+      } else {
+        setAssignError(err?.message || "Yerine atama başarısız.");
+      }
     } finally {
       setAssigning("");
     }
@@ -629,6 +705,36 @@ export default function QuickReplacePanel({
           )}
 
           {assignError && <div className="text-sm text-rose-600">{assignError}</div>}
+
+          {overrideDialog && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <ShieldAlert size={16} className="text-amber-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Kural İhlali Tespit Edildi</p>
+                  <p className="text-sm text-amber-700 mt-1">{overrideDialog.message}</p>
+                </div>
+              </div>
+              <p className="text-sm text-slate-700">Yine de zorla atamak istiyor musunuz?</p>
+              <div className="flex gap-2">
+                <button
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-40 transition-colors"
+                  onClick={() => handleAssign(overrideDialog.candidate, true)}
+                  disabled={!!assigning}
+                >
+                  {assigning ? <Loader2 size={12} className="animate-spin" /> : null}
+                  Evet, Zorla Ata
+                </button>
+                <button
+                  className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+                  onClick={() => setOverrideDialog(null)}
+                  disabled={!!assigning}
+                >
+                  Vazgeç
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex justify-end">

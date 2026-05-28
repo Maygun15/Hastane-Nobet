@@ -20,6 +20,7 @@ import {
   PieChart,
   Scale,
   Settings2,
+  ShieldCheck,
   UserRound,
   Users2,
   X,
@@ -33,7 +34,7 @@ const ICON_MAP = {
   BarChart, BarChart2, Bell, Bot, CalendarCheck, CalendarClock,
   CalendarDays, CalendarCog, CircleDollarSign, ClipboardList, Clock4,
   FileText, LayoutDashboard, Megaphone, PieChart, Scale,
-  Settings2, UserRound, Users2,
+  Settings2, ShieldCheck, UserRound, Users2,
 };
 
 // ── Sabitler ──────────────────────────────────────────────────────────────────

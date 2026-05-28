@@ -88,7 +88,7 @@ export function WorkspacePanel({ title, description, children, aside }) {
   );
 }
 
-export function WorkspaceStatCard({ accent = "sky", title, value, caption }) {
+export function WorkspaceStatCard({ accent = "sky", title, value, caption, onClick, ariaLabel }) {
   const tones = {
     sky: "border-sky-100 bg-sky-50/70 text-sky-700",
     emerald: "border-emerald-100 bg-emerald-50/70 text-emerald-700",
@@ -98,11 +98,21 @@ export function WorkspaceStatCard({ accent = "sky", title, value, caption }) {
     slate: "border-slate-200 bg-slate-50/70 text-slate-700",
   };
   const tone = tones[accent] || tones.sky;
+  const Component = typeof onClick === "function" ? "button" : "div";
   return (
-    <div className={cx("rounded-2xl border p-4", tone)}>
+    <Component
+      type={Component === "button" ? "button" : undefined}
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className={cx(
+        "w-full rounded-2xl border p-4 text-left",
+        tone,
+        onClick && "cursor-pointer transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-500/50"
+      )}
+    >
       <div className="text-xs font-medium uppercase tracking-[0.14em]">{title}</div>
       <div className="mt-2 text-3xl font-semibold text-slate-900">{value}</div>
       {caption ? <div className="mt-1 text-xs text-slate-500">{caption}</div> : null}
-    </div>
+    </Component>
   );
 }

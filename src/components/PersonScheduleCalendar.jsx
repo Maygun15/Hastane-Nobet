@@ -190,24 +190,6 @@ function preferSingleAssignment(list) {
   return [scored[0]];
 }
 
-function collectLeaveDays(leavesForPerson, year, month0) {
-  const out = new Set();
-  if (!leavesForPerson) return out;
-  const ym = `${year}-${pad2(month0 + 1)}`;
-  for (const [k, v] of Object.entries(leavesForPerson || {})) {
-    if (!v) continue;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(k)) {
-      if (!k.startsWith(ym)) continue;
-      const d = Number(k.slice(8, 10));
-      if (Number.isFinite(d)) out.add(d);
-      continue;
-    }
-    const d = Number(k);
-    if (Number.isFinite(d)) out.add(d);
-  }
-  return out;
-}
-
 function buildServiceLabelMap() {
   const map = new Map();
   const feed = (entry) => {
@@ -849,6 +831,7 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
   const [leaveModalError, setLeaveModalError] = useState("");
   const [leaveBackendConflict, setLeaveBackendConflict] = useState(null);
   const pendingRefreshRef = useRef(null);
+  const hasFetchedOnceRef = useRef(false);
   const [settingsRevision, setSettingsRevision] = useState(0);
   const [googleCalendarStatus, setGoogleCalendarStatus] = useState({
     loading: false,
@@ -1151,6 +1134,7 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
       } finally {
         if (active) {
           setRemoteLoading(false);
+          hasFetchedOnceRef.current = true;
           const resolve = pendingRefreshRef.current;
           pendingRefreshRef.current = null;
           resolve?.();
@@ -1224,22 +1208,17 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
       }
     };
     merge(remoteAssignments);
-    const leaveDays = collectLeaveDays(leavesForPerson, year, month0);
     for (const [day, list] of combined.entries()) {
       const unique = dedupeAssignments(list);
-      const filtered = leaveDays.has(Number(day))
-        ? unique.filter((a) => a?.pinned)
-        : unique;
-      const capped = preferSingleAssignment(filtered);
+      // İzin olan günlerde nöbeti gizleme. Gizlemek, görev yazılmadı sanılmasına
+      // ve "izin + nöbet" çakışmasının kullanıcıdan saklanmasına yol açıyordu.
+      const capped = preferSingleAssignment(unique);
       if (capped.length) combined.set(day, capped);
       else combined.delete(day);
     }
     return combined;
   }, [
     remoteAssignments,
-    leavesForPerson,
-    year,
-    month0,
   ]);
 
   const resolvePlanHours = useMemo(() => createPlanWorkHourResolver(summaryWorkingHours), [summaryWorkingHours]);
@@ -1955,6 +1934,14 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
           </svg>
           Çizelge yükleniyor…
+        </div>
+      )}
+
+      {/* Boş durum — atama verisi yok */}
+      {!remoteLoading && hasFetchedOnceRef.current && !remoteError && selectedPerson && remoteAssignmentsRaw.length === 0 && (
+        <div className="no-print rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+          Bu dönem için atama verisi bulunamadı. Planlama sekmesinden{" "}
+          <strong className="text-slate-700">Çizelgeden Doldur</strong> çalıştırın.
         </div>
       )}
 
