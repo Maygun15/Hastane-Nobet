@@ -454,11 +454,10 @@ export function solveHourBalanced({
       if (area === CUSTOM_RULES?.greenArea?.code) decAreaCount(day, area, "V1");
     }
 
-    // Haftalık saat cache geri al
+    // Haftalık saat cache geri al — backtrack sonrası bayat değer kalmasın
     const mon = dayToMonday.get(day);
     if (mon) {
-      const k = `${personId}|${mon}`;
-      weeklyHoursCache.set(k, (weeklyHoursCache.get(k) || 0) - slotH);
+      weeklyHoursCache.delete(`${personId}|${mon}`);
     }
 
     const roleMap = assignByDay.get(day);
@@ -566,8 +565,15 @@ export function solveHourBalanced({
     // Haftalık saat limiti
     if (rules.weeklyHourLimit && rules.weeklyHourLimit > 0) {
       const mon = dayToMonday.get(day);
-      const current = mon ? (weeklyHoursCache.get(`${pidStr}|${mon}`) || 0) : 0;
-      if (current + slotH > rules.weeklyHourLimit) return "Haftalık saat limiti";
+      if (mon) {
+        const cacheKey = `${pidStr}|${mon}`;
+        if (!weeklyHoursCache.has(cacheKey)) {
+          weeklyHoursCache.set(cacheKey, weeklyHoursWith(assignments, pidStr, day));
+        }
+        if ((weeklyHoursCache.get(cacheKey) || 0) + slotH > rules.weeklyHourLimit) {
+          return "Haftalık saat limiti";
+        }
+      }
     }
 
     // Önceki gün etkileri: dinlenme / nextDayAllowed / ardışık gece

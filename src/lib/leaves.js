@@ -27,6 +27,14 @@ const canonName = (s) => stripDiacritics((s || "").toString().trim().toLocaleUpp
 const ymKey = (y, m1) => `${y}-${String(m1).padStart(2, "0")}`;
 const isObj = (o) => o && typeof o === "object" && !Array.isArray(o);
 const toInt = (v) => (Number.isFinite(Number(v)) ? Number(v) : NaN);
+const stableJson = (value) => JSON.stringify(value, (key, val) => {
+  void key;
+  if (!val || typeof val !== "object" || Array.isArray(val)) return val;
+  return Object.keys(val).sort().reduce((acc, k) => {
+    acc[k] = val[k];
+    return acc;
+  }, {});
+});
 
 function put(out, pid, year, month1, dayNum, rec) {
   const ym = ymKey(year, month1);
@@ -134,11 +142,20 @@ export function emitLeavesChanged() {
   try { window.dispatchEvent(new Event("leaves:changed")); } catch {}
 }
 
+export function invalidateLeaves() {
+  leavesLoaded = false;
+  leavesDirty = false;
+  loadPromise = null;
+}
+
 export function setLeavesStore(raw, { emit = true } = {}) {
-  leavesCache = normalizeLeaves(raw);
+  const next = normalizeLeaves(raw);
+  const changed = stableJson(leavesCache) !== stableJson(next);
+  leavesCache = next;
   leavesLoaded = true;
   leavesDirty = false;
-  if (emit) emitLeavesChanged();
+  if (emit && changed) emitLeavesChanged();
+  return leavesCache;
 }
 
 export async function loadLeavesFromBackend() {

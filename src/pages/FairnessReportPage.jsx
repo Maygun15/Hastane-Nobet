@@ -15,6 +15,7 @@ const TR_MONTHS = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','A
 
 const NIGHT_CODES = new Set(['N', 'V1', 'V2', 'SV', 'G', 'GECE', 'NIGHT']);
 const PDF_CANVAS = { width: 1600, height: 1131, scale: 2 };
+const PDF_ROWS_PER_PAGE = 17;
 
 // Türkiye resmi & dini tatilleri (2025-2026; dini bayramlar tahmini)
 const TURKISH_HOLIDAYS = new Set([
@@ -85,26 +86,26 @@ function metricCard(x, y, w, label, value, accent) {
 
 function buildFairnessPdfSvg({ data, people, shiftEntries, monthLabel, year, pageIndex, pageCount }) {
   const { width, height } = PDF_CANVAS;
-  const rows = people.slice(pageIndex * 22, pageIndex * 22 + 22);
+  const rows = people.slice(pageIndex * PDF_ROWS_PER_PAGE, pageIndex * PDF_ROWS_PER_PAGE + PDF_ROWS_PER_PAGE);
   const tone = scoreTone(data.fairnessScore);
   const nowText = new Date().toLocaleString('tr-TR', { dateStyle: 'medium', timeStyle: 'short' });
   const shiftSummary = shiftEntries.slice(0, 7).map(([name, count]) => `${name}: ${count}`).join('   •   ') || 'Vardiya dağılımı yok';
-  const rowH = 34;
-  const tableY = 382;
+  const rowH = 30;
+  const tableY = 362;
   const tableRows = rows.map((p, i) => {
-    const y = tableY + 54 + i * rowH;
+    const y = tableY + 78 + i * rowH;
     const fill = i % 2 === 0 ? '#ffffff' : '#f8fafc';
     const pTone = scoreTone(p.fairnessScore ?? data.fairnessScore);
     return `
       <rect x="80" y="${y - 24}" width="1440" height="${rowH}" fill="${fill}"/>
-      <text x="104" y="${y}" font-size="18" font-weight="800" fill="#1e293b">${escapeXml(shortText(p.name, 36))}</text>
-      <text x="610" y="${y}" font-size="18" text-anchor="middle" fill="#334155">${escapeXml(p.count)}</text>
-      <text x="760" y="${y}" font-size="18" text-anchor="middle" fill="#334155">${escapeXml(p.nightCount || 0)}</text>
-      <text x="910" y="${y}" font-size="18" text-anchor="middle" fill="#334155">${escapeXml(p.weekendCount || 0)}</text>
-      <text x="1070" y="${y}" font-size="18" text-anchor="middle" fill="#334155">${escapeXml(p.holidayCount || 0)}</text>
-      <text x="1230" y="${y}" font-size="18" text-anchor="middle" fill="#334155">${escapeXml(p.hours)}</text>
-      <rect x="1350" y="${y - 24}" width="112" height="26" rx="13" fill="${pTone.bg}" stroke="${pTone.border}"/>
-      <text x="1406" y="${y - 6}" font-size="16" font-weight="900" text-anchor="middle" fill="${pTone.fg}">${escapeXml(p.fairnessScore ?? data.fairnessScore)}</text>
+      <text x="104" y="${y - 3}" font-size="16" font-weight="800" fill="#1e293b">${escapeXml(shortText(p.name, 38))}</text>
+      <text x="610" y="${y - 3}" font-size="16" text-anchor="middle" fill="#334155">${escapeXml(p.count)}</text>
+      <text x="760" y="${y - 3}" font-size="16" text-anchor="middle" fill="#334155">${escapeXml(p.nightCount || 0)}</text>
+      <text x="910" y="${y - 3}" font-size="16" text-anchor="middle" fill="#334155">${escapeXml(p.weekendCount || 0)}</text>
+      <text x="1070" y="${y - 3}" font-size="16" text-anchor="middle" fill="#334155">${escapeXml(p.holidayCount || 0)}</text>
+      <text x="1230" y="${y - 3}" font-size="16" text-anchor="middle" fill="#334155">${escapeXml(p.hours)}</text>
+      <rect x="1350" y="${y - 25}" width="112" height="24" rx="12" fill="${pTone.bg}" stroke="${pTone.border}"/>
+      <text x="1406" y="${y - 8}" font-size="14" font-weight="900" text-anchor="middle" fill="${pTone.fg}">${escapeXml(p.fairnessScore ?? data.fairnessScore)}</text>
     `;
   }).join('');
 
@@ -120,25 +121,26 @@ function buildFairnessPdfSvg({ data, people, shiftEntries, monthLabel, year, pag
     <text x="1341" y="112" font-size="18" font-weight="800" text-anchor="middle" fill="${tone.fg}">GENEL SKOR</text>
     <text x="1341" y="151" font-size="38" font-weight="900" text-anchor="middle" fill="${tone.fg}">${escapeXml(data.fairnessScore)} / 100</text>
 
-    ${metricCard(80, 248, 332, 'GECE DENGESİ', `${data.nightFairness} / 100`, '#bfdbfe')}
-    ${metricCard(432, 248, 332, 'HAFTA SONU', `${data.weekendFairness} / 100`, '#ddd6fe')}
-    ${metricCard(784, 248, 332, 'BAYRAM', `${data.holidayFairness} / 100`, '#fed7aa')}
-    ${metricCard(1136, 248, 384, 'TOPLAM SAAT', `${data.totalHours} saat`, '#bbf7d0')}
+    ${metricCard(80, 236, 332, 'GECE DENGESİ', `${data.nightFairness} / 100`, '#bfdbfe')}
+    ${metricCard(432, 236, 332, 'HAFTA SONU', `${data.weekendFairness} / 100`, '#ddd6fe')}
+    ${metricCard(784, 236, 332, 'BAYRAM', `${data.holidayFairness} / 100`, '#fed7aa')}
+    ${metricCard(1136, 236, 384, 'TOPLAM SAAT', `${data.totalHours} saat`, '#bbf7d0')}
 
-    <rect x="80" y="382" width="1440" height="54" rx="18" fill="#eef6ff" stroke="#dbeafe"/>
-    <text x="104" y="416" font-size="18" font-weight="900" fill="#1e3a8a">Ad Soyad</text>
-    <text x="610" y="416" font-size="18" font-weight="900" text-anchor="middle" fill="#1e3a8a">Toplam</text>
-    <text x="760" y="416" font-size="18" font-weight="900" text-anchor="middle" fill="#1e3a8a">Gece</text>
-    <text x="910" y="416" font-size="18" font-weight="900" text-anchor="middle" fill="#1e3a8a">H. Sonu</text>
-    <text x="1070" y="416" font-size="18" font-weight="900" text-anchor="middle" fill="#1e3a8a">Bayram</text>
-    <text x="1230" y="416" font-size="18" font-weight="900" text-anchor="middle" fill="#1e3a8a">Saat</text>
-    <text x="1406" y="416" font-size="18" font-weight="900" text-anchor="middle" fill="#1e3a8a">Skor</text>
+    <rect x="80" y="${tableY}" width="1440" height="54" rx="18" fill="#eef6ff" stroke="#dbeafe"/>
+    <text x="104" y="${tableY + 34}" font-size="17" font-weight="900" fill="#1e3a8a">Ad Soyad</text>
+    <text x="610" y="${tableY + 34}" font-size="17" font-weight="900" text-anchor="middle" fill="#1e3a8a">Toplam</text>
+    <text x="760" y="${tableY + 34}" font-size="17" font-weight="900" text-anchor="middle" fill="#1e3a8a">Gece</text>
+    <text x="910" y="${tableY + 34}" font-size="17" font-weight="900" text-anchor="middle" fill="#1e3a8a">H. Sonu</text>
+    <text x="1070" y="${tableY + 34}" font-size="17" font-weight="900" text-anchor="middle" fill="#1e3a8a">Bayram</text>
+    <text x="1230" y="${tableY + 34}" font-size="17" font-weight="900" text-anchor="middle" fill="#1e3a8a">Saat</text>
+    <text x="1406" y="${tableY + 34}" font-size="17" font-weight="900" text-anchor="middle" fill="#1e3a8a">Skor</text>
     ${tableRows}
 
-    <line x1="80" y1="1012" x2="1520" y2="1012" stroke="#e2e8f0"/>
-    <text x="84" y="1050" font-size="18" font-weight="800" fill="#334155">Vardiya dağılımı</text>
-    <text x="244" y="1050" font-size="17" fill="#64748b">${escapeXml(shortText(shiftSummary, 150))}</text>
-    <text x="1520" y="1050" font-size="16" text-anchor="end" fill="#94a3b8">Hastane Nöbet Yönetim Sistemi • Gizlilik Dereceli</text>
+    <rect x="80" y="984" width="1440" height="72" rx="18" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="104" y="1022" font-size="17" font-weight="900" fill="#334155">Vardiya dağılımı</text>
+    <text x="265" y="1022" font-size="15" fill="#64748b">${escapeXml(shortText(shiftSummary, 128))}</text>
+    <text x="104" y="1048" font-size="13" fill="#94a3b8">Sayfa ${pageIndex + 1}/${pageCount}</text>
+    <text x="1496" y="1048" font-size="13" text-anchor="end" fill="#94a3b8">Hastane Nöbet Yönetim Sistemi • Gizlilik Dereceli</text>
   </svg>`;
 }
 
@@ -524,7 +526,7 @@ export default function FairnessReportPage({ activeYM }) {
   const exportToPdf = async () => {
     if (!data) return;
     const rows = personScores.length ? personScores : computePersonFairnessScores(sortedPeople);
-    const pageCount = Math.max(1, Math.ceil(rows.length / 22));
+    const pageCount = Math.max(1, Math.ceil(rows.length / PDF_ROWS_PER_PAGE));
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();

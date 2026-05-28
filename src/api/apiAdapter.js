@@ -778,8 +778,13 @@ export async function exportToIKFormat({ year, month, standardHours } = {}) {
   const url   = `${base}/api/schedules/export/excel-ik?${qs}`;
 
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+    },
     credentials: 'include',
+    cache: 'no-store',
   });
 
   if (!res.ok) {

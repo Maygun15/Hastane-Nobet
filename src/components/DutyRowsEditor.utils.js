@@ -26,7 +26,11 @@ export const stripDiacritics = (str) =>
     .replace(/Ö/g, "O").replace(/Ç/g, "C")
     .replace(/ğ/g, "g").replace(/ü/g, "u").replace(/ş/g, "s").replace(/ı/g, "i")
     .replace(/ö/g, "o").replace(/ç/g, "c");
-export const canonName = (s) => stripDiacritics(norm(s)).replace(/\s+/g, " ").trim();
+export const canonName = (s) =>
+  stripDiacritics((s || "").toString())
+    .toLocaleLowerCase("tr-TR")
+    .replace(/\s+/g, " ")
+    .trim();
 
 export const isPlainLowercaseName = (s = "") => {
   const raw = String(s || "").trim();
@@ -540,6 +544,7 @@ export function normalizeFromParamTable(x, role) {
       role === "Doctor" ? "Doctor" : "Nurse"
     ),
     serviceId: String(serviceIdRaw || ""),
+    service: String(serviceIdRaw || ""),  // runPlannerOnce uyumluluğu için alias
     areas,
     shiftCodes,
     weekendOff: !!x?.weekendOff,
