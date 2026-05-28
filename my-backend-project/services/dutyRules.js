@@ -23,13 +23,18 @@ const MIN_REST_MIN = 12 * 60;
 // Önceki vardiyanın bitiş saatinden sonraki vardiyanın başlangıcına kadar olan boşluk ≥ 12h mi?
 function restGapOk(prevCode, nextCode) {
   const pc = String(prevCode || '').toUpperCase();
-  const nc = String(nextCode || '').toUpperCase();
+  // Bilinmeyen/boş shiftCode → false positive üretme, ihlal sayma
+  if (!pc || !(pc in SHIFT_END_MIN)) return true;
+
   const prevEnd   = SHIFT_END_MIN[pc];
   const prevStart = SHIFT_START_MIN[pc];
-  if (prevEnd === null || prevEnd === undefined) return false; // N, V2 → 24h dinlenme zorunlu
+  // null: N/V2 gibi tam 24h dinlenme gerektiren vardiyalar
+  if (prevEnd === null) return false;
+
+  const nc = String(nextCode || '').toUpperCase();
+  const nextStart  = (nc in SHIFT_START_MIN) ? SHIFT_START_MIN[nc] : 8 * 60;
   const prevEndAbs = (prevEnd <= (prevStart ?? 0)) ? prevEnd + 1440 : prevEnd; // cross-midnight
-  const nextStart  = SHIFT_START_MIN[nc] ?? 8*60;
-  const nextStartAbs = nextStart + 1440; // ertesi gün başlangıcı
+  const nextStartAbs = nextStart + 1440; // ertesi gün başlangıcı (mutlak)
   return (nextStartAbs - prevEndAbs) >= MIN_REST_MIN;
 }
 
