@@ -7,6 +7,7 @@ const SUP_POOL_KEY = "supervisorPool";
 const SUP_CFG_KEY = "supervisorConfig";
 
 const NIGHT = new Set(["N", "V1", "V2", "SV"]);
+const FULL_REST = new Set(["N", "V2"]); // 24 saatlik vardiya → ertesi gün çalışma yasağı
 
 const U = (s) => (s || "").toString().trim().toLocaleUpperCase("tr-TR");
 const daysIn = (y, m0) => new Date(y, m0 + 1, 0).getDate();
@@ -325,12 +326,59 @@ export function generateRoster({
 
   const namedAssignments = {};
   const issues = [];
+  const usedDays = Object.fromEntries(staff.map((p) => [p.id, 0])); // soft fallback için gün sayacı
+
+  // ── Kural 3: N nöbetleri arası minimum gap takibi ──────────────────────────
+  const lastNDay = Object.fromEntries(staff.map((p) => [p.id, -99]));
+
+  // ── Kural 4: Aylık N kotası ─────────────────────────────────────────────────
+  const monthNCount = Object.fromEntries(staff.map((p) => [p.id, 0]));
+  const MAX_MONTHLY_N = 10;
+  const MIN_N_GAP = 2;
+
+  // ── Kural 5: Hafta sonu dengesi ─────────────────────────────────────────────
+  const weekendNCount = Object.fromEntries(staff.map((p) => [p.id, 0]));
+  const totalWeekends = Array.from({ length: dim }, (_, i) => i + 1)
+    .filter((d) => { const wd = new Date(year, month0, d).getDay(); return wd === 0 || wd === 6; }).length;
+  const MAX_WEEKEND_N = Math.ceil(totalWeekends / 2);
+
+  // ── Point 3: Sayaçları mevcut pinlerden/atamalardan besle ───────────────────
+  // Planlama yeniden çalıştırıldığında mevcut N atamaları sayaçlarda görünmeli;
+  // aksi hâlde yanlış "kota doldu" veya "N-gap" engeliyle karşılaşılır.
+  for (const pin of (explicitPins || [])) {
+    const pid = String(pin.personId || "");
+    if (!pid || !(pid in lastNDay)) continue;
+    const shiftU = U(pin.shiftCode || "");
+    if (!FULL_REST.has(shiftU)) continue;
+    const dayNum = Number(pin.dayNum || String(pin.day || "").slice(-2));
+    if (!Number.isFinite(dayNum) || dayNum < 1) continue;
+    if (dayNum > (lastNDay[pid] ?? -99)) lastNDay[pid] = dayNum;
+    monthNCount[pid] = (monthNCount[pid] || 0) + 1;
+    const pinWd = new Date(year, month0, dayNum).getDay();
+    if (pinWd === 0 || pinWd === 6) weekendNCount[pid] = (weekendNCount[pid] || 0) + 1;
+  }
 
   for (let d = 1; d <= dim; d++) {
     namedAssignments[d] = {};
     const usedToday = new Set();
     const jsDay = new Date(year, month0, d).getDay();
     const isWeekend = (jsDay === 0 || jsDay === 6);
+
+    // Önceki gün vardiyalarından kısıt setleri — günde bir kez hesapla
+    const prevDay = d > 1 ? (namedAssignments[d - 1] || {}) : {};
+    const prevFullRestCanon = new Set(); // N/V2 yapanlar → bugün hiçbir vardiyada çalışamaz
+    const prevNightCanon = new Set();    // Herhangi NIGHT yapanlar → bugün NIGHT'ta çalışamaz
+    if (d > 1) {
+      for (const rr of (rows || [])) {
+        const shiftU = U(rr?.shiftCode || "");
+        for (const nm of (prevDay[rr.id] || [])) {
+          const prevP = canon2person.get(canonName(nm));
+          const prevId = prevP?.id || canonName(nm); // fallback: isim canon'u — ID yoksa
+          if (FULL_REST.has(shiftU)) prevFullRestCanon.add(prevId);
+          if (NIGHT.has(shiftU)) prevNightCanon.add(prevId);
+        }
+      }
+    }
 
     /* --- Servis Sorumlusu --- */
     for (const r of (rows || [])) {
@@ -432,32 +480,69 @@ export function generateRoster({
         if (chosen.length >= need) break;
       }
 
-      // havuz
+      // havuz — hard constraint'ler
+      const isNightToday = NIGHT.has(U(r?.shiftCode || ""));
+      const isFullRestRow = FULL_REST.has(U(r?.shiftCode || ""));
       let pool = staff
         .filter((p) => !usedToday.has(p.id))
         .filter((p) => isEligible(p, r, year, month0, d, requireEligibility))
-        .filter((p) => leavePolicy === "ignore" ? true : !isOnLeave(p, d));
+        .filter((p) => leavePolicy === "ignore" ? true : !isOnLeave(p, d))
+        .filter((p) => !prevFullRestCanon.has(p.id))                                      // Kural 1-2: 24h sonrası yasak
+        .filter((p) => !isNightToday || !prevNightCanon.has(p.id))                      // gece üstüne gece yok
+        .filter((p) => !isFullRestRow || (d - (lastNDay[p.id] ?? -99)) >= MIN_N_GAP)    // Kural 3: N-gap
+        .filter((p) => !isFullRestRow || (monthNCount[p.id] ?? 0) < MAX_MONTHLY_N)      // Kural 4: aylık N kotası
+        .filter((p) => !isFullRestRow || !isWeekend || (weekendNCount[p.id] ?? 0) < MAX_WEEKEND_N); // Kural 5: hafta sonu dengesi
 
-      // gece üstüne gece yok
-      const isNightToday = NIGHT.has(U(r?.shiftCode || ""));
-      if (isNightToday && d > 1) {
-        const prev = namedAssignments[d - 1] || {};
-        const prevNightCanon = new Set();
-        for (const rr of (rows || [])) {
-          if (!NIGHT.has(U(rr?.shiftCode || ""))) continue;
-          for (const nm of (prev[rr.id] || [])) prevNightCanon.add(canonName(nm));
+      const trackAssignment = (person) => {
+        usedToday.add(person.id);
+        usedDays[person.id] = (usedDays[person.id] || 0) + 1;
+        if (isFullRestRow) {
+          lastNDay[person.id] = d;                                         // Kural 3: son N günü güncelle
+          monthNCount[person.id] = (monthNCount[person.id] || 0) + 1;     // Kural 4: aylık N sayacı
+          if (isWeekend) weekendNCount[person.id] = (weekendNCount[person.id] || 0) + 1; // Kural 5
         }
-        pool = pool.filter((p) => !prevNightCanon.has(p.nameCanon));
-      }
+      };
 
       while (chosen.length < need && pool.length) {
         const idx = Math.floor(rng() * pool.length);
         const person = pool.splice(idx, 1)[0];
         chosen.push(person.name);
-        usedToday.add(person.id);
+        trackAssignment(person);
       }
 
-      if (chosen.length < need) issues.push({ day: d, label: r.label, need, assigned: chosen.length });
+      // Soft-constraint fallback — N-gap / kota / alan kısıtları gevşetilir,
+      // sadece 24h ban (FULL_REST) ve aktif izin korunur.
+      // En az N tutmuş kişiler önce seçilir (adalet).
+      if (chosen.length < need) {
+        const softPool = staff
+          .filter((p) => !usedToday.has(p.id))
+          .filter((p) => leavePolicy === "ignore" ? true : !isOnLeave(p, d))
+          .filter((p) => !prevFullRestCanon.has(p.id))          // 24h ban — asla esnetilmez
+          .sort((a, b) => (monthNCount[a.id] || 0) - (monthNCount[b.id] || 0)); // en az N tutmuş önce
+        for (const person of softPool) {
+          if (chosen.length >= need) break;
+          chosen.push(person.name);
+          trackAssignment(person);
+        }
+      }
+
+      if (chosen.length < need) {
+        // Point 1: Neden havuz boş kaldı? — ilk 3 engeli kaydet
+        const filterAudit = [];
+        for (const p of staff) {
+          if (filterAudit.length >= 3) break;
+          if (usedToday.has(p.id)) continue;
+          let reason = null;
+          if (leavePolicy !== "ignore" && isOnLeave(p, d)) reason = "izin";
+          else if (prevFullRestCanon.has(p.id)) reason = "24h-ban";
+          else if (!isEligible(p, r, year, month0, d, requireEligibility)) reason = "alan-uyumsuz";
+          else if (isFullRestRow && (d - (lastNDay[p.id] ?? -99)) < MIN_N_GAP) reason = "N-gap";
+          else if (isFullRestRow && (monthNCount[p.id] ?? 0) >= MAX_MONTHLY_N) reason = "kota-doldu";
+          else if (isFullRestRow && isWeekend && (weekendNCount[p.id] ?? 0) >= MAX_WEEKEND_N) reason = "hafta-sonu-kota";
+          if (reason) filterAudit.push({ name: p.name, reason });
+        }
+        issues.push({ day: d, label: r.label, need, assigned: chosen.length, filterAudit });
+      }
       namedAssignments[d][r.id] = chosen;
     }
   }
