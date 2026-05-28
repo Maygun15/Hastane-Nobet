@@ -44,7 +44,7 @@ export const SHIFT_RULES = {
         nextDayAllowed: ["M","M1","M2","M3","M4","M5","M6","N","V1","V2"] },
   N:  { start: "08:00", end: "08:00", restAfterHours: 24 }, // ertesi gün çalışamaz
   V1: { start: "08:00", end: "00:00",
-        nextDayAllowed: ["M","M1","M2","M3","M4","M5","M6","N","V1","V2"],
+        nextDayAllowed: ["M","M1","M2","M3","M4","M5","M6","N","V2"],
         avoidNextDay: ["N","V1","V2"] },
   V2: { start: "08:00", end: "08:00", restAfterHours: 24 },
 };

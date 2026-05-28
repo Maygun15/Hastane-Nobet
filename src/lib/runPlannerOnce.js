@@ -254,7 +254,47 @@ const forbidsNextDay = (shiftCode, shiftIndex) => {
   if (is24h) return true;
   const codeN = norm(shiftCode);
   if (codeN==="N" || codeN==="V2" || codeN==="V1") return true;
+  // Cross-midnight vardiya (end < start, ör. M4 16:00→00:00):
+  // ertesi günün en erken başlayan shifti için bile 12h dinlenme garantilenemez —
+  // enforceNextDayRest için tüm günü güvenli şekilde yasakla.
+  if (def && timeToMin(def.end) < timeToMin(def.start)) return true;
   return false;
+};
+
+// Önceki vardiya bitişi ile sonraki vardiya başlangıcı arasındaki gerçek dinlenme süresi
+// minRestHours'tan azsa true döner. repairAfterCap'ta her iki shift kodu bilindiği için
+// bu fonksiyon kesin saat aritmetiği kullanır; forbidsNextDay'in binary tam-gün
+// yasağından daha doğrudur.
+const restGapViolation = (prevShiftCode, nextShiftCode, shiftIndex, minRestHours = 12) => {
+  const prevDef = shiftIndex?.[norm(prevShiftCode)];
+  const nextDef = shiftIndex?.[norm(nextShiftCode)];
+
+  // Tanım yoksa güvenli fallback: forbidsNextDay davranışını koru
+  if (!prevDef) return forbidsNextDay(prevShiftCode, shiftIndex);
+
+  // Explicit restAfterHours önce kontrol edilir (N/V2: 24h ban)
+  if ((prevDef.restAfterHours || 0) >= 24) return true;
+
+  const s = timeToMin(prevDef.start);
+  const e = timeToMin(prevDef.end);
+
+  // start === end → 24 saatlik vardiya
+  if (s === e) return true;
+
+  // Mutlak bitiş dakikası (day D'nin 00:00'ından itibaren):
+  //   cross-midnight (e < s, ör. M4/V1): shift ertesi güne taşıyor → e + 1440
+  //   normal (e > s): shift aynı gün içinde bitiyor → e
+  const prevEndAbs = e > s ? e : e + 1440;
+
+  // Sonraki shift tanımsızsa 08:00 (480 dk) varsayımı yapılır —
+  // çoğu vardiya 08:00 başladığından bu değer hem M/M4/V1 cross-midnight
+  // durumları için doğru ihlali yakalar (8h < 12h), hem M→M için
+  // yanlış bloklama yapmaz (16h ≥ 12h).
+  const nextStart = nextDef ? timeToMin(nextDef.start) : 480;
+  const nextStartAbs = nextStart + 1440; // ertesi gün = +1440
+
+  const gapMin = nextStartAbs - prevEndAbs;
+  return gapMin < minRestHours * 60;
 };
 
 function enforceNextDayRest(assignments, shiftIndex) {
@@ -362,7 +402,8 @@ function repairAfterCap({
         let blocked=false;
         for (const pa of yesterdays) {
           const pDef = shiftIndex?.[norm(pa.shiftCode)];
-          if (forbidsNextDay(pa.shiftCode, shiftIndex)) { blocked=true; break; }
+          // Gerçek saat farkı kontrolü: önceki vardiya bitişi → bu vardiya başlangıcı
+          if (restGapViolation(pa.shiftCode, tl.shiftCode, shiftIndex)) { blocked=true; break; }
           if (Array.isArray(pDef?.nextDayAllowed)) {
             if (!includesCode(pDef.nextDayAllowed, tl.shiftCode)) { blocked=true; break; }
           }
@@ -404,7 +445,8 @@ function repairAfterCap({
           .filter(pid => {
             const prevYmd = prevOf(day);
             const yesterdays = assignments.filter(a => a.personId === pid && a.day === prevYmd);
-            return !yesterdays.some(pa => forbidsNextDay(pa.shiftCode, shiftIndex));
+            // Saat bazlı 12h dinlenme kontrolü — aday listesinden süzer
+            return !yesterdays.some(pa => restGapViolation(pa.shiftCode, tl.shiftCode, shiftIndex));
           })
           .sort((p1, p2) => {
             const d1 = target - (hoursByPerson.get(String(p1)) || 0);
