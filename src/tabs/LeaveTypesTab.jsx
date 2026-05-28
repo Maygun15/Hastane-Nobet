@@ -208,15 +208,11 @@ function useHybridLeaveTypes(external, setExternal) {
 
   const setLT = (updater) => {
     if (controlled) {
-      setExternal((prev) => {
-        const base = Array.isArray(prev) ? prev : [];
-        const nextRaw = typeof updater === "function" ? updater(base) : updater;
-        const next = sortTR(dedupeByCode(normalizeList(nextRaw || [])));
-        // Controlled modda localStorage yazmayız; üst seviye yönetir
-        // Ama yine de aynı pencere için sinyal göndermek iyi olur:
-        try { window.dispatchEvent(new Event("leaveTypes:changed")); } catch {}
-        return next;
-      });
+      const base = Array.isArray(external) ? external : [];
+      const nextRaw = typeof updater === "function" ? updater(base) : updater;
+      const next = sortTR(dedupeByCode(normalizeList(nextRaw || [])));
+      try { window.dispatchEvent(new Event("leaveTypes:changed")); } catch {}
+      setExternal(next);
     } else {
       setInner((prev) => {
         const base = Array.isArray(prev) ? prev : [];
@@ -426,103 +422,150 @@ export default function LeaveTypesTab({ leaveTypes, setLeaveTypes }) {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Üst butonlar */}
-      <div className="flex items-center justify-end gap-2">
-        <button onClick={exportExcel} className="px-3 py-2 text-sm border rounded">Excele Aktar</button>
-        <label className="px-3 py-2 text-sm border rounded cursor-pointer">
-          Excel/CSV'den Yükle
-          <input
-            ref={importRef}
-            type="file"
-            accept=".xls,.xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-            className="hidden"
-            onChange={importExcel}
-          />
-        </label>
-        <button type="button" onClick={clearAll} className="px-3 py-2 text-sm border rounded text-red-600">
-          İzin Türlerini Sıfırla
-        </button>
+    <div className="px-8 py-6 max-w-7xl mx-auto space-y-6">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-800">İzin Türleri</h2>
+          <p className="text-sm text-slate-500 mt-1">İzin türü tanımlarını yönetin; Excel ile toplu içe/dışa aktarın.</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={exportExcel} className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white hover:bg-slate-50">Excele Aktar</button>
+          <label className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white hover:bg-slate-50 cursor-pointer">
+            Excel'den Yükle
+            <input
+              ref={importRef}
+              type="file"
+              accept=".xls,.xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              className="hidden"
+              onChange={importExcel}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              if (!window.confirm("Kritik işlem: Tüm izin türleri sıfırlanacak. Devam edilsin mi?")) return;
+              clearAll();
+            }}
+            className="px-3 py-2 text-sm border border-red-200 rounded-lg text-red-600 hover:bg-red-50"
+          >
+            İzin Türlerini Sıfırla
+          </button>
+        </div>
       </div>
 
-      <h3 className="font-medium">İzin Türleri</h3>
-
-      {/* Form */}
-      <form onSubmit={upsert} className="bg-white rounded-2xl shadow-sm p-4 grid md:grid-cols-6 gap-3 items-end">
-        <input
-          value={form.code}
-          onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-          className="w-full border rounded p-2 font-mono"
-          placeholder="Kısaltma (örn: R, İ, Üİ, SÜ, AN...)"
-        />
-        <input
-          value={form.name}
-          onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          className="md:col-span-2 w-full border rounded p-2"
-          placeholder="Tür adı (örn: Rapor, İzin, Ücretsiz İzin, Sü... )"
-        />
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          <input
-            type="checkbox"
-            checked={!!form.countsAsWorked}
-            onChange={(e) => setForm((f) => ({ ...f, countsAsWorked: e.target.checked }))}
-          />
-          Çalışılmış say
-        </label>
-        <input
-          type="number"
-          step="0.5"
-          min="0"
-          value={form.hoursPerDay}
-          onChange={(e) => setForm((f) => ({ ...f, hoursPerDay: e.target.value }))}
-          disabled={!form.countsAsWorked}
-          className="w-full border rounded p-2"
-          placeholder="Saat"
-        />
-        <div className="flex gap-2">
-          <button type="submit" className="px-3 py-2 text-sm border rounded bg-emerald-600 text-white">
-            {editingId ? "Güncelle" : "Ekle"}
-          </button>
-          {editingId && (
-            <button type="button" onClick={reset} className="px-3 py-2 text-sm border rounded bg-slate-100">
-              İptal
-            </button>
-          )}
-        </div>
-      </form>
-
-      {/* Liste */}
-      <div className="bg-white rounded-2xl shadow-sm p-4 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="text-slate-500">
-            <tr className="border-b">
-              <th className="py-2 pr-2 text-left">Kısaltma</th>
-              <th className="py-2 pr-2 text-left">Tür Adı</th>
-              <th className="py-2 pr-2 text-left">Çalışılmış</th>
-              <th className="py-2 pr-2 text-left">Saat</th>
-              <th className="py-2 pr-2 text-right">İşlem</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(!list || list.length === 0) && (
-              <tr>
-                <td colSpan={5} className="py-6 text-center text-slate-400">Henüz izin türü yok.</td>
-              </tr>
+      {/* İki sütun: Yeni Ekle | Mevcut Liste */}
+      <div className="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-6 items-start">
+        {/* Yeni İzin Türü Ekle */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+            <div className="text-sm font-medium text-slate-700">
+              {editingId ? "İzin Türünü Düzenle" : "Yeni İzin Türü Ekle"}
+            </div>
+            <div className="text-xs text-slate-500 mt-1">Kısaltma, tür adı ve saatlik değeri girin.</div>
+          </div>
+          <form onSubmit={upsert} className="p-4 space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Kısaltma</label>
+              <input
+                value={form.code}
+                onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                placeholder="örn: R, İ, Üİ, SÜ, AN..."
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Tür Adı</label>
+              <input
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                placeholder="örn: Rapor, İzin, Ücretsiz İzin..."
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!form.countsAsWorked}
+                onChange={(e) => setForm((f) => ({ ...f, countsAsWorked: e.target.checked }))}
+                className="rounded"
+              />
+              Çalışılmış say
+            </label>
+            {form.countsAsWorked && (
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Günlük Saat</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={form.hoursPerDay}
+                  onChange={(e) => setForm((f) => ({ ...f, hoursPerDay: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  placeholder="Saat"
+                />
+              </div>
             )}
-            {(list ?? []).map((t) => (
-              <tr key={t.id} className="border-t">
-                <td className="py-2 pr-2 font-mono">{t.code}</td>
-                <td className="py-2 pr-2">{t.name}</td>
-                <td className="py-2 pr-2">{t.countsAsWorked ? "Evet" : "Hayır"}</td>
-                <td className="py-2 pr-2">{Number.isFinite(Number(t.hoursPerDay)) ? Number(t.hoursPerDay) : 0}</td>
-                <td className="py-2 pr-2 text-right">
-                  <button onClick={() => edit(t)} className="text-xs px-2 py-1 border rounded bg-slate-100">Düzenle</button>
-                  <button onClick={() => del(t.id)} className="text-xs px-2 py-1 border rounded bg-slate-100 ml-1">Sil</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            <div className="flex gap-2 pt-1">
+              <button type="submit" className="px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
+                {editingId ? "Güncelle" : "Ekle"}
+              </button>
+              {editingId && (
+                <button type="button" onClick={reset} className="px-4 py-2 text-sm border border-slate-200 rounded-lg bg-white hover:bg-slate-50">
+                  İptal
+                </button>
+              )}
+            </div>
+          </form>
+        </div>
+
+        {/* Mevcut İzin Türleri */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+            <div className="text-sm font-medium text-slate-700">Mevcut İzin Türleri</div>
+            <div className="text-xs text-slate-500 mt-1">{list?.length ?? 0} izin türü tanımlanmış.</div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-slate-500">
+                <tr className="border-b border-slate-100">
+                  <th className="px-3 py-2 text-left">Kısaltma</th>
+                  <th className="px-3 py-2 text-left">Tür Adı</th>
+                  <th className="px-3 py-2 text-left">Çalışılmış</th>
+                  <th className="px-3 py-2 text-center">Saat</th>
+                  <th className="px-3 py-2 text-right">İşlem</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(!list || list.length === 0) && (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-8 text-center text-slate-400">Henüz izin türü yok.</td>
+                  </tr>
+                )}
+                {(list ?? []).map((t) => (
+                  <tr key={t.id} className="border-t border-slate-100 hover:bg-slate-50/50">
+                    <td className="px-3 py-2 font-mono font-medium">{t.code}</td>
+                    <td className="px-3 py-2">{t.name}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] border ${t.countsAsWorked ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-500 border-slate-200"}`}>
+                        {t.countsAsWorked ? "Evet" : "Hayır"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-center font-mono tabular-nums">
+                      {Number.isFinite(Number(t.hoursPerDay)) ? Number(t.hoursPerDay) : 0}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="inline-flex gap-1">
+                        <button onClick={() => edit(t)} className="text-xs px-2 py-1 border border-slate-200 rounded-lg bg-white hover:bg-slate-50">Düzenle</button>
+                        <button onClick={() => del(t.id)} className="text-xs px-2 py-1 border border-red-200 rounded-lg text-red-600 hover:bg-red-50">Sil</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   );

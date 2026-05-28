@@ -54,7 +54,8 @@ function useAreas(external, setExternal) {
   const list = Array.isArray(external) ? external : [];
   const setAreas = (updater) => {
     if (typeof setExternal !== "function") return;
-    setExternal((prev) => (typeof updater === "function" ? updater(prev ?? []) : updater));
+    const next = typeof updater === "function" ? updater(list) : updater;
+    setExternal(next);
   };
   return [list, setAreas];
 }
@@ -200,7 +201,6 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
   };
 
   const resetAreas = () => {
-    if (!confirm("Tüm alanları sıfırlamak istiyor musunuz?")) return;
     cancelEdit();
     setSelectedAreaKey(null);
     setAreas([]);
@@ -252,34 +252,45 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Üst sağ butonlar */}
-      <div className="flex items-center justify-end gap-2">
-        <button type="button" className="px-3 py-2 text-sm border rounded" onClick={exportExcel}>
-          Excele Aktar
-        </button>
-        <label className="px-3 py-2 text-sm border rounded cursor-pointer">
-          Excelden Yükle
-          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importExcel} />
-        </label>
-        <button type="button" className="px-3 py-2 text-sm border rounded text-red-600" onClick={resetAreas}>
-          Alanları Sıfırla
-        </button>
+    <div className="px-8 py-6 max-w-7xl mx-auto space-y-6">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-800">Çalışma Alanları</h2>
+          <p className="text-sm text-slate-500 mt-1">Servis ve bölüm tanımlarını yönetin; personeli alanlara göre filtreleyin.</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button type="button" className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white hover:bg-slate-50" onClick={exportExcel}>
+            Excele Aktar
+          </button>
+          <label className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white hover:bg-slate-50 cursor-pointer">
+            Excel'den Yükle
+            <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importExcel} />
+          </label>
+          <button
+            type="button"
+            className="px-3 py-2 text-sm border border-red-200 rounded-lg text-red-600 hover:bg-red-50"
+            onClick={() => {
+              if (!window.confirm("Kritik işlem: Tüm çalışma alanları sıfırlanacak. Devam edilsin mi?")) return;
+              resetAreas();
+            }}
+          >
+            Alanları Sıfırla
+          </button>
+        </div>
       </div>
-
-      <h3 className="font-medium">Çalışma Alanları</h3>
 
       <div className="grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] gap-6">
         <div className="space-y-4">
-          <div className="rounded-xl border bg-white overflow-hidden">
-            <div className="px-4 py-3 border-b bg-slate-50">
+          <div className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
               <div className="text-sm font-medium text-slate-700">Mevcut Alanlar</div>
               <div className="text-xs text-slate-500 mt-1">Bir alan seçerek detayını sağ panelde yönetin.</div>
             </div>
             <div className="p-3">
               <div className="mb-3">
                 <input
-                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Alan ara..."
@@ -321,16 +332,16 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
             </div>
           </div>
 
-          <div className="rounded-xl border bg-white p-4">
+          <div className="rounded-xl border border-slate-100 bg-white shadow-sm p-4">
             <div className="text-sm font-medium text-slate-700 mb-2">Yeni Alan Ekle</div>
             <div className="flex items-center gap-2">
               <input
-                className="px-3 py-2 border rounded w-full"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder=""
               />
-              <button type="button" className="px-3 py-2 text-sm border rounded" onClick={addArea}>
+              <button type="button" className="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 whitespace-nowrap" onClick={addArea}>
                 Ekle
               </button>
             </div>
@@ -341,8 +352,8 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-xl border bg-white overflow-hidden">
-            <div className="px-4 py-3 border-b bg-slate-50 flex items-start justify-between gap-4">
+          <div className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex items-start justify-between gap-4">
               <div>
                 <div className="text-sm font-medium text-slate-700">Seçili Alan</div>
                 <div className="text-xs text-slate-500 mt-1">
@@ -362,16 +373,16 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
                     {editingIndex === selectedArea.rawIndex ? (
                       <div className="space-y-3">
                         <input
-                          className="w-full px-3 py-2 border rounded bg-white"
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                           value={editingValue}
                           onChange={(e) => setEditingValue(e.target.value)}
                           autoFocus
                         />
                         <div className="flex items-center gap-2">
-                          <button type="button" className="text-sm px-3 py-2 border rounded bg-white" onClick={saveEdit}>
+                          <button type="button" className="text-sm px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700" onClick={saveEdit}>
                             Kaydet
                           </button>
-                          <button type="button" className="text-sm px-3 py-2 border rounded bg-white" onClick={cancelEdit}>
+                          <button type="button" className="text-sm px-3 py-2 border border-slate-200 rounded-lg bg-white hover:bg-slate-50" onClick={cancelEdit}>
                             İptal
                           </button>
                         </div>
@@ -385,14 +396,14 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
                         <div className="flex items-center gap-2 shrink-0">
                           <button
                             type="button"
-                            className="text-sm px-3 py-2 border rounded bg-white"
+                            className="text-sm px-3 py-2 border border-slate-200 rounded-lg bg-white hover:bg-slate-50"
                             onClick={() => startEdit(selectedArea.rawIndex)}
                           >
                             Düzenle
                           </button>
                           <button
                             type="button"
-                            className="text-sm px-3 py-2 border rounded bg-white text-red-600"
+                            className="text-sm px-3 py-2 border border-red-200 rounded-lg text-red-600 hover:bg-red-50"
                             onClick={() => removeArea(selectedArea.rawIndex)}
                           >
                             Sil
@@ -408,8 +419,8 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
             </div>
           </div>
 
-          <div className="rounded-xl border bg-white overflow-hidden">
-            <div className="px-4 py-3 border-b bg-slate-50">
+          <div className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
               <div className="text-sm font-medium text-slate-700">Seçilen Alanda Çalışanlar</div>
               <div className="text-xs text-slate-500 mt-1">
                 {selectedArea ? `${selectedArea.name} alanındaki personel listesi` : "Personel listesini görmek için soldan bir alan seçin."}
