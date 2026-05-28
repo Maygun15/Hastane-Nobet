@@ -7,8 +7,28 @@
 import { useEffect } from "react";
 import { useAppStore } from "../state/appStore.js";
 
+const pendingEvents = new Set();
+let flushHandle = 0;
+
 const fire = (name) => {
-  try { window.dispatchEvent(new Event(name)); } catch {}
+  if (typeof window === "undefined") return;
+  pendingEvents.add(name);
+  if (flushHandle) return;
+
+  const flush = () => {
+    flushHandle = 0;
+    const events = Array.from(pendingEvents);
+    pendingEvents.clear();
+    for (const eventName of events) {
+      try { window.dispatchEvent(new Event(eventName)); } catch {}
+    }
+  };
+
+  if (typeof window.requestAnimationFrame === "function") {
+    flushHandle = window.requestAnimationFrame(flush);
+  } else {
+    flushHandle = window.setTimeout(flush, 0);
+  }
 };
 
 export function useStoreEventBridge() {

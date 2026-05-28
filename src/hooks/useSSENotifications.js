@@ -2,6 +2,7 @@
 import { useEffect, useRef } from 'react';
 import { getToken } from '../lib/api.js';
 import { getApiBase } from '../lib/apiConfig.js';
+import { invalidateLeaves, loadLeavesFromBackend } from '../lib/leaves.js';
 
 const MIN_RETRY_MS = 5_000;
 const MAX_RETRY_MS = 60_000;
@@ -38,6 +39,26 @@ export default function useSSENotifications(onNotification) {
         try {
           const data = JSON.parse(e.data || '{}');
           cbRef.current?.(data);
+        } catch {}
+      });
+
+      es.addEventListener('leaves:refresh', () => {
+        invalidateLeaves();
+        loadLeavesFromBackend().catch(() => {});
+      });
+
+      es.addEventListener('request:updated', () => {
+        try { window.dispatchEvent(new Event('request:updated')); } catch {}
+      });
+
+      es.addEventListener('assignments:refresh', () => {
+        try { window.dispatchEvent(new Event('assignments:refresh')); } catch {}
+      });
+
+      es.addEventListener('compliance:violation', (e) => {
+        try {
+          const data = JSON.parse(e.data || '{}');
+          window.dispatchEvent(new CustomEvent('compliance:violation', { detail: data }));
         } catch {}
       });
 

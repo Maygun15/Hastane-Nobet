@@ -136,6 +136,7 @@ async function req(path, { method = 'GET', body, headers, timeoutMs, retries, si
   function buildOpts() {
     return {
       method,
+      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         ...authHeaders(),

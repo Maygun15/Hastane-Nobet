@@ -320,12 +320,13 @@ export async function getScheduleModel({ sectionId, serviceId, role = "", year, 
   try {
     if (sectionId) {
       const list = await getAssignmentsForMonth({ sectionId, serviceId, role, year, month });
+      console.log('[DEBUG-ASSIGNMENT-LOAD] monthlyScheduleModel SSOT:', { dataLength: list?.length, sectionId, year, month });
       if (Array.isArray(list) && list.length > 0) {
         return fromAssignmentsList(list, people);
       }
     }
-  } catch {
-    // Endpoint yoksa eski yoldan devam et
+  } catch (e) {
+    console.warn('[DEBUG-ASSIGNMENT-LOAD] SSOT hata:', e?.message);
   }
 
   // 2) Fallback: MonthlySchedule

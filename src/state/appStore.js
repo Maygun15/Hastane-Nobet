@@ -29,6 +29,10 @@ function stableJson(value) {
   }
 }
 
+function sameStable(a, b) {
+  return stableJson(a) === stableJson(b);
+}
+
 const initial = {
   ym: todayYM(),
   activeServiceId: "",   // Seçili servis — tüm sekmeler tarafından paylaşılır
@@ -41,7 +45,7 @@ const initial = {
   leavesByPerson: {},  // {personId: [{id, start, end, partial, hours}]}
   shiftCodeHours: {},  // {"V1": 8, "N": 16, ...}
   // backend-sourced arrays (NOT persisted via Zustand; synced by HospitalRosterApp)
-  workAreas: [],
+  workAreas: lsInit(["workAreas", "workAreasV2"]),
   nurses: [],
   doctors: [],
   workingHours: lsInit(["workingHoursV2", "workingHours"]),
@@ -74,14 +78,20 @@ export const useAppStore = create(
       gotoToday: () => set({ ym: todayYM() }),
 
       /* === SERVİS & ROL === */
-      setActiveServiceId: (id) => set({ activeServiceId: String(id ?? "") }),
+      setActiveServiceId: (id) =>
+        set((state) => {
+          const next = String(id ?? "");
+          if (state.activeServiceId === next) return state;
+          return { activeServiceId: next };
+        }),
       setActiveRole: (role) => {
         const val = role === "Doctor" ? "Doctor" : "Nurse";
-        set({ activeRole: val });
+        const current = get().activeRole;
+        if (current !== val) set({ activeRole: val });
         // Geriye dönük uyumluluk: LS ve event — eski bileşenler bunları dinliyor
         try {
           localStorage.setItem("activeRole", JSON.stringify(val));
-          window.dispatchEvent(new CustomEvent("activeRole:changed", { detail: val }));
+          if (current !== val) window.dispatchEvent(new CustomEvent("activeRole:changed", { detail: val }));
         } catch {}
       },
 
@@ -129,15 +139,40 @@ export const useAppStore = create(
         })),
 
       /* === BACKEND-SOURCED ARRAYS === */
-      setWorkAreas: (arr) => set({ workAreas: Array.isArray(arr) ? arr : [] }),
-      setNurses: (arr) => set({ nurses: Array.isArray(arr) ? arr : [] }),
-      setDoctors: (arr) => set({ doctors: Array.isArray(arr) ? arr : [] }),
-      setWorkingHours: (arr) => set({ workingHours: Array.isArray(arr) ? arr : [] }),
-      setLeaveTypes: (arr) => set({ leaveTypes: Array.isArray(arr) ? arr : [] }),
+      setWorkAreas: (arr) =>
+        set((state) => {
+          const next = Array.isArray(arr) ? arr : [];
+          if (sameStable(state.workAreas, next)) return state;
+          return { workAreas: next };
+        }),
+      setNurses: (arr) =>
+        set((state) => {
+          const next = Array.isArray(arr) ? arr : [];
+          if (sameStable(state.nurses, next)) return state;
+          return { nurses: next };
+        }),
+      setDoctors: (arr) =>
+        set((state) => {
+          const next = Array.isArray(arr) ? arr : [];
+          if (sameStable(state.doctors, next)) return state;
+          return { doctors: next };
+        }),
+      setWorkingHours: (arr) =>
+        set((state) => {
+          const next = Array.isArray(arr) ? arr : [];
+          if (sameStable(state.workingHours, next)) return state;
+          return { workingHours: next };
+        }),
+      setLeaveTypes: (arr) =>
+        set((state) => {
+          const next = Array.isArray(arr) ? arr : [];
+          if (sameStable(state.leaveTypes, next)) return state;
+          return { leaveTypes: next };
+        }),
       setPersonLeaves: (obj) =>
         set((state) => {
           const next = (obj && typeof obj === "object") ? obj : {};
-          if (stableJson(state.personLeaves) === stableJson(next)) return state;
+          if (sameStable(state.personLeaves, next)) return state;
           return { personLeaves: next };
         }),
 

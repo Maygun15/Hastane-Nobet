@@ -24,6 +24,25 @@ function notifyAll() {
   _listeners.forEach((fn) => fn());
 }
 
+function stableJson(value) {
+  return JSON.stringify(value, (key, val) => {
+    void key;
+    if (!val || typeof val !== "object" || Array.isArray(val)) return val;
+    return Object.keys(val).sort().reduce((acc, k) => {
+      acc[k] = val[k];
+      return acc;
+    }, {});
+  });
+}
+
+function setCache(next) {
+  const normalized = Array.isArray(next) ? next : [];
+  const changed = stableJson(_cache) !== stableJson(normalized);
+  _cache = normalized;
+  _loaded = true;
+  if (changed) notifyAll();
+}
+
 export function useServices() {
   const [, tick] = useState(0);
 
@@ -39,9 +58,7 @@ export function useServices() {
       const res = await fetch(url, { headers: authHeaders() });
       const json = await res.json();
       if (json?.ok) {
-        _cache = Array.isArray(json.data) ? json.data : [];
-        _loaded = true;
-        notifyAll();
+        setCache(json.data);
       }
     } catch (e) {
       console.error("Servisler yüklenemedi:", e);
@@ -72,9 +89,7 @@ export default function useServicesModel() {
       const res = await fetch(url, { headers: authHeaders() });
       const json = await res.json();
       if (json?.ok) {
-        _cache = Array.isArray(json.data) ? json.data : [];
-        _loaded = true;
-        notifyAll();
+        setCache(json.data);
       }
     } catch (e) {
       console.error("Servisler yüklenemedi:", e);
