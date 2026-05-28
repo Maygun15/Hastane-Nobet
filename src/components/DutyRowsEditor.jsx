@@ -246,26 +246,61 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     });
   }, [rows, roster, daysInMonth, shiftMetaByCode]);
 
-  /* Dinlenme kuralı ihlali: aynı personel arka arkaya 2 günde atanmışsa uyar */
+  /* Dinlenme kuralı ihlali: önceki vardiya bitişi ile sonraki başlangıcı arasında
+     12 saatten az dinlenme varsa badge göster. shiftMetaByCode üzerinden gerçek
+     saat farkı hesaplanır; eski "aynı gün ardışık = ihlal" false positive kaldırıldı. */
   const restViolationSet = useMemo(() => {
+    const toMin = (hhmm) => {
+      const [h, m] = (String(hhmm || "0:0")).split(":").map(x => parseInt(x || "0", 10));
+      return (h % 24) * 60 + (m % 60);
+    };
+    const shiftGapViolates = (prevCode, nextCode) => {
+      const prevDef = shiftMetaByCode.get(String(prevCode || "").trim());
+      const nextDef = shiftMetaByCode.get(String(nextCode || "").trim());
+      if (!prevDef) return false; // tanımsız shift → badge gösterme
+      if ((prevDef.restAfterHours || 0) >= 24) return true; // N/V2: tam gün yasak
+      const s = toMin(prevDef.start);
+      const e = toMin(prevDef.end);
+      if (s === e) return true; // 24h vardiya (N/V2 restAfterHours olmayan tip)
+      // cross-midnight (M4, V1): bitiş ertesi güne taşıyor → +1440
+      const prevEndAbs = e > s ? e : e + 1440;
+      const nextStart = nextDef ? toMin(nextDef.start) : 480; // fallback 08:00
+      const nextStartAbs = nextStart + 1440; // ertesi gün offset
+      return (nextStartAbs - prevEndAbs) < 12 * 60;
+    };
+
     const set = new Set();
     for (let dayIdx = 1; dayIdx < daysInMonth; dayIdx++) {
-      const prevNames = new Set();
+      // Dün: kişi → çalıştığı shiftCode kümesi
+      const prevShiftsByName = new Map();
       for (const row of rosterDisplayRows) {
+        const sc = String(row.shiftCode || "").trim();
         for (const nm of (row.namesByDay[dayIdx - 1] || [])) {
-          if (nm) prevNames.add(nm.trim().toLowerCase());
+          if (!nm) continue;
+          const key = nm.trim().toLowerCase();
+          if (!prevShiftsByName.has(key)) prevShiftsByName.set(key, new Set());
+          prevShiftsByName.get(key).add(sc);
         }
       }
+      // Bugün: dünkü shift→bugünkü shift arasında gap < 12h ise ihlal
       for (const row of rosterDisplayRows) {
+        const sc = String(row.shiftCode || "").trim();
         for (const nm of (row.namesByDay[dayIdx] || [])) {
-          if (nm && prevNames.has(nm.trim().toLowerCase())) {
-            set.add(`${dayIdx + 1}|${nm.trim()}`);
+          if (!nm) continue;
+          const key = nm.trim().toLowerCase();
+          const prevShifts = prevShiftsByName.get(key);
+          if (!prevShifts) continue;
+          for (const prevSc of prevShifts) {
+            if (shiftGapViolates(prevSc, sc)) {
+              set.add(`${dayIdx + 1}|${nm.trim()}`);
+              break;
+            }
           }
         }
       }
     }
     return set;
-  }, [rosterDisplayRows, daysInMonth]);
+  }, [rosterDisplayRows, daysInMonth, shiftMetaByCode]);
 
   /* Dinlenme kuralı ihlalleri — backend SSOT */
   const [backendViolations, setBackendViolations] = useState([]);
