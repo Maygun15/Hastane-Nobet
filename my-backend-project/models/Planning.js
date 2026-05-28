@@ -13,6 +13,10 @@ const planningSchema = new mongoose.Schema(
     description: { type: String, trim: true, maxlength: 500, default: '' },
     startDate: { type: String, required: true }, // YYYY-MM-DD
     endDate: { type: String, required: true },   // YYYY-MM-DD
+    serviceId: { type: String, default: '', index: true },
+    serviceName: { type: String, trim: true, default: '' },
+    month: { type: Number, min: 1, max: 12, index: true },
+    year: { type: Number, index: true },
     status: {
       type: String,
       enum: ['draft', 'active', 'completed', 'cancelled'],
@@ -32,6 +36,7 @@ const planningSchema = new mongoose.Schema(
 // Listeleme ve sıralama sorguları için
 planningSchema.index({ hospitalId: 1, status: 1, createdAt: -1 });
 planningSchema.index({ hospitalId: 1, priority: 1 });
+planningSchema.index({ hospitalId: 1, year: 1, month: 1, serviceId: 1 });
 
 applyHospitalScope(planningSchema);
 

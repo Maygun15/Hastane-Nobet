@@ -6,6 +6,7 @@ const RuleEngine = require('../services/ruleEngine');
 const { withHospitalFilter } = require('../middleware/hospital');
 const { requireRole } = require('../middleware/authz');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+const LEGACY_DEFAULT_SECTION_ID = 'calisma-cizelgesi';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
 const devError = (err) => (isProd ? {} : { error: err?.message || 'Sunucu hatası' });
@@ -14,7 +15,7 @@ const normalizeScopeValue = (value) => String(value == null ? '' : value).trim()
 
 function normalizeRuleScope(input = {}) {
   return {
-    sectionId: normalizeScopeValue(input.sectionId),
+    sectionId: normalizeScopeValue(input.sectionId || input.section || LEGACY_DEFAULT_SECTION_ID),
     serviceId: normalizeScopeValue(input.serviceId || input.unitId),
     role: normalizeScopeValue(input.role),
   };
@@ -96,6 +97,21 @@ router.put('/', requireRole('admin', 'yetkili'), async (req, res) => {
     return res.json({ ok: true, rule: doc });
   } catch (err) {
     return res.status(500).json({ message: safeMessage(err) });
+  }
+});
+
+// GET /api/duty-rules/rest-violations?year=&month=
+// Ay içindeki tüm '24 saat dinlenme' ihlallerini döner (ardışık 2 günde aynı personel).
+// Bu statik rota, aşağıdaki legacy "/:serviceId" rotasından önce tanımlı kalmalı.
+router.get('/rest-violations', requireRole('admin', 'authorized', 'staff'), async (req, res) => {
+  try {
+    const year  = Number(req.query.year)  || new Date().getFullYear();
+    const month = Number(req.query.month) || new Date().getMonth() + 1;
+    const { findRestViolations } = require('../services/dutyRules');
+    const violations = await findRestViolations({ hospitalId: req.hospitalId, year, month });
+    res.json({ ok: true, year, month, count: violations.length, violations });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: safeMessage(err, 'İhlal sorgulaması başarısız') });
   }
 });
 
@@ -433,20 +449,6 @@ router.post('/calculate-hours', requireRole('admin', 'yetkili'), async (req, res
       message: 'Hesaplama başarısız',
       ...devError(err),
     });
-  }
-});
-
-// GET /api/duty-rules/rest-violations?year=&month=
-// Ay içindeki tüm '24 saat dinlenme' ihlallerini döner (ardışık 2 günde aynı personel)
-router.get('/rest-violations', requireRole('admin', 'authorized', 'staff'), async (req, res) => {
-  try {
-    const year  = Number(req.query.year)  || new Date().getFullYear();
-    const month = Number(req.query.month) || new Date().getMonth() + 1;
-    const { findRestViolations } = require('../services/dutyRules');
-    const violations = await findRestViolations({ hospitalId: req.hospitalId, year, month });
-    res.json({ ok: true, year, month, count: violations.length, violations });
-  } catch (err) {
-    res.status(500).json({ ok: false, message: safeMessage(err, 'İhlal sorgulaması başarısız') });
   }
 });
 

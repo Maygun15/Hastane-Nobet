@@ -19,10 +19,13 @@ function isAdmin(req) {
 // GET /api/plannings  — list with optional filters
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const { status, priority, search, dateFrom, dateTo, page = 1, limit = 50 } = req.query;
+    const { status, priority, search, dateFrom, dateTo, serviceId, month, year, page = 1, limit = 50 } = req.query;
     const filter = {};
     if (status && status !== 'all') filter.status = status;
     if (priority && priority !== 'all') filter.priority = priority;
+    if (serviceId !== undefined && serviceId !== 'all') filter.serviceId = String(serviceId || '');
+    if (month) filter.month = Number(month);
+    if (year) filter.year = Number(year);
     if (search) filter.title = { $regex: search, $options: 'i' };
     if (dateFrom || dateTo) {
       filter.startDate = {};
@@ -83,7 +86,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 router.post('/', requireAuth, async (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ message: 'Yetki gerekli' });
   try {
-    const { title, description, startDate, endDate, priority, status, assignedPersonnel } = req.body;
+    const { title, description, startDate, endDate, priority, status, assignedPersonnel, serviceId, serviceName, month, year } = req.body;
     if (!title || !startDate || !endDate) {
       return res.status(400).json({ message: 'Başlık ve tarihler zorunludur' });
     }
@@ -95,6 +98,10 @@ router.post('/', requireAuth, async (req, res) => {
       description: String(description || '').trim().slice(0, 500),
       startDate,
       endDate,
+      serviceId: String(serviceId || ''),
+      serviceName: String(serviceName || '').trim().slice(0, 100),
+      month: month ? Number(month) : undefined,
+      year: year ? Number(year) : undefined,
       priority: priority || 'medium',
       status: status || 'active',
       assignedPersonnel: Array.isArray(assignedPersonnel) ? assignedPersonnel : [],
@@ -111,7 +118,7 @@ router.post('/', requireAuth, async (req, res) => {
 router.put('/:id', requireAuth, async (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ message: 'Yetki gerekli' });
   try {
-    const { title, description, startDate, endDate, priority, status, assignedPersonnel } = req.body;
+    const { title, description, startDate, endDate, priority, status, assignedPersonnel, serviceId, serviceName, month, year } = req.body;
     if (startDate && endDate && endDate < startDate) {
       return res.status(400).json({ message: 'Bitiş tarihi başlangıç tarihinden önce olamaz' });
     }
@@ -123,6 +130,10 @@ router.put('/:id', requireAuth, async (req, res) => {
     if (priority !== undefined) updates.priority = priority;
     if (status !== undefined) updates.status = status;
     if (assignedPersonnel !== undefined) updates.assignedPersonnel = assignedPersonnel;
+    if (serviceId !== undefined) updates.serviceId = String(serviceId || '');
+    if (serviceName !== undefined) updates.serviceName = String(serviceName || '').trim().slice(0, 100);
+    if (month !== undefined) updates.month = month ? Number(month) : undefined;
+    if (year !== undefined) updates.year = year ? Number(year) : undefined;
 
     const planning = await Planning.findByIdAndUpdate(req.params.id, updates, { new: true });
     if (!planning) return res.status(404).json({ message: 'Planlama bulunamadı' });
