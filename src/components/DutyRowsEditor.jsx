@@ -1778,6 +1778,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         };
         await doSave({ silent: true, payloadOverride: payload });
         await loadGeneratedExplainability();
+        fetchRestViolations();
         try {
           const monthKey = `${year}-${String(month0 + 1).padStart(2, "0")}`;
           LS.set("scheduleBuildTrigger", { ym: monthKey, ts: Date.now() });

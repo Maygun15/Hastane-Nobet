@@ -4,6 +4,35 @@
 const Assignment = require('../models/Assignment');
 const mongoose   = require('mongoose');
 
+// Vardiya bitiş saatleri (dakika cinsinden, gece yarısını geçenler için cross-midnight)
+const SHIFT_END_MIN = {
+  M: 16*60, M1: 15*60, M2: 16*60, M3: 17*60,
+  M4: 0,    // 00:00 → cross-midnight (16:00→00:00)
+  M5: 13*60, M6: 14*60,
+  N: null,  // 24h tam dinlenme
+  V1: 0,    // 00:00 → cross-midnight (08:00→00:00)
+  V2: null, // 24h tam dinlenme
+};
+const SHIFT_START_MIN = {
+  M: 8*60, M1: 8*60, M2: 9*60, M3: 10*60,
+  M4: 16*60, M5: 8*60, M6: 8*60,
+  N: 8*60, V1: 8*60, V2: 8*60,
+};
+const MIN_REST_MIN = 12 * 60;
+
+// Önceki vardiyanın bitiş saatinden sonraki vardiyanın başlangıcına kadar olan boşluk ≥ 12h mi?
+function restGapOk(prevCode, nextCode) {
+  const pc = String(prevCode || '').toUpperCase();
+  const nc = String(nextCode || '').toUpperCase();
+  const prevEnd   = SHIFT_END_MIN[pc];
+  const prevStart = SHIFT_START_MIN[pc];
+  if (prevEnd === null || prevEnd === undefined) return false; // N, V2 → 24h dinlenme zorunlu
+  const prevEndAbs = (prevEnd <= (prevStart ?? 0)) ? prevEnd + 1440 : prevEnd; // cross-midnight
+  const nextStart  = SHIFT_START_MIN[nc] ?? 8*60;
+  const nextStartAbs = nextStart + 1440; // ertesi gün başlangıcı
+  return (nextStartAbs - prevEndAbs) >= MIN_REST_MIN;
+}
+
 const toOid = (id) => {
   try { return new mongoose.Types.ObjectId(String(id)); } catch { return null; }
 };
@@ -64,27 +93,34 @@ async function findRestViolations({ hospitalId, year, month }) {
   };
 
   const assignments = await Assignment.find(match)
-    .select('personId personName date')
+    .select('personId personName date shiftCode')
     .sort({ personId: 1, date: 1 })
     .lean();
 
-  // Group by personId
+  // Group by personId → sorted list of { date, shiftCode }
   const byPerson = new Map();
   for (const a of assignments) {
     const pid = String(a.personId);
-    if (!byPerson.has(pid)) byPerson.set(pid, { personName: a.personName, dates: new Set() });
-    byPerson.get(pid).dates.add(String(a.date).slice(0, 10));
+    if (!byPerson.has(pid)) byPerson.set(pid, { personName: a.personName, entries: [] });
+    byPerson.get(pid).entries.push({ date: String(a.date).slice(0, 10), shiftCode: a.shiftCode || '' });
   }
 
   const violations = [];
-  for (const [pid, { personName, dates }] of byPerson) {
-    const sorted = [...dates].sort();
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const d1 = new Date(`${sorted[i]}T00:00:00`);
-      const d2 = new Date(`${sorted[i + 1]}T00:00:00`);
+  for (const [pid, { personName, entries }] of byPerson) {
+    entries.sort((a, b) => a.date.localeCompare(b.date));
+    for (let i = 0; i < entries.length - 1; i++) {
+      const d1 = new Date(`${entries[i].date}T00:00:00`);
+      const d2 = new Date(`${entries[i + 1].date}T00:00:00`);
       const diffDays = Math.round((d2 - d1) / 86_400_000);
-      if (diffDays === 1) {
-        violations.push({ personId: pid, personName: personName || pid, date1: sorted[i], date2: sorted[i + 1] });
+      if (diffDays === 1 && !restGapOk(entries[i].shiftCode, entries[i + 1].shiftCode)) {
+        violations.push({
+          personId: pid,
+          personName: personName || pid,
+          date1: entries[i].date,
+          date2: entries[i + 1].date,
+          shift1: entries[i].shiftCode,
+          shift2: entries[i + 1].shiftCode,
+        });
       }
     }
   }
