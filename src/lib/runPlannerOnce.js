@@ -230,7 +230,7 @@ const nextOf = (ymd) => {
 const includesCode = (arr, code) => (arr||[]).some(c=>norm(c)===norm(code));
 
 // Şablon Kural 3: N/V2 kodlu vardiyalar arasında en az MIN_N_GAP gün olmalı
-const FULL_REST_CODES = new Set(["N", "V2"]);
+const FULL_REST_CODES = new Set(["N", "V2", "V1"]);
 const MIN_N_GAP_DAYS = 2;
 const isFullRestCode = (shiftCode) => FULL_REST_CODES.has(norm(shiftCode || ""));
 
@@ -253,7 +253,7 @@ const forbidsNextDay = (shiftCode, shiftIndex) => {
   if ((def?.restAfterHours||0) >= 24) return true;
   if (is24h) return true;
   const codeN = norm(shiftCode);
-  if (codeN==="N" || codeN==="V2") return true;
+  if (codeN==="N" || codeN==="V2" || codeN==="V1") return true;
   return false;
 };
 
