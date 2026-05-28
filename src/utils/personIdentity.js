@@ -1,15 +1,55 @@
-// Tek ve yetkili ID çözümleyici: id/_id/personId/pid'yi dener.
+// Tek ve yetkili ID çözümleyici: id/_id/personId/person_id/pid'yi dener.
 // TC numarası, kod veya diğer alanlar sistem ID'si olarak KULLANILMAZ.
 export function resolvePersonId(person) {
-  return String(person?.id || person?._id || person?.personId || person?.pid || "").trim();
+  return String(
+    person?.id ||
+    person?._id ||
+    person?.personId ||
+    person?.person_id ||
+    person?.pid ||
+    person?.staffId ||
+    person?.person?.id ||
+    person?.person?._id ||
+    person?.person?.personId ||
+    person?.person?.person_id ||
+    ""
+  ).trim();
 }
 
 function personIdOf(person) {
   return resolvePersonId(person);
 }
 
-function personNameOf(person) {
-  return person?.fullName || person?.name || "";
+export function personNameOf(person) {
+  return String(
+    person?.fullName ||
+    person?.name ||
+    person?.displayName ||
+    person?.adsoyad ||
+    person?.adSoyad ||
+    person?.personName ||
+    person?.person?.fullName ||
+    person?.person?.name ||
+    ""
+  ).trim();
+}
+
+export function resolveAssignmentPersonId(assignment) {
+  return String(
+    assignment?.personId ||
+    assignment?.person_id ||
+    assignment?.pid ||
+    assignment?.staffId ||
+    assignment?.person?.id ||
+    assignment?.person?._id ||
+    assignment?.person?.personId ||
+    assignment?.person?.person_id ||
+    ""
+  ).trim();
+}
+
+export function resolveAssignmentPersonName(assignment) {
+  return personNameOf(assignment);
 }
 
 export function stripDiacritics(str) {
@@ -53,8 +93,8 @@ export function buildPersonIdentityIndex(people = []) {
 
 export function resolvePersonRef(ref = {}, peopleOrIndex = []) {
   const index = Array.isArray(peopleOrIndex) ? buildPersonIdentityIndex(peopleOrIndex) : (peopleOrIndex || {});
-  const personId = String(ref?.personId || ref?.id || "").trim();
-  const nameKey = canonName(ref?.name || ref?.personName || ref?.fullName || "");
+  const personId = String(ref?.personId || ref?.person_id || ref?.id || ref?._id || ref?.pid || ref?.staffId || "").trim();
+  const nameKey = canonName(personNameOf(ref));
 
   if (personId && index.byId?.has(personId)) {
     return index.byId.get(personId) || null;

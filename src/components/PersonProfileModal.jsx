@@ -1,12 +1,94 @@
 // src/components/PersonProfileModal.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { X, User, Calendar, Clock, Activity } from "lucide-react";
 import { http } from "../lib/api.js";
+import { useServices } from "../hooks/useServicesModel.js";
+import { useAppStore } from "../state/appStore.js";
+import { createPlanWorkHourResolver } from "../utils/planWorkCalculator.js";
+
+const IDISH_RE = /^[a-f0-9]{12,}$/i;
+const TIMESTAMP_PIPE_RE = /^\d{10,}\|?$/;
+
+function norm(value) {
+  return String(value ?? "").trim();
+}
+
+function key(value) {
+  return norm(value).toUpperCase();
+}
+
+function looksLikeRawId(value) {
+  const text = norm(value);
+  return !!text && (IDISH_RE.test(text) || TIMESTAMP_PIPE_RE.test(text) || (text.length >= 18 && !/\s/.test(text)));
+}
+
+function findByIdentity(list = [], raw, extraFields = []) {
+  const target = key(raw);
+  if (!target) return null;
+  const fields = [
+    "id",
+    "_id",
+    "value",
+    "key",
+    "code",
+    "name",
+    "label",
+    "title",
+    "area",
+    "serviceId",
+    "shiftId",
+    "shiftCode",
+    "vardiyaKodu",
+    "vardiya",
+    "taskKey",
+    "rowId",
+    ...extraFields,
+  ];
+  return (Array.isArray(list) ? list : []).find((item) =>
+    fields.some((field) => key(item?.[field]) === target)
+  ) || null;
+}
+
+function recordLabel(item, preferred = []) {
+  if (!item) return "";
+  const fields = [
+    ...preferred,
+    "name",
+    "label",
+    "title",
+    "area",
+    "code",
+    "shiftCode",
+    "vardiyaKodu",
+    "vardiya",
+  ];
+  for (const field of fields) {
+    const value = norm(item?.[field]);
+    if (value) return value;
+  }
+  return "";
+}
+
+function shiftCodeOf(item, fallback = "") {
+  return norm(item?.code || item?.shiftCode || item?.vardiyaKodu || item?.vardiya || fallback);
+}
+
+function SkeletonText({ className = "" }) {
+  return (
+    <span
+      className={`inline-block h-4 rounded bg-slate-200 align-middle animate-pulse ${className || "w-24"}`}
+      aria-label="Yükleniyor"
+    />
+  );
+}
 
 export default function PersonProfileModal({ person, onClose }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { items: allServices = [] } = useServices();
+  const workAreas = useAppStore((s) => s.workAreas);
+  const workingHours = useAppStore((s) => s.workingHours);
 
   useEffect(() => {
     if (!person?._id && !person?.id) return;
@@ -30,17 +112,78 @@ export default function PersonProfileModal({ person, onClose }) {
   }, [onClose]);
 
   const assignments = data?.assignments || [];
+  const resolveShiftHours = useMemo(
+    () => createPlanWorkHourResolver(workingHours),
+    [workingHours]
+  );
+
+  const enrichedAssignments = useMemo(() => {
+    return assignments.map((assignment) => {
+      const rawService = norm(assignment.serviceId || assignment.service || assignment.service_id);
+      const rawShift = norm(
+        assignment.shiftId ||
+        assignment.shiftCode ||
+        assignment.shift ||
+        assignment.code ||
+        assignment.vardiya
+      );
+      const rawRole = norm(
+        assignment.roleId ||
+        assignment.roleLabel ||
+        assignment.taskKey ||
+        assignment.rowLabel ||
+        assignment.area ||
+        assignment.rowId ||
+        assignment.taskId
+      );
+
+      const service = findByIdentity(allServices, rawService, ["service"]);
+      const shift = findByIdentity(workingHours, rawShift, ["hoursCode"]);
+      const role = findByIdentity(workAreas, rawRole, ["roleId", "taskId"]);
+
+      const serviceLabel = recordLabel(service, ["name"]) || (!looksLikeRawId(rawService) ? rawService : "");
+      const shiftCode = shiftCodeOf(shift) || (!looksLikeRawId(rawShift) ? rawShift : "");
+      const shiftLabel = recordLabel(shift, ["code", "name", "label"]) || (!looksLikeRawId(rawShift) ? rawShift : "");
+      const roleLabel = recordLabel(role, ["label", "name", "area"]) || (!looksLikeRawId(rawRole) ? rawRole : "");
+
+      const explicitHours = Number(assignment.hours);
+      const resolvedHours = resolveShiftHours(shiftCode || rawShift, roleLabel || rawRole);
+      const hours = Number.isFinite(explicitHours) && explicitHours > 0
+        ? explicitHours
+        : resolvedHours;
+
+      return {
+        ...assignment,
+        _serviceRaw: rawService,
+        _serviceLabel: serviceLabel,
+        _servicePending: !!rawService && !serviceLabel && looksLikeRawId(rawService),
+        _shiftRaw: rawShift,
+        _shiftCode: shiftCode,
+        _shiftLabel: shiftLabel,
+        _shiftPending: !!rawShift && !shiftLabel && !shiftCode && looksLikeRawId(rawShift) && workingHours.length === 0,
+        _roleRaw: rawRole,
+        _roleLabel: roleLabel,
+        _rolePending: !!rawRole && !roleLabel && looksLikeRawId(rawRole),
+        _resolvedHours: Number.isFinite(hours) ? hours : 0,
+        _hoursPending:
+          !(Number.isFinite(hours) && hours > 0) &&
+          !!rawShift &&
+          !shift &&
+          looksLikeRawId(rawShift),
+      };
+    });
+  }, [assignments, allServices, workingHours, workAreas, resolveShiftHours]);
 
   const now = new Date();
   const thisYear = now.getFullYear();
   const thisMonth = now.getMonth() + 1;
   const thisMonthStr = `${thisYear}-${String(thisMonth).padStart(2, "0")}`;
 
-  const totalCount = assignments.length;
-  const thisMonthCount = assignments.filter((a) =>
+  const totalCount = enrichedAssignments.length;
+  const thisMonthCount = enrichedAssignments.filter((a) =>
     (a.date || "").startsWith(thisMonthStr)
   ).length;
-  const totalHours = assignments.reduce((sum, a) => sum + (Number(a.hours) || 0), 0);
+  const totalHours = enrichedAssignments.reduce((sum, a) => sum + (Number(a._resolvedHours) || 0), 0);
 
   const personName =
     data?.person?.name ||
@@ -111,7 +254,7 @@ export default function PersonProfileModal({ person, onClose }) {
               </div>
 
               {/* Assignments table */}
-              {assignments.length === 0 ? (
+              {enrichedAssignments.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-slate-400">
                   <Calendar className="h-10 w-10 mb-3 opacity-30" />
                   <div className="text-sm">Nöbet kaydı bulunamadı</div>
@@ -129,19 +272,27 @@ export default function PersonProfileModal({ person, onClose }) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {assignments.map((a, i) => (
+                      {enrichedAssignments.map((a, i) => (
                         <tr key={a._id || i} className="hover:bg-slate-50 transition">
                           <td className="px-4 py-2.5 text-slate-700 font-medium tabular-nums">{a.date || "-"}</td>
-                          <td className="px-4 py-2.5 text-slate-600 max-w-xs truncate" title={a.serviceId || "-"}>{a.serviceId || "-"}</td>
+                          <td className="px-4 py-2.5 text-slate-600 max-w-xs truncate" title={a._serviceLabel || a._serviceRaw || "-"}>
+                            {a._servicePending ? <SkeletonText /> : (a._serviceLabel || "-")}
+                          </td>
                           <td className="px-4 py-2.5">
-                            {a.shiftCode ? (
+                            {a._shiftPending ? (
+                              <SkeletonText className="w-14" />
+                            ) : a._shiftCode || a._shiftLabel ? (
                               <span className="inline-flex items-center rounded-full bg-sky-50 border border-sky-200 px-2 py-0.5 text-xs font-medium text-sky-700">
-                                {a.shiftCode}
+                                {a._shiftCode || a._shiftLabel}
                               </span>
                             ) : "-"}
                           </td>
-                          <td className="px-4 py-2.5 text-slate-600 text-xs max-w-xs truncate" title={a.roleLabel || a.taskKey || "-"}>{a.roleLabel || a.taskKey || "-"}</td>
-                          <td className="px-4 py-2.5 text-right text-slate-700 tabular-nums">{a.hours || 0}</td>
+                          <td className="px-4 py-2.5 text-slate-600 text-xs max-w-xs truncate" title={a._roleLabel || a._roleRaw || "-"}>
+                            {a._rolePending ? <SkeletonText /> : (a._roleLabel || "-")}
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-slate-700 tabular-nums">
+                            {a._hoursPending ? <SkeletonText className="w-10" /> : (a._resolvedHours || 0)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

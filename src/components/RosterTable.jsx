@@ -3,6 +3,54 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 import { X, Download, FileText, Copy, Info, Phone, Mail, Clock, Calendar, Hash, Trash2 } from "lucide-react";
+import { http } from "../lib/api.js";
+import {
+  resolvePersonId,
+  resolveAssignmentPersonId,
+  resolveAssignmentPersonName,
+  personNameOf,
+} from "../utils/personIdentity.js";
+
+const personIdentity = (p) =>
+  resolvePersonId(p);
+
+const assignmentPersonId = (a) =>
+  resolveAssignmentPersonId(a);
+
+const assignmentPersonName = (a) =>
+  resolveAssignmentPersonName(a);
+
+const assignmentDay = (a) =>
+  String(a?.day ?? a?.date ?? a?.ymd ?? "").slice(0, 10);
+
+const assignmentRole = (a) =>
+  String(a?.roleLabel ?? a?.role ?? a?.label ?? a?.area ?? a?.workArea ?? "").trim();
+
+const assignmentShift = (a) =>
+  String(a?.shiftCode ?? a?.shift ?? a?.code ?? a?.shiftId ?? a?.rowId ?? "").trim();
+
+const canonName = (s) =>
+  String(s || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/Ğ/g, "g")
+    .replace(/Ü/g, "u")
+    .replace(/Ş/g, "s")
+    .replace(/İ/g, "i")
+    .replace(/Ö/g, "o")
+    .replace(/Ç/g, "c")
+    .replace(/ğ/g, "g")
+    .replace(/ü/g, "u")
+    .replace(/ş/g, "s")
+    .replace(/ı/g, "i")
+    .replace(/ö/g, "o")
+    .replace(/ç/g, "c")
+    .toLocaleLowerCase("tr-TR")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const displayPersonName = (person) =>
+  personNameOf(person);
 
 /**
  * Nöbet çizelgesini tablo olarak gösteren bileşen.
@@ -40,6 +88,7 @@ const RosterTable = forwardRef(function RosterTable({
   const [editShift, setEditShift] = useState("");
   const [editError, setEditError] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+  const [orphanPeople, setOrphanPeople] = useState({});
 
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
@@ -123,8 +172,8 @@ const RosterTable = forwardRef(function RosterTable({
         const key = `${d.ymd}|${taskLine.label}|${taskLine.shiftCode}`;
         const assignedIds = assignmentsMap.get(key) || [];
         const pid = assignedIds[slotIndex];
-        const name = pid ? personMap.get(String(pid)) : "";
-        rowData.push(name);
+        const person = pid ? personMap.get(String(pid)) : null;
+        rowData.push(displayPersonName(person));
       });
       data.push(rowData);
     });
@@ -166,8 +215,8 @@ const RosterTable = forwardRef(function RosterTable({
         const key = `${d.ymd}|${taskLine.label}|${taskLine.shiftCode}`;
         const assignedIds = assignmentsMap.get(key) || [];
         const pid = assignedIds[slotIndex];
-        const name = pid ? personMap.get(String(pid)) : "";
-        rowData.push(name);
+        const person = pid ? personMap.get(String(pid)) : null;
+        rowData.push(displayPersonName(person));
       });
       return rowData;
     });
@@ -219,11 +268,76 @@ const RosterTable = forwardRef(function RosterTable({
   }, [year, month, dayFilter]);
 
   // 2. Kişi lookup (id -> person object)
-  const personMap = useMemo(() => {
+  const basePersonMap = useMemo(() => {
     const map = new Map();
-    people.forEach((p) => map.set(String(p.id), p));
+    people.forEach((p) => {
+      const id = personIdentity(p);
+      if (id) map.set(id, p);
+    });
     return map;
   }, [people]);
+
+  // Fallback: isim bazlı lookup (canonical name -> personId)
+  const nameToIdMap = useMemo(() => {
+    const map = new Map();
+    people.forEach((p) => {
+      const key = canonName(displayPersonName(p));
+      const id = personIdentity(p);
+      if (key && id) map.set(key, id);
+    });
+    return map;
+  }, [people]);
+
+  const orphanIds = useMemo(() => {
+    const missing = new Set();
+    for (const a of assignments || []) {
+      const pid = assignmentPersonId(a);
+      if (pid && !basePersonMap.has(pid) && !orphanPeople[pid]) {
+        missing.add(pid);
+      }
+    }
+    return Array.from(missing);
+  }, [assignments, basePersonMap, orphanPeople]);
+
+  useEffect(() => {
+    if (!orphanIds.length) return;
+    let cancelled = false;
+    orphanIds.forEach((id) => {
+      console.warn("Kayıtlı olmayan personel ataması:", id);
+    });
+    (async () => {
+      const fetched = {};
+      await Promise.all(
+        orphanIds.map(async (id) => {
+          try {
+            const res = await http.get(`/api/personnel/${encodeURIComponent(id)}/profile`);
+            const person = res?.person || res;
+            if (person && typeof person === "object") {
+              fetched[id] = { ...person, id: personIdentity(person) || id };
+            }
+          } catch (err) {
+            console.warn("Atama personeli veritabanından tamamlanamadı:", id, err?.message || err);
+          }
+        })
+      );
+      if (!cancelled && Object.keys(fetched).length) {
+        setOrphanPeople((prev) => ({ ...prev, ...fetched }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [orphanIds]);
+
+  const personMap = useMemo(() => {
+    const map = new Map(basePersonMap);
+    Object.entries(orphanPeople || {}).forEach(([id, person]) => {
+      if (id && person) map.set(String(id), person);
+      const ownId = personIdentity(person);
+      if (ownId && person) map.set(ownId, person);
+    });
+    return map;
+  }, [basePersonMap, orphanPeople]);
 
   const roleOptions = useMemo(() => {
     const set = new Set();
@@ -284,12 +398,18 @@ const RosterTable = forwardRef(function RosterTable({
   const assignmentsMap = useMemo(() => {
     const map = new Map();
     for (const a of assignments) {
-      const key = `${a.day}|${a.roleLabel}|${a.shiftCode}`;
+      const day = assignmentDay(a);
+      const role = assignmentRole(a);
+      const shift = assignmentShift(a);
+      if (!day || !role || !shift) continue;
+      const key = `${day}|${role}|${shift}`;
       if (!map.has(key)) map.set(key, []);
-      map.get(key).push(a.personId);
+      // personId yoksa personName üzerinden nameToIdMap ile çöz
+      const pid = assignmentPersonId(a) || nameToIdMap.get(canonName(assignmentPersonName(a))) || "";
+      if (pid) map.get(key).push(pid);
     }
     return map;
-  }, [assignments]);
+  }, [assignments, nameToIdMap]);
 
   // 4. Personel istatistiklerini hesapla (toplam saat/nöbet)
   const personStats = useMemo(() => {
@@ -298,10 +418,13 @@ const RosterTable = forwardRef(function RosterTable({
     const visibleDays = new Set(days.map(d => d.ymd));
 
     for (const a of assignments) {
-      const pid = String(a.personId);
+      const pid = assignmentPersonId(a);
+      if (!pid) continue;
       const hrs = Number(a.hours) || 0;
+      const day = assignmentDay(a);
+      if (!day) continue;
       
-      const dObj = new Date(a.day);
+      const dObj = new Date(day);
       const isWeekend = dObj.getDay() === 0 || dObj.getDay() === 6;
 
       // Aylık Toplam
@@ -312,7 +435,7 @@ const RosterTable = forwardRef(function RosterTable({
       if (isWeekend) m.weekendShifts += 1;
 
       // Görüntülenen (Filtreli) Toplam
-      if (visibleDays.has(a.day)) {
+      if (visibleDays.has(day)) {
         if (!visible.has(pid)) visible.set(pid, { hours: 0, shifts: 0 });
         const v = visible.get(pid);
         v.hours += hrs;
@@ -433,7 +556,7 @@ const RosterTable = forwardRef(function RosterTable({
                   const assignedIds = assignmentsMap.get(key) || [];
                   const pid = assignedIds[slotIndex]; // Bu slota düşen kişi
           const person = pid ? personMap.get(String(pid)) : null;
-          const name = person ? (person.name || person.fullName || "Bilinmeyen") : null;
+          const name = displayPersonName(person) || null;
 
                   const cellData = {
                     date: d.ymd,
