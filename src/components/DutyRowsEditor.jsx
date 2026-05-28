@@ -305,6 +305,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   /* Dinlenme kuralı ihlalleri — backend SSOT */
   const [backendViolations, setBackendViolations] = useState([]);
   const [violationsLoading, setViolationsLoading] = useState(false);
+  const [showAllViolations, setShowAllViolations] = useState(false);
 
   const fetchRestViolations = useCallback(async () => {
     if (!year || !month1) return;
@@ -2288,19 +2289,28 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
               <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-white text-xs font-bold">!</span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-amber-900">
-                  UYARI: {backendViolations.length} personel nöbet sonrası dinlenme süresinde!
+                  UYARI: {backendViolations.length} personel minimum 12 saat dinlenme kuralını ihlal ediyor!
                 </p>
                 <p className="text-xs text-amber-700 mt-0.5">
-                  Aşağıdaki personeller art arda iki günde aktif nöbete atanmış — 24 saat dinlenme kuralı ihlal edildi:
+                  Aşağıdaki personeller minimum 12 saat dinlenme kuralını ihlal ediyor:
                 </p>
                 <ul className="mt-1.5 space-y-0.5">
-                  {backendViolations.slice(0, 5).map((v, i) => (
+                  {(showAllViolations ? backendViolations : backendViolations.slice(0, 5)).map((v, i) => (
                     <li key={i} className="text-xs text-amber-800 font-medium">
-                      • {v.personName} — {v.date1} ve {v.date2}
+                      • {v.personName} — {v.date1} → {v.date2}{v.shift1 ? ` (${v.shift1}→${v.shift2})` : ""}
                     </li>
                   ))}
                   {backendViolations.length > 5 && (
-                    <li className="text-xs text-amber-700">… ve {backendViolations.length - 5} ihlal daha</li>
+                    <li>
+                      <button
+                        onClick={() => setShowAllViolations(p => !p)}
+                        className="text-xs text-amber-700 underline hover:text-amber-900 mt-0.5"
+                      >
+                        {showAllViolations
+                          ? "Daha az göster"
+                          : `… ve ${backendViolations.length - 5} ihlal daha — Tümünü göster`}
+                      </button>
+                    </li>
                   )}
                 </ul>
               </div>
