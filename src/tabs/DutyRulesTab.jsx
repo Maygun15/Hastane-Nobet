@@ -264,10 +264,13 @@ export default function DutyRulesTab({ rules, setRules }) {
             className="px-3 py-2 rounded-xl border bg-white hover:bg-slate-50"
             title="Excel dosyasından kuralları içe aktar."
           >
-            Excelden Yükle
+            Excel'den Yükle
           </button>
           <button
-            onClick={clearAll}
+            onClick={() => {
+              if (!window.confirm("Kritik işlem: Tüm nöbet kuralları sıfırlanacak. Devam edilsin mi?")) return;
+              clearAll();
+            }}
             disabled={!ordered.length}
             className="px-3 py-2 rounded-xl bg-red-50 text-red-700 border border-red-200 disabled:opacity-50"
             title="Tüm kuralları siler."

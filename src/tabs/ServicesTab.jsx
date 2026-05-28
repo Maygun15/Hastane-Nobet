@@ -80,7 +80,7 @@ function ServiceModal({ open, onClose, onSubmit, existingCodes, initial }) {
           <div>
             <label className="block text-sm text-slate-600 mb-1">Ad</label>
             <input
-              className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-sky-400"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               placeholder="Örn. Genel Cerrahi"
               value={name}
               onChange={(e) => {
@@ -96,10 +96,10 @@ function ServiceModal({ open, onClose, onSubmit, existingCodes, initial }) {
               <div className="flex-1">
                 <label className="block text-sm text-slate-600 mb-1">Kod</label>
                 <input
-                  className={`w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 ${
+                  className={`w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ${
                     codeExists
                       ? "border-red-400 focus:ring-red-300"
-                      : "focus:ring-sky-400"
+                      : "border-slate-200 focus:ring-indigo-500 focus:border-transparent"
                   }`}
                   placeholder="GENEL_CERRAHI"
                   value={code}
@@ -115,7 +115,7 @@ function ServiceModal({ open, onClose, onSubmit, existingCodes, initial }) {
                 )}
               </div>
               <button
-                className="h-10 px-3 border rounded-lg"
+                className="h-10 px-3 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 text-sm"
                 onClick={() => {
                   setCode(slugCode(name));
                   setAuto(true);
@@ -128,11 +128,11 @@ function ServiceModal({ open, onClose, onSubmit, existingCodes, initial }) {
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
-          <button className="border rounded-xl px-4 py-2" onClick={onClose}>
+          <button className="border border-slate-200 rounded-lg px-4 py-2 text-sm bg-white hover:bg-slate-50" onClick={onClose}>
             Vazgeç
           </button>
           <button
-            className="rounded-xl bg-emerald-600 text-white px-4 py-2 hover:bg-emerald-700 disabled:opacity-50"
+            className="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm hover:bg-indigo-700 disabled:opacity-50"
             disabled={!name.trim() || !code.trim() || codeExists}
             onClick={() =>
               onSubmit({
@@ -163,7 +163,7 @@ function ServiceCard({ row, canManage, onEdit, onDelete, onToggle }) {
   );
 
   return (
-    <div className="relative rounded-xl border bg-white shadow-sm">
+    <div className="relative rounded-xl border border-slate-100 bg-white shadow-sm">
       {/* başlık */}
       <div className="px-4 pt-3 pb-2 flex items-start justify-between">
         <div className="text-[13px] font-semibold tracking-wide uppercase text-slate-800">
@@ -171,14 +171,14 @@ function ServiceCard({ row, canManage, onEdit, onDelete, onToggle }) {
         </div>
         <div className="flex items-center gap-2">
           <button
-            className="text-[12px] px-2 py-1 border rounded hover:bg-slate-50 disabled:opacity-50"
+            className="text-[12px] px-2 py-1 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 disabled:opacity-50"
             disabled={!canManage}
             onClick={onEdit}
           >
             Düzenle
           </button>
           <button
-            className="text-[12px] px-2 py-1 border rounded hover:bg-red-50 text-red-600 disabled:opacity-50"
+            className="text-[12px] px-2 py-1 border border-red-200 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50"
             disabled={!canManage}
             onClick={onDelete}
           >
@@ -203,7 +203,7 @@ function ServiceCard({ row, canManage, onEdit, onDelete, onToggle }) {
             {Status}
             {canManage && (
               <button
-                className="text-[12px] px-2 py-0.5 border rounded hover:bg-slate-50"
+                className="text-[12px] px-2 py-0.5 border border-slate-200 rounded-lg bg-white hover:bg-slate-50"
                 onClick={onToggle}
               >
                 {row.active ? "Pasifleştir" : "Aktifleştir"}
@@ -426,7 +426,7 @@ export default function ServicesTab() {
       });
 
       bump();
-      toast.success(`Excelden yükleme tamamlandı. Eklendi: ${added}, Güncellendi: ${updated}`);
+      toast.success(`Excel'den yükleme tamamlandı. Eklendi: ${added}, Güncellendi: ${updated}`);
     } catch (err) {
       console.error(err);
       toast.error("Dosya okunurken bir hata oluştu. Lütfen şablona uygun dosya yükleyin.");
@@ -436,20 +436,52 @@ export default function ServicesTab() {
   }
 
   return (
-    <div className="p-4 space-y-4">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex-1 min-w-[220px]">
+    <div className="px-8 py-6 max-w-7xl mx-auto space-y-6">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-800">Servisler</h2>
+          <p className="text-sm text-slate-500 mt-1">Hastane servis ve birimlerini yönetin; Excel ile toplu içe/dışa aktarın.</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white hover:bg-slate-50" onClick={downloadTemplate}>
+            Şablon
+          </button>
+          <button className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white hover:bg-slate-50" onClick={exportToExcel}>
+            Excele Aktar
+          </button>
+          {canManage && (
+            <>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,text/csv" className="hidden" onChange={handleFile} />
+              <button
+                className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white hover:bg-slate-50"
+                onClick={() => fileRef.current?.click()}
+              >
+                Excel'den Yükle
+              </button>
+              <button
+                className="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                onClick={() => { setEditing(null); setModalOpen(true); }}
+              >
+                Yeni Servis
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Filtre Çubuğu */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 px-4 py-3 flex flex-wrap items-center gap-3">
+        <div className="flex-1 min-w-[200px]">
           <input
-            className="border rounded px-3 py-2 w-full"
+            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             placeholder="Ara (ad/kod)…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-
         <select
-          className="border rounded px-3 py-2"
+          className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           value={onlyActive}
           onChange={(e) => setOnlyActive(e.target.value)}
         >
@@ -457,68 +489,30 @@ export default function ServicesTab() {
           <option value="active">Sadece Aktif</option>
           <option value="passive">Sadece Pasif</option>
         </select>
-
-        <div className="flex items-center gap-2">
-          <select
-            className="border rounded px-3 py-2"
-            value={sortKey}
-            onChange={(e) => setSortKey(e.target.value)}
-          >
-            <option value="name">Ada göre</option>
-            <option value="code">Koda göre</option>
-            <option value="active">Duruma göre</option>
-          </select>
-          <button
-            className="border rounded px-2 py-2"
-            onClick={() => setAsc((v) => !v)}
-            title="Sıralama yönü"
-          >
-            {asc ? "A→Z" : "Z→A"}
-          </button>
-        </div>
-
-        <div className="ml-auto flex items-center gap-2">
-          <button className="px-3 py-2 rounded border" onClick={downloadTemplate}>
-            Şablon
-          </button>
-          <button className="px-3 py-2 rounded border" onClick={exportToExcel}>
-            Excele Aktar
-          </button>
-          {canManage && (
-            <>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".xlsx,.xls,.csv,text/csv"
-                className="hidden"
-                onChange={handleFile}
-              />
-              <button
-                className="px-3 py-2 rounded border"
-                onClick={() => fileRef.current?.click()}
-              >
-                Excelden Yükle
-              </button>
-              <button
-                className="px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700"
-                onClick={() => {
-                  setEditing(null);
-                  setModalOpen(true);
-                }}
-              >
-                Ekle
-              </button>
-            </>
-          )}
-        </div>
+        <select
+          className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value)}
+        >
+          <option value="name">Ada göre</option>
+          <option value="code">Koda göre</option>
+          <option value="active">Duruma göre</option>
+        </select>
+        <button
+          className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white hover:bg-slate-50"
+          onClick={() => setAsc((v) => !v)}
+          title="Sıralama yönü"
+        >
+          {asc ? "A→Z" : "Z→A"}
+        </button>
       </div>
 
       {/* Boş durum */}
       {rows.length === 0 && (
-        <div className="border rounded-xl p-4 text-sm text-slate-600 flex items-center justify-between">
+        <div className="border border-slate-100 rounded-xl shadow-sm p-4 text-sm text-slate-600 flex items-center justify-between bg-white">
           <span>Henüz servis bulunamadı.</span>
           {canManage && (
-            <button onClick={handleQuickSeed} className="px-3 py-2 rounded border">
+            <button onClick={handleQuickSeed} className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white hover:bg-slate-50">
               Hızlı Başlat
             </button>
           )}

@@ -11,6 +11,7 @@ import {
   createPlanningTask, updatePlanningTask, patchPlanningTaskStatus, deletePlanningTask,
   checkPlanningTaskConflicts,
 } from "../api/apiAdapter.js";
+import useServicesModel from "../hooks/useServicesModel.js";
 
 // ─── Sabitler ────────────────────────────────────────────────────────────────
 
@@ -33,8 +34,48 @@ const TASK_STATUS_META = {
   "completed":   { label: "Tamamlandı",   cls: "bg-emerald-100 text-emerald-700" },
 };
 
-const EMPTY_PLANNING_FORM = { title: "", description: "", startDate: "", endDate: "", priority: "medium", status: "active" };
+const now = new Date();
+const DEFAULT_PERIOD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+const MONTH_LABELS = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
+
+const EMPTY_PLANNING_FORM = { title: "", period: DEFAULT_PERIOD, serviceId: "", description: "", priority: "medium", status: "draft" };
 const EMPTY_TASK_FORM     = { title: "", description: "", startDate: "", dueDate: "", priority: "medium", status: "todo", estimatedHours: "", assignedToName: "" };
+
+function toYmd(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function periodBounds(period) {
+  const [rawYear, rawMonth] = String(period || DEFAULT_PERIOD).split("-").map(Number);
+  const year = rawYear || now.getFullYear();
+  const month = rawMonth || now.getMonth() + 1;
+  return {
+    year,
+    month,
+    startDate: `${year}-${String(month).padStart(2, "0")}-01`,
+    endDate: toYmd(new Date(year, month, 0)),
+  };
+}
+
+function periodFromPlanning(planning) {
+  if (planning?.year && planning?.month) return `${planning.year}-${String(planning.month).padStart(2, "0")}`;
+  return String(planning?.startDate || "").slice(0, 7) || DEFAULT_PERIOD;
+}
+
+function formatPlanningPeriod(planning) {
+  const [year, month] = periodFromPlanning(planning).split("-").map(Number);
+  return year && month ? `${MONTH_LABELS[month - 1]} ${year}` : "Dönem seçilmedi";
+}
+
+function normalizeService(service) {
+  const id = String(service?._id || service?.id || service?.serviceId || "");
+  const name = String(service?.name || service?.title || service?.label || service?.code || id);
+  return { id, name };
+}
+
+function extractPlanning(response) {
+  return response?.planning || response?.data || response;
+}
 
 // ─── Yardımcı bileşenler ─────────────────────────────────────────────────────
 
@@ -89,7 +130,7 @@ const selCls   = inputCls;
 
 // ─── Form: Planlama ──────────────────────────────────────────────────────────
 
-function PlanningForm({ initial, onSave, onClose, saving }) {
+function PlanningForm({ initial, services = [], onSave, onClose, saving }) {
   const [form, setForm] = useState(initial || EMPTY_PLANNING_FORM);
   const [errors, setErrors] = useState({});
 
@@ -98,48 +139,49 @@ function PlanningForm({ initial, onSave, onClose, saving }) {
   const validate = () => {
     const e = {};
     if (!form.title.trim() || form.title.trim().length < 3) e.title = "En az 3 karakter";
-    if (!form.startDate) e.startDate = "Zorunlu";
-    if (!form.endDate) e.endDate = "Zorunlu";
-    if (form.startDate && form.endDate && form.endDate < form.startDate) e.endDate = "Başlangıçtan önce olamaz";
+    if (!form.period) e.period = "Zorunlu";
+    if (!form.serviceId) e.serviceId = "Zorunlu";
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  const submit = () => { if (validate()) onSave(form); };
+  const submit = () => {
+    if (!validate()) return;
+    const selectedService = services.find((service) => service.id === String(form.serviceId));
+    onSave({
+      title: form.title.trim(),
+      description: String(form.description || "").trim(),
+      ...periodBounds(form.period),
+      serviceId: String(form.serviceId || ""),
+      serviceName: selectedService?.name || "",
+      priority: form.priority || "medium",
+      status: form.status || "draft",
+    });
+  };
 
   return (
     <div className="space-y-4">
-      <Field label="Başlık" required error={errors.title}>
-        <input className={inputCls} value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="Planlama başlığı..." maxLength={100} />
+      <Field label="Plan Adı" required error={errors.title}>
+        <input className={inputCls} value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="Örn. Mayıs 2026 Acil Servis Hemşire Planı" maxLength={100} />
       </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Dönem" required error={errors.period}>
+          <input type="month" className={inputCls} value={form.period} onChange={(e) => set("period", e.target.value)} />
+        </Field>
+        <Field label="Servis" required error={errors.serviceId}>
+          <select className={selCls} value={form.serviceId} onChange={(e) => set("serviceId", e.target.value)}>
+            <option value="">Servis seçin</option>
+            {services.map((service) => (
+              <option key={service.id} value={service.id}>{service.name}</option>
+            ))}
+          </select>
+        </Field>
+      </div>
       <Field label="Açıklama" error={errors.description}>
         <textarea className={inputCls} rows={3} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="İsteğe bağlı..." maxLength={500} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Başlangıç Tarihi" required error={errors.startDate}>
-          <input type="date" className={inputCls} value={form.startDate} onChange={(e) => set("startDate", e.target.value)} />
-        </Field>
-        <Field label="Bitiş Tarihi" required error={errors.endDate}>
-          <input type="date" className={inputCls} value={form.endDate} onChange={(e) => set("endDate", e.target.value)} />
-        </Field>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Öncelik">
-          <select className={selCls} value={form.priority} onChange={(e) => set("priority", e.target.value)}>
-            <option value="low">Düşük</option>
-            <option value="medium">Orta</option>
-            <option value="high">Yüksek</option>
-            <option value="critical">Kritik</option>
-          </select>
-        </Field>
-        <Field label="Durum">
-          <select className={selCls} value={form.status} onChange={(e) => set("status", e.target.value)}>
-            <option value="draft">Taslak</option>
-            <option value="active">Aktif</option>
-            <option value="completed">Tamamlandı</option>
-            <option value="cancelled">İptal</option>
-          </select>
-        </Field>
+      <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[12px] text-blue-700">
+        Yeni plan taslak olarak oluşturulur. Sağ panelden detayları görebilir veya çalışma çizelgesine geçebilirsin.
       </div>
       <div className="flex justify-end gap-2 pt-2">
         <button onClick={onClose} className="px-4 py-2 rounded-lg border text-[13px] text-slate-600 hover:bg-slate-50">Vazgeç</button>
@@ -350,6 +392,88 @@ function EmptyState({ message = "Planlama bulunamadı", sub }) {
   );
 }
 
+function PlanningListEmptyState() {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-white via-blue-50/50 to-slate-50 px-6 py-10 text-center shadow-sm">
+      <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full bg-blue-100/70 blur-2xl" />
+      <div className="absolute -left-10 bottom-4 h-24 w-24 rounded-full bg-emerald-100/50 blur-2xl" />
+
+      <div className="relative mx-auto mb-5 flex h-24 w-24 items-center justify-center rounded-3xl bg-white shadow-sm ring-1 ring-blue-100">
+        <svg viewBox="0 0 88 88" className="h-16 w-16" role="img" aria-label="Planlama takvimi">
+          <rect x="16" y="18" width="56" height="52" rx="14" fill="#eff6ff" stroke="#bfdbfe" strokeWidth="2" />
+          <path d="M16 34h56" stroke="#93c5fd" strokeWidth="2" />
+          <path d="M31 14v12M57 14v12" stroke="#1d4ed8" strokeWidth="4" strokeLinecap="round" />
+          <rect x="27" y="44" width="12" height="10" rx="3" fill="#2563eb" opacity=".88" />
+          <rect x="43" y="44" width="18" height="10" rx="3" fill="#14b8a6" opacity=".82" />
+          <rect x="27" y="58" width="34" height="5" rx="2.5" fill="#cbd5e1" />
+          <path d="M66 59l5 5 10-13" stroke="#059669" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        </svg>
+      </div>
+
+      <h3 className="relative text-[16px] font-semibold text-slate-900">
+        Henüz planlama oluşturulmadı.
+      </h3>
+      <p className="relative mx-auto mt-2 max-w-[280px] text-[12px] leading-5 text-slate-500">
+        Sağ üstteki 'Yeni Planlama' butonunu kullanarak ilk nöbet listenizi hemen hazırlayabilirsiniz.
+      </p>
+      <div className="relative mt-5 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white px-3 py-1.5 text-[11px] font-medium text-blue-700 shadow-sm">
+        <Plus size={12} />
+        İlk planı oluşturun
+      </div>
+    </div>
+  );
+}
+
+function PlanningDetailPlaceholder() {
+  const rows = ["Acil Servis", "Dahiliye", "Cerrahi", "Yoğun Bakım"];
+  return (
+    <div className="relative h-full min-h-[360px] overflow-hidden bg-gradient-to-br from-white via-slate-50 to-blue-50/40 p-5">
+      <div className="absolute inset-5 opacity-70 blur-[0.2px]">
+        <div className="mb-5 flex items-center justify-between rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
+          <div className="space-y-2">
+            <div className="h-3 w-28 rounded-full bg-slate-200" />
+            <div className="h-5 w-52 rounded-full bg-slate-100" />
+          </div>
+          <div className="h-9 w-28 rounded-xl bg-blue-100" />
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <div className="h-20 rounded-2xl border border-blue-100 bg-white" />
+          <div className="h-20 rounded-2xl border border-emerald-100 bg-white" />
+          <div className="h-20 rounded-2xl border border-amber-100 bg-white" />
+        </div>
+
+        <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="grid grid-cols-[1.3fr_.8fr_.8fr_.8fr] gap-3 bg-slate-50 px-4 py-3">
+            <div className="h-3 rounded-full bg-slate-200" />
+            <div className="h-3 rounded-full bg-slate-200" />
+            <div className="h-3 rounded-full bg-slate-200" />
+            <div className="h-3 rounded-full bg-slate-200" />
+          </div>
+          {rows.map((row, index) => (
+            <div key={row} className="grid grid-cols-[1.3fr_.8fr_.8fr_.8fr] gap-3 border-t border-slate-100 px-4 py-3">
+              <div className="h-4 rounded-full bg-slate-200/80" style={{ width: `${72 - index * 6}%` }} />
+              <div className="h-4 rounded-full bg-blue-100" />
+              <div className="h-4 rounded-full bg-slate-100" />
+              <div className="h-4 rounded-full bg-emerald-100" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="absolute inset-0 bg-white/45 backdrop-blur-[1.5px]" />
+      <div className="relative z-10 flex h-full items-center justify-center text-center">
+        <div className="max-w-sm rounded-2xl border border-white/80 bg-white/85 px-6 py-5 shadow-sm">
+          <LayoutList size={24} className="mx-auto mb-3 text-slate-300" />
+          <p className="text-[13px] leading-5 text-slate-500">
+            Burada planlama detayları, klinik bilgileri ve nöbetçi listeleri görüntülenecektir.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Planlama Kartı ──────────────────────────────────────────────────────────
 
 function PlanningCard({ p, selected, onSelect, onEdit, onDelete, deleting }) {
@@ -369,6 +493,9 @@ function PlanningCard({ p, selected, onSelect, onEdit, onDelete, deleting }) {
       <div className="flex flex-wrap gap-1 mb-3">
         <Badge meta={STATUS_META} value={p.status} />
         <Badge meta={PRIORITY_META} value={p.priority} />
+      </div>
+      <div className="text-[11px] text-slate-500 mb-2">
+        {(p.serviceName || "Servis seçilmedi")} · {formatPlanningPeriod(p)}
       </div>
       {(p.startDate || p.endDate) && (
         <div className="flex items-center gap-1 text-[10px] text-slate-400 mb-2">
@@ -577,6 +704,11 @@ export default function PlanningManagementTab() {
   const [saving, setSaving] = useState(false);
   const [savingTask, setSavingTask] = useState("");
   const [deleting, setDeleting] = useState("");
+  const servicesModel = useServicesModel();
+
+  const services = useMemo(() => (
+    servicesModel.list().map(normalizeService).filter((service) => service.id)
+  ), [servicesModel]);
 
   // ── Veri yükleme ─────────────────────────────────────────────────────────
 
@@ -586,10 +718,10 @@ export default function PlanningManagementTab() {
       const res = await getPlannings({ status: filters.status || undefined, priority: filters.priority || undefined });
       const list = res?.plannings || [];
       setPlannings(list);
-      if (selected) {
-        const refreshed = list.find((p) => p._id === selected._id);
-        if (refreshed) setSelected(refreshed);
-      }
+      setSelected((prev) => {
+        if (!prev?._id) return prev;
+        return list.find((p) => p._id === prev._id) || prev;
+      });
     } catch (e) {
       toast.error(e?.message || "Planlamalar yüklenemedi");
     } finally {
@@ -619,26 +751,57 @@ export default function PlanningManagementTab() {
   const filtered = useMemo(() => {
     const q = filters.search.toLowerCase();
     return plannings.filter((p) => {
-      if (q && !p.title.toLowerCase().includes(q) && !(p.description || "").toLowerCase().includes(q)) return false;
+      const haystack = `${p.title || ""} ${p.description || ""} ${p.serviceName || ""} ${formatPlanningPeriod(p)}`.toLowerCase();
+      if (q && !haystack.includes(q)) return false;
       return true;
     });
   }, [plannings, filters.search]);
+  const isPlanningListEmpty = !loading && plannings.length === 0;
+  const hasNoFilteredPlanning = !loading && filtered.length === 0;
+
+  const selectPlanning = useCallback((planning) => {
+    setSelected(planning);
+    if (planning?._id) sessionStorage.setItem("planningManagement:selectedId", planning._id);
+  }, []);
+
+  const openSelectedPlanningSchedule = useCallback(() => {
+    if (!selected?._id) return;
+    const [year, month] = periodFromPlanning(selected).split("-").map(Number);
+    sessionStorage.setItem("planningManagement:selectedPlan", JSON.stringify({
+      id: selected._id,
+      title: selected.title || "",
+      serviceId: selected.serviceId || "",
+      serviceName: selected.serviceName || "",
+      year,
+      month,
+    }));
+    window.location.hash = "#/cizelgeler/calisma-cizelgesi";
+  }, [selected]);
 
   // ── Planlama CRUD ─────────────────────────────────────────────────────────
 
   const handleSavePlanning = async (form) => {
     setSaving(true);
     try {
+      let saved = null;
       if (editingPlanning) {
-        await updatePlanning(editingPlanning._id, form);
+        saved = extractPlanning(await updatePlanning(editingPlanning._id, form));
         toast.success("Planlama güncellendi");
       } else {
-        await createPlanning(form);
+        saved = extractPlanning(await createPlanning(form));
         toast.success("Planlama oluşturuldu");
+      }
+      if (saved?._id) {
+        setSelected(saved);
+        setPlannings((prev) => {
+          if (editingPlanning) return prev.map((p) => p._id === saved._id ? saved : p);
+          return [saved, ...prev.filter((p) => p._id !== saved._id)];
+        });
+        if (!editingPlanning) setTasks([]);
       }
       setShowPlanningModal(false);
       setEditingPlanning(null);
-      loadPlannings();
+      await loadPlannings();
     } catch (e) {
       toast.error(e?.message || "Kaydedilemedi");
     } finally {
@@ -720,12 +883,20 @@ export default function PlanningManagementTab() {
           <h1 className="text-[16px] font-semibold text-slate-800 leading-tight">Planlama Kontrol Merkezi</h1>
           <p className="text-[12px] text-slate-400 mt-0.5">Proje planlama ve görev takibi</p>
         </div>
-        <button
-          onClick={() => { setEditingPlanning(null); setShowPlanningModal(true); }}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-[13px] font-medium hover:bg-blue-700 shadow-sm shrink-0"
-        >
-          <Plus size={14} /> Yeni Planlama
-        </button>
+        <div className="relative shrink-0">
+          <button
+            onClick={() => { setEditingPlanning(null); setShowPlanningModal(true); }}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-[13px] font-medium hover:bg-blue-700 shadow-sm"
+          >
+            <Plus size={14} /> Yeni Planlama
+          </button>
+          {isPlanningListEmpty && (
+            <div className="pointer-events-none absolute right-0 top-[calc(100%+10px)] z-20 hidden w-64 rounded-2xl border border-blue-100 bg-white px-4 py-3 text-[12px] text-slate-600 shadow-xl lg:block">
+              <div className="absolute -top-1.5 right-8 h-3 w-3 rotate-45 border-l border-t border-blue-100 bg-white" />
+              <div className="font-semibold text-slate-800">İlk planlamanızı oluşturmak için buraya tıklayın</div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── Satır 2: Secondary controls ── */}
@@ -804,15 +975,17 @@ export default function PlanningManagementTab() {
           {/* Sol: Planlama listesi */}
           <div className="lg:w-80 xl:w-96 flex flex-col gap-2 overflow-y-auto">
             {loading && <div className="text-center py-8 text-slate-400 text-[13px]">Yükleniyor…</div>}
-            {!loading && filtered.length === 0 && (
-              <EmptyState message="Planlama bulunamadı" sub='Sağ üstten "Planlama" ekleyin' />
+            {hasNoFilteredPlanning && (
+              isPlanningListEmpty
+                ? <PlanningListEmptyState />
+                : <EmptyState message="Sonuç bulunamadı" sub="Arama veya filtreleri temizleyin" />
             )}
             {filtered.map((p) => (
               <PlanningCard
                 key={p._id}
                 p={p}
                 selected={selected?._id === p._id}
-                onSelect={setSelected}
+                onSelect={selectPlanning}
                 onEdit={(pl) => { setEditingPlanning(pl); setShowPlanningModal(true); }}
                 onDelete={handleDeletePlanning}
                 deleting={deleting}
@@ -823,15 +996,43 @@ export default function PlanningManagementTab() {
           {/* Sağ: Detay + Görevler */}
           <div className="flex-1 rounded-2xl border bg-white shadow-sm min-h-0 overflow-hidden">
             {selected ? (
-              <DetailPanel
-                planning={selected}
-                tasks={tasks}
-                onAddTask={() => { setEditingTask(null); setShowTaskModal(true); }}
-                onEditTask={(t) => { setEditingTask(t); setShowTaskModal(true); }}
-                onDeleteTask={handleDeleteTask}
-                onStatusChange={handleTaskStatusChange}
-                savingTask={savingTask}
-              />
+              <div className="flex flex-col h-full">
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b bg-slate-50/70">
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-semibold text-slate-800 truncate">{selected.title}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      {(selected.serviceName || "Servis seçilmedi")} · {formatPlanningPeriod(selected)}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => loadTasks(selected._id)}
+                      className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[12px] text-slate-600 hover:bg-slate-50"
+                    >
+                      Detayları Gör
+                    </button>
+                    <button
+                      onClick={openSelectedPlanningSchedule}
+                      className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[12px] font-medium hover:bg-blue-700"
+                    >
+                      Çizelgeyi Düzenle
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 min-h-0">
+                  <DetailPanel
+                    planning={selected}
+                    tasks={tasks}
+                    onAddTask={() => { setEditingTask(null); setShowTaskModal(true); }}
+                    onEditTask={(t) => { setEditingTask(t); setShowTaskModal(true); }}
+                    onDeleteTask={handleDeleteTask}
+                    onStatusChange={handleTaskStatusChange}
+                    savingTask={savingTask}
+                  />
+                </div>
+              </div>
+            ) : isPlanningListEmpty ? (
+              <PlanningDetailPlaceholder />
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-slate-400 py-20">
                 <ChevronRight size={32} className="mb-2 opacity-30" />
@@ -846,7 +1047,15 @@ export default function PlanningManagementTab() {
       {showPlanningModal && (
         <Modal title={editingPlanning ? "Planlamayı Düzenle" : "Yeni Planlama"} onClose={() => { setShowPlanningModal(false); setEditingPlanning(null); }}>
           <PlanningForm
-            initial={editingPlanning ? { title: editingPlanning.title, description: editingPlanning.description || "", startDate: editingPlanning.startDate || "", endDate: editingPlanning.endDate || "", priority: editingPlanning.priority, status: editingPlanning.status } : null}
+            initial={editingPlanning ? {
+              title: editingPlanning.title || "",
+              period: periodFromPlanning(editingPlanning),
+              serviceId: String(editingPlanning.serviceId || ""),
+              description: editingPlanning.description || "",
+              priority: editingPlanning.priority || "medium",
+              status: editingPlanning.status || "draft",
+            } : null}
+            services={services}
             onSave={handleSavePlanning}
             onClose={() => { setShowPlanningModal(false); setEditingPlanning(null); }}
             saving={saving}

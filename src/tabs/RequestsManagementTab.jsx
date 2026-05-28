@@ -23,6 +23,16 @@ const peerTone = {
   rejected: "bg-rose-50 text-rose-600 border border-rose-200",
 };
 const peerLabel = { pending: "Karşı taraf: yanıt bekleniyor", accepted: "Karşı taraf onayladı", rejected: "Karşı taraf reddetti" };
+const statusFilters = new Set(["all", "pending", "approved", "rejected"]);
+
+function initialStatusFilter() {
+  try {
+    const value = new URLSearchParams(window.location.search).get("status") || "all";
+    return statusFilters.has(value) ? value : "all";
+  } catch {
+    return "all";
+  }
+}
 
 function requestMonthDate(r) {
   return (
@@ -75,7 +85,7 @@ function groupRequestsByMonth(list) {
 
 export default function RequestsManagementTab() {
   const [items, setItems] = useState([]);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(initialStatusFilter);
   const [typeFilter, setTypeFilter] = useState("all");
   const [serviceFilter, setServiceFilter] = useState("all");
   const [error, setError] = useState("");
@@ -102,6 +112,13 @@ export default function RequestsManagementTab() {
     const ctrl = new AbortController();
     load(ctrl.signal);
     return () => ctrl.abort();
+  }, [load]);
+
+  // SSE üzerinden herhangi bir talep güncellendiğinde listeyi otomatik yenile
+  useEffect(() => {
+    const handler = () => load();
+    window.addEventListener('request:updated', handler);
+    return () => window.removeEventListener('request:updated', handler);
   }, [load]);
 
   const filtered = useMemo(() => {
