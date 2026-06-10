@@ -15,6 +15,10 @@ const {
 } = require('../services/assignmentSyncService');
 const { requireAuth, sameServiceOrAdmin, requireRole } = require('../middleware/authz');
 const { assignShiftSchema, validate } = require('../middleware/validate');
+const {
+  requireSpecificServiceScope,
+  specificServiceErrorPayload,
+} = require('../utils/serviceScopeGuard');
 const ExcelJS = require('exceljs');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
@@ -559,6 +563,29 @@ function buildAssignQuery(body) {
     day: dateInfo.d,
     dateStr: dateInfo.date,
   };
+}
+
+function normalizeOperationalRole(value) {
+  if (value === undefined || value === null) return '';
+  return String(value)
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function requireSpecificDeleteRole(req, res, next) {
+  const normalized = normalizeOperationalRole(req.body?.role);
+  if (['', 'all', 'all roles', 'tumu', 'tum roller'].includes(normalized)) {
+    return res.status(400).json({
+      ok: false,
+      code: 'SPECIFIC_ROLE_REQUIRED',
+      message: 'A specific role must be selected before deleting assignments.',
+    });
+  }
+  req.body = { ...(req.body || {}), role: String(req.body.role).trim() };
+  return next();
 }
 
 function normalizeAssignPayload(body, query, userId) {
@@ -1137,6 +1164,7 @@ async function upsertMonthly(req, res) {
 
 router.put('/monthly',
   requireAuth,
+  requireSpecificServiceScope,
   (req, res, next) => {
     try {
       const query = buildQuery(req);
@@ -1144,6 +1172,9 @@ router.put('/monthly',
       req.targetServiceId = query.serviceId;
       next();
     } catch (err) {
+      if (err?.code === 'SPECIFIC_SERVICE_REQUIRED') {
+        return res.status(400).json(specificServiceErrorPayload(err));
+      }
       return res.status(400).json({ ok: false, message: err.message || 'Geçersiz istek' });
     }
   },
@@ -1154,6 +1185,7 @@ router.put('/monthly',
 // Backward-compat: eski clientlar /api/schedules POST çağırıyor olabilir
 router.post('/',
   requireAuth,
+  requireSpecificServiceScope,
   (req, res, next) => {
     try {
       const query = buildQuery(req);
@@ -1161,6 +1193,9 @@ router.post('/',
       req.targetServiceId = query.serviceId;
       next();
     } catch (err) {
+      if (err?.code === 'SPECIFIC_SERVICE_REQUIRED') {
+        return res.status(400).json(specificServiceErrorPayload(err));
+      }
       return res.status(400).json({ ok: false, message: err.message || 'Geçersiz istek' });
     }
   },
@@ -1170,6 +1205,7 @@ router.post('/',
 
 router.post('/assign',
   requireAuth,
+  requireSpecificServiceScope,
   validate(assignShiftSchema),
   (req, res, next) => {
     try {
@@ -1179,6 +1215,9 @@ router.post('/assign',
       req.targetServiceId = query.serviceId;
       next();
     } catch (err) {
+      if (err?.code === 'SPECIFIC_SERVICE_REQUIRED') {
+        return res.status(400).json(specificServiceErrorPayload(err));
+      }
       return res.status(400).json({ ok: false, message: err.message || 'Geçersiz istek' });
     }
   },
@@ -1456,6 +1495,8 @@ router.post('/assign',
 
 router.delete('/assign',
   requireAuth,
+  requireSpecificServiceScope,
+  requireSpecificDeleteRole,
   (req, res, next) => {
     try {
       const query = buildAssignQuery(req.body || {});
@@ -1464,40 +1505,36 @@ router.delete('/assign',
       req.targetServiceId = query.serviceId;
       next();
     } catch (err) {
+      if (err?.code === 'SPECIFIC_SERVICE_REQUIRED') {
+        return res.status(400).json(specificServiceErrorPayload(err));
+      }
       return res.status(400).json({ ok: false, message: err.message || 'Geçersiz istek' });
     }
   },
   sameServiceOrAdmin,
   async (req, res) => {
     try {
-      const base = {
+      const exactQuery = Object.freeze({
         hospitalId: req.hospitalId,
         sectionId: req.assignQuery.sectionId,
+        serviceId: req.assignQuery.serviceId,
+        role: req.assignQuery.role,
         year: req.assignQuery.year,
         month: req.assignQuery.month,
-      };
-      if (!base.hospitalId) {
+      });
+      if (!exactQuery.hospitalId) {
         return res.status(400).json({ ok: false, message: 'hospitalId eksik' });
       }
-      const serviceId = req.assignQuery.serviceId || '';
-      const role = req.assignQuery.role || '';
-      const candidates = [
-        { ...base, serviceId, role },
-        { ...base, serviceId, role: '' },
-        { ...base, serviceId: '', role },
-        { ...base, serviceId: '', role: '' },
-      ];
 
-      let doc = null;
-      let query = null;
-      for (const q of candidates) {
-        const found = await MonthlySchedule.findOne(q).lean();
-        if (found) {
-          doc = found;
-          query = q;
-          break;
-        }
+      const doc = await MonthlySchedule.findOne(exactQuery).lean();
+      if (!doc) {
+        return res.status(404).json({
+          ok: false,
+          code: 'SCHEDULE_NOT_FOUND_IN_SCOPE',
+          message: 'No schedule was found in the requested scope.',
+        });
       }
+
       const attemptRemove = async (targetDoc, targetQuery) => {
         const data = targetDoc?.data && typeof targetDoc.data === 'object' ? targetDoc.data : {};
         let assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
@@ -1562,80 +1599,43 @@ router.delete('/assign',
         };
       };
 
-      if (doc && query) {
-        const res1 = await attemptRemove(doc, query);
-        if (res1.removed) {
-          const removedItem = res1.removedAssignment || null;
-          try {
-            await removeAssignment({
-              scope: {
-                ...query,
-                sourceScheduleId: doc?._id || null,
-              },
-              assignment: removedItem || req.assignPayload,
-            });
-          } catch (syncErr) {
-            console.error('[assignmentSync][unassign-primary] ERR:', syncErr);
-          }
-          const { removedAssignment: _ignoredRemovedAssignment1, ...resPayload1 } = res1;
-          const changedByName = req.user?.name || req.user?.email || 'Yetkili';
-          void sendShiftChanged({
-            personId: req.assignPayload?.personId || removedItem?.personId,
-            personName: req.assignPayload?.personName || removedItem?.personName || '',
-            date: req.assignQuery?.dateStr,
-            previousShift: removedItem?.shiftCode || removedItem?.shiftId || req.assignPayload?.shiftCode || req.assignPayload?.shiftId || '-',
-            newShift: '-',
-            roleLabel: removedItem?.roleLabel || req.assignPayload?.roleLabel || '',
-            note: req.assignPayload?.note || removedItem?.note || '',
-            changedByName,
-            action: 'removed',
-          }).catch((notifyErr) => {
-            console.error('[notify][shift-removed] ERR:', notifyErr?.message || notifyErr);
-          });
-          return res.json({ ok: true, removed: true, ...resPayload1 });
-        }
+      const result = await attemptRemove(doc, exactQuery);
+      if (!result.removed) {
+        return res.status(404).json({
+          ok: false,
+          code: 'ASSIGNMENT_NOT_FOUND_IN_SCOPE',
+          message: 'No matching assignment was found in the requested schedule scope.',
+        });
       }
 
-      // Son çare: aynı ay için tüm schedule'larda ara
-      const allDocs = await MonthlySchedule.find(base).lean();
-      for (const d of allDocs) {
-        const res2 = await attemptRemove(d, { _id: d._id });
-        if (res2.removed) {
-          const removedItem = res2.removedAssignment || null;
-          try {
-            await removeAssignment({
-              scope: {
-                hospitalId: base.hospitalId,
-                sectionId: String(d?.sectionId || base.sectionId || '').trim(),
-                serviceId: d?.serviceId != null ? String(d.serviceId).trim() : '',
-                role: d?.role != null ? String(d.role).trim() : '',
-                sourceScheduleId: d?._id || null,
-              },
-              assignment: removedItem || req.assignPayload,
-            });
-          } catch (syncErr) {
-            console.error('[assignmentSync][unassign-fallback] ERR:', syncErr);
-          }
-          const { removedAssignment: _ignoredRemovedAssignment2, ...resPayload2 } = res2;
-          const changedByName = req.user?.name || req.user?.email || 'Yetkili';
-          void sendShiftChanged({
-            personId: req.assignPayload?.personId || removedItem?.personId,
-            personName: req.assignPayload?.personName || removedItem?.personName || '',
-            date: req.assignQuery?.dateStr,
-            previousShift: removedItem?.shiftCode || removedItem?.shiftId || req.assignPayload?.shiftCode || req.assignPayload?.shiftId || '-',
-            newShift: '-',
-            roleLabel: removedItem?.roleLabel || req.assignPayload?.roleLabel || '',
-            note: req.assignPayload?.note || removedItem?.note || '',
-            changedByName,
-            action: 'removed',
-          }).catch((notifyErr) => {
-            console.error('[notify][shift-removed] ERR:', notifyErr?.message || notifyErr);
-          });
-          return res.json({ ok: true, removed: true, ...resPayload2 });
-        }
+      const removedItem = result.removedAssignment || null;
+      try {
+        await removeAssignment({
+          scope: {
+            ...exactQuery,
+            sourceScheduleId: doc?._id || null,
+          },
+          assignment: removedItem || req.assignPayload,
+        });
+      } catch (syncErr) {
+        console.error('[assignmentSync][unassign-primary] ERR:', syncErr);
       }
-
-      return res.json({ ok: true, assignments: doc?.data?.assignments || [], removed: false });
+      const { removedAssignment: _ignoredRemovedAssignment, ...responsePayload } = result;
+      const changedByName = req.user?.name || req.user?.email || 'Yetkili';
+      void sendShiftChanged({
+        personId: req.assignPayload?.personId || removedItem?.personId,
+        personName: req.assignPayload?.personName || removedItem?.personName || '',
+        date: req.assignQuery?.dateStr,
+        previousShift: removedItem?.shiftCode || removedItem?.shiftId || req.assignPayload?.shiftCode || req.assignPayload?.shiftId || '-',
+        newShift: '-',
+        roleLabel: removedItem?.roleLabel || req.assignPayload?.roleLabel || '',
+        note: req.assignPayload?.note || removedItem?.note || '',
+        changedByName,
+        action: 'removed',
+      }).catch((notifyErr) => {
+        console.error('[notify][shift-removed] ERR:', notifyErr?.message || notifyErr);
+      });
+      return res.json({ ok: true, removed: true, ...responsePayload });
     } catch (err) {
       console.error('[DELETE /api/schedules/assign] ERR:', err);
       return res.status(500).json({ ok: false, message: 'Sunucu hatası' });
@@ -1852,7 +1852,7 @@ router.get('/export/ical', requireAuth, requireRole('admin', 'authorized'), asyn
     res.setHeader('Content-Disposition', `attachment; filename="nobetler-${year}-${String(month).padStart(2,'0')}.ics"`);
     return res.send(icsContent);
   } catch (err) {
-    return res.status(500).json({ ok: false, message: err?.message || 'iCal oluşturma hatası' });
+    return res.status(500).json({ ok: false, message: safeMessage(err, 'iCal oluşturma hatası') });
   }
 });
 
@@ -1924,7 +1924,7 @@ router.get('/export/excel', requireAuth, requireRole('admin', 'authorized'), asy
     await wb.xlsx.write(res);
     return res.end();
   } catch (err) {
-    return res.status(500).json({ ok: false, message: err?.message || 'Excel oluşturma hatası' });
+    return res.status(500).json({ ok: false, message: safeMessage(err, 'Excel oluşturma hatası') });
   }
 });
 
@@ -2068,7 +2068,7 @@ router.get('/export/excel-ik', requireAuth, requireRole('admin', 'authorized'), 
     await wb.xlsx.write(res);
     return res.end();
   } catch (err) {
-    return res.status(500).json({ ok: false, message: err?.message || 'İK Excel oluşturma hatası' });
+    return res.status(500).json({ ok: false, message: safeMessage(err, 'İK Excel oluşturma hatası') });
   }
 });
 
@@ -2265,7 +2265,7 @@ router.post('/publish-notify',
         groupStats: result.groupStats,
       });
     } catch (err) {
-      return res.status(500).json({ ok: false, message: err?.message || 'Bildirim gönderilemedi' });
+      return res.status(500).json({ ok: false, message: safeMessage(err, 'Bildirim gönderilemedi') });
     }
   }
 );
@@ -2304,6 +2304,6 @@ router.get('/generated',
     if (!doc) return res.json({ ok: true, data: null });
     res.json({ ok: true, data: doc });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    res.status(500).json({ ok: false, message: safeMessage(e, 'Sunucu hatası') });
   }
 });

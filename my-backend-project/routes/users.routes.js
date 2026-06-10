@@ -8,6 +8,7 @@ const User    = require('../models/User');
 const Person  = require('../models/Person');
 const { requireAuth, requireRole } = require('../middleware/authz');
 const { withHospitalFilter } = require('../middleware/hospital');
+const { isEmail, isTc, isValidRole, isObjectId, hasPollutionKeys } = require('../middleware/inputGuards');
 const { sendMail, isConfigured } = require('../utils/mailer');
 
 const ExcelJS = require('exceljs');
@@ -295,6 +296,9 @@ router.post('/quick-create', requireAdminOrStaff, async (req, res) => {
 
     const callerRole = String(req.user?.role || '').toLowerCase();
     const requestedRole = role || 'user';
+    if (role && !isValidRole(role)) {
+      return res.status(400).json({ message: 'Geçersiz rol değeri' });
+    }
     // staff cannot create admin or superadmin accounts
     if (callerRole === 'staff' && ['admin', 'superadmin', 'authorized'].includes(requestedRole)) {
       return res.status(403).json({ message: 'Bu rolü atama yetkiniz yok' });
@@ -412,7 +416,10 @@ router.patch('/:id/profile', requireAuth, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
 
     if (phone !== undefined) user.phone = phone;
-    if (email !== undefined) user.email = email;
+    if (email !== undefined) {
+      if (email && !isEmail(email)) return res.status(400).json({ error: 'Geçersiz e-posta formatı' });
+      user.email = email;
+    }
     if (serviceId !== undefined && isAdminOrStaff) {
       const sid = String(serviceId || '').trim();
       user.serviceIds = sid ? [sid] : [];
@@ -454,7 +461,10 @@ router.patch('/:id/identity', requireAdminOrStaff, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
 
     if (name) user.name = String(name).trim();
-    if (tc) user.tc = String(tc).trim();
+    if (tc) {
+      if (!isTc(tc)) return res.status(400).json({ error: 'TC kimlik numarası 11 haneli olmalı' });
+      user.tc = String(tc).trim();
+    }
     await user.save();
 
     return res.json({ ok: true });
@@ -503,10 +513,12 @@ router.post('/', requireAuth, async (req, res) => {
   try {
     const me = req.user; // {_id, role, serviceIds: [...]}
     const body = req.body || {};
+    if (hasPollutionKeys(body)) return res.status(400).json({ error: 'Geçersiz istek gövdesi' });
     const errors = validate(body);
     if (errors.length) return res.status(400).json({ error: errors.join(', ') });
 
     const { name, tc, phone, email, serviceId, role, password } = body;
+    if (role && !isValidRole(role)) return res.status(400).json({ error: 'Geçersiz rol değeri' });
 
     // Yetki kontrolü
     const isAdmin = me.role === 'admin';

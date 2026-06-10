@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const { requireRole } = require(path.join(__dirname, '..', 'middleware', 'authz.js'));
+const { safeErr, isObjectId, isSafeName, isTimeFormat, hasPollutionKeys } = require(path.join(__dirname, '..', 'middleware', 'inputGuards.js'));
 
 // Models
 const WorkArea = require(path.join(__dirname, '..', 'models', 'WorkArea.js'));
@@ -20,7 +21,7 @@ router.get('/work-areas', async (req, res) => {
     const areas = await WorkArea.find(withHospitalFilter(req, {})).sort({ createdAt: -1 }).lean();
     res.json({ ok: true, data: areas });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
@@ -31,15 +32,16 @@ router.get('/work-areas/:id', async (req, res) => {
     if (!area) return res.status(404).json({ message: 'Çalışma alanı bulunamadı' });
     res.json({ ok: true, data: area });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
 // POST new work area
 router.post('/work-areas', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
+    if (hasPollutionKeys(req.body)) return res.status(400).json({ message: 'Geçersiz istek gövdesi' });
     const { name, description, color } = req.body;
-    if (!name) return res.status(400).json({ message: 'İsim gerekli' });
+    if (!isSafeName(name, 200)) return res.status(400).json({ message: 'İsim gerekli (en fazla 200 karakter)' });
     
     const area = await WorkArea.create(withHospitalFilter(req, {
       name: name.trim(),
@@ -49,14 +51,17 @@ router.post('/work-areas', requireRole('admin', 'yetkili'), async (req, res) => 
     
     res.status(201).json({ ok: true, data: area });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
 // PUT update work area
 router.put('/work-areas/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
+    if (!isObjectId(req.params.id)) return res.status(400).json({ message: 'Geçersiz ID' });
+    if (hasPollutionKeys(req.body)) return res.status(400).json({ message: 'Geçersiz istek gövdesi' });
     const { name, description, color, status } = req.body;
+    if (name !== undefined && !isSafeName(name, 200)) return res.status(400).json({ message: 'İsim en fazla 200 karakter olabilir' });
     const area = await WorkArea.findOneAndUpdate(
       withHospitalFilter(req, { _id: req.params.id }),
       { name, description, color, status, updatedAt: new Date() },
@@ -66,18 +71,19 @@ router.put('/work-areas/:id', requireRole('admin', 'yetkili'), async (req, res) 
     if (!area) return res.status(404).json({ message: 'Çalışma alanı bulunamadı' });
     res.json({ ok: true, data: area });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
 // DELETE work area
 router.delete('/work-areas/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
+    if (!isObjectId(req.params.id)) return res.status(400).json({ message: 'Geçersiz ID' });
     const area = await WorkArea.findOneAndDelete(withHospitalFilter(req, { _id: req.params.id }));
     if (!area) return res.status(404).json({ message: 'Çalışma alanı bulunamadı' });
     res.json({ ok: true, message: 'Silindi' });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
@@ -92,7 +98,7 @@ router.get('/working-hours', async (req, res) => {
       .lean();
     res.json({ ok: true, data: hours });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
@@ -105,16 +111,19 @@ router.get('/working-hours/:id', async (req, res) => {
     if (!hours) return res.status(404).json({ message: 'Çalışma saati bulunamadı' });
     res.json({ ok: true, data: hours });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
 // POST new working hours
 router.post('/working-hours', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
+    if (hasPollutionKeys(req.body)) return res.status(400).json({ message: 'Geçersiz istek gövdesi' });
     const { name, startTime, endTime, workAreaId, isDefault } = req.body;
-    if (!name || !startTime || !endTime) {
-      return res.status(400).json({ message: 'İsim, başlangıç ve bitiş saati gerekli' });
+    if (!isSafeName(name, 200)) return res.status(400).json({ message: 'İsim gerekli (en fazla 200 karakter)' });
+    if (!startTime || !endTime) return res.status(400).json({ message: 'Başlangıç ve bitiş saati gerekli' });
+    if (!isTimeFormat(startTime) || !isTimeFormat(endTime)) {
+      return res.status(400).json({ message: 'Saat formatı HH:MM olmalı' });
     }
     
     const hours = await WorkingHours.create(withHospitalFilter(req, {
@@ -127,14 +136,19 @@ router.post('/working-hours', requireRole('admin', 'yetkili'), async (req, res) 
     
     res.status(201).json({ ok: true, data: hours });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
 // PUT update working hours
 router.put('/working-hours/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
+    if (!isObjectId(req.params.id)) return res.status(400).json({ message: 'Geçersiz ID' });
+    if (hasPollutionKeys(req.body)) return res.status(400).json({ message: 'Geçersiz istek gövdesi' });
     const { name, startTime, endTime, workAreaId, isDefault, status } = req.body;
+    if (name !== undefined && !isSafeName(name, 200)) return res.status(400).json({ message: 'İsim en fazla 200 karakter olabilir' });
+    if (startTime !== undefined && !isTimeFormat(startTime)) return res.status(400).json({ message: 'Başlangıç saati HH:MM formatında olmalı' });
+    if (endTime   !== undefined && !isTimeFormat(endTime))   return res.status(400).json({ message: 'Bitiş saati HH:MM formatında olmalı' });
     const hours = await WorkingHours.findOneAndUpdate(
       withHospitalFilter(req, { _id: req.params.id }),
       { name, startTime, endTime, workAreaId, isDefault, status, updatedAt: new Date() },
@@ -144,18 +158,19 @@ router.put('/working-hours/:id', requireRole('admin', 'yetkili'), async (req, re
     if (!hours) return res.status(404).json({ message: 'Çalışma saati bulunamadı' });
     res.json({ ok: true, data: hours });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
 // DELETE working hours
 router.delete('/working-hours/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
+    if (!isObjectId(req.params.id)) return res.status(400).json({ message: 'Geçersiz ID' });
     const hours = await WorkingHours.findOneAndDelete(withHospitalFilter(req, { _id: req.params.id }));
     if (!hours) return res.status(404).json({ message: 'Çalışma saati bulunamadı' });
     res.json({ ok: true, message: 'Silindi' });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
@@ -167,7 +182,7 @@ router.get('/leave-types', async (req, res) => {
     const types = await LeaveType.find(withHospitalFilter(req, {})).sort({ createdAt: -1 }).lean();
     res.json({ ok: true, data: types });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
@@ -178,15 +193,16 @@ router.get('/leave-types/:id', async (req, res) => {
     if (!type) return res.status(404).json({ message: 'İzin türü bulunamadı' });
     res.json({ ok: true, data: type });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
 // POST new leave type
 router.post('/leave-types', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
+    if (hasPollutionKeys(req.body)) return res.status(400).json({ message: 'Geçersiz istek gövdesi' });
     const { name, description, color, category, maxDaysPerYear, paidLeave } = req.body;
-    if (!name) return res.status(400).json({ message: 'İsim gerekli' });
+    if (!isSafeName(name, 200)) return res.status(400).json({ message: 'İsim gerekli (en fazla 200 karakter)' });
     
     const type = await LeaveType.create(withHospitalFilter(req, {
       name: name.trim(),
@@ -199,14 +215,17 @@ router.post('/leave-types', requireRole('admin', 'yetkili'), async (req, res) =>
     
     res.status(201).json({ ok: true, data: type });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
 // PUT update leave type
 router.put('/leave-types/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
+    if (!isObjectId(req.params.id)) return res.status(400).json({ message: 'Geçersiz ID' });
+    if (hasPollutionKeys(req.body)) return res.status(400).json({ message: 'Geçersiz istek gövdesi' });
     const { name, description, color, category, maxDaysPerYear, paidLeave } = req.body;
+    if (name !== undefined && !isSafeName(name, 200)) return res.status(400).json({ message: 'İsim en fazla 200 karakter olabilir' });
     const updates = { updatedAt: new Date() };
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
@@ -224,18 +243,19 @@ router.put('/leave-types/:id', requireRole('admin', 'yetkili'), async (req, res)
     if (!type) return res.status(404).json({ message: 'İzin türü bulunamadı' });
     res.json({ ok: true, data: type });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
 // DELETE leave type
 router.delete('/leave-types/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
+    if (!isObjectId(req.params.id)) return res.status(400).json({ message: 'Geçersiz ID' });
     const type = await LeaveType.findOneAndDelete(withHospitalFilter(req, { _id: req.params.id }));
     if (!type) return res.status(404).json({ message: 'İzin türü bulunamadı' });
     res.json({ ok: true, message: 'Silindi' });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
@@ -257,7 +277,7 @@ router.get('/calendar', async (req, res) => {
     
     res.json({ ok: true, data: settings });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
@@ -270,15 +290,18 @@ router.get('/calendar/:id', async (req, res) => {
     if (!setting) return res.status(404).json({ message: 'Takvim ayarı bulunamadı' });
     res.json({ ok: true, data: setting });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
 // POST new calendar setting
 router.post('/calendar', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
+    if (hasPollutionKeys(req.body)) return res.status(400).json({ message: 'Geçersiz istek gövdesi' });
     const { name, date, type, isHoliday, startDate, endDate } = req.body;
-    if (!name || !date) return res.status(400).json({ message: 'İsim ve tarih gerekli' });
+    if (!isSafeName(name, 200)) return res.status(400).json({ message: 'İsim gerekli (en fazla 200 karakter)' });
+    if (!date) return res.status(400).json({ message: 'Tarih gerekli' });
+    if (isNaN(new Date(date).getTime())) return res.status(400).json({ message: 'Geçersiz tarih formatı' });
     
     const dateObj = new Date(date);
     const setting = await CalendarSetting.create(withHospitalFilter(req, {
@@ -295,14 +318,18 @@ router.post('/calendar', requireRole('admin', 'yetkili'), async (req, res) => {
     
     res.status(201).json({ ok: true, data: setting });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
 // PUT update calendar setting
 router.put('/calendar/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
+    if (!isObjectId(req.params.id)) return res.status(400).json({ message: 'Geçersiz ID' });
+    if (hasPollutionKeys(req.body)) return res.status(400).json({ message: 'Geçersiz istek gövdesi' });
     const { name, date, type, isHoliday, startDate, endDate } = req.body;
+    if (name !== undefined && !isSafeName(name, 200)) return res.status(400).json({ message: 'İsim en fazla 200 karakter olabilir' });
+    if (date !== undefined && isNaN(new Date(date).getTime())) return res.status(400).json({ message: 'Geçersiz tarih formatı' });
     const updates = { updatedAt: new Date() };
     if (name !== undefined) updates.name = name;
     if (type !== undefined) updates.type = type;
@@ -325,18 +352,19 @@ router.put('/calendar/:id', requireRole('admin', 'yetkili'), async (req, res) =>
     if (!setting) return res.status(404).json({ message: 'Takvim ayarı bulunamadı' });
     res.json({ ok: true, data: setting });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
 // DELETE calendar setting
 router.delete('/calendar/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
+    if (!isObjectId(req.params.id)) return res.status(400).json({ message: 'Geçersiz ID' });
     const setting = await CalendarSetting.findOneAndDelete(withHospitalFilter(req, { _id: req.params.id }));
     if (!setting) return res.status(404).json({ message: 'Takvim ayarı bulunamadı' });
     res.json({ ok: true, message: 'Silindi' });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
@@ -348,7 +376,7 @@ router.get('/request-types', async (req, res) => {
     const types = await RequestType.find(withHospitalFilter(req, {})).sort({ createdAt: -1 }).lean();
     res.json({ ok: true, data: types });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
@@ -359,15 +387,16 @@ router.get('/request-types/:id', async (req, res) => {
     if (!type) return res.status(404).json({ message: 'İstek türü bulunamadı' });
     res.json({ ok: true, data: type });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
 // POST new request type
 router.post('/request-types', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
+    if (hasPollutionKeys(req.body)) return res.status(400).json({ message: 'Geçersiz istek gövdesi' });
     const { name, description, category, requiresApproval } = req.body;
-    if (!name) return res.status(400).json({ message: 'İsim gerekli' });
+    if (!isSafeName(name, 200)) return res.status(400).json({ message: 'İsim gerekli (en fazla 200 karakter)' });
     
     const type = await RequestType.create(withHospitalFilter(req, {
       name: name.trim(),
@@ -378,14 +407,17 @@ router.post('/request-types', requireRole('admin', 'yetkili'), async (req, res) 
     
     res.status(201).json({ ok: true, data: type });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
 // PUT update request type
 router.put('/request-types/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
+    if (!isObjectId(req.params.id)) return res.status(400).json({ message: 'Geçersiz ID' });
+    if (hasPollutionKeys(req.body)) return res.status(400).json({ message: 'Geçersiz istek gövdesi' });
     const { name, description, category, requiresApproval } = req.body;
+    if (name !== undefined && !isSafeName(name, 200)) return res.status(400).json({ message: 'İsim en fazla 200 karakter olabilir' });
     const updates = { updatedAt: new Date() };
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
@@ -401,18 +433,19 @@ router.put('/request-types/:id', requireRole('admin', 'yetkili'), async (req, re
     if (!type) return res.status(404).json({ message: 'İstek türü bulunamadı' });
     res.json({ ok: true, data: type });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
 // DELETE request type
 router.delete('/request-types/:id', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
+    if (!isObjectId(req.params.id)) return res.status(400).json({ message: 'Geçersiz ID' });
     const type = await RequestType.findOneAndDelete(withHospitalFilter(req, { _id: req.params.id }));
     if (!type) return res.status(404).json({ message: 'İstek türü bulunamadı' });
     res.json({ ok: true, message: 'Silindi' });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: safeErr(e, 'İşlem başarısız') });
   }
 });
 
