@@ -35,6 +35,10 @@ import { checkLeaveShiftConflict, removeShiftOnDay } from "../utils/conflictChec
 import useActiveYM from "../hooks/useActiveYM.js";
 import useServiceScope from "../hooks/useServiceScope.js"; // ⬅️ YENİ: servis kapsamı
 import { useAppStore } from "../state/appStore";
+import {
+  OPERATIONAL_SERVICE_WARNING,
+  isSpecificServiceSelected,
+} from "../utils/serviceScope.js";
 
 /* =========================================================
    INLINE SCHEDULER — “Liste Oluştur” için yedek algoritma
@@ -550,18 +554,29 @@ function SmartResetButton({ onReset, hasData, sectionTitle }) {
    Standart Çizelge Aksiyon Şeridi
 ========================= */
 // 4 sekmenin tamamında aynı buton sırası ve boyutları; handler'lar sekmeye göre değişir.
-function SectionHeader({ title, onAi, onBuild, onExport, onImport, onReset, building = false }) {
+function SectionHeader({
+  title,
+  onAi,
+  onBuild,
+  onExport,
+  onImport,
+  onReset,
+  building = false,
+  operationalDisabled = false,
+}) {
   const btn = "inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-medium transition-colors";
   const hasData = !!onReset;
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
       <h2 className="text-[15px] font-semibold text-slate-800">{title}</h2>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={onAi} disabled={!onAi}
+        <button type="button" onClick={onAi} disabled={!onAi || operationalDisabled}
+          title={operationalDisabled ? OPERATIONAL_SERVICE_WARNING : undefined}
           className={`${btn} bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-30 disabled:cursor-not-allowed`}>
           <Sparkles size={13} /> Yapay Zeka
         </button>
-        <button type="button" onClick={building ? undefined : onBuild} disabled={!onBuild || building}
+        <button type="button" onClick={building ? undefined : onBuild} disabled={!onBuild || building || operationalDisabled}
+          title={operationalDisabled ? OPERATIONAL_SERVICE_WARNING : undefined}
           className={`${btn} border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed`}>
           {building
             ? <><Loader2 size={13} className="animate-spin" /> Oluşturuluyor…</>
@@ -599,6 +614,7 @@ function SectionContent({
   activeRole,
   servicesById,
 }) {
+  const isSpecificService = isSpecificServiceSelected(selectedServiceId);
   const editorRef = useRef(null);
   const monthlyRef = useRef(null);
   const templateFileRef = useRef(null);
@@ -615,13 +631,26 @@ function SectionContent({
   const [quickReplaceKey, setQuickReplaceKey] = useState(0);
   useEffect(() => {
     const handler = (e) => {
+      if (!isSpecificService) {
+        toast.warning("Specific service required", {
+          description: OPERATIONAL_SERVICE_WARNING,
+        });
+        return;
+      }
       setQuickReplaceSelection(e.detail || null);
       setQuickReplaceKey((k) => k + 1);
       setQuickReplaceOpen(true);
     };
     window.addEventListener("quick-replace:open", handler);
     return () => window.removeEventListener("quick-replace:open", handler);
-  }, []);
+  }, [isSpecificService]);
+
+  useEffect(() => {
+    if (!isSpecificService) {
+      setQuickReplaceOpen(false);
+      setQuickReplaceSelection(null);
+    }
+  }, [isSpecificService]);
 
   // DutyRowsEditor'ı yeniden yüklemeye zorlar:
   // - schedule:saved   → PlanTab yeni plan üretince
@@ -681,9 +710,16 @@ function SectionContent({
     return s;
   }, [swapLog, year, month]);
   const handleBuild = useCallback(() => {
+    if (!isSpecificService) {
+      toast.warning("Specific service required", {
+        description: OPERATIONAL_SERVICE_WARNING,
+      });
+      return undefined;
+    }
     if (editorRef.current?.build) return editorRef.current.build();
     toast.error("Çizelge bileşeni yüklenemedi", { description: "Sayfayı yenileyin ve tekrar deneyin." });
-  }, []);
+    return undefined;
+  }, [isSpecificService]);
 
   // Toplu İzin export (gerçek)
   const handleExportLeaves = useCallback(async () => {
@@ -887,9 +923,13 @@ function SectionContent({
             {SwapLogBanner}
             <SectionHeader
               title="Çalışma Çizelgesi"
-              onAi={() => editorRef.current?.ai?.() ?? noop()}
+              onAi={() => {
+                if (!isSpecificService) return undefined;
+                return editorRef.current?.ai?.() ?? noop();
+              }}
               onBuild={handleBuild}
               onExport={() => editorRef.current?.exportExcel?.() ?? noop()}
+              operationalDisabled={!isSpecificService}
             />
             <div className="rounded-lg border bg-white p-4">
               <DutyRowsEditor
@@ -910,7 +950,7 @@ function SectionContent({
           </div>
           <QuickReplacePanel
             key={quickReplaceKey}
-            open={quickReplaceOpen}
+            open={isSpecificService && quickReplaceOpen}
             onClose={() => setQuickReplaceOpen(false)}
             sectionId={sectionId}
             serviceId={selectedServiceId || ""}

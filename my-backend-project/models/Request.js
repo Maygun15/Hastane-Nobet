@@ -18,11 +18,14 @@ const RequestSchema = new mongoose.Schema({
   fromPersonId: { type: mongoose.Schema.Types.ObjectId, ref: 'Person', default: null },
   fromName:     { type: String, default: '' },
   serviceId:    { type: String, default: '' },
+  role:         { type: String, default: '', trim: true },
   targetDate:   { type: String, default: '' },   // YYYY-MM-DD
   targetDateEnd:{ type: String, default: '' },   // izin aralığı için
   swapWithPersonId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Person', default: null },
 
   // Takas talebi için hangi vardiyaların değiştirileceği
+  swapMyAssignmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Assignment', default: null },
+  swapTargetAssignmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Assignment', default: null },
   swapSectionId:      { type: String, default: '' },
   swapMyDate:         { type: String, default: '' },   // YYYY-MM-DD
   swapMyShiftId:      { type: String, default: '' },   // shift kodu

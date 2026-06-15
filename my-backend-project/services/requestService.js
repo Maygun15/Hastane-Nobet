@@ -13,7 +13,10 @@ const { broadcastAll }                 = require('./sseService');
 const { computeMonthlyFairnessScores } = require('./fairnessEngine');
 const { withHospitalFilter }           = require('../middleware/hospital');
 const { validateAssignment }           = require('../utils/rulesValidator');
-const { replaceAssignmentsForSchedule } = require('./assignmentSyncService');
+const {
+  assertExactProjectionScope,
+  replaceAssignmentsForSchedule,
+} = require('./assignmentSyncService');
 const {
   sendLeaveApproved,
   sendLeaveRejected,
@@ -56,17 +59,109 @@ function isNightShiftDef(def) {
   return sh >= 22 || eh < sh;
 }
 
+function createSwapScopeAmbiguousError() {
+  const error = new Error('The swap request does not contain a complete schedule scope.');
+  error.code = 'SWAP_SCOPE_AMBIGUOUS';
+  error.status = 409;
+  error.statusCode = 409;
+  return error;
+}
+
+function createScheduleNotFoundInScopeError() {
+  const error = new Error('No schedule was found in the requested scope.');
+  error.code = 'SCHEDULE_NOT_FOUND_IN_SCOPE';
+  error.status = 404;
+  error.statusCode = 404;
+  return error;
+}
+
+function createProjectionSyncFailedError(cause) {
+  const error = new Error('Assignment projection synchronization failed after the schedule was updated.');
+  error.code = 'PROJECTION_SYNC_FAILED';
+  error.status = 500;
+  error.statusCode = 500;
+  error.sourceMutationApplied = true;
+  error.cause = cause;
+  return error;
+}
+
+function normalizeSwapScopeValue(value) {
+  if (value === undefined || value === null) return '';
+  return String(value)
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseSwapDate(value) {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() + 1 !== month ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return { date: raw, year, month };
+}
+
+function validateSwapOperationalScope(request = {}) {
+  const hospitalId = request?.hospitalId || null;
+  const sectionId = String(request?.swapSectionId || '').trim();
+  const serviceId = String(request?.serviceId || '').trim();
+  const role = String(request?.role || '').trim();
+  const normalizedService = normalizeSwapScopeValue(serviceId);
+  const normalizedRole = normalizeSwapScopeValue(role);
+  const myDate = parseSwapDate(request?.swapMyDate);
+  const targetDate = parseSwapDate(request?.swapTargetDate);
+  const invalidServices = new Set(['', 'all', 'all services', 'tumu', 'tum servisler']);
+  const invalidRoles = new Set(['', 'all', 'all roles', 'tumu', 'tum roller']);
+
+  if (
+    !hospitalId ||
+    !sectionId ||
+    invalidServices.has(normalizedService) ||
+    invalidRoles.has(normalizedRole) ||
+    !myDate ||
+    !targetDate ||
+    myDate.year !== targetDate.year ||
+    myDate.month !== targetDate.month
+  ) {
+    throw createSwapScopeAmbiguousError();
+  }
+
+  return Object.freeze({
+    hospitalId,
+    sectionId,
+    serviceId,
+    role,
+    year: myDate.year,
+    month: myDate.month,
+  });
+}
+
+async function findExactSwapSchedule(scope, projection = null) {
+  let query = MonthlySchedule.findOne(scope);
+  if (projection) query = query.select(projection);
+  const doc = await query.lean();
+  if (!doc) throw createScheduleNotFoundInScopeError();
+  return doc;
+}
+
 /* ─── Takas çakışma kontrolü ─── */
-async function checkSwapConflicts(request) {
+async function checkSwapConflicts(request, operationalScope = validateSwapOperationalScope(request)) {
   const { fromPersonId, fromName, swapWithPersonId, swapSectionId,
     swapMyDate, swapMyShiftId, swapTargetDate, swapTargetShiftId } = request;
   if (!fromPersonId || !swapWithPersonId || !swapMyDate || !swapTargetDate) return null;
 
-  function ym(d) { const m = String(d).slice(0, 10).match(/^(\d{4})-(\d{2})/); return m ? { year: Number(m[1]), month: Number(m[2]) } : null; }
-  const myYm = ym(swapMyDate); const tYm = ym(swapTargetDate);
-  if (!myYm || !tYm) return null;
-
-  const sectionId = String(swapSectionId || '');
   const fromPid   = String(fromPersonId);
   const toPid     = String(swapWithPersonId);
   const myDate    = String(swapMyDate).slice(0, 10);
@@ -81,14 +176,8 @@ async function checkSwapConflicts(request) {
   const fromDisplayName = fromPerson?.name || fromName || 'Talep eden';
   const toDisplayName   = toPerson?.name || 'Diğer personel';
 
-  const docs = await Promise.all([
-    MonthlySchedule.findOne({ sectionId, year: myYm.year, month: myYm.month }).lean(),
-    myYm.year !== tYm.year || myYm.month !== tYm.month
-      ? MonthlySchedule.findOne({ sectionId, year: tYm.year, month: tYm.month }).lean()
-      : null,
-  ]);
-  const myDoc = docs[0];
-  const tDoc  = docs[1] || myDoc;
+  const myDoc = await findExactSwapSchedule(operationalScope);
+  const tDoc = myDoc;
 
   function getDefs(doc) { return Array.isArray(doc?.data?.defs) ? doc.data.defs : []; }
 
@@ -168,25 +257,25 @@ async function checkSwapConflicts(request) {
 }
 
 /* ─── Takas kural simülasyonu ─── */
-async function validateSwap(request) {
+async function validateSwap(request, operationalScope = validateSwapOperationalScope(request)) {
   const {
     fromPersonId, fromName,
     swapWithPersonId,
     swapSectionId, swapMyDate, swapMyShiftId,
     swapTargetDate, swapTargetShiftId,
-    serviceId,
   } = request;
   if (!fromPersonId || !swapWithPersonId || !swapMyDate || !swapTargetDate) return { valid: true, violations: [] };
 
-  const sectionId = String(swapSectionId || '');
-  const rulesFilter = { sectionId };
-  if (serviceId) rulesFilter.serviceId = String(serviceId);
-  const rulesDoc = await ScheduleRules.findOne(rulesFilter).lean();
+  const [rulesDoc, myDoc] = await Promise.all([
+    ScheduleRules.findOne({
+      hospitalId: operationalScope.hospitalId,
+      sectionId: operationalScope.sectionId,
+      serviceId: operationalScope.serviceId,
+      role: operationalScope.role,
+    }).lean(),
+    findExactSwapSchedule(operationalScope, { 'data.assignments': 1 }),
+  ]);
   if (!rulesDoc?.enabled) return { valid: true, violations: [] };
-
-  function ym(d) { const m = String(d).slice(0, 10).match(/^(\d{4})-(\d{2})/); return m ? { year: Number(m[1]), month: Number(m[2]) } : null; }
-  const myYm = ym(swapMyDate); const tYm = ym(swapTargetDate);
-  if (!myYm || !tYm) return { valid: true, violations: [] };
 
   const fromPid  = String(fromPersonId);
   const toPid    = String(swapWithPersonId);
@@ -202,16 +291,8 @@ async function validateSwap(request) {
   const fromDisplayName = fromPerson?.name || fromName || String(fromPersonId);
   const toDisplayName   = toPerson?.name || String(swapWithPersonId);
 
-  const isSameDoc = myYm.year === tYm.year && myYm.month === tYm.month;
-  const [myDoc, tDoc] = await Promise.all([
-    MonthlySchedule.findOne({ sectionId, year: myYm.year, month: myYm.month }).select({ 'data.assignments': 1 }).lean(),
-    isSameDoc
-      ? Promise.resolve(null)
-      : MonthlySchedule.findOne({ sectionId, year: tYm.year, month: tYm.month }).select({ 'data.assignments': 1 }).lean(),
-  ]);
-
   const myAssignments = Array.isArray(myDoc?.data?.assignments) ? myDoc.data.assignments.slice() : [];
-  const tAssignments  = isSameDoc ? myAssignments : (Array.isArray(tDoc?.data?.assignments) ? tDoc.data.assignments.slice() : []);
+  const tAssignments  = myAssignments;
 
   function forPerson(list, pid, name) {
     const canonName = swapCanonName(name);
@@ -259,17 +340,11 @@ async function executeSwap(request) {
     swapSectionId, swapMyDate, swapMyShiftId,
     swapTargetDate, swapTargetShiftId,
   } = request;
+  const operationalScope = validateSwapOperationalScope(request);
   if (!fromPersonId || !swapWithPersonId || !swapMyDate || !swapTargetDate) return false;
   if (String(fromPersonId) === String(swapWithPersonId)) return false;
 
-  function ym(dateStr) {
-    const m = String(dateStr).slice(0, 10).match(/^(\d{4})-(\d{2})/);
-    return m ? { year: Number(m[1]), month: Number(m[2]) } : null;
-  }
-  const myYm = ym(swapMyDate); const tYm = ym(swapTargetDate);
-  if (!myYm || !tYm) return false;
-
-  const sectionId = String(swapSectionId || '');
+  const sectionId = operationalScope.sectionId;
   const fromPid   = String(fromPersonId);
   const toPid     = String(swapWithPersonId);
   const myShift   = String(swapMyShiftId || '').toUpperCase();
@@ -285,8 +360,6 @@ async function executeSwap(request) {
   const resolvedToName   = (toPerson?.name || '').trim();
   if (!resolvedFromName) throw new Error(`Takas başlatıcısının adı bulunamadı (personId: ${fromPid}).`);
   if (!resolvedToName)   throw new Error(`Takas yapılacak kişinin adı bulunamadı (personId: ${toPid}).`);
-
-  const isSameDoc = myYm.year === tYm.year && myYm.month === tYm.month;
 
   const findAndSwap = async (doc, findDate, findPid, findShift, newPid, newName, findNameFallback = '') => {
     const assignments = Array.isArray(doc?.data?.assignments) ? [...doc.data.assignments] : [];
@@ -332,92 +405,35 @@ async function executeSwap(request) {
     return { doc, found: true, assignments };
   };
 
-  const syncDoc = async (doc, year, month, sectionId) => {
+  const syncDoc = async (doc) => {
     try {
+      const projectionScope = assertExactProjectionScope({
+        ...operationalScope,
+        sourceScheduleId: doc?._id || null,
+      }, { requireSourceScheduleId: true });
       await replaceAssignmentsForSchedule({
-        scope: {
-          sectionId: String(doc.sectionId || sectionId || '').trim(),
-          serviceId: doc.serviceId != null ? String(doc.serviceId).trim() : '',
-          role:      doc.role != null ? String(doc.role).trim() : '',
-          year, month,
-          sourceScheduleId: doc._id,
-        },
+        scope: projectionScope,
         payload:   doc.data || {},
         createdBy: doc.createdBy || null,
         updatedBy: null,
       });
     } catch (syncErr) {
       console.error('[assignmentSync][swap] ERR:', syncErr?.message || syncErr);
+      throw createProjectionSyncFailedError(syncErr);
     }
   };
 
-  if (isSameDoc) {
-    const doc = await MonthlySchedule.findOne({ sectionId, year: myYm.year, month: myYm.month });
-    if (!doc) return false;
-    const r1 = await findAndSwap(doc, myDate, fromPid, myShift, toPid, resolvedToName, resolvedFromName);
-    if (!r1.found) return false;
-    doc.data = { ...doc.data, assignments: r1.assignments };
-    const r2 = await findAndSwap(doc, tDate, toPid, tShift, fromPid, resolvedFromName, resolvedToName);
-    if (!r2.found) return false;
-    doc.data = { ...doc.data, assignments: r2.assignments };
-    doc.markModified('data');
-    await doc.save();
-    await syncDoc(doc, myYm.year, myYm.month, sectionId);
-  } else {
-    let session;
-    let syncFromDoc, syncToDoc;
-    try {
-      session = await mongoose.startSession();
-      await session.withTransaction(async () => {
-        const [fromDoc, toDoc] = await Promise.all([
-          MonthlySchedule.findOne({ sectionId, year: myYm.year, month: myYm.month }).session(session),
-          MonthlySchedule.findOne({ sectionId, year: tYm.year,  month: tYm.month  }).session(session),
-        ]);
-        if (!fromDoc || !toDoc) throw new Error('Çizelge bulunamadı');
-        const r1 = await findAndSwap(fromDoc, myDate, fromPid, myShift, toPid, resolvedToName, resolvedFromName);
-        if (!r1.found) throw new Error('Vardiya bulunamadı (from)');
-        fromDoc.data = { ...fromDoc.data, assignments: r1.assignments }; fromDoc.markModified('data');
-        const r2 = await findAndSwap(toDoc, tDate, toPid, tShift, fromPid, resolvedFromName, resolvedToName);
-        if (!r2.found) throw new Error('Vardiya bulunamadı (to)');
-        toDoc.data = { ...toDoc.data, assignments: r2.assignments }; toDoc.markModified('data');
-        await fromDoc.save({ session }); await toDoc.save({ session });
-        syncFromDoc = fromDoc; syncToDoc = toDoc;
-      });
-    } catch (txErr) {
-      const isNoReplica = txErr?.codeName === 'IllegalOperation' || txErr?.message?.includes('Transaction') || txErr?.message?.includes('replica');
-      if (isNoReplica) {
-        console.warn('[swap][cross-doc] Standalone MongoDB fallback');
-        try {
-          const [fbFromDoc, fbToDoc] = await Promise.all([
-            MonthlySchedule.findOne({ sectionId, year: myYm.year, month: myYm.month }),
-            MonthlySchedule.findOne({ sectionId, year: tYm.year,  month: tYm.month  }),
-          ]);
-          if (!fbFromDoc || !fbToDoc) { if (session) await session.endSession().catch(() => {}); return false; }
-          const fr1 = await findAndSwap(fbFromDoc, myDate, fromPid, myShift, toPid, resolvedToName, resolvedFromName);
-          if (!fr1.found) { if (session) await session.endSession().catch(() => {}); return false; }
-          fbFromDoc.data = { ...fbFromDoc.data, assignments: fr1.assignments }; fbFromDoc.markModified('data');
-          const fr2 = await findAndSwap(fbToDoc, tDate, toPid, tShift, fromPid, resolvedFromName, resolvedToName);
-          if (!fr2.found) { if (session) await session.endSession().catch(() => {}); return false; }
-          fbToDoc.data = { ...fbToDoc.data, assignments: fr2.assignments }; fbToDoc.markModified('data');
-          await fbFromDoc.save(); await fbToDoc.save();
-          syncFromDoc = fbFromDoc; syncToDoc = fbToDoc;
-        } catch (fbErr) {
-          console.error('[swap][cross-doc][fallback] ERR:', fbErr?.message);
-          if (session) await session.endSession().catch(() => {});
-          return false;
-        }
-      } else {
-        console.error('[swap] Transaction rollback:', txErr?.message);
-        if (session) await session.endSession().catch(() => {}); return false;
-      }
-    }
-    if (session) await session.endSession().catch(() => {});
-    if (!syncFromDoc || !syncToDoc) return false;
-    await Promise.all([
-      syncDoc(syncFromDoc, myYm.year, myYm.month, sectionId),
-      syncDoc(syncToDoc,   tYm.year,  tYm.month,  sectionId),
-    ]);
-  }
+  const doc = await MonthlySchedule.findOne(operationalScope);
+  if (!doc) throw createScheduleNotFoundInScopeError();
+  const r1 = await findAndSwap(doc, myDate, fromPid, myShift, toPid, resolvedToName, resolvedFromName);
+  if (!r1.found) return false;
+  doc.data = { ...doc.data, assignments: r1.assignments };
+  const r2 = await findAndSwap(doc, tDate, toPid, tShift, fromPid, resolvedFromName, resolvedToName);
+  if (!r2.found) return false;
+  doc.data = { ...doc.data, assignments: r2.assignments };
+  doc.markModified('data');
+  await doc.save();
+  await syncDoc(doc);
   return true;
 }
 
@@ -728,9 +744,21 @@ async function rejectLeaveRequest({ req, request, adminNote, actorUserId, actorN
 }
 
 async function approveSwapRequest({ req, request, adminNote, actorUserId, actorName, forceSwap, previousStatus }) {
+  let operationalScope;
+  try {
+    operationalScope = validateSwapOperationalScope(request);
+  } catch (error) {
+    return {
+      ok: false,
+      httpStatus: error.status || 409,
+      code: error.code,
+      message: error.message,
+    };
+  }
+
   // Validation-First: her iki taraf için kural simülasyonu
   try {
-    const swapVal = await validateSwap(request);
+    const swapVal = await validateSwap(request, operationalScope);
     if (!swapVal.valid && !forceSwap) {
       return { ok: false, httpStatus: 400, message: 'Takas kural ihlali içeriyor. Devam etmek için forceSwap: true gönderin.', violations: swapVal.violations, canForce: true };
     }
@@ -738,14 +766,30 @@ async function approveSwapRequest({ req, request, adminNote, actorUserId, actorN
       console.warn('[swap-validate] Kural ihlali forceSwap ile geçildi:', JSON.stringify(swapVal.violations));
     }
   } catch (valErr) {
+    if (valErr?.code === 'SCHEDULE_NOT_FOUND_IN_SCOPE' || valErr?.code === 'SWAP_SCOPE_AMBIGUOUS') {
+      return {
+        ok: false,
+        httpStatus: valErr.status || valErr.statusCode || 409,
+        code: valErr.code,
+        message: valErr.message,
+      };
+    }
     console.error('[swap-validate] ERR:', valErr?.message);
   }
 
   // Aynı gün / ardışık gece çakışma kontrolü
   try {
-    const conflict = await checkSwapConflicts(request);
+    const conflict = await checkSwapConflicts(request, operationalScope);
     if (conflict) return { ok: false, httpStatus: 422, message: conflict };
   } catch (checkErr) {
+    if (checkErr?.code === 'SCHEDULE_NOT_FOUND_IN_SCOPE' || checkErr?.code === 'SWAP_SCOPE_AMBIGUOUS') {
+      return {
+        ok: false,
+        httpStatus: checkErr.status || checkErr.statusCode || 409,
+        code: checkErr.code,
+        message: checkErr.message,
+      };
+    }
     console.error('[swap-conflict-check] ERR:', checkErr?.message);
   }
 
@@ -772,11 +816,23 @@ async function approveSwapRequest({ req, request, adminNote, actorUserId, actorN
         return { ok: false, httpStatus: 422, message: 'Takas onaylandı ancak çizelgede ilgili vardiya bulunamadı. Durum "Beklemede" ye geri alındı — çizelgeyi kaydedin ve tekrar deneyin.' };
       }
     } catch (e) {
-      await Request.updateOne(
-        withHospitalFilter(req, { _id: updatedRequest._id }),
-        { $set: { status: previousStatus, adminNote: `Takas sırasında hata: ${e?.message || 'bilinmeyen hata'}` } }
-      ).catch(() => {});
-      return { ok: false, httpStatus: 500, message: e?.message || 'Takas sırasında sunucu hatası' };
+      if (e?.code === 'PROJECTION_SYNC_FAILED' && e?.sourceMutationApplied === true) {
+        await Request.updateOne(
+          withHospitalFilter(req, { _id: updatedRequest._id }),
+          { $set: { adminNote: e.message } }
+        ).catch(() => {});
+      } else {
+        await Request.updateOne(
+          withHospitalFilter(req, { _id: updatedRequest._id }),
+          { $set: { status: previousStatus, adminNote: `Takas sırasında hata: ${e?.message || 'bilinmeyen hata'}` } }
+        ).catch(() => {});
+      }
+      return {
+        ok: false,
+        httpStatus: e?.status || e?.statusCode || 500,
+        code: e?.code,
+        message: e?.message || 'Takas sırasında sunucu hatası',
+      };
     }
 
     // SSE: tüm istemciler atama değişikliğini bilir
@@ -811,5 +867,7 @@ module.exports = {
   // Exported for direct use by routes (validation, peer responses etc.)
   validateSwap,
   checkSwapConflicts,
+  executeSwap,
+  validateSwapOperationalScope,
   revertLeaveBalance,
 };

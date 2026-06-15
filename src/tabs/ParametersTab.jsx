@@ -25,6 +25,10 @@ import DutyRowsEditor from "../components/DutyRowsEditor.jsx";
 import useActiveYM from "../hooks/useActiveYM.js";
 import useServiceScope from "../hooks/useServiceScope.js";
 import { useAppStore } from "../state/appStore";
+import {
+  OPERATIONAL_SERVICE_WARNING,
+  isSpecificServiceSelected,
+} from "../utils/serviceScope.js";
 
 const LS_ACTIVE_SUBTAB = "paramsActiveSubtabV1";
 const LS_KEY_RULES = "dutyRulesV2"; // ✅ nöbet kuralları LS anahtarı
@@ -292,6 +296,7 @@ function ScheduleStructureSettingsTab({ workAreas, workingHours, people }) {
   const activeRole = useAppStore((s) => s.activeRole);
   const setActiveRole = useAppStore((s) => s.setActiveRole);
   const selectedServiceId = scope.isAdmin ? (storeServiceId || "") : scope.defaultServiceId;
+  const isSpecificService = isSpecificServiceSelected(selectedServiceId);
   const selectedServiceName = scope.isAdmin
     ? (selectedServiceId
         ? (scope.servicesById.get(String(selectedServiceId))?.name
@@ -395,6 +400,12 @@ function ScheduleStructureSettingsTab({ workAreas, workingHours, people }) {
           </div>
         </div>
       </div>
+
+      {!isSpecificService && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {OPERATIONAL_SERVICE_WARNING}
+        </div>
+      )}
 
       <DutyRowsEditor
         mode="configOnly"

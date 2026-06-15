@@ -2,7 +2,66 @@
 const MonthlySchedule = require('../models/MonthlySchedule');
 const Setting         = require('../models/Setting');
 const Person          = require('../models/Person');
-const { upsertAssignment, removeAssignment } = require('./assignmentSyncService');
+const {
+  assertExactProjectionScope,
+  upsertAssignment,
+  removeAssignment,
+} = require('./assignmentSyncService');
+
+const AI_SCOPE_AMBIGUOUS_CODE = 'AI_SCOPE_AMBIGUOUS';
+const AI_SCOPE_AMBIGUOUS_MESSAGE = 'AI assignment changes require a complete schedule scope.';
+const SCHEDULE_NOT_FOUND_CODE = 'SCHEDULE_NOT_FOUND_IN_SCOPE';
+const SCHEDULE_NOT_FOUND_MESSAGE = 'No schedule was found in the requested scope.';
+const PROJECTION_SYNC_FAILED_CODE = 'PROJECTION_SYNC_FAILED';
+const PROJECTION_SYNC_FAILED_MESSAGE = 'Assignment projection synchronization failed after the schedule was updated.';
+
+function createAiMutationError(code, message, status) {
+  const error = new Error(message);
+  error.code = code;
+  error.status = status;
+  error.statusCode = status;
+  return error;
+}
+
+function requireAiOperationalScope({ entities = {}, hospitalId, date } = {}) {
+  const ym = parseYM(date);
+  if (!ym) return null;
+  try {
+    const exactScope = assertExactProjectionScope({
+      hospitalId,
+      sectionId: entities.sectionId,
+      serviceId: entities.serviceId,
+      role: entities.role,
+      year: ym.year,
+      month: ym.month,
+    });
+    return Object.freeze({
+      hospitalId: exactScope.hospitalId,
+      sectionId: exactScope.sectionId,
+      serviceId: exactScope.serviceId,
+      role: exactScope.role,
+      year: exactScope.year,
+      month: exactScope.month,
+    });
+  } catch {
+    throw createAiMutationError(
+      AI_SCOPE_AMBIGUOUS_CODE,
+      AI_SCOPE_AMBIGUOUS_MESSAGE,
+      409
+    );
+  }
+}
+
+function projectionSyncFailed(cause) {
+  const error = createAiMutationError(
+    PROJECTION_SYNC_FAILED_CODE,
+    PROJECTION_SYNC_FAILED_MESSAGE,
+    500
+  );
+  error.sourceMutationApplied = true;
+  error.cause = cause;
+  return error;
+}
 
 // Kişi adı veya ID ile Person kaydını bul (hospitalId ile izole)
 async function resolvePerson(nameOrId, hospitalId) {
@@ -144,7 +203,7 @@ async function execRemoveLeave({ entities, hospitalId }) {
 }
 
 // ── Assign shift: kişiye belirli tarih + vardiya ata ──
-async function execAssignShift({ entities }) {
+async function execAssignShift({ entities, hospitalId }) {
   const { person, date, shiftCode, shiftLabel } = entities || {};
   if (!person)    return { ok: false, message: 'Kişi belirtilmedi' };
   if (!date)      return { ok: false, message: 'Tarih belirtilmedi' };
@@ -152,13 +211,26 @@ async function execAssignShift({ entities }) {
 
   const ym = parseYM(date);
   if (!ym) return { ok: false, message: 'Geçersiz tarih formatı' };
+  const operationalScope = requireAiOperationalScope({ entities, hospitalId, date });
 
-  const resolvedPerson = await resolvePerson(person);
+  const resolvedPerson = await resolvePerson(person, hospitalId);
   if (!resolvedPerson) return { ok: false, message: `Kişi bulunamadı: ${person}` };
+  if (String(resolvedPerson.serviceId || '').trim() !== operationalScope.serviceId) {
+    throw createAiMutationError(
+      AI_SCOPE_AMBIGUOUS_CODE,
+      AI_SCOPE_AMBIGUOUS_MESSAGE,
+      409
+    );
+  }
 
-  const serviceId = String(resolvedPerson.serviceId || '');
-  const doc = await MonthlySchedule.findOne({ year: ym.year, month: ym.month, serviceId }).lean();
-  if (!doc) return { ok: false, message: `${ym.year}-${String(ym.month).padStart(2,'0')} için çizelge bulunamadı` };
+  const doc = await MonthlySchedule.findOne(operationalScope).lean();
+  if (!doc) {
+    throw createAiMutationError(
+      SCHEDULE_NOT_FOUND_CODE,
+      SCHEDULE_NOT_FOUND_MESSAGE,
+      404
+    );
+  }
 
   const data = doc.data || {};
   const assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
@@ -184,11 +256,7 @@ async function execAssignShift({ entities }) {
   try {
     await upsertAssignment({
       scope: {
-        sectionId: String(doc.sectionId || 'calisma-cizelgesi').trim(),
-        serviceId: doc.serviceId != null ? String(doc.serviceId).trim() : serviceId,
-        role: doc.role != null ? String(doc.role).trim() : '',
-        year: ym.year,
-        month: ym.month,
+        ...operationalScope,
         sourceScheduleId: doc._id,
       },
       assignment: {
@@ -203,62 +271,85 @@ async function execAssignShift({ entities }) {
     });
   } catch (syncErr) {
     console.error('[assignmentSync][ai-assign] ERR:', syncErr?.message || syncErr);
+    throw projectionSyncFailed(syncErr);
   }
   return { ok: true, humanReadable: `${resolvedPerson.name} için ${date} tarihine ${shiftCode} vardiyası atandı` };
 }
 
 // ── Remove shift: kişinin belirli tarihteki nöbetini sil ──
-async function execRemoveShift({ entities }) {
+async function execRemoveShift({ entities, hospitalId }) {
   const { person, date, shiftCode } = entities || {};
   if (!person) return { ok: false, message: 'Kişi belirtilmedi' };
   if (!date)   return { ok: false, message: 'Tarih belirtilmedi' };
 
   const ym = parseYM(date);
   if (!ym) return { ok: false, message: 'Geçersiz tarih formatı' };
+  const operationalScope = requireAiOperationalScope({ entities, hospitalId, date });
 
-  const resolvedPerson = await resolvePerson(person);
+  const resolvedPerson = await resolvePerson(person, hospitalId);
   if (!resolvedPerson) return { ok: false, message: `Kişi bulunamadı: ${person}` };
+  if (String(resolvedPerson.serviceId || '').trim() !== operationalScope.serviceId) {
+    throw createAiMutationError(
+      AI_SCOPE_AMBIGUOUS_CODE,
+      AI_SCOPE_AMBIGUOUS_MESSAGE,
+      409
+    );
+  }
 
-  const serviceId = String(resolvedPerson.serviceId || '');
-  const doc = await MonthlySchedule.findOne({ year: ym.year, month: ym.month, serviceId }).lean();
-  if (!doc) return { ok: false, message: 'Çizelge bulunamadı' };
+  const doc = await MonthlySchedule.findOne(operationalScope).lean();
+  if (!doc) {
+    throw createAiMutationError(
+      SCHEDULE_NOT_FOUND_CODE,
+      SCHEDULE_NOT_FOUND_MESSAGE,
+      404
+    );
+  }
 
   const data = doc.data || {};
   const assignments = Array.isArray(data.assignments) ? [...data.assignments] : [];
   const pid = String(resolvedPerson._id);
 
-  const filtered = assignments.filter((a) => {
+  const removedAssignments = assignments.filter((a) => {
     const aDate = String(a.date || a.day || '').slice(0, 10);
     const aPid  = String(a.personId || '');
-    if (aPid !== pid || aDate !== date) return true;
+    if (aPid !== pid || aDate !== date) return false;
     // shiftCode belirtildiyse sadece o kodu sil; yoksa o gündeki tüm atamayı sil
-    if (shiftCode) return String(a.shiftId || a.shiftCode || '').toUpperCase() !== shiftCode.toUpperCase();
-    return false;
+    if (shiftCode) return String(a.shiftId || a.shiftCode || '').toUpperCase() === shiftCode.toUpperCase();
+    return true;
   });
+  const removedSet = new Set(removedAssignments);
+  const filtered = assignments.filter((assignment) => !removedSet.has(assignment));
 
-  if (filtered.length === assignments.length) {
+  if (removedAssignments.length === 0) {
     return { ok: false, message: `${resolvedPerson.name} için ${date} tarihinde silinecek atama bulunamadı` };
   }
 
   await MonthlySchedule.findByIdAndUpdate(doc._id, { $set: { 'data.assignments': filtered } });
   try {
-    await removeAssignment({
-      scope: {
-        sectionId: String(doc.sectionId || 'calisma-cizelgesi').trim(),
-        serviceId: doc.serviceId != null ? String(doc.serviceId).trim() : serviceId,
-        role: doc.role != null ? String(doc.role).trim() : '',
-        sourceScheduleId: doc._id,
-      },
-      assignment: {
-        personId: pid,
-        personName: resolvedPerson.name,
-        date,
-        shiftId: shiftCode || '',
-        shiftCode: shiftCode || '',
-      },
-    });
+    for (const removedAssignment of removedAssignments) {
+      const result = await removeAssignment({
+        scope: {
+          ...operationalScope,
+          sourceScheduleId: doc._id,
+        },
+        assignment: {
+          ...removedAssignment,
+          personId: pid,
+          personName: resolvedPerson.name,
+          date,
+          rowId: removedAssignment?.rowId || '',
+          shiftId: removedAssignment?.shiftId || removedAssignment?.shiftCode || shiftCode || '',
+          shiftCode: removedAssignment?.shiftCode || removedAssignment?.shiftId || shiftCode || '',
+          roleLabel: removedAssignment?.roleLabel || removedAssignment?.shiftLabel || '',
+        },
+      });
+      if (!result || Number(result.deletedCount) < 1) {
+        throw new Error('No matching Assignment projection record was removed.');
+      }
+    }
   } catch (syncErr) {
     console.error('[assignmentSync][ai-remove] ERR:', syncErr?.message || syncErr);
+    throw projectionSyncFailed(syncErr);
   }
   return { ok: true, humanReadable: `${resolvedPerson.name} için ${date} tarihindeki vardiya silindi` };
 }
@@ -276,9 +367,9 @@ async function executeCommand({ intent, entities, hospitalId }) {
     case 'remove_leave':
       return execRemoveLeave({ entities, hospitalId });
     case 'assign_shift':
-      return execAssignShift({ entities });
+      return execAssignShift({ entities, hospitalId });
     case 'remove_shift':
-      return execRemoveShift({ entities });
+      return execRemoveShift({ entities, hospitalId });
     case 'swap_shifts':
       // swap iki kişi gerektirir; AI entity şeması tek kişiyi destekliyor.
       // Frontend takas talep akışını kullanmalı.

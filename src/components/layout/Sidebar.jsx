@@ -1,6 +1,7 @@
 // src/components/layout/Sidebar.jsx
 import React, { useCallback, useEffect, useState } from "react";
 import {
+  Activity,
   BarChart,
   BarChart2,
   Bell,
@@ -31,7 +32,7 @@ import { LS } from "../../utils/storage.js";
 
 // ── İkon adı → bileşen eşlemesi ──────────────────────────────────────────────
 const ICON_MAP = {
-  BarChart, BarChart2, Bell, Bot, CalendarCheck, CalendarClock,
+  Activity, BarChart, BarChart2, Bell, Bot, CalendarCheck, CalendarClock,
   CalendarDays, CalendarCog, CircleDollarSign, ClipboardList, Clock4,
   FileText, LayoutDashboard, Megaphone, PieChart, Scale,
   Settings2, ShieldCheck, UserRound, Users2,

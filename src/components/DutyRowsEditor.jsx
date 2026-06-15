@@ -29,6 +29,7 @@ import {
 import {
   getMonthlySchedule,
   getGeneratedSchedule,
+  getAssignmentsForMonth,
   saveMonthlySchedule,
   generateSchedulerPlan,
   fetchPersonnel,
@@ -47,6 +48,10 @@ import { runPlannerOnce } from "../lib/runPlannerOnce.js";
 import OverrideDialog from "./OverrideDialog.jsx";
 import SchedulerAuditPanel from "./SchedulerAuditPanel.jsx";
 import { toast } from "sonner";
+import {
+  OPERATIONAL_SERVICE_WARNING,
+  isSpecificServiceSelected,
+} from "../utils/serviceScope.js";
 import {
   WD_TR, HEAD_TR, MONTHS_TR, DUTY_RULES_LS_KEY,
   norm, stripDiacritics, canonName, isPlainLowercaseName,
@@ -179,6 +184,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     generatedAt: null,
   }));
   const serviceKey = serviceId == null ? "" : String(serviceId);
+  const isSpecificService = isSpecificServiceSelected(serviceKey);
   const autoSaveTimerRef = useRef(null);
   const lastSavedSignatureRef = useRef(null);
   const hasRemoteLoadedRef = useRef(false);
@@ -246,9 +252,9 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     });
   }, [rows, roster, daysInMonth, shiftMetaByCode]);
 
-  /* Dinlenme kuralı ihlali: önceki vardiya bitişi ile sonraki başlangıcı arasında
-     12 saatten az dinlenme varsa badge göster. shiftMetaByCode üzerinden gerçek
-     saat farkı hesaplanır; eski "aynı gün ardışık = ihlal" false positive kaldırıldı. */
+/* Dinlenme kuralı riski: önceki vardiya bitişi ile sonraki başlangıcı arasında
+   12 saatten az dinlenme varsa badge göster. shiftMetaByCode üzerinden gerçek
+   saat farkı hesaplanır; eski "aynı gün ardışık = risk" false positive kaldırıldı. */
   const restViolationSet = useMemo(() => {
     const toMin = (hhmm) => {
       const [h, m] = (String(hhmm || "0:0")).split(":").map(x => parseInt(x || "0", 10));
@@ -282,7 +288,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
           prevShiftsByName.get(key).add(sc);
         }
       }
-      // Bugün: dünkü shift→bugünkü shift arasında gap < 12h ise ihlal
+      // Bugün: dünkü shift→bugünkü shift arasında gap < 12h ise risk
       for (const row of rosterDisplayRows) {
         const sc = String(row.shiftCode || "").trim();
         for (const nm of (row.namesByDay[dayIdx] || [])) {
@@ -302,25 +308,95 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     return set;
   }, [rosterDisplayRows, daysInMonth, shiftMetaByCode]);
 
-  /* Dinlenme kuralı ihlalleri — backend SSOT */
-  const [backendViolations, setBackendViolations] = useState([]);
-  const [violationsLoading, setViolationsLoading] = useState(false);
-  const [showAllViolations, setShowAllViolations] = useState(false);
+/* Dinlenme riski — backend/projection kaynağı */
+const [backendViolations, setBackendViolations] = useState([]);
+const [violationsLoading, setViolationsLoading] = useState(false);
+const [showAllViolations, setShowAllViolations] = useState(false);
+const [assignmentProjectionMeta, setAssignmentProjectionMeta] = useState(() => ({
+  checked: false,
+  count: null,
+  maxUpdatedAt: null,
+}));
 
-  const fetchRestViolations = useCallback(async () => {
-    if (!year || !month1) return;
-    setViolationsLoading(true);
-    try {
-      const data = await http.get(`/api/duty-rules/rest-violations?year=${year}&month=${month1}`);
-      setBackendViolations(Array.isArray(data?.violations) ? data.violations : []);
-    } catch {
-      // Sessizce atla — uyarı kritik değil
-    } finally {
-      setViolationsLoading(false);
+const getMaxAssignmentUpdatedAt = useCallback((assignments = []) => {
+  let latest = null;
+  let latestMs = null;
+
+  for (const assignment of assignments || []) {
+    const candidate =
+      assignment?.updatedAt ||
+      assignment?.updated_at ||
+      assignment?.savedAt ||
+      assignment?.createdAt ||
+      null;
+    const candidateMs = parseTimestamp(candidate);
+    if (candidateMs == null) continue;
+    if (latestMs == null || candidateMs > latestMs) {
+      latest = candidate;
+      latestMs = candidateMs;
     }
-  }, [year, month1]);
+  }
 
-  useEffect(() => { fetchRestViolations(); }, [fetchRestViolations]);
+  return latest;
+}, []);
+
+const fetchRestViolations = useCallback(async () => {
+  if (!year || !month1) return;
+  setViolationsLoading(true);
+  try {
+    const scopeParams = [
+      `year=${year}`,
+      `month=${month1}`,
+      sectionId ? `sectionId=${encodeURIComponent(sectionId)}` : null,
+      serviceKey !== undefined ? `serviceId=${encodeURIComponent(serviceKey)}` : null,
+      role       ? `role=${encodeURIComponent(role)}`    : null,
+    ].filter(Boolean).join('&');
+    const data = await http.get(`/api/duty-rules/rest-violations?${scopeParams}`);
+    setBackendViolations(Array.isArray(data?.violations) ? data.violations : []);
+  } catch {
+    // Sessizce atla — risk uyarısı kritik değil
+  }
+
+  try {
+    if (!sectionId) {
+      setAssignmentProjectionMeta({ checked: false, count: null, maxUpdatedAt: null });
+    } else {
+      const assignments = await getAssignmentsForMonth({
+        sectionId,
+        serviceId: serviceKey,
+        role,
+        year,
+        month: month1,
+      });
+      setAssignmentProjectionMeta({
+        checked: true,
+        count: assignments.length,
+        maxUpdatedAt: getMaxAssignmentUpdatedAt(assignments),
+      });
+    }
+  } catch {
+    setAssignmentProjectionMeta({ checked: false, count: null, maxUpdatedAt: null });
+  } finally {
+    setViolationsLoading(false);
+  }
+}, [year, month1, sectionId, serviceKey, role, getMaxAssignmentUpdatedAt]);
+
+useEffect(() => { fetchRestViolations(); }, [fetchRestViolations]);
+
+const monthlyUpdatedAtMs = parseTimestamp(monthlyReadModelState?.updatedAt);
+const assignmentProjectionUpdatedAtMs = parseTimestamp(assignmentProjectionMeta?.maxUpdatedAt);
+const isAssignmentProjectionStale =
+  monthlyUpdatedAtMs != null &&
+  assignmentProjectionUpdatedAtMs != null &&
+  monthlyUpdatedAtMs > assignmentProjectionUpdatedAtMs;
+const isAssignmentProjectionMissing =
+  assignmentProjectionMeta.checked && assignmentProjectionMeta.count === 0;
+const isProjectionOrphan =
+  !monthlyReadModelState.scheduleId &&
+  assignmentProjectionMeta.checked &&
+  (assignmentProjectionMeta.count ?? 0) > 0;
+const shouldShowRestRiskPanel =
+  backendViolations.length > 0 || isAssignmentProjectionStale || isAssignmentProjectionMissing || isProjectionOrphan;
 
   /* Pinler (Sabitlenenler) */
   const [pins, setPins] = useState([]);
@@ -329,7 +405,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const [rules, setRules] = useState(() => LS.get("dutyRulesV2", []) || []);
 
   const loadGeneratedExplainability = useCallback(async () => {
-    if (!sectionId) {
+    if (!sectionId || !isSpecificService) {
       setRawGeneratedExplainability(createEmptyExplainability());
       return createEmptyExplainability();
     }
@@ -353,7 +429,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
       setRawGeneratedExplainability(empty);
       return empty;
     }
-  }, [sectionId, serviceKey, role, year, month1]);
+  }, [sectionId, serviceKey, role, year, month1, isSpecificService]);
 
   const generatedExplainability = useMemo(
     () =>
@@ -1203,7 +1279,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!sectionId) {
+      if (!sectionId || !isSpecificService) {
         if (!cancelled) setRawGeneratedExplainability(createEmptyExplainability());
         return;
       }
@@ -1230,7 +1306,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     return () => {
       cancelled = true;
     };
-  }, [sectionId, serviceKey, role, year, month1]);
+  }, [sectionId, serviceKey, role, year, month1, isSpecificService]);
   // Backend personelini yerel motora (solver) tanıtmak için senkronizasyon
   useEffect(() => {
     let alive = true;
@@ -1288,6 +1364,16 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const canonicalIdNameMap = useMemo(() => buildIdToNameMap(staffForRole), [staffForRole]);
 
   const doSave = useCallback(async ({ silent = false, payloadOverride = null } = {}) => {
+    if (!isSpecificService) {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      setAutoSaveStatus("idle");
+      setAutoSaveError(null);
+      if (!silent) note(OPERATIONAL_SERVICE_WARNING, "warning");
+      return null;
+    }
     if (!sectionId) {
       if (!silent) note("Sekme kimliği bulunamadı.", "error");
       else setAutoSaveStatus("error");
@@ -1406,7 +1492,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     } finally {
       setSaving(false);
     }
-  }, [sectionId, serviceKey, role, year, month1, rows, overrides, roster, preview, aiPlan, pins, rules, manualChangeLog, daysInMonth, note, makeSignature]);
+  }, [sectionId, serviceKey, role, year, month1, rows, overrides, roster, preview, aiPlan, pins, rules, manualChangeLog, daysInMonth, note, makeSignature, isSpecificService]);
 
   useEffect(() => {
     if (autoSaveStatus !== "saved") return undefined;
@@ -1417,6 +1503,17 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   }, [autoSaveStatus]);
 
   useEffect(() => {
+    if (!isSpecificService) {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      if (autoSaveStatus !== "idle") {
+        setAutoSaveStatus("idle");
+        setAutoSaveError(null);
+      }
+      return undefined;
+    }
     if (!sectionId || loadingRemote) return;
     const sig = computeSignature();
     if (!sig) return;
@@ -1450,7 +1547,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         autoSaveTimerRef.current = null;
       }
     };
-  }, [sectionId, loadingRemote, saving, computeSignature, doSave, autoSaveStatus]);
+  }, [sectionId, loadingRemote, saving, computeSignature, doSave, autoSaveStatus, isSpecificService]);
 
   /* Parametrelerden satır üret (yoksa) */
   function ensureRowsFromParameters() {
@@ -1496,7 +1593,13 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   }
 
   /* Imperative API (üst toolbar buradan çağıracak) */
-  const doAi = () => doBuild();  // n8n/AI entegrasyonu sonra eklenecek
+  const doAi = () => {
+    if (!isSpecificService) {
+      note(OPERATIONAL_SERVICE_WARNING, "warning");
+      return;
+    }
+    return doBuild();
+  };  // n8n/AI entegrasyonu sonra eklenecek
   const doAi_legacy = () => {
     try {
       generateAutoSchedule({ year, month1_12: month0 + 1, writeToLS: true });
@@ -1629,6 +1732,10 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   }, []);
 
   const doBuild = async () => {
+    if (!isSpecificService) {
+      note(OPERATIONAL_SERVICE_WARNING, "warning");
+      return;
+    }
     if (staffLoading) {
       note("Personel listesi yükleniyor. Lütfen birkaç saniye sonra tekrar deneyin.", "info");
       return;
@@ -1815,8 +1922,18 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
     }
   };
   const doExport = () => exportXlsx();
-  const doImport = (file) => file && importFromTemplate(file);
+  const doImport = (file) => {
+    if (!isSpecificService) {
+      note(OPERATIONAL_SERVICE_WARNING, "warning");
+      return;
+    }
+    return file ? importFromTemplate(file) : undefined;
+  };
   const doReset = () => {
+    if (!isSpecificService) {
+      note(OPERATIONAL_SERVICE_WARNING, "warning");
+      return;
+    }
     setOverrides({});
     setPreview(null);
     setRoster(null);
@@ -1967,20 +2084,29 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   // Klavye kısayolları: Ctrl+Z undo, Ctrl+Y / Ctrl+Shift+Z redo
   useEffect(() => {
     const handler = (e) => {
+      if (!isSpecificService) return;
       if (!e.ctrlKey && !e.metaKey) return;
       if (e.key === "z" && !e.shiftKey) { e.preventDefault(); handleUndo(); }
       if (e.key === "y" || (e.key === "z" && e.shiftKey)) { e.preventDefault(); handleRedo(); }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [handleUndo, handleRedo]);
+  }, [handleUndo, handleRedo, isSpecificService]);
 
   /* Render (toolbar yok) */
   return (
-    <div className="space-y-3">
+    <fieldset
+      disabled={!isSpecificService}
+      className="min-w-0 space-y-3 border-0 p-0 m-0"
+    >
       <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
         Çalışma Çizelgesi — {roleLabel}
       </div>
+      {!isSpecificService && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {OPERATIONAL_SERVICE_WARNING}
+        </div>
+      )}
       {showStatusBar && (
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
           {buildLoading && <span className="text-slate-600">Liste oluşturuluyor…</span>}
@@ -2283,36 +2409,106 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
             totalDays={daysInMonth}
           />
 
-          {/* Dinlenme Kuralı İhlali — Soft-error Banner */}
-          {backendViolations.length > 0 && (
+          {/* Dinlenme Riski — projection kaynaklı read-only uyarı */}
+          {shouldShowRestRiskPanel && (isProjectionOrphan ? (
+            /* Orphan projection: MonthlySchedule yok ama projection dolu — subdued bilgi kutusu */
+            <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 flex items-start gap-3">
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-400 text-white text-xs font-bold">i</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-700">
+                  Assignment projection güncel çizelgeyi yansıtmıyor olabilir.
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Aktif MonthlySchedule bulunamadı ancak Assignment Projection içinde eski kayıtlar var ({assignmentProjectionMeta.count} kayıt). Dinlenme riskleri güncel çizelgeyi temsil etmeyebilir.
+                </p>
+                {backendViolations.length > 0 && (
+                  <div className="mt-2">
+                    <button
+                      onClick={() => setShowAllViolations(p => !p)}
+                      className="text-xs text-slate-500 underline hover:text-slate-700"
+                    >
+                      {showAllViolations
+                        ? "Detayları gizle"
+                        : `Detayları göster (${backendViolations.length} kayıt)`}
+                    </button>
+                    {showAllViolations && (
+                      <ul className="mt-1.5 space-y-0.5">
+                        {backendViolations.map((v, i) => (
+                          <li key={i} className="text-xs text-slate-600">
+                            • {v.personName} — {v.date1} → {v.date2}{v.shift1 ? ` (${v.shift1}→${v.shift2})` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={fetchRestViolations}
+                disabled={violationsLoading}
+                className="shrink-0 text-xs text-slate-400 underline hover:text-slate-600 disabled:opacity-50"
+              >
+                {violationsLoading ? "…" : "Yenile"}
+              </button>
+            </div>
+          ) : (
+            /* Normal risk paneli — MonthlySchedule aktif */
             <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 flex items-start gap-3">
               <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-white text-xs font-bold">!</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-amber-900">
-                  UYARI: {backendViolations.length} personel minimum 12 saat dinlenme kuralını ihlal ediyor!
-                </p>
-                <p className="text-xs text-amber-700 mt-0.5">
-                  Aşağıdaki personeller minimum 12 saat dinlenme kuralını ihlal ediyor:
-                </p>
-                <ul className="mt-1.5 space-y-0.5">
-                  {(showAllViolations ? backendViolations : backendViolations.slice(0, 5)).map((v, i) => (
-                    <li key={i} className="text-xs text-amber-800 font-medium">
-                      • {v.personName} — {v.date1} → {v.date2}{v.shift1 ? ` (${v.shift1}→${v.shift2})` : ""}
-                    </li>
-                  ))}
-                  {backendViolations.length > 5 && (
-                    <li>
-                      <button
-                        onClick={() => setShowAllViolations(p => !p)}
-                        className="text-xs text-amber-700 underline hover:text-amber-900 mt-0.5"
-                      >
-                        {showAllViolations
-                          ? "Daha az göster"
-                          : `… ve ${backendViolations.length - 5} ihlal daha — Tümünü göster`}
-                      </button>
-                    </li>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold text-amber-900">
+                    Olası dinlenme riski
+                    {backendViolations.length > 0 ? `: ${backendViolations.length} personel kontrol edilmeli` : ""}
+                  </p>
+                  <span className="rounded-full border border-amber-200 bg-white/70 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                    Veri kaynağı: Assignment Projection
+                  </span>
+                  {(sectionId || serviceKey || role) && (
+                    <span className="rounded-full border border-amber-200 bg-white/70 px-2 py-0.5 text-[11px] text-amber-700">
+                      Kapsam: {[sectionId, serviceKey || null, role].filter(Boolean).join(' / ')}
+                    </span>
                   )}
-                </ul>
+                </div>
+                <p className="text-xs text-amber-700 mt-1">
+                  Bu panel raporlama/projection verisini okur; görünür çizelge MonthlySchedule üzerinden gösterilir.
+                </p>
+                {isAssignmentProjectionStale && (
+                  <div className="mt-2 rounded-lg border border-amber-200 bg-white/70 px-3 py-2 text-xs text-amber-800">
+                    Projection eski kalmış olabilir. Görünür çizelge ile dinlenme riski paneli farklı sonuç gösterebilir.
+                  </div>
+                )}
+                {isAssignmentProjectionMissing && (
+                  <div className="mt-2 rounded-lg border border-amber-200 bg-white/70 px-3 py-2 text-xs text-amber-800">
+                    Assignment projection eksik olabilir. Dinlenme riski paneli sınırlı veriyle çalışıyor olabilir.
+                  </div>
+                )}
+                {backendViolations.length > 0 && (
+                  <>
+                    <p className="text-xs text-amber-700 mt-2">
+                      Aşağıdaki kayıtlar olası dinlenme riski için kontrol edilmeli:
+                    </p>
+                    <ul className="mt-1.5 space-y-0.5">
+                      {(showAllViolations ? backendViolations : backendViolations.slice(0, 5)).map((v, i) => (
+                        <li key={i} className="text-xs text-amber-800 font-medium">
+                          • {v.personName} — {v.date1} → {v.date2}{v.shift1 ? ` (${v.shift1}→${v.shift2})` : ""}
+                        </li>
+                      ))}
+                      {backendViolations.length > 5 && (
+                        <li>
+                          <button
+                            onClick={() => setShowAllViolations(p => !p)}
+                            className="text-xs text-amber-700 underline hover:text-amber-900 mt-0.5"
+                          >
+                            {showAllViolations
+                              ? "Daha az göster"
+                              : `… ve ${backendViolations.length - 5} risk daha — Tümünü göster`}
+                          </button>
+                        </li>
+                      )}
+                    </ul>
+                  </>
+                )}
               </div>
               <button
                 onClick={fetchRestViolations}
@@ -2322,7 +2518,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                 {violationsLoading ? "…" : "Yenile"}
               </button>
             </div>
-          )}
+          ))}
 
           <div
             className="overflow-x-auto rounded-card border border-slate-200 shadow-card"
@@ -2416,7 +2612,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                           <td
                             key={`${row.id}-${slotIdx}-${day}`}
                             title={
-                              isRestViolation ? `Dinlenme kuralı ihlali — ${name}` :
+                              isRestViolation ? `Dinlenme riski — ${name}` :
                               isMarkedChanged ? `Güncellendi: ${name}` :
                               (name ? name : "Atama yap")
                             }
@@ -2428,6 +2624,10 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                                 : isWeekend ? "bg-blue-50/70 hover:bg-blue-100" : "hover:bg-sky-50"
                             } ${name ? "text-ink" : "text-slate-300"}`}
                             onClick={() => {
+                              if (!isSpecificService) {
+                                note(OPERATIONAL_SERVICE_WARNING, "warning");
+                                return;
+                              }
                               window.dispatchEvent(new CustomEvent("quick-replace:open", {
                                 detail: {
                                   date: `${year}-${String(month0 + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
@@ -2446,7 +2646,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
                               <span className="absolute top-0.5 right-0.5 text-[8px] text-orange-500 font-bold leading-none">↺</span>
                             )}
                             {isRestViolation && (
-                              <span className="absolute bottom-0 left-0 right-0 text-[7px] text-amber-700 bg-amber-100 font-semibold leading-tight px-0.5 truncate">Dinlenme ihlali</span>
+                              <span className="absolute bottom-0 left-0 right-0 text-[7px] text-amber-700 bg-amber-100 font-semibold leading-tight px-0.5 truncate">Dinlenme riski</span>
                             )}
                           </td>
                         );
@@ -2867,7 +3067,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
 
       <OverrideDialog
         open={overrideDialog.open}
-        title="Kayıt Öncesi Kural İhlali"
+        title="Kayıt Öncesi Kural Riski"
         errors={overrideDialog.errors}
         onConfirm={async (reason) => {
           setOverrideDialog({ open: false, errors: [], pendingPayload: null });
@@ -2877,7 +3077,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
         }}
         onCancel={() => setOverrideDialog({ open: false, errors: [], pendingPayload: null })}
       />
-    </div>
+    </fieldset>
   );
 });
 

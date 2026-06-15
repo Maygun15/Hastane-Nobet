@@ -27,7 +27,7 @@ const AUTH_WINDOW_MS = 15 * 60 * 1000;
 
 // Timing saldırısı için startup'ta bir kez üretilen gerçek bcrypt hash
 let DUMMY_HASH = null;
-(async () => { try { DUMMY_HASH = await bcrypt.hash('__warmup__', 10); } catch {} })();
+(async () => { try { DUMMY_HASH = await bcrypt.hash('__warmup__', 12); } catch {} })();
 
 // Süresi dolmuş rate-limit kayıtlarını temizle (OOM önleme)
 setInterval(() => {
@@ -248,7 +248,7 @@ router.post('/register', registerRateLimit, ...registerValidation, async (req, r
 
     if (exists) return res.status(409).json({ message: 'Bu kullanıcı zaten kayıtlı' });
 
-    const hash = await bcrypt.hash(pass, 10);
+    const hash = await bcrypt.hash(pass, 12);
     const user = await User.create({
       name,
       email: emailLC,

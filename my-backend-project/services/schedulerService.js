@@ -13,6 +13,7 @@ const { resolveStaff } = require('./scheduler/staffResolver');
 const { validateAssignments } = require('./scheduler/validator');
 const { applyHolidayPolicies } = require('./scheduler/holidayPolicyAdapter');
 const { buildSchedulerInput } = require('./scheduler/inputBuilder');
+const { assertSpecificServiceId } = require('../utils/serviceScopeGuard');
 
 const MONTHLY_SCHEDULER_INPUT_PROJECTION = {
   _id: 1,
@@ -470,6 +471,7 @@ function mergeLeavesByPerson(dbLeaves, payloadLeaves) {
 }
 
 async function generateSchedule({ sectionId, serviceId = '', role = '', year, month, dryRun = false, userId, payload = {}, hospitalId = null }) {
+  serviceId = assertSpecificServiceId(serviceId);
   const query = hospitalId ? { hospitalId, sectionId, year, month } : { sectionId, year, month };
   if (serviceId) query.serviceId = serviceId;
   if (role) query.role = role;

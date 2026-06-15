@@ -61,7 +61,7 @@ async function run() {
     }
     try {
       const result = await replaceAssignmentsForSchedule({
-        scope, payload, source: 'backfill-monthly',
+        scope, payload, source: 'backfill-monthly', mode: 'legacy-script',
       });
       total += result.count;
       console.log(`  ✓ ${scope.sectionId}/${scope.serviceId}/${scope.role} ${scope.year}-${scope.month}: ${result.count} atama`);
@@ -101,7 +101,7 @@ async function run() {
     try {
       const payload = doc.data || {};
       const result = await replaceAssignmentsForSchedule({
-        scope, payload, source: 'backfill-generated',
+        scope, payload, source: 'backfill-generated', mode: 'legacy-script',
       });
       total += result.count;
       console.log(`  ✓ Generated ${scope.year}-${scope.month}: ${result.count} atama`);

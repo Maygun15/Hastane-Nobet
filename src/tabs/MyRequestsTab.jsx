@@ -30,11 +30,12 @@ const EMPTY_FORM = {
   message: "",
   swapWithPersonId: "",
   swapWithPersonName: "",
-  swapSectionId: "",
   swapMyDate: "",
+  swapMyAssignment: null,
   swapMyShiftId: "",
   swapMyShiftLabel: "",
   swapTargetDate: "",
+  swapTargetAssignment: null,
   swapTargetShiftId: "",
   swapTargetShiftLabel: "",
 };
@@ -117,7 +118,7 @@ function ShiftPicker({ date, personId, value, onChange, placeholder = "Vardiya s
   if (loading) return <div className="text-[11px] text-slate-400 py-1">Vardiyalar yükleniyor…</div>;
   if (shifts.length === 0) return (
     <div className="text-[11px] text-amber-600 py-1">
-      Bu tarihte kayıtlı vardiya bulunamadı — kodu elle girin.
+      Bu tarihte seçilebilecek doğrulanmış vardiya bulunamadı.
     </div>
   );
 
@@ -127,18 +128,15 @@ function ShiftPicker({ date, personId, value, onChange, placeholder = "Vardiya s
         className={inputCls}
         value={value}
         onChange={(e) => {
-          const sel = shifts.find((s) => (s.shiftId || s.shiftCode || s.rowId) === e.target.value);
-          onChange(
-            e.target.value,
-            sel ? (sel.roleLabel || sel.shiftCode || sel.shiftId || "") : e.target.value
-          );
+          const selected = shifts.find((shift) => String(shift._id) === e.target.value) || null;
+          onChange(selected);
         }}
       >
         <option value="">{placeholder}</option>
-        {shifts.map((s, i) => {
-          const id = s.shiftId || s.shiftCode || s.rowId || `row-${i}`;
-          const label = [s.roleLabel, s.shiftCode].filter(Boolean).join(" · ") || id;
-          return <option key={id} value={id}>{label}</option>;
+        {shifts.map((s) => {
+          const id = String(s._id);
+          const label = [s.roleLabel, s.shiftCode || s.shiftId, s.role].filter(Boolean).join(" · ");
+          return <option key={id} value={id}>{label || "Vardiya"}</option>;
         })}
       </select>
     </div>
@@ -303,9 +301,9 @@ export default function MyRequestsTab() {
     if (form.type === "takas") {
       if (!form.swapWithPersonId)  { toast.error("Takas yapılacak kişiyi seçin"); return; }
       if (!form.swapMyDate)        { toast.error("Kendi tarihini girin"); return; }
-      if (!form.swapMyShiftId)     { toast.error("Kendi vardiya kodunu girin"); return; }
+      if (!form.swapMyAssignment?._id) { toast.error("Kendi vardiyanızı listeden seçin"); return; }
       if (!form.swapTargetDate)    { toast.error("Karşı tarih tarihini girin"); return; }
-      if (!form.swapTargetShiftId) { toast.error("Karşı vardiya kodunu girin"); return; }
+      if (!form.swapTargetAssignment?._id) { toast.error("Karşı vardiyayı listeden seçin"); return; }
     }
 
     setSubmitting(true);
@@ -320,13 +318,14 @@ export default function MyRequestsTab() {
         Object.assign(payload, {
           swapWithPersonId:     form.swapWithPersonId,
           swapWithPersonName:   form.swapWithPersonName,
-          swapSectionId:        form.swapSectionId || "",
+          swapMyAssignmentId:   form.swapMyAssignment._id,
+          swapTargetAssignmentId: form.swapTargetAssignment._id,
           swapMyDate:           form.swapMyDate,
-          swapMyShiftId:        form.swapMyShiftId.trim(),
-          swapMyShiftLabel:     form.swapMyShiftLabel || form.swapMyShiftId.trim(),
+          swapMyShiftId:        form.swapMyShiftId,
+          swapMyShiftLabel:     form.swapMyShiftLabel,
           swapTargetDate:       form.swapTargetDate,
-          swapTargetShiftId:    form.swapTargetShiftId.trim(),
-          swapTargetShiftLabel: form.swapTargetShiftLabel || form.swapTargetShiftId.trim(),
+          swapTargetShiftId:    form.swapTargetShiftId,
+          swapTargetShiftLabel: form.swapTargetShiftLabel,
         });
         payload.targetDate = form.swapMyDate;
       }
@@ -559,7 +558,14 @@ export default function MyRequestsTab() {
                     <PersonSearch
                       value={form.swapWithPersonName}
                       personnel={personnel}
-                      onSelect={(id, name) => setForm((f) => ({ ...f, swapWithPersonId: id, swapWithPersonName: name }))}
+                      onSelect={(id, name) => setForm((f) => ({
+                        ...f,
+                        swapWithPersonId: id,
+                        swapWithPersonName: name,
+                        swapTargetAssignment: null,
+                        swapTargetShiftId: "",
+                        swapTargetShiftLabel: "",
+                      }))}
                     />
                     {personnel.length === 0 && (
                       <p className="text-[11px] text-slate-400">Personel listesi yükleniyor…</p>
@@ -571,7 +577,13 @@ export default function MyRequestsTab() {
                     <label className={labelCls}>Benim Tarihim <span className="text-rose-500">*</span></label>
                     <input
                       type="date" className={inputCls} value={form.swapMyDate}
-                      onChange={(e) => setForm((f) => ({ ...f, swapMyDate: e.target.value, swapMyShiftId: "", swapMyShiftLabel: "" }))}
+                      onChange={(e) => setForm((f) => ({
+                        ...f,
+                        swapMyDate: e.target.value,
+                        swapMyAssignment: null,
+                        swapMyShiftId: "",
+                        swapMyShiftLabel: "",
+                      }))}
                     />
                   </div>
                   {form.swapMyDate && (
@@ -580,14 +592,15 @@ export default function MyRequestsTab() {
                       <ShiftPicker
                         date={form.swapMyDate}
                         personId={null}
-                        value={form.swapMyShiftId}
-                        onChange={(id, label) => setForm((f) => ({ ...f, swapMyShiftId: id, swapMyShiftLabel: label }))}
+                        value={form.swapMyAssignment?._id || ""}
+                        onChange={(assignment) => setForm((f) => ({
+                          ...f,
+                          swapMyAssignment: assignment,
+                          swapMyShiftId: assignment?.shiftId || assignment?.shiftCode || assignment?.rowId || "",
+                          swapMyShiftLabel: assignment?.roleLabel || assignment?.shiftCode || assignment?.shiftId || "",
+                        }))}
                         placeholder="Kendi vardiyamı seçin…"
                       />
-                      {!form.swapMyShiftId && (
-                        <input className={inputCls + " mt-1"} placeholder="Veya kodu elle girin…" value={form.swapMyShiftId}
-                          onChange={(e) => setForm((f) => ({ ...f, swapMyShiftId: e.target.value, swapMyShiftLabel: e.target.value }))} />
-                      )}
                     </div>
                   )}
 
@@ -596,7 +609,13 @@ export default function MyRequestsTab() {
                     <label className={labelCls}>Karşı Tarih <span className="text-rose-500">*</span></label>
                     <input
                       type="date" className={inputCls} value={form.swapTargetDate}
-                      onChange={(e) => setForm((f) => ({ ...f, swapTargetDate: e.target.value, swapTargetShiftId: "", swapTargetShiftLabel: "" }))}
+                      onChange={(e) => setForm((f) => ({
+                        ...f,
+                        swapTargetDate: e.target.value,
+                        swapTargetAssignment: null,
+                        swapTargetShiftId: "",
+                        swapTargetShiftLabel: "",
+                      }))}
                     />
                   </div>
                   {form.swapTargetDate && form.swapWithPersonId && (
@@ -605,14 +624,15 @@ export default function MyRequestsTab() {
                       <ShiftPicker
                         date={form.swapTargetDate}
                         personId={form.swapWithPersonId}
-                        value={form.swapTargetShiftId}
-                        onChange={(id, label) => setForm((f) => ({ ...f, swapTargetShiftId: id, swapTargetShiftLabel: label }))}
+                        value={form.swapTargetAssignment?._id || ""}
+                        onChange={(assignment) => setForm((f) => ({
+                          ...f,
+                          swapTargetAssignment: assignment,
+                          swapTargetShiftId: assignment?.shiftId || assignment?.shiftCode || assignment?.rowId || "",
+                          swapTargetShiftLabel: assignment?.roleLabel || assignment?.shiftCode || assignment?.shiftId || "",
+                        }))}
                         placeholder="Karşı tarafın vardiyasını seçin…"
                       />
-                      {!form.swapTargetShiftId && (
-                        <input className={inputCls + " mt-1"} placeholder="Veya kodu elle girin…" value={form.swapTargetShiftId}
-                          onChange={(e) => setForm((f) => ({ ...f, swapTargetShiftId: e.target.value, swapTargetShiftLabel: e.target.value }))} />
-                      )}
                     </div>
                   )}
                   {form.swapTargetDate && !form.swapWithPersonId && (

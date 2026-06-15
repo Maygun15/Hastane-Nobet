@@ -22,6 +22,7 @@ const FALLBACK_BLOCKING_RULE_CODES = Object.freeze([
   "MAX_WEEKLY_SHIFTS",
   "MAX_CONSECUTIVE_DAYS",
   "ONE_SHIFT_PER_DAY",
+  "MIN_REST_HOURS",
 ]);
 
 const getISOWeekKey = (dateStr) => {

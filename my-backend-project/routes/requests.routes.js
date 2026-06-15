@@ -12,6 +12,9 @@ const { broadcastAll }    = require('../services/sseService');
 const { suggestSwaps }    = require('../services/swapSuggestionService');
 const Assignment          = require('../models/Assignment');
 const {
+  verifySwapCreationAssignments,
+} = require('../services/swapRequestCreationService');
+const {
   approveLeaveRequest,
   approveSwapRequest,
   rejectLeaveRequest,
@@ -56,36 +59,70 @@ router.post('/', requireAuth, async (req, res) => {
     const {
       type, targetDate, targetDateEnd, message, swapWithPersonId,
       leaveTypeCode,
+      swapMyAssignmentId, swapTargetAssignmentId,
       swapSectionId, swapMyDate, swapMyShiftId, swapMyShiftLabel,
       swapTargetDate, swapTargetShiftId, swapTargetShiftLabel,
       swapWithPersonName,
     } = req.body;
 
     if (!type || !message) return res.status(400).json({ message: 'Tür ve mesaj zorunlu' });
-    if (type === 'takas' && (!swapWithPersonId || !swapMyDate || !swapMyShiftId || !swapTargetDate || !swapTargetShiftId)) {
-      return res.status(400).json({ message: 'Takas için swapWithPersonId, swapMyDate, swapMyShiftId, swapTargetDate, swapTargetShiftId zorunlu' });
+    if (type === 'takas' && (!swapMyAssignmentId || !swapTargetAssignmentId)) {
+      return res.status(400).json({
+        ok: false,
+        code: 'SWAP_ASSIGNMENT_SELECTION_REQUIRED',
+        message: 'Both swap shifts must be selected from verified assignments.',
+      });
     }
 
     const person = await Person.findOne(withHospitalFilter(req, { userId: req.user._id })).lean();
+    let verifiedSwapFields = {};
+    if (type === 'takas') {
+      try {
+        const verified = await verifySwapCreationAssignments({
+          hospitalId: req.hospitalId,
+          requesterPersonId: person?._id,
+          swapWithPersonId,
+          swapMyAssignmentId,
+          swapTargetAssignmentId,
+          swapMyDate,
+          swapTargetDate,
+          swapMyShiftId,
+          swapTargetShiftId,
+        });
+        verifiedSwapFields = verified.requestFields;
+      } catch (error) {
+        if (error?.status === 400 && error?.code) {
+          return res.status(400).json({
+            ok: false,
+            code: error.code,
+            message: error.message,
+          });
+        }
+        throw error;
+      }
+    }
 
     const request = await Request.create(withHospitalFilter(req, {
       type,
       fromUserId:   req.user._id,
       fromPersonId: person?._id || null,
       fromName:     req.user.name || '',
-      serviceId:    person?.serviceId || '',
+      serviceId:    type === 'takas' ? verifiedSwapFields.serviceId : (person?.serviceId || ''),
+      role:         type === 'takas' ? verifiedSwapFields.role : '',
       targetDate:   targetDate || '',
       targetDateEnd: targetDateEnd || '',
-      swapWithPersonId:     swapWithPersonId || null,
-      swapWithPersonName:   String(swapWithPersonName || '').trim(),
+      swapWithPersonId:     verifiedSwapFields.swapWithPersonId || swapWithPersonId || null,
+      swapWithPersonName:   verifiedSwapFields.swapWithPersonName || String(swapWithPersonName || '').trim(),
       leaveTypeCode:        String(leaveTypeCode || '').trim().toUpperCase(),
-      swapSectionId:        String(swapSectionId || '').trim(),
-      swapMyDate:           String(swapMyDate || '').slice(0, 10),
-      swapMyShiftId:        String(swapMyShiftId || '').trim(),
-      swapMyShiftLabel:     String(swapMyShiftLabel || '').trim(),
-      swapTargetDate:       String(swapTargetDate || '').slice(0, 10),
-      swapTargetShiftId:    String(swapTargetShiftId || '').trim(),
-      swapTargetShiftLabel: String(swapTargetShiftLabel || '').trim(),
+      swapMyAssignmentId:   verifiedSwapFields.swapMyAssignmentId || null,
+      swapTargetAssignmentId: verifiedSwapFields.swapTargetAssignmentId || null,
+      swapSectionId:        verifiedSwapFields.swapSectionId || String(swapSectionId || '').trim(),
+      swapMyDate:           verifiedSwapFields.swapMyDate || String(swapMyDate || '').slice(0, 10),
+      swapMyShiftId:        verifiedSwapFields.swapMyShiftId || String(swapMyShiftId || '').trim(),
+      swapMyShiftLabel:     verifiedSwapFields.swapMyShiftLabel || String(swapMyShiftLabel || '').trim(),
+      swapTargetDate:       verifiedSwapFields.swapTargetDate || String(swapTargetDate || '').slice(0, 10),
+      swapTargetShiftId:    verifiedSwapFields.swapTargetShiftId || String(swapTargetShiftId || '').trim(),
+      swapTargetShiftLabel: verifiedSwapFields.swapTargetShiftLabel || String(swapTargetShiftLabel || '').trim(),
       message,
       status: 'pending',
     }));
@@ -113,7 +150,10 @@ router.get('/swap-shifts', requireAuth, async (req, res) => {
 
     const items = await Assignment.find(
       withHospitalFilter(req, { date: String(date), personId: queryPid })
-    ).select('date shiftId shiftCode roleLabel rowId personName personId sectionId serviceId').limit(20).lean();
+    )
+      .select('_id sourceScheduleId sectionId serviceId role year month date rowId shiftId shiftCode roleLabel personId personName')
+      .limit(20)
+      .lean();
 
     res.json({ items });
   } catch (err) {
@@ -194,6 +234,8 @@ router.put('/:id', requireAuth, async (req, res) => {
       const result = await approveSwapRequest({ req, request, adminNote: adminNote || '', actorUserId, actorName, forceSwap, previousStatus });
       if (!result.ok) {
         return res.status(result.httpStatus || 500).json({
+          ok: false,
+          ...(result.code ? { code: result.code } : {}),
           message: result.message,
           ...(result.violations ? { violations: result.violations, canForce: result.canForce } : {}),
         });

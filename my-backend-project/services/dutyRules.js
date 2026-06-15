@@ -85,10 +85,13 @@ async function checkSingleRestViolation({ hospitalId, personId, date }) {
  * Belirli bir ay için hastanedeki tüm dinlenme kuralı ihlallerini döner.
  * Aynı personel arka arkaya iki günde aktif nöbete atanmışsa ihlal sayılır.
  *
- * @param {{ hospitalId: string, year: number, month: number }} params
+ * sectionId/serviceId/role verilirse yalnızca o bucket sorgulanır;
+ * verilmezse tüm hospital bazlı kayıtlar taranır (eski davranış).
+ *
+ * @param {{ hospitalId: string, year: number, month: number, sectionId?: string, serviceId?: string, role?: string }} params
  * @returns {Promise<Array<{ personId, personName, date1, date2 }>>}
  */
-async function findRestViolations({ hospitalId, year, month }) {
+async function findRestViolations({ hospitalId, year, month, sectionId, serviceId, role }) {
   const hoid = toOid(hospitalId);
   const match = {
     year: Number(year),
@@ -96,6 +99,9 @@ async function findRestViolations({ hospitalId, year, month }) {
     status: 'active',
     ...(hoid ? { hospitalId: hoid } : { hospitalId: String(hospitalId) }),
   };
+  if (sectionId != null && String(sectionId).trim()) match.sectionId = String(sectionId).trim();
+  if (serviceId != null)                              match.serviceId = String(serviceId).trim();
+  if (role      != null && String(role).trim())       match.role      = String(role).trim();
 
   const assignments = await Assignment.find(match)
     .select('personId personName date shiftCode')

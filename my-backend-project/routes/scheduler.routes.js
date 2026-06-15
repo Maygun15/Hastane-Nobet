@@ -9,6 +9,10 @@ const { enqueueScheduleJob, getJob }      = require('../services/schedulerJobRun
 const { computeQualityScore }             = require('../services/scheduleQuality');
 const { suggestSwaps }                    = require('../services/swapSuggestionService');
 const { llmChat }                         = require('../services/llmService');
+const {
+  requireSpecificServiceScope,
+  specificServiceErrorPayload,
+} = require('../utils/serviceScopeGuard');
 
 const isProd      = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
@@ -32,7 +36,7 @@ function parseBody(req) {
    Async: enqueues a background job, returns { jobId } immediately.
    Sync fallback via ?sync=true for backward compatibility.
    ───────────────────────────────────────────────────────────────── */
-router.post('/generate', requireAuth, requireRole('admin', 'authorized'), validate(scheduleGenerateSchema), async (req, res) => {
+router.post('/generate', requireAuth, requireRole('admin', 'authorized'), requireSpecificServiceScope, validate(scheduleGenerateSchema), async (req, res) => {
   try {
     const params    = parseBody(req);
     const userId    = req.user?.uid || null;
@@ -55,6 +59,9 @@ router.post('/generate', requireAuth, requireRole('admin', 'authorized'), valida
     return res.status(202).json({ ok: true, jobId, status: 'queued' });
   } catch (err) {
     console.error('[POST /api/scheduler/generate] ERR:', err);
+    if (err?.code === 'SPECIFIC_SERVICE_REQUIRED') {
+      return res.status(400).json(specificServiceErrorPayload(err));
+    }
     return res.status(400).json({ ok: false, message: safeMessage(err, err.message) });
   }
 });

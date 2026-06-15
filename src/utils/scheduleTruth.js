@@ -29,15 +29,37 @@ function uniqueDefs(defs = []) {
   return out;
 }
 
-// shiftCode is portable across all sources; rowId is source-specific.
-// Excluding roleLabel prevents case/format differences from creating spurious duplicates.
+// 10+ haneli saf sayısal değer → rowId/timestamp (örn. "1761072131836").
+// Gerçek vardiya kodları kısa alfanümeriktir: "N", "V1", "M4" vb.
+function isTimestampLike(value) {
+  return /^\d{10,}$/.test(String(value || "").trim());
+}
+
+// shiftCode tüm kaynaklarda taşınabilir; rowId kaynak-özgüdür.
+// item.rowId HER ZAMAN kaynak-özgü timestamp/rowId içerebilir — asla kimlik anahtarı değil.
+// shiftId de timestamp olabilir (scheduler rowId'yi shiftId'ye yazar) — önce kontrol edilir.
+// roleLabel, shiftCode da shiftId de yoksa son çare semantik tanımlayıcı olarak kullanılır.
 function assignmentDedupeKey(item = {}) {
   const date = String(item.date || item.day || "").slice(0, 10);
   const personId = String(item.personId || item.pid || item.staffId || "").trim();
   const personName = canonName(item.personName || item.fullName || item.name || "");
+
+  // Gerçek vardiya kodu — hiçbir zaman timestamp değil
   const shiftCode = String(item.shiftCode || item.shift || item.code || "").trim().toUpperCase();
-  const rowId = String(item.rowId || item.shiftId || "").trim();
-  return `${date}|${personId || personName}|${shiftCode || rowId}`;
+
+  // shiftId timestamp değilse güvenli kısa tanımlayıcı olabilir; timestamp ise boş bırak
+  const rawShiftId = String(item.shiftId || "").trim();
+  const shiftIdSafe = isTimestampLike(rawShiftId) ? "" : rawShiftId.toUpperCase();
+
+  // Son çare: semantik görev/alan etiketi (roleLabel/rowLabel/label)
+  // roleLabel harf büyüklüğü farklarından sahte duplicate oluşturmaması için uppercase normalize edilir
+  const roleLabel = String(item.roleLabel || item.rowLabel || item.label || item.area || "").trim().toUpperCase();
+
+  // Öncelik: shiftCode > güvenli shiftId > roleLabel
+  // item.rowId asla kullanılmaz — her zaman kaynak-özgü timestamp/rowId
+  const shiftIdentity = shiftCode || shiftIdSafe || roleLabel;
+
+  return `${date}|${personId || personName}|${shiftIdentity}`;
 }
 
 function dedupeAssignments(assignments = []) {

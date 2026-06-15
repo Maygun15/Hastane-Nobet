@@ -244,7 +244,7 @@ function explainAvailability(person, day, context, shift) {
         if (restHours < minRest) return { allowed: false, reason: "MIN_REST_HOURS" };
       } else {
         const diff = daysBetween(prev.date, dayKey);
-        if ((diff === 0 && minRest > 0) || (diff === 1 && minRest > 24)) {
+        if ((diff === 0 && minRest > 0) || (diff === 1 && minRest > 0)) {
           return { allowed: false, reason: "MIN_REST_HOURS" };
         }
       }

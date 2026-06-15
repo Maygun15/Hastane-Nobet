@@ -1,6 +1,70 @@
 const mongoose = require('mongoose');
 const Assignment = require('../models/Assignment');
 
+const EXACT_PROJECTION_SCOPE_CODE = 'EXACT_PROJECTION_SCOPE_REQUIRED';
+const EXACT_PROJECTION_SCOPE_MESSAGE = 'A complete schedule scope is required for Assignment projection synchronization.';
+const LEGACY_SCRIPT_MODE = 'legacy-script';
+
+function normalizeScopeValue(value) {
+  if (value === undefined || value === null) return '';
+  return String(value)
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function createExactProjectionScopeError() {
+  const error = new Error(EXACT_PROJECTION_SCOPE_MESSAGE);
+  error.code = EXACT_PROJECTION_SCOPE_CODE;
+  error.status = 400;
+  error.statusCode = 400;
+  return error;
+}
+
+function assertExactProjectionScope(scope = {}, { requireSourceScheduleId = false } = {}) {
+  const rawHospitalId = scope?.hospitalId;
+  const hospitalId = typeof rawHospitalId === 'string' ? rawHospitalId.trim() : (rawHospitalId || null);
+  const sectionId = String(scope?.sectionId || '').trim();
+  const serviceId = scope?.serviceId != null ? String(scope.serviceId).trim() : '';
+  const role = scope?.role != null ? String(scope.role).trim() : '';
+  const year = Number(scope?.year);
+  const month = Number(scope?.month);
+  const rawSourceScheduleId = scope?.sourceScheduleId;
+  const sourceScheduleId = typeof rawSourceScheduleId === 'string'
+    ? rawSourceScheduleId.trim()
+    : (rawSourceScheduleId || null);
+  const invalidServices = new Set(['', 'all', 'all services', 'all roles', 'tumu', 'tum servisler', 'tum roller']);
+  const invalidRoles = new Set(['', 'all', 'all services', 'all roles', 'tumu', 'tum servisler', 'tum roller']);
+
+  if (
+    !hospitalId
+    || !sectionId
+    || invalidServices.has(normalizeScopeValue(serviceId))
+    || invalidRoles.has(normalizeScopeValue(role))
+    || !Number.isInteger(year)
+    || year < 2000
+    || year > 2100
+    || !Number.isInteger(month)
+    || month < 1
+    || month > 12
+    || (requireSourceScheduleId && !sourceScheduleId)
+  ) {
+    throw createExactProjectionScopeError();
+  }
+
+  return Object.freeze({
+    hospitalId,
+    sectionId,
+    serviceId,
+    role,
+    year,
+    month,
+    sourceScheduleId,
+  });
+}
+
 function canonName(str = '') {
   return String(str || '')
     .normalize('NFD')
@@ -200,16 +264,25 @@ function extractAssignmentsFromPayload(payload = {}, scope = {}) {
   return [];
 }
 
-async function replaceAssignmentsForSchedule({ scope = {}, payload = {}, createdBy = null, updatedBy = null, source = 'monthlySchedule' } = {}) {
-  const baseScope = {
-    hospitalId: scope?.hospitalId || null,
-    sectionId: String(scope?.sectionId || '').trim(),
-    serviceId: scope?.serviceId != null ? String(scope.serviceId).trim() : '',
-    role: scope?.role != null ? String(scope.role).trim() : '',
-    year: Number(scope?.year),
-    month: Number(scope?.month),
-    sourceScheduleId: scope?.sourceScheduleId || null,
-  };
+async function replaceAssignmentsForSchedule({
+  scope = {},
+  payload = {},
+  createdBy = null,
+  updatedBy = null,
+  source = 'monthlySchedule',
+  mode = 'operational',
+} = {}) {
+  const baseScope = mode === LEGACY_SCRIPT_MODE
+    ? {
+        hospitalId: scope?.hospitalId || null,
+        sectionId: String(scope?.sectionId || '').trim(),
+        serviceId: scope?.serviceId != null ? String(scope.serviceId).trim() : '',
+        role: scope?.role != null ? String(scope.role).trim() : '',
+        year: Number(scope?.year),
+        month: Number(scope?.month),
+        sourceScheduleId: scope?.sourceScheduleId || null,
+      }
+    : assertExactProjectionScope(scope, { requireSourceScheduleId: true });
   if (!baseScope.sectionId || !baseScope.year || !baseScope.month) return { count: 0 };
 
   const rawAssignments = extractAssignmentsFromPayload(payload, baseScope);
@@ -310,7 +383,8 @@ async function replaceAssignmentsForSchedule({ scope = {}, payload = {}, created
 }
 
 async function upsertAssignment({ scope = {}, assignment = {}, createdBy = null, updatedBy = null, source = 'manual' } = {}) {
-  const doc = normalizeAssignmentRecord(assignment, scope, { source, createdBy, updatedBy });
+  const exactScope = assertExactProjectionScope(scope, { requireSourceScheduleId: true });
+  const doc = normalizeAssignmentRecord(assignment, exactScope, { source, createdBy, updatedBy });
   if (!doc) return null;
   await Assignment.findOneAndUpdate(
     {
@@ -329,23 +403,22 @@ async function upsertAssignment({ scope = {}, assignment = {}, createdBy = null,
 }
 
 async function removeAssignment({ scope = {}, assignment = {} } = {}) {
+  const exactScope = assertExactProjectionScope(scope);
   const dateInfo = parseDateYmd(assignment?.date || assignment?.day);
   if (!dateInfo) return { deletedCount: 0 };
-  const serviceId = scope?.serviceId != null ? String(scope.serviceId).trim() : '';
-  const role = scope?.role != null ? String(scope.role).trim() : '';
   const personId = String(assignment?.personId || '').trim();
   const personName = canonName(assignment?.personName || assignment?.name || '');
   const shiftId = String(assignment?.shiftId || assignment?.shiftCode || assignment?.shift || assignment?.code || '').trim();
   const roleLabel = String(assignment?.roleLabel || assignment?.rowLabel || assignment?.label || assignment?.area || '').trim();
   const taskKey = buildTaskKey({ shiftId, rowId: assignment?.rowId, shiftCode: assignment?.shiftCode, roleLabel });
   const personKey = personId || personName;
-  if (!scope?.sectionId || !personKey) return { deletedCount: 0 };
+  if (!personKey) return { deletedCount: 0 };
 
   const result = await Assignment.deleteMany({
-    sectionId: String(scope.sectionId).trim(),
-    hospitalId: scope?.hospitalId || null,
-    serviceId,
-    role,
+    hospitalId: exactScope.hospitalId,
+    sectionId: exactScope.sectionId,
+    serviceId: exactScope.serviceId,
+    role: exactScope.role,
     date: dateInfo.date,
     taskKey,
     personKey,
@@ -354,6 +427,9 @@ async function removeAssignment({ scope = {}, assignment = {} } = {}) {
 }
 
 module.exports = {
+  EXACT_PROJECTION_SCOPE_CODE,
+  EXACT_PROJECTION_SCOPE_MESSAGE,
+  assertExactProjectionScope,
   replaceAssignmentsForSchedule,
   upsertAssignment,
   removeAssignment,

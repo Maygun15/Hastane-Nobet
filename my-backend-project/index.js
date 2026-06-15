@@ -61,10 +61,82 @@ function redactMongoUri(uri) {
   return String(uri || '').replace(/\/\/([^:\/?#]+):([^@]+)@/, '//***:***@');
 }
 
-if (!JWT_SECRET) {
-  console.error('HATA: JWT_SECRET tanımlı değil');
-  process.exit(1);
+/* ====================================================================
+ * PRODUCTION SECRETS VALIDATION
+ * NODE_ENV=production ortamında zayıf/varsayılan değerler startup'ı durdurur.
+ * Geliştirme ortamında yalnızca uyarı verilir.
+ * ==================================================================== */
+const KNOWN_WEAK_JWT_SECRETS = new Set([
+  'super-gizli-ve-uzun-bir-anahtar',
+  'degistir-uzun-ve-rastgele-bir-deger',
+  'degistir-ayri-uzun-ve-rastgele-bir-deger',
+  'secret', 'your-secret', 'your-secret-key', 'changeme',
+  'jwt_secret', 'jwt-secret', 'mysecret', 'password',
+]);
+const KNOWN_WEAK_PASSWORDS = new Set([
+  '123456', '12345678', '123456789', 'password', 'admin',
+  'admin123', 'qwerty', 'letmein', 'guclu-sifre-gir',
+]);
+
+function assertProductionSecrets() {
+  const errors = [];
+
+  // JWT_SECRET
+  if (!JWT_SECRET) {
+    errors.push('JWT_SECRET tanımlı değil. Üretmek için: openssl rand -hex 64');
+  } else if (KNOWN_WEAK_JWT_SECRETS.has(JWT_SECRET.toLowerCase())) {
+    errors.push('JWT_SECRET bilinen zayıf/varsayılan bir değer içeriyor. openssl rand -hex 64 ile yeni bir değer üretin.');
+  } else if (JWT_SECRET.length < 32) {
+    errors.push(`JWT_SECRET çok kısa (${JWT_SECRET.length} karakter). En az 32 karakter gerekli.`);
+  }
+
+  // MONGODB_URI
+  if (!MONGODB_URI) {
+    errors.push('MONGODB_URI tanımlı değil. Production MongoDB bağlantı dizesi gerekli.');
+  }
+
+  // FRONTEND_ORIGIN — production'da açık bir değer zorunlu, hardcode fallback'e güvenilmez
+  if (!process.env.FRONTEND_ORIGIN) {
+    errors.push('FRONTEND_ORIGIN tanımlı değil. Production frontend URL\'ini ekleyin (örn. https://yourdomain.vercel.app). DEPLOYMENT.md\'e bakın.');
+  }
+
+  // ADMIN_PASSWORD (yalnızca RESET_ADMIN_PASSWORD=true olduğunda kritik)
+  if (RESET_ADMIN_PW || !ADMIN_PASSWORD) {
+    if (!ADMIN_PASSWORD) {
+      errors.push('ADMIN_PASSWORD tanımlı değil. Güçlü bir şifre belirleyin (en az 12 karakter).');
+    } else if (KNOWN_WEAK_PASSWORDS.has(ADMIN_PASSWORD.toLowerCase())) {
+      errors.push('ADMIN_PASSWORD bilinen zayıf/varsayılan bir değer. Güçlü bir şifre kullanın (12+ karakter, büyük/küçük harf, rakam, özel karakter).');
+    } else if (ADMIN_PASSWORD.length < 12) {
+      errors.push(`ADMIN_PASSWORD çok kısa (${ADMIN_PASSWORD.length} karakter). En az 12 karakter gerekli.`);
+    }
+  }
+
+  if (errors.length > 0) {
+    console.error('\n╔══════════════════════════════════════════════════════════╗');
+    console.error('║  PRODUCTION SECRETS HATASI — Sunucu başlatılamıyor       ║');
+    console.error('╚══════════════════════════════════════════════════════════╝');
+    errors.forEach((e, i) => console.error(`  [${i + 1}] ${e}`));
+    console.error('\n  Çözüm: .env dosyanızı veya Railway/Vercel ortam değişkenlerinizi güncelleyin.');
+    console.error('  Belge: DEPLOYMENT.md\n');
+    process.exit(1);
+  }
+
+  console.log('[BOOT] Production secrets doğrulandı.');
 }
+
+// Production ortamında tüm kritik değişkenler doğrulanır; dev'de sadece eksiklik uyarısı
+if (IS_PROD) {
+  assertProductionSecrets();
+} else {
+  if (!JWT_SECRET) {
+    console.error('HATA: JWT_SECRET tanımlı değil');
+    process.exit(1);
+  }
+  if (!MONGODB_URI && !SKIP_DB) {
+    console.warn('UYARI: MONGODB_URI tanımlı değil (dev modunda SKIP_DB ile geçilebilir).');
+  }
+}
+
 if (IS_PROD && ALLOW_DEV_RAW) {
   console.warn('UYARI: NODE_ENV=production iken ALLOW_DEV_ENDPOINTS aktif, dev endpointler zorla kapatıldı.');
 }
@@ -124,8 +196,21 @@ if (!SKIP_DB) {
 function normalizeOrigin(value) {
   return String(value || '').trim().replace(/\/+$/, '');
 }
+
+// CORS_ORIGINS env var — virgülle ayrılmış ek production origin'ları (opsiyonel)
+// Örnek: CORS_ORIGINS=https://admin.example.com,https://app.example.com
+const _extraCorsOrigins = String(process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map(normalizeOrigin)
+  .filter(Boolean);
+
 const ALLOWED_ORIGINS = new Set(
-  ['http://localhost:5173', 'http://localhost:5174', FRONTEND_ORIGIN]
+  [
+    // localhost origin'ları yalnızca geliştirme ortamında izin verilir
+    ...(!IS_PROD ? ['http://localhost:5173', 'http://localhost:5174'] : []),
+    FRONTEND_ORIGIN,
+    ..._extraCorsOrigins,
+  ]
     .map(normalizeOrigin)
     .filter(Boolean)
 );
@@ -228,20 +313,34 @@ app.get('/', (_req, res) => res.send('Backend Sunucusu Başarıyla Çalışıyor
 app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
-// Public health endpoint — UptimeRobot / dashboard monitoring (auth gerektirmez)
+// Public health endpoint — UptimeRobot / load balancer monitoring (auth gerektirmez)
+// Production: yalnızca status + ts döner — altyapı detayları gizlenir
+// Development: bellek, DB gecikme ve pool bilgileri de döner
 app.get('/api/ping', async (_req, res) => {
   const t0 = Date.now();
   const dbState = mongoose.connection.readyState; // 0=off 1=ok 2=connecting 3=closing
+  const isOk = dbState === 1;
+  const httpStatus = isOk ? 200 : 503;
+
+  if (IS_PROD) {
+    // Production: altyapı bilgisi dışarıya sızdırılmaz
+    return res.status(httpStatus).json({
+      status: isOk ? 'ok' : 'degraded',
+      ts: Date.now(),
+    });
+  }
+
+  // Development / staging: tam detay
   let dbLatencyMs = null;
-  if (dbState === 1) {
+  if (isOk) {
     try {
       await mongoose.connection.db.admin().ping();
       dbLatencyMs = Date.now() - t0;
-    } catch { /* bağlantı var ama ping başarısız — state zaten 1 değil */ }
+    } catch { /* bağlantı var ama ping başarısız */ }
   }
   const pool = mongoose.connection?.pool;
-  res.status(dbState === 1 ? 200 : 503).json({
-    status: dbState === 1 ? 'ok' : 'degraded',
+  return res.status(httpStatus).json({
+    status: isOk ? 'ok' : 'degraded',
     ts: Date.now(),
     uptime_s: Math.floor(process.uptime()),
     memory_mb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
@@ -271,7 +370,7 @@ async function createAdmin() {
         if (!ADMIN_PASSWORD) {
           throw new Error('RESET_ADMIN_PASSWORD açıkken ADMIN_PASSWORD zorunlu');
         }
-        existing.passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
+        existing.passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 12);
         existing.password = undefined;
         existing.role = 'admin';
         existing.active = true;
@@ -288,7 +387,7 @@ async function createAdmin() {
       throw new Error('İlk admin oluşturma için ADMIN_PASSWORD zorunlu');
     }
 
-    const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
+    const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 12);
     await User.create({
       name: 'Admin',
       email,

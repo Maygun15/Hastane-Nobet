@@ -16,6 +16,7 @@ import { fetchScheduleTruth } from "../utils/scheduleTruth.js";
 import OverrideDialog from "./OverrideDialog.jsx";
 import QuickReplacePanel from "./QuickReplacePanel.jsx";
 import { resolvePersonId } from "../utils/personIdentity.js";
+import { resolvePersonWorkAreaNames } from "../lib/workAreasModel.js";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const stripDiacritics = (str = "") =>
@@ -351,6 +352,77 @@ function collectAreasFromPeople(list) {
     out.push(...extractAreasFromPerson(person));
   });
   return out;
+}
+
+function dedupeTextList(values) {
+  const map = new Map();
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    const text = String(value || "").trim();
+    if (!text) return;
+    const key = text.toLocaleUpperCase("tr-TR");
+    if (!map.has(key)) map.set(key, text);
+  });
+  return Array.from(map.values());
+}
+
+function splitShiftTokens(value) {
+  return String(value || "")
+    .split(/[,;]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function extractShiftCodesFromPerson(person) {
+  const out = [];
+  const candidates = [
+    person?.shiftCodes,
+    person?.shifts,
+    person?.vardiyalar,
+    person?.meta?.shiftCodes,
+    person?.meta?.shifts,
+    person?.meta?.vardiyalar,
+    person?.raw?.shiftCodes,
+    person?.raw?.shifts,
+    person?.raw?.vardiyalar,
+    person?.raw?.meta?.shiftCodes,
+    person?.raw?.meta?.shifts,
+    person?.["VARDİYE KODLARI"],
+    person?.["VARDIYE KODLARI"],
+    person?.["VARDİYELER"],
+    person?.["VARDIYELER"],
+    person?.raw?.["VARDİYE KODLARI"],
+    person?.raw?.["VARDIYE KODLARI"],
+    person?.raw?.["VARDİYELER"],
+    person?.raw?.["VARDIYELER"],
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (Array.isArray(candidate)) {
+      for (const item of candidate) {
+        if (!item) continue;
+        if (typeof item === "string") {
+          out.push(...splitShiftTokens(item));
+        } else if (typeof item === "object") {
+          const code = item.shiftCode ?? item.code ?? item.id ?? item.name ?? item.label ?? "";
+          if (code) out.push(...splitShiftTokens(code));
+        }
+      }
+      continue;
+    }
+    if (typeof candidate === "string") {
+      out.push(...splitShiftTokens(candidate));
+      continue;
+    }
+    if (typeof candidate === "object") {
+      const code = candidate.shiftCode ?? candidate.code ?? candidate.id ?? candidate.name ?? candidate.label ?? "";
+      if (code) out.push(...splitShiftTokens(code));
+    }
+  }
+  return dedupeTextList(out);
+}
+
+function shiftKey(value) {
+  return String(value || "").trim().toLocaleUpperCase("tr-TR");
 }
 
 function normalizeWorkingHours(input) {
@@ -1185,18 +1257,54 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
     );
   }, [remoteDefs, settingsRevision, summaryWorkingHours]);
 
+  const selectedPersonRaw = selectedPerson?.raw || selectedPerson || null;
+
+  const personAreaOptions = useMemo(() => {
+    if (!selectedPersonRaw) return [];
+    return dedupeTextList([
+      ...resolvePersonWorkAreaNames(selectedPersonRaw, workAreas),
+      ...extractAreasFromPerson(selectedPersonRaw),
+    ]);
+  }, [selectedPersonRaw, workAreas, settingsRevision]);
+
+  const selectedPersonShiftCodes = useMemo(() => {
+    if (!selectedPersonRaw) return [];
+    return extractShiftCodesFromPerson(selectedPersonRaw);
+  }, [selectedPersonRaw, settingsRevision]);
+
+  const personShiftOptions = useMemo(() => {
+    if (!selectedPersonShiftCodes.length) return [];
+    const wanted = new Set(selectedPersonShiftCodes.map(shiftKey));
+    const matched = shiftOptions.filter((opt) => wanted.has(shiftKey(opt.code)));
+    if (matched.length) return matched;
+    return selectedPersonShiftCodes.map((code) => ({ code, label: code }));
+  }, [selectedPersonShiftCodes, shiftOptions]);
+
   const areaOptions = useMemo(() => {
-    const fromPropsRaw = Array.isArray(workAreas) ? workAreas : [];
+    // workAreas prop boşsa localStorage'dan fallback oku — settings henüz yüklenmemişse de tam liste görünsün
+    const fromPropsRaw = Array.isArray(workAreas) && workAreas.length > 0
+      ? workAreas
+      : (LS.get("workAreasV2") || LS.get("workAreas") || []);
     const fromPeopleRaw = collectAreasFromPeople(people);
-    const merged = normalizeWorkAreas([...fromPropsRaw, ...fromPeopleRaw]);
-    if (merged.length) return merged;
-    const set = new Set();
-    (remoteDefs || []).forEach((def) => {
-      const label = String(def?.label ?? def?.area ?? def?.name ?? "").trim();
-      if (label) set.add(label);
-    });
-    return Array.from(set.values()).sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
-  }, [remoteDefs, settingsRevision, workAreas, people]);
+    const globalNames = normalizeWorkAreas(fromPropsRaw);
+    const peopleNames = normalizeWorkAreas(fromPeopleRaw);
+    const remoteLabels = (remoteDefs || [])
+      .map((def) => String(def?.label ?? def?.area ?? def?.name ?? "").trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
+    // Kişinin kendi alanları önce, ardından tüm global alanlar, sonra diğer kaynaklar
+    return dedupeTextList([...personAreaOptions, ...globalNames, ...peopleNames, ...remoteLabels]);
+  }, [remoteDefs, settingsRevision, workAreas, people, personAreaOptions]);
+
+  const assignAreaOptions = useMemo(
+    () => (personAreaOptions.length > 0 ? personAreaOptions : areaOptions),
+    [personAreaOptions, areaOptions]
+  );
+
+  const assignShiftOptions = useMemo(
+    () => (personShiftOptions.length ? personShiftOptions : shiftOptions),
+    [personShiftOptions, shiftOptions]
+  );
 
   const assignmentsByDay = useMemo(() => {
     const combined = new Map();
@@ -1515,9 +1623,9 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
   const openAssignModal = (dayNum) => {
     if (!canManage || !selectedPerson) return;
     const dateStr = `${year}-${pad2(month0 + 1)}-${pad2(dayNum)}`;
-    const first = shiftOptions[0]?.code || "";
+    const first = assignShiftOptions[0]?.code || shiftOptions[0]?.code || "";
     setAssignShiftId(first);
-    setAssignRoleLabel(areaOptions[0] || "");
+    setAssignRoleLabel(assignAreaOptions[0] || areaOptions[0] || "");
     setAssignNote("");
     setAssignPinned(false);
     setAssignError("");
@@ -1571,7 +1679,7 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
       date: assignModal.dateStr,
       shiftId,
       shiftCode: shiftId,
-      ...(assignModal.mode === "edit" && prevShiftId && prevShiftId !== shiftId
+      ...(assignModal.mode === "edit" && prevShiftId
         ? { previousShiftId: prevShiftId }
         : {}),
       personId: selectedPerson.id,
@@ -2104,22 +2212,30 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
           </div>
           <label className="flex flex-col gap-1 text-sm">
             Alan
-            <input
+            <select
               value={assignRoleLabel}
               onChange={(e) => setAssignRoleLabel(e.target.value)}
               className="h-9 rounded border px-3 text-sm"
-              placeholder="Örn: NÖROLOJİ"
-              list="assign-area-options"
-            />
-            {areaOptions.length > 0 && (
-              <datalist id="assign-area-options">
-                {areaOptions.map((opt) => (
-                  <option key={opt} value={opt} />
-                ))}
-              </datalist>
-            )}
+            >
+              {assignAreaOptions.length === 0 ? (
+                <option value="">— Alan tanımlı değil —</option>
+              ) : (
+                <>
+                  {/* Mevcut değer listede yoksa (manuel girilmiş alan) seçenek olarak koru */}
+                  {assignRoleLabel &&
+                    !assignAreaOptions.some(
+                      (o) => o.toLocaleUpperCase("tr-TR") === assignRoleLabel.toLocaleUpperCase("tr-TR")
+                    ) && (
+                      <option value={assignRoleLabel}>{assignRoleLabel}</option>
+                    )}
+                  {assignAreaOptions.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </>
+              )}
+            </select>
           </label>
-          {shiftOptions.length > 0 ? (
+          {assignShiftOptions.length > 0 ? (
             <label className="flex flex-col gap-1 text-sm">
               Vardiya
               <select
@@ -2131,7 +2247,7 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
                 className="h-9 rounded border px-3 text-sm"
               >
                 <option value="">Seç...</option>
-                {shiftOptions.map((opt) => (
+                {assignShiftOptions.map((opt) => (
                   <option key={opt.code} value={opt.code}>
                     {opt.label} ({opt.code})
                   </option>

@@ -13,4 +13,11 @@ COPY --chown=appuser:appgroup . .
 USER appuser
 
 EXPOSE 3000
+
+# wget Alpine'da mevcut; curl ile aynı iş görür ve ek paket gerektirmez.
+# /health → tam public endpoint, auth yok, yalnızca {ok:true,ts:...} döner.
+# interval: 30s kontrol, timeout: 5s, başlangıç gecikmesi: 15s, 3 başarısızlıkta unhealthy.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget -qO- http://localhost:3000/health > /dev/null || exit 1
+
 CMD ["node", "index.js"]

@@ -49,6 +49,7 @@ import DashboardPage from "../pages/DashboardPage.jsx";
 import AISchedulerPage from "../pages/AISchedulerPage.jsx";
 import AICostPage from "../pages/AICostPage.jsx";
 import FairnessReportPage from "../pages/FairnessReportPage.jsx";
+import ProjectionHealthPage from "../pages/ProjectionHealthPage.jsx";
 import useSSENotifications from "../hooks/useSSENotifications.js";
 import NotificationBell from "../components/NotificationBell.jsx";
 import AnnouncementsPanel from "../components/AnnouncementsPanel.jsx";
@@ -224,6 +225,8 @@ export default function HospitalRosterApp() {
   const canSeeAIScheduler = isAdmin || isAuthorized;   // AI Çizelge: Admin + Yetkili
   const canSeeAICost      = isAdmin;                   // AI Maliyet: yalnız Admin
   const canSeeFairness    = isAdmin || isAuthorized;   // Adillik Raporu: Admin + Yetkili
+  const canSeeProjectionHealth =
+    isAdmin || ["AUTHORIZED", "STAFF"].includes(roleOf(user));
 
   // Store değişikliklerini legacy window event'lerine köprüle (geriye dönük uyumluluk)
   useStoreEventBridge();
@@ -523,6 +526,7 @@ export default function HospitalRosterApp() {
       // ── Hash tabanlı rotalar (önce daha spesifik olanlar) ──────────────────
       // Yeni: Analiz grubu
       if (hash.startsWith("#/analiz/genel-bakis"))  { if (canSeeDashboard)   setActiveTab("dashboard");            return; }
+      if (hash.startsWith("#/analiz/projection-health")) { if (canSeeProjectionHealth) setActiveTab("projectionHealth"); return; }
       if (hash.startsWith("#/analiz/ai-cizelge"))   { if (canSeeAIScheduler) setActiveTab("aiScheduler");          return; }
       if (hash.startsWith("#/analiz/ai-maliyet"))   { if (canSeeAICost)      setActiveTab("aiCost");               return; }
       if (hash.startsWith("#/analiz/adillik"))       { if (canSeeFairness)    setActiveTab("fairness");             return; }
@@ -587,7 +591,7 @@ export default function HospitalRosterApp() {
       window.removeEventListener("hashchange",  syncFromLocation);
     };
   }, [activeTab, canSeePersonnel, canSeeSchedules, canSeeParameters, canSeeUsersTab,
-      canSeeDashboard, canSeeAIScheduler, canSeeAICost, canSeeFairness, isAdmin, isStaff]);
+      canSeeDashboard, canSeeAIScheduler, canSeeAICost, canSeeFairness, canSeeProjectionHealth, isAdmin, isStaff]);
 
   // Quick-action callbacks (sidebar dışı: header toolbar)
   const openRequests = useCallback((status = "") => {
@@ -618,6 +622,7 @@ export default function HospitalRosterApp() {
       ai: "AI Asistan",
       aiScheduler: "AI Çizelge",
       fairness: "Adillik",
+      projectionHealth: "Projection Health",
       aiCost: "AI Maliyet",
       plannings: "Planlama Yönetimi",
       leaveBalance: "İzin Bakiyesi",
@@ -711,6 +716,10 @@ export default function HospitalRosterApp() {
 
           {activeTab === "fairness" && canSeeFairness && (
             <FairnessReportPage activeYM={ymKey(getActiveYM())} />
+          )}
+
+          {activeTab === "projectionHealth" && canSeeProjectionHealth && (
+            <ProjectionHealthPage activeYM={ymKey(getActiveYM())} />
           )}
 
           {activeTab === "aiCost" && canSeeAICost && (

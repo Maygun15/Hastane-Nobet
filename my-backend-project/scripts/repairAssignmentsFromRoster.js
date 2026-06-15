@@ -175,6 +175,7 @@ async function main() {
           assignments: rebuilt,
         },
         source: 'repair-monthly',
+        mode: 'legacy-script',
       });
     }
     changed += 1;

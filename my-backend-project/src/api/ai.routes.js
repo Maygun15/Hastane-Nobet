@@ -66,7 +66,23 @@ router.post('/confirm-action', async (req, res) => {
     return res.json({ ok: result.ok, result });
   } catch (err) {
     console.error('[AI /confirm-action]', err?.message || err);
-    return res.status(500).json({ ok: false, message: safeMessage(err) });
+    const safeStructuredCodes = new Set([
+      'AI_SCOPE_AMBIGUOUS',
+      'SCHEDULE_NOT_FOUND_IN_SCOPE',
+      'PROJECTION_SYNC_FAILED',
+    ]);
+    if (err?.code === 'SPECIFIC_SERVICE_REQUIRED') {
+      return res.status(400).json({
+        ok: false,
+        code: err.code,
+        message: err.message,
+      });
+    }
+    return res.status(err?.status || err?.statusCode || 500).json({
+      ok: false,
+      ...(err?.code ? { code: err.code } : {}),
+      message: safeStructuredCodes.has(err?.code) ? err.message : safeMessage(err),
+    });
   }
 });
 

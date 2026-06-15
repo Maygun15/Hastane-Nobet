@@ -378,6 +378,7 @@ export default function FairnessReportPage({ activeYM }) {
   const [publishing, setPublishing]             = useState(false);
   const [complianceResult, setComplianceResult] = useState(null);
   const [checkingCompliance, setCheckingCompliance] = useState(false);
+  const [scheduleRevision, setScheduleRevision] = useState(0);
 
   const activeServiceId = useAppStore(s => s.activeServiceId);
 
@@ -483,9 +484,21 @@ export default function FairnessReportPage({ activeYM }) {
     } finally {
       setLoading(false);
     }
-  }, [year, month, activeServiceId]);
+  }, [year, month, activeServiceId, scheduleRevision]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const bump = () => setScheduleRevision((v) => v + 1);
+    window.addEventListener('schedule:saved', bump);
+    window.addEventListener('schedule:invalidated', bump);
+    window.addEventListener('planner:changed', bump);
+    return () => {
+      window.removeEventListener('schedule:saved', bump);
+      window.removeEventListener('schedule:invalidated', bump);
+      window.removeEventListener('planner:changed', bump);
+    };
+  }, []);
 
   const sortedPeople = useMemo(() => {
     if (!data?.people) return [];
