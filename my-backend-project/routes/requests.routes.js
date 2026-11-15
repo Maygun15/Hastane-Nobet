@@ -11,6 +11,7 @@ const { sendNewRequestNotification } = require('../services/notificationService'
 const { broadcastAll }    = require('../services/sseService');
 const { suggestSwaps }    = require('../services/swapSuggestionService');
 const Assignment          = require('../models/Assignment');
+const { normalizePreferenceKind } = require('../services/preferenceRequestService');
 const {
   verifySwapCreationAssignments,
 } = require('../services/swapRequestCreationService');
@@ -63,9 +64,24 @@ router.post('/', requireAuth, async (req, res) => {
       swapSectionId, swapMyDate, swapMyShiftId, swapMyShiftLabel,
       swapTargetDate, swapTargetShiftId, swapTargetShiftLabel,
       swapWithPersonName,
+      preferenceKind: rawPreferenceKind,
     } = req.body;
 
     if (!type || !message) return res.status(400).json({ message: 'Tür ve mesaj zorunlu' });
+    const preferenceKind = type === 'tercih' ? normalizePreferenceKind(rawPreferenceKind) : '';
+    if (type === 'tercih' && rawPreferenceKind && !preferenceKind) {
+      return res.status(400).json({ ok: false, code: 'INVALID_PREFERENCE_KIND', message: 'Geçersiz tercih türü' });
+    }
+    if (preferenceKind) {
+      const start = String(targetDate || '').slice(0, 10);
+      const end = String(targetDateEnd || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) {
+        return res.status(400).json({ ok: false, code: 'PREFERENCE_DATE_REQUIRED', message: 'Tercih için tarih zorunlu' });
+      }
+      if (end && (!/^\d{4}-\d{2}-\d{2}$/.test(end) || end < start)) {
+        return res.status(400).json({ ok: false, code: 'INVALID_PREFERENCE_RANGE', message: 'Bitiş tarihi başlangıçtan önce olamaz' });
+      }
+    }
     if (type === 'takas' && (!swapMyAssignmentId || !swapTargetAssignmentId)) {
       return res.status(400).json({
         ok: false,
@@ -114,6 +130,7 @@ router.post('/', requireAuth, async (req, res) => {
       swapWithPersonId:     verifiedSwapFields.swapWithPersonId || swapWithPersonId || null,
       swapWithPersonName:   verifiedSwapFields.swapWithPersonName || String(swapWithPersonName || '').trim(),
       leaveTypeCode:        String(leaveTypeCode || '').trim().toUpperCase(),
+      preferenceKind,
       swapMyAssignmentId:   verifiedSwapFields.swapMyAssignmentId || null,
       swapTargetAssignmentId: verifiedSwapFields.swapTargetAssignmentId || null,
       swapSectionId:        verifiedSwapFields.swapSectionId || String(swapSectionId || '').trim(),

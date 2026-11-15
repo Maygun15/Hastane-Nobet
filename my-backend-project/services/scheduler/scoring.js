@@ -1,5 +1,26 @@
 // services/scheduler/scoring.js
 
+const { isNightShift, isNightEquivalentShiftCode } = require("./utils/nightShift");
+
+// Onaysız tercih ("çalışmak istemiyorum" / "gece istemiyorum") için kaçınma cezası.
+// Saat dengesi (hourBalance=2) ile kıyaslanınca ~10 saatlik farka denk gelir:
+// motor mümkünse kaçınır ama kadro yetmezse yine yazar.
+const DEFAULT_PREFERENCE_AVOID_WEIGHT = 20;
+
+function preferencePenalty(person, day, shift, context, weights) {
+  const pref = context?.preferencesByPerson?.[person?.id];
+  const date = day?.date;
+  if (!pref || !date) return 0;
+  const w = Number(weights.preferenceAvoid ?? DEFAULT_PREFERENCE_AVOID_WEIGHT);
+  let penalty = 0;
+  if (Array.isArray(pref.softOff) && pref.softOff.includes(date)) penalty += w;
+  if (Array.isArray(pref.softNoNight) && pref.softNoNight.includes(date) && shift) {
+    const nightLike = isNightShift(shift) || isNightEquivalentShiftCode(shift.code || shift.id || shift.shiftCode || "");
+    if (nightLike) penalty += w;
+  }
+  return penalty;
+}
+
 function calculateScore(person, day, shift, context) {
   let score = 0;
 
@@ -48,10 +69,13 @@ function calculateScore(person, day, shift, context) {
     score += w;
   }
 
+  // Onaysız tercih: kaçınma cezası
+  score += preferencePenalty(person, day, shift, context, weights);
+
   // Ufak rastgelelik (opsiyonel)
   if (context?.randomize !== false) score += Math.random() * 0.5;
 
   return score;
 }
 
-module.exports = { calculateScore };
+module.exports = { calculateScore, preferencePenalty, DEFAULT_PREFERENCE_AVOID_WEIGHT };

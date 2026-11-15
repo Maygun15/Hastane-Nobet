@@ -133,8 +133,8 @@ Hepsi ilk sürümde zorunlu:
 | Adalet: hafta sonu | 🟡 | Haftanın her günü ayrı dengeleniyor (weekdayBalance); "hafta sonu toplamı" diye ayrı hedef yok. |
 | Adalet: bayram / yıl boyu dönüşüm | ❌ | Motor bayramda sadece kadroyu değiştiriyor; kimin bayram tuttuğunu hatırlamıyor. |
 | Adalet raporu | 🟡 | `fairnessEngine.js` gece/hafta sonu/bayramı ölçüyor ama: geceyi sadece `G`/`GECE` kodundan tanıyor (`N` kodu kaçabilir); bayram listesi koda gömülü ve 2026'da bitiyor (veritabanındaki tatil takvimini kullanmıyor). |
-| İstek ("bu gün / gece istemiyorum") | ❌ | Talep türü `tercih` var ama motora hiç ulaşmıyor; motor isteği yalnızca "bu gün çalışmak istiyorum" olarak yorumluyor. |
-| Sorumlu onaylı istek = kesin kural | ❌ | Onaylanan tercih çizelgeye yansımıyor. |
+| İstek ("bu gün / gece istemiyorum") | ✅ | 2026-11-15: tercih talebinde tür seçilir (çalışmak istemiyorum / gece istemiyorum / çalışmak istiyorum) ve tarih aralığı girilir; motor veritabanından okur. |
+| Sorumlu onaylı istek = kesin kural | ✅ | 2026-11-15: onaylı "istemiyorum" tercihi motorda kesin engel; bekleyen tercih kaçınma puanı alır. |
 | İstek puanı/hakkı + karşılanamayanın sonraki aya devri | ❌ | Hiç yok. |
 | İzin ve takas talebi + onay | ✅ | Talep, onay, kural kontrolü, çift onay koruması (BUG-04, BUG-11) var. |
 | Sorumlunun elle düzenlemesi kayda geçer | ✅ | `changeLog` + işlem geçmişi ve geri alma (undo). |
@@ -153,7 +153,7 @@ Süre ~2 hafta (Aralık çizelgesi Kasım sonunda yayınlanmalı). Önerilen sı
 **A. Pilot için şart (yayından önce)**
 
 1. ✅ **Taslak / yayınlandı durumu** — personel sadece yayınlanmış çizelgeyi görür; "Yayınla" bildirimi tetikler. *(2026-11-15: `MonthlySchedule.publication`, `POST /api/schedules/publish|unpublish`, `SchedulePublishBar`; eski kayıtlar yayınlanmış sayılır. Ekranda gerçek veriyle denenmedi.)*
-2. **Tercih talepleri motora bağlansın** — "bu gün / gece istemiyorum" desteği; sorumlu onaylı tercih = kesin engel, onaysız tercih = puanla kaçınma.
+2. ✅ **Tercih talepleri motora bağlansın** — "bu gün / gece istemiyorum" desteği; sorumlu onaylı tercih = kesin engel, onaysız tercih = puanla kaçınma. *(2026-11-15: `Request.preferenceKind` (off | noNight | want), `services/preferenceRequestService.js`, motor kuralları `PREFERENCE_OFF` / `PREFERENCE_NO_NIGHT`, kaçınma ağırlığı `preferenceAvoid` = 20; talep formu ve onay ekranı güncellendi. Sadece varsayılan motor (`generateMonthlyPlan`) uyguluyor; `engine: "draft"` modu uygulamıyor. Türü olmayan eski serbest metin tercihleri yok sayılır.)*
 3. **Gece ve hafta sonu dengesi motora eklensin** — kişi başı gece sayısı ve hafta sonu sayısı için hedef/ceza puanı.
 4. **Adalet raporu düzeltmesi** — gece tanımı vardiya saatinden, bayramlar veritabanı tatil takviminden.
 5. **Acil verisiyle uçtan uca prova** — gerçek vardiya tanımları, 50–100 kişi, Aralık çizelgesini üret → kural ihlali sayısı 0 mı, süre kaç saniye, telefonda personel ekranı.

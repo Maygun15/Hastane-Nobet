@@ -32,6 +32,7 @@ function buildContext({
   days,
   leavesByPerson = {},
   requestsByPerson = {},
+  preferencesByPerson = {},
   targetHours = 0,
   targetShifts = 0,
   rules = {},
@@ -44,6 +45,7 @@ function buildContext({
     days,
     leavesByPerson,
     requestsByPerson,
+    preferencesByPerson,
     targetHours,
     targetShifts,
     rules,
@@ -60,6 +62,7 @@ async function generateMonthlyPlan({
   getMonthlyShifts,
   getLeaves,
   getRequests,
+  getPreferences,
   ruleEngineDoc,
   rules,
   weights,
@@ -76,6 +79,7 @@ async function generateMonthlyPlan({
   const days = await getMonthlyShifts({ year, month });
   const leavesByPerson = (await (getLeaves?.({ year, month }) || {})) || {};
   const requestsByPerson = (await (getRequests?.({ year, month }) || {})) || {};
+  const preferencesByPerson = (await (getPreferences?.({ year, month }) || {})) || {};
 
   const ctxTarget = Number.isFinite(targetHours) ? targetHours : 0;
   const ctxTargetShifts = Number.isFinite(targetShifts) ? targetShifts : 0;
@@ -84,6 +88,7 @@ async function generateMonthlyPlan({
     days,
     leavesByPerson,
     requestsByPerson,
+    preferencesByPerson,
     targetHours: ctxTarget,
     targetShifts: ctxTargetShifts,
     rules,

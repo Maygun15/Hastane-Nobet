@@ -48,6 +48,13 @@ const RequestSchema = new mongoose.Schema({
   // İzin talebi için izin türü kodu
   leaveTypeCode:      { type: String, default: '' },   // 'YILLIK', 'HASTALIK' vb.
 
+  // Tercih talebi türü (type='tercih'): off | noNight | want — bkz. services/preferenceRequestService.js
+  preferenceKind: {
+    type: String,
+    enum: ['', 'off', 'noNight', 'want'],
+    default: '',
+  },
+
   message:      { type: String, default: '' },
   status: {
     type: String,

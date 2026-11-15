@@ -40,6 +40,12 @@ const shiftIsNight = (shift) => {
   return isNightShift(shift);
 };
 
+// "Gece istemiyorum" için gece + geceyi kapsayan (ör. V2/24 saat) vardiyalar.
+const isNightLikeShift = (shift) => {
+  if (!shift) return false;
+  return isNightShift(shift) || isNightEquivalentShiftCode(shift.code || shift.id || shift.shiftCode || "");
+};
+
 const normalizeCode = (s) =>
   (s || "").toString().normalize("NFD").replace(/\p{Diacritic}/gu, "").toUpperCase().trim();
 
@@ -201,6 +207,17 @@ function explainAvailability(person, day, context, shift) {
     }
   }
 
+  // Sorumlunun onayladığı tercih talepleri kesin kuraldır (preferenceRequestService).
+  const pref = context?.preferencesByPerson?.[person.id];
+  if (pref) {
+    if (Array.isArray(pref.hardOff) && pref.hardOff.includes(dayKey)) {
+      return { allowed: false, reason: "PREFERENCE_OFF" };
+    }
+    if (shift && Array.isArray(pref.hardNoNight) && pref.hardNoNight.includes(dayKey) && isNightLikeShift(shift)) {
+      return { allowed: false, reason: "PREFERENCE_NO_NIGHT" };
+    }
+  }
+
   if (rules.MAX_CONSECUTIVE_DAYS) {
     const max = Number(rules.MAX_CONSECUTIVE_DAYS);
     if (Number.isFinite(max) && max > 0) {
@@ -283,4 +300,4 @@ function isAvailable(person, day, context, shift) {
   return result.allowed;
 }
 
-module.exports = { isAvailable, explainAvailability, areaMatches, normalizeArea, splitAreaTokens };
+module.exports = { isAvailable, explainAvailability, areaMatches, normalizeArea, splitAreaTokens, isNightLikeShift };

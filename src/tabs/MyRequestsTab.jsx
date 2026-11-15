@@ -5,6 +5,7 @@ import { Plus, X, Clock, CheckCircle, XCircle, Trash2, ArrowLeftRight, User } fr
 import { createRequest, getMyRequests } from "../api/apiAdapter.js";
 import { http } from "../lib/api.js";
 import { useAuth } from "../auth/AuthContext.jsx";
+import { PREFERENCE_KIND_OPTIONS, PREFERENCE_KIND_SHORT, formatPreferenceDates } from "../constants/preferenceKinds.js";
 
 const TYPE_LABELS = { izin: "İzin", takas: "Takas", tercih: "Tercih", diger: "Diğer" };
 
@@ -28,6 +29,7 @@ const EMPTY_FORM = {
   targetDate: "",
   targetDateEnd: "",
   message: "",
+  preferenceKind: "off",
   swapWithPersonId: "",
   swapWithPersonName: "",
   swapMyDate: "",
@@ -298,6 +300,10 @@ export default function MyRequestsTab() {
   const submit = async () => {
     if (!form.message.trim()) { toast.error("Mesaj zorunludur"); return; }
     if (form.type === "izin" && !form.targetDate) { toast.error("İzin başlangıç tarihi zorunludur"); return; }
+    if (form.type === "tercih") {
+      if (!form.targetDate) { toast.error("Tercih için tarih zorunludur"); return; }
+      if (form.targetDateEnd && form.targetDateEnd < form.targetDate) { toast.error("Bitiş tarihi başlangıçtan önce olamaz"); return; }
+    }
     if (form.type === "takas") {
       if (!form.swapWithPersonId)  { toast.error("Takas yapılacak kişiyi seçin"); return; }
       if (!form.swapMyDate)        { toast.error("Kendi tarihini girin"); return; }
@@ -314,6 +320,7 @@ export default function MyRequestsTab() {
         targetDate: form.targetDate || "",
         targetDateEnd: form.targetDateEnd || "",
       };
+      if (form.type === "tercih") payload.preferenceKind = form.preferenceKind || "off";
       if (form.type === "takas") {
         Object.assign(payload, {
           swapWithPersonId:     form.swapWithPersonId,
@@ -461,6 +468,11 @@ export default function MyRequestsTab() {
                           <StatusBadge status={r.status} />
                           {r.type === "takas" && r.peerStatus && <PeerBadge peerStatus={r.peerStatus} />}
                         </div>
+                        {r.type === "tercih" && r.preferenceKind && (
+                          <div className="text-[11px] text-slate-500">
+                            {PREFERENCE_KIND_SHORT[r.preferenceKind] || r.preferenceKind} — {formatPreferenceDates(r)}
+                          </div>
+                        )}
                         {r.type === "takas" && (r.swapMyDate || r.swapTargetDate) && (
                           <div className="text-[11px] text-slate-500">
                             {r.swapMyDate} {r.swapMyShiftLabel || r.swapMyShiftId}
@@ -641,8 +653,39 @@ export default function MyRequestsTab() {
                 </div>
               )}
 
-              {/* Diğer / Tercih: tek tarih */}
-              {(form.type === "tercih" || form.type === "diger") && (
+              {/* Tercih: tür + tarih aralığı — çizelge motoru bunu dikkate alır */}
+              {form.type === "tercih" && (
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className={labelCls}>Tercih <span className="text-rose-500">*</span></label>
+                    <select
+                      className={inputCls}
+                      value={form.preferenceKind}
+                      onChange={(e) => set("preferenceKind", e.target.value)}
+                    >
+                      {PREFERENCE_KIND_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className={labelCls}>Başlangıç <span className="text-rose-500">*</span></label>
+                      <input type="date" className={inputCls} value={form.targetDate} onChange={(e) => set("targetDate", e.target.value)} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className={labelCls}>Bitiş (tek gün ise boş)</label>
+                      <input type="date" className={inputCls} value={form.targetDateEnd} min={form.targetDate || undefined} onChange={(e) => set("targetDateEnd", e.target.value)} />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Sorumlu onaylarsa çizelge buna kesin uyar. Onaylanana kadar sistem mümkün olduğunca dikkate alır.
+                  </p>
+                </div>
+              )}
+
+              {/* Diğer: tek tarih */}
+              {form.type === "diger" && (
                 <div className="space-y-1">
                   <label className={labelCls}>Tarih (isteğe bağlı)</label>
                   <input type="date" className={inputCls} value={form.targetDate} onChange={(e) => set("targetDate", e.target.value)} />

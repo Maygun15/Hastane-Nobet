@@ -16,6 +16,7 @@ const { buildSchedulerInput } = require('./scheduler/inputBuilder');
 const { assertSpecificServiceId } = require('../utils/serviceScopeGuard');
 const { loadMergedLeavesV2Value } = require('./leavesV2SettingsService');
 const { draftPublication } = require('./schedulePublicationService');
+const { loadPreferencesFromDb, mergeWantIntoRequests } = require('./preferenceRequestService');
 
 const MONTHLY_SCHEDULER_INPUT_PROJECTION = {
   _id: 1,
@@ -505,7 +506,19 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
 
   const dbLeaves = await buildLeavesByPersonFromDb({ serviceId, year, month, hospitalId });
   const leavesByPerson = mergeLeavesByPerson(dbLeaves, payload.leavesByPerson || {});
-  const requestsByPerson = payload.requestsByPerson || {};
+  // Personel tercih talepleri: onaylı = kesin engel, bekleyen = kaçınma puanı, "want" = istek bonusu.
+  let preferencesByPerson = {};
+  try {
+    preferencesByPerson = await loadPreferencesFromDb({
+      hospitalId,
+      personIds: (staff || []).map((p) => p?.id || p?._id || p?.personId),
+      year,
+      month,
+    });
+  } catch (prefErr) {
+    console.warn('[scheduler] tercih talepleri okunamadı:', prefErr?.message || prefErr);
+  }
+  const requestsByPerson = mergeWantIntoRequests(payload.requestsByPerson || {}, preferencesByPerson);
 
   const staffCount = Array.isArray(staff) ? staff.length : 0;
   const totalSlots = Array.isArray(effectiveDays)
@@ -573,6 +586,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
       getMonthlyShifts: async () => effectiveDays,
       getLeaves: async () => leavesByPerson,
       getRequests: async () => requestsByPerson,
+      getPreferences: async () => preferencesByPerson,
       ruleEngineDoc: ruleDoc || null,
       rules,
       weights,

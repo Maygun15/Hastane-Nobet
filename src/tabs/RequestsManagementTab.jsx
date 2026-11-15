@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner";
 import { getMyRequests, updateRequest } from "../api/apiAdapter.js";
 import { loadLeavesFromBackend, emitLeavesChanged } from "../lib/leaves.js";
+import { PREFERENCE_KIND_SHORT, formatPreferenceDates } from "../constants/preferenceKinds.js";
 
 const typeLabels = {
   izin: "İzin",
@@ -276,6 +277,15 @@ export default function RequestsManagementTab() {
                           {" ↔ "}
                           <span className="font-medium">{r.swapWithPersonName || "?"}</span>:{" "}
                           {r.swapTargetDate} {r.swapTargetShiftLabel || r.swapTargetShiftId}
+                        </div>
+                      )}
+                      {r.type === "tercih" && r.preferenceKind && (
+                        <div className="mt-1 text-[11px] text-slate-600 bg-slate-50 rounded p-2">
+                          <span className="font-medium">{PREFERENCE_KIND_SHORT[r.preferenceKind] || r.preferenceKind}</span>
+                          {" — "}{formatPreferenceDates(r)}
+                          {r.status === "pending" && (
+                            <span className="ml-1 text-slate-500">· Onaylanırsa çizelgede kesin kural olur.</span>
+                          )}
                         </div>
                       )}
                       <div className="text-slate-600 mt-1">{r.message}</div>
