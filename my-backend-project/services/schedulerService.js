@@ -15,6 +15,7 @@ const { applyHolidayPolicies } = require('./scheduler/holidayPolicyAdapter');
 const { buildSchedulerInput } = require('./scheduler/inputBuilder');
 const { assertSpecificServiceId } = require('../utils/serviceScopeGuard');
 const { loadMergedLeavesV2Value } = require('./leavesV2SettingsService');
+const { draftPublication } = require('./schedulePublicationService');
 
 const MONTHLY_SCHEDULER_INPUT_PROJECTION = {
   _id: 1,
@@ -665,7 +666,13 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     if (scheduleDoc?._id) {
       await MonthlySchedule.findByIdAndUpdate(
         scheduleDoc._id,
-        { $set: buildMonthlyScheduleWriteback({ data: persistedData, existingRoster: scheduleDoc?.data?.roster }) },
+        {
+          $set: {
+            ...buildMonthlyScheduleWriteback({ data: persistedData, existingRoster: scheduleDoc?.data?.roster }),
+            // Yeni üretilen çizelge sorumlu yayınlayana kadar personele görünmez.
+            publication: draftPublication(userId, 'generated'),
+          },
+        },
         { new: true }
       );
     }

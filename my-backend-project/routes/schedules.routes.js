@@ -7,6 +7,15 @@ const Assignment = require('../models/Assignment');
 const ScheduleRules = require('../models/ScheduleRules');
 const { listHolidays } = require('../services/holidayService');
 const { sendShiftChanged } = require('../services/notificationService');
+const {
+  PUBLICATION_STATUS,
+  canViewDrafts,
+  draftPublication,
+  excludeDraftScopes,
+  findDraftScopes,
+  isDraftSchedule,
+  setPublicationStatus,
+} = require('../services/schedulePublicationService');
 const { validateAssignment } = require('../utils/rulesValidator');
 const { checkSameDayConflict, checkLeaveConflict } = require('../services/conflictService');
 const {
@@ -1073,6 +1082,9 @@ router.get('/',
     try {
       const query = req.scheduleQuery;
       const doc = await MonthlySchedule.findOne(query).lean();
+      if (isDraftSchedule(doc) && !canViewDrafts(req.user)) {
+        return res.json({ ok: true, data: { assignments: [], issues: [] }, assignments: [], issues: [], unpublished: true });
+      }
       const data = doc?.data && typeof doc.data === 'object' ? doc.data : {};
       const assignments = Array.isArray(data?.assignments) ? data.assignments : [];
       const issues =
@@ -1106,6 +1118,10 @@ router.get('/monthly',
     try {
       const query = req.scheduleQuery;
       const doc = await MonthlySchedule.findOne(query).lean();
+      if (isDraftSchedule(doc) && !canViewDrafts(req.user)) {
+        // Personel taslağı göremez; çizelge hiç yokmuş gibi döner.
+        return res.json({ ok: true, schedule: null, issues: [], unpublished: true });
+      }
       let scheduleData = doc?.data && typeof doc.data === 'object' ? doc.data : {};
 
       const defs = Array.isArray(scheduleData.defs)
@@ -1162,6 +1178,7 @@ router.get('/monthly',
           ...query,
           data: scheduleData,
           meta: doc.meta || {},
+          publication: doc.publication || { status: PUBLICATION_STATUS.PUBLISHED, legacy: true },
           issues,
           createdAt: doc.createdAt,
           updatedAt: doc.updatedAt,
@@ -1284,6 +1301,7 @@ async function upsertMonthly(req, res) {
         $set: update,
         $setOnInsert: {
           ...query,
+          publication: draftPublication(req.user, 'created'),
           createdBy: req.user?.uid || null,
         },
       },
@@ -1623,6 +1641,7 @@ router.post('/assign',
         },
         $setOnInsert: {
           ...query,
+          publication: draftPublication(req.user, 'created'),
           createdBy: req.user?.uid || null,
         },
       };
@@ -1670,7 +1689,8 @@ router.post('/assign',
       const previousShift =
         String(payload?.previousShiftId || existingAssignment?.shiftCode || existingAssignment?.shiftId || '').trim() || '-';
       const newShift = String(payload?.shiftCode || payload?.shiftId || '').trim() || '-';
-      void sendShiftChanged({
+      // Taslak çizelgede personele değişiklik bildirimi gitmez; yayınlanınca toplu bildirim gider.
+      if (!isDraftSchedule(saved)) void sendShiftChanged({
         personId: payload?.personId,
         personName: payload?.personName || existingAssignment?.personName || '',
         date: payload?.date || req.assignQuery?.dateStr,
@@ -1809,6 +1829,7 @@ router.delete('/assign',
           beforeSnapshot,
           afterSnapshot: captureMonthlyScheduleSnapshot(saved || { data: nextData }),
           scheduleId: saved?._id || targetDoc?._id || null,
+          isDraft: isDraftSchedule(saved || targetDoc),
         };
       };
 
@@ -1851,10 +1872,12 @@ router.delete('/assign',
         beforeSnapshot: _ignoredBeforeSnapshot,
         afterSnapshot: _ignoredAfterSnapshot,
         scheduleId: _ignoredScheduleId,
+        isDraft: removedFromDraft,
         ...responsePayload
       } = result;
       const changedByName = req.user?.name || req.user?.email || 'Yetkili';
-      void sendShiftChanged({
+      // Taslak çizelgede personele değişiklik bildirimi gitmez.
+      if (!removedFromDraft) void sendShiftChanged({
         personId: req.assignPayload?.personId || removedItem?.personId,
         personName: req.assignPayload?.personName || removedItem?.personName || '',
         date: req.assignQuery?.dateStr,
@@ -2378,14 +2401,17 @@ router.get('/assignments',
         // role=user can only see their own assignments
         const personId = req.user?.personId ? String(req.user.personId) : null;
         if (!personId) return res.json({ ok: true, assignments: [], count: 0 });
-        const query = {
+        const baseQuery = {
           personId,
           sectionId: String(sectionId).trim(),
           year: Number(year),
           month: Number(month),
         };
-        if (req.hospitalId) query.hospitalId = req.hospitalId;
-        const assignments = await Assignment.find(query).lean();
+        if (req.hospitalId) baseQuery.hospitalId = req.hospitalId;
+        const draftScopes = await findDraftScopes({
+          hospitalId: req.hospitalId, year, month, sectionId: baseQuery.sectionId,
+        });
+        const assignments = await Assignment.find(excludeDraftScopes(baseQuery, draftScopes)).lean();
         return res.json({ ok: true, assignments, count: assignments.length });
       }
       const query = {
@@ -2435,7 +2461,15 @@ router.get('/person-calendar',
       if (role != null && String(role).trim()) query.role = String(role).trim();
       if (req.hospitalId) query.hospitalId = req.hospitalId;
 
-      const assignments = await Assignment.find(query)
+      let finalQuery = query;
+      if (!canViewDrafts(req.user)) {
+        const draftScopes = await findDraftScopes({
+          hospitalId: req.hospitalId, year, month, sectionId: query.sectionId || null,
+        });
+        finalQuery = excludeDraftScopes(query, draftScopes);
+      }
+
+      const assignments = await Assignment.find(finalQuery)
         .sort({ date: 1 })
         .lean();
 
@@ -2502,6 +2536,93 @@ router.post('/publish-notify',
   }
 );
 
+/* =========================================================
+   POST /api/schedules/publish   — taslağı yayınla (personel görür + bildirim)
+   POST /api/schedules/unpublish — yayını geri al (taslağa döner)
+   Body: { sectionId, serviceId, role, year, month }
+========================================================= */
+function publicationScope(req, res, next) {
+  try {
+    const query = buildQuery(req);
+    req.scheduleQuery = query;
+    req.targetServiceId = query.serviceId;
+    return next();
+  } catch (err) {
+    return res.status(400).json({ ok: false, message: err.message || 'Geçersiz istek' });
+  }
+}
+
+async function notifyScheduleAudience(query) {
+  const { computeMonthlyFairnessScores } = require('../services/fairnessEngine');
+  const { sendSchedulePublished } = require('../services/notificationService');
+  const personIds = new Set(
+    (await Assignment.distinct('personId', {
+      hospitalId: query.hospitalId,
+      sectionId: query.sectionId,
+      serviceId: query.serviceId,
+      role: query.role,
+      year: query.year,
+      month: query.month,
+    })).map(String)
+  );
+  const result = await computeMonthlyFairnessScores({
+    hospitalId: query.hospitalId,
+    year: query.year,
+    month: query.month,
+  });
+  const people = (result.people || []).filter((p) => personIds.has(String(p.personId)));
+  await sendSchedulePublished({ hospitalId: query.hospitalId, year: query.year, month: query.month, people });
+  return people.length;
+}
+
+router.post('/publish',
+  requireAuth,
+  requireRole('admin', 'authorized', 'manager'),
+  publicationScope,
+  sameServiceOrAdmin,
+  async (req, res) => {
+    try {
+      const query = req.scheduleQuery;
+      const existing = await MonthlySchedule.findOne(query).select('_id publication').lean();
+      if (!existing) {
+        return res.status(404).json({ ok: false, code: 'SCHEDULE_NOT_FOUND_IN_SCOPE', message: 'Bu kapsamda çizelge bulunamadı.' });
+      }
+      const saved = await setPublicationStatus(query, PUBLICATION_STATUS.PUBLISHED, req.user);
+
+      let notified = 0;
+      try {
+        notified = await notifyScheduleAudience(query);
+      } catch (notifyErr) {
+        console.error('[POST /api/schedules/publish] bildirim ERR:', notifyErr?.message || notifyErr);
+      }
+
+      return res.json({ ok: true, publication: saved?.publication || null, notified });
+    } catch (err) {
+      console.error('[POST /api/schedules/publish] ERR:', err);
+      return res.status(500).json({ ok: false, message: 'Sunucu hatası' });
+    }
+  }
+);
+
+router.post('/unpublish',
+  requireAuth,
+  requireRole('admin', 'authorized', 'manager'),
+  publicationScope,
+  sameServiceOrAdmin,
+  async (req, res) => {
+    try {
+      const saved = await setPublicationStatus(req.scheduleQuery, PUBLICATION_STATUS.DRAFT, req.user);
+      if (!saved) {
+        return res.status(404).json({ ok: false, code: 'SCHEDULE_NOT_FOUND_IN_SCOPE', message: 'Bu kapsamda çizelge bulunamadı.' });
+      }
+      return res.json({ ok: true, publication: saved.publication || null });
+    } catch (err) {
+      console.error('[POST /api/schedules/unpublish] ERR:', err);
+      return res.status(500).json({ ok: false, message: 'Sunucu hatası' });
+    }
+  }
+);
+
 router.__test = {
   chooseMonthlyResponseAssignments,
   slotKey,
@@ -2540,6 +2661,17 @@ router.get('/generated',
       .lean();
 
     if (!doc) return res.json({ ok: true, data: null });
+
+    if (!canViewDrafts(req.user)) {
+      // Personel, taslaktaki ayın üretim çıktısını göremez.
+      const draftScopes = await findDraftScopes({
+        hospitalId: req.hospitalId, year: doc.year, month: doc.month, sectionId: doc.sectionId,
+      });
+      const hidden = draftScopes.some((s) =>
+        s.serviceId === String(doc.serviceId || '') && s.role === String(doc.role || '')
+      );
+      if (hidden) return res.json({ ok: true, data: null, unpublished: true });
+    }
     res.json({ ok: true, data: doc });
   } catch (e) {
     res.status(500).json({ ok: false, message: safeMessage(e, 'Sunucu hatası') });

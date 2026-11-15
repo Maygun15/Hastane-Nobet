@@ -139,7 +139,7 @@ Hepsi ilk sürümde zorunlu:
 | İzin ve takas talebi + onay | ✅ | Talep, onay, kural kontrolü, çift onay koruması (BUG-04, BUG-11) var. |
 | Sorumlunun elle düzenlemesi kayda geçer | ✅ | `changeLog` + işlem geçmişi ve geri alma (undo). |
 | Elle düzenleme kuralı bozarsa uyarı | ✅ | `/assign` kural ihlalinde 409 döner; "zorla" seçeneği var. Zorla yapılan değişiklikte gerekçe zorunlu değil. |
-| Taslak / yayınlandı ayrımı | ❌ | Çizelgede yayın durumu yok; personel taslağı yayından önce görebilir. `publish-notify` sadece bildirim gönderiyor. |
+| Taslak / yayınlandı ayrımı | ✅ | 2026-11-15: yeni ay ve yeniden üretilen çizelge taslak başlar; personel (`user`) taslağı göremez; "Yayınla" ile görünür olur ve sadece o çizelgedeki kişilere bildirim gider. Taslakta yapılan elle değişiklik bildirim göndermez. |
 | Bildirimler | 🟡 | Uygulama içi (canlı) + e-posta var. E-posta için SMTP ayarı gerekli. Uygulama kapalıyken telefona anlık bildirim (push) yok. |
 | Raporlar | ✅ | Adalet, doluluk, izin istatistik, çalışma saati sayfaları var. |
 | Personel telefondan kullanır | 🟡 | Personel menüsü (Takvimim, Taleplerim, Duyurular, Profilim) ve telefona uygun sayfa ayarı var; telefonda ekran ekran denenmedi. |
@@ -152,7 +152,7 @@ Süre ~2 hafta (Aralık çizelgesi Kasım sonunda yayınlanmalı). Önerilen sı
 
 **A. Pilot için şart (yayından önce)**
 
-1. **Taslak / yayınlandı durumu** — personel sadece yayınlanmış çizelgeyi görür; "Yayınla" bildirimi tetikler.
+1. ✅ **Taslak / yayınlandı durumu** — personel sadece yayınlanmış çizelgeyi görür; "Yayınla" bildirimi tetikler. *(2026-11-15: `MonthlySchedule.publication`, `POST /api/schedules/publish|unpublish`, `SchedulePublishBar`; eski kayıtlar yayınlanmış sayılır. Ekranda gerçek veriyle denenmedi.)*
 2. **Tercih talepleri motora bağlansın** — "bu gün / gece istemiyorum" desteği; sorumlu onaylı tercih = kesin engel, onaysız tercih = puanla kaçınma.
 3. **Gece ve hafta sonu dengesi motora eklensin** — kişi başı gece sayısı ve hafta sonu sayısı için hedef/ceza puanı.
 4. **Adalet raporu düzeltmesi** — gece tanımı vardiya saatinden, bayramlar veritabanı tatil takviminden.

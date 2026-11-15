@@ -465,6 +465,24 @@ export async function carryForwardMonthlyTemplate({
   return payload;
 }
 
+/**
+ * Çizelge yayın durumunu değiştirir.
+ * publish → personel görür ve bildirim alır; unpublish → taslağa döner.
+ * Dönüş: { ok, publication, notified? }
+ */
+export async function setSchedulePublication(
+  { sectionId, serviceId = "", role = "", year, month } = {},
+  publish = true,
+) {
+  if (!sectionId) throw new Error("sectionId gerekli");
+  const payload = await httpRequest(
+    publish ? "/api/schedules/publish" : "/api/schedules/unpublish",
+    { method: "POST", body: { sectionId, serviceId, role, year, month } },
+  );
+  invalidateScheduleCache(year, month);
+  return payload;
+}
+
 export async function saveMonthlySchedule({
   sectionId,
   serviceId = "",

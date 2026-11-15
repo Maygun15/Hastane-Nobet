@@ -49,6 +49,7 @@ import { runPlannerOnce } from "../lib/runPlannerOnce.js";
 import OverrideDialog from "./OverrideDialog.jsx";
 import SchedulerAuditPanel from "./SchedulerAuditPanel.jsx";
 import RecentOperationsPanel from "./undo/RecentOperationsPanel.jsx";
+import SchedulePublishBar from "./SchedulePublishBar.jsx";
 import { toast } from "sonner";
 import {
   OPERATIONAL_SERVICE_WARNING,
@@ -2189,6 +2190,16 @@ const shouldShowRestRiskPanel =
         <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           {OPERATIONAL_SERVICE_WARNING}
         </div>
+      )}
+      {isSpecificService && (
+        <SchedulePublishBar
+          sectionId={sectionId}
+          serviceId={serviceKey}
+          role={role}
+          year={year}
+          month={month1}
+          refreshKey={lastSavedInfo?.updatedAt}
+        />
       )}
       {showStatusBar && (
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">

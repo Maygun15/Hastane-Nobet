@@ -1,6 +1,7 @@
 'use strict';
 
 const MonthlySchedule = require('../models/MonthlySchedule');
+const { draftPublication } = require('./schedulePublicationService');
 
 const TEMPLATE_DEF_FIELDS = new Set([
   'id',
@@ -163,6 +164,7 @@ async function carryForwardMonthlyTemplate({
         $setOnInsert: {
           ...exactScope,
           data: templateData,
+          publication: draftPublication(userId, 'carryForward'),
           meta: {
             templateCarryForward: {
               from,

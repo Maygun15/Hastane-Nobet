@@ -20,6 +20,12 @@ const MonthlyScheduleSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
     }, // opsiyonel ek bilgiler
+    // Yayın durumu: { status: 'draft'|'published', publishedAt, publishedBy, ... }
+    // Alan yoksa (eski kayıt) yayınlanmış sayılır — bkz. services/schedulePublicationService.js
+    publication: {
+      type: mongoose.Schema.Types.Mixed,
+      default: undefined,
+    },
     createdBy: { type: String, default: null },
     updatedBy: { type: String, default: null },
   },
