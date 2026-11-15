@@ -8,6 +8,12 @@ const LeaveType = require('../models/LeaveType');
 const Assignment = require('../models/Assignment');
 const { withHospitalFilter } = require('../middleware/hospital');
 const { checkConflict } = require('../services/validation.service');
+const {
+  CONFLICT_CODE,
+  CONFLICT_MESSAGE,
+  findLeavesV2Doc,
+  saveLeavesV2Value,
+} = require('../services/leavesV2SettingsService');
 
 /**
  * İzin ekleme/silme işlemlerinde LeaveBalance.used alanını senkronize eder.
@@ -61,7 +67,7 @@ async function syncLeaveBalance(req, pid, code, year, delta) {
       // Gün silindi — used negatife düşmesin
       await LeaveBalance.updateOne(filter, [
         { $set: { used: { $max: [0, { $subtract: ['$used', Math.abs(delta)] }] } } },
-        { $set: { remaining: { $subtract: ['$allocated', '$used'] } } },
+        { $set: { remaining: { $max: [0, { $subtract: ['$allocated', '$used'] }] } } },
       ]);
     }
   } catch (err) {
@@ -70,28 +76,17 @@ async function syncLeaveBalance(req, pid, code, year, delta) {
 }
 
 async function findLeavesDoc(req, serviceId = '') {
-  const base = withHospitalFilter(req, { key: 'leavesV2', serviceId });
-  const primary = await Setting.findOne(base);
+  const primary = await findLeavesV2Doc(req, serviceId);
   if (primary) return primary;
 
   // Legacy migration: personLeaves -> leavesV2 (tek kaynak)
   const legacy = await Setting.findOne(withHospitalFilter(req, { key: 'personLeaves', serviceId }));
   if (!legacy) return null;
 
-  const migrated = await Setting.findOneAndUpdate(
-    withHospitalFilter(req, { key: 'leavesV2', serviceId }),
-    {
-      $set: {
-        key: 'leavesV2',
-        serviceId,
-        value: legacy?.value && typeof legacy.value === 'object' ? legacy.value : {},
-        updatedBy: legacy?.updatedBy || null,
-      },
-      $setOnInsert: {
-        createdBy: legacy?.createdBy || null,
-      },
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
+  const migrated = await saveLeavesV2Value(
+    { ...req, user: { ...(req.user || {}), uid: legacy?.updatedBy || req.user?.uid || null } },
+    serviceId,
+    legacy?.value && typeof legacy.value === 'object' ? legacy.value : {}
   );
   try {
     await Setting.deleteOne(withHospitalFilter(req, { _id: legacy._id }));
@@ -214,13 +209,10 @@ router.put('/', async (req, res) => {
     // ─────────────────────────────────────────────────────────────────────────
 
     // Leave dokümanını oku (transaction dışı — okuma önce, yazma transaction içinde)
-    let doc = await findLeavesDoc(req, serviceId);
-    if (!doc) {
-      doc = new Setting(withHospitalFilter(req, { key: 'leavesV2', serviceId, value: {} }));
-    }
+    const doc = await findLeavesDoc(req, serviceId);
 
     const ym = monthKey(year, month);
-    const value = doc.value && typeof doc.value === 'object' ? { ...doc.value } : {};
+    const value = doc?.value && typeof doc.value === 'object' ? { ...doc.value } : {};
     value[personId] ??= {};
     value[personId][ym] ??= {};
 
@@ -233,16 +225,14 @@ router.put('/', async (req, res) => {
 
     value[personId][ym][String(day)] = note ? { code, note } : { code };
 
-    // ── Nöbet sil (force) + izin kaydet ──────────────────────────────────────
+    // ── Önce izin kaydını güvenli yaz; force temizliği yalnız başarıdan sonra ──
+    const savedDoc = await saveLeavesV2Value(req, serviceId, value);
+
     if (force) {
-      // Çakışan aktif nöbetleri sil
       await Assignment.deleteMany(
         withHospitalFilter(req, { personId: String(person._id), date: dateStr, status: 'active' }),
       );
     }
-    doc.value = value;
-    doc.markModified('value');
-    await doc.save();
     // ─────────────────────────────────────────────────────────────────────────
 
     // LeaveBalance senkronizasyonu (fire-and-forget, transaction dışı)
@@ -251,8 +241,11 @@ router.put('/', async (req, res) => {
       void syncLeaveBalance(req, personId, upperCode, year, +1);
     }
 
-    return res.json({ ok: true, key: doc.key, data: value[personId][ym], forced: force });
+    return res.json({ ok: true, key: savedDoc?.key || 'leavesV2', data: value[personId][ym], forced: force });
   } catch (e) {
+    if (e?.code === CONFLICT_CODE) {
+      return res.status(e.status || 409).json({ ok: false, code: CONFLICT_CODE, message: CONFLICT_MESSAGE });
+    }
     return res.status(500).json({ ok: false, error: e.message || 'Leave kaydedilemedi' });
   }
 });
@@ -290,9 +283,7 @@ router.delete('/', async (req, res) => {
       delete value[personId][ym][String(day)];
       if (!Object.keys(value[personId][ym] || {}).length) delete value[personId][ym];
       if (!Object.keys(value[personId] || {}).length) delete value[personId];
-      doc.value = value;
-      doc.markModified('value');
-      await doc.save();
+      await saveLeavesV2Value(req, serviceId, value);
 
       // LeaveBalance'dan 1 gün geri al
       if (deletedCode) void syncLeaveBalance(req, personId, deletedCode, year, -1);

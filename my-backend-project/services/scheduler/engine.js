@@ -65,19 +65,33 @@ const daysBetween = (a, b) => {
 function assign(person, day, shift, context) {
   if (!person || !day || !shift) return;
   const hours = Number(shift.hours || context.defaultShiftHours || 0);
+  const startTime = shift.start || shift.startTime || null;
+  const endTime = shift.end || shift.endTime || null;
+  const duration = Number.isFinite(hours) && hours > 0 ? hours : undefined;
 
   applyAssignmentStateMutation({ person, day, shift, hours });
   appendAssignedPersonToShift({ person, shift });
 
   if (!context.assignments) context.assignments = [];
-  context.assignments.push({
+  const assignment = {
     date: day.date,
     weekday: day.weekday,
     shiftId: shift.id || shift.code || "",
+    shiftCode: shift.code || shift.shiftCode || shift.id || "",
     personId: person.id,
     personName: person.name || "",
     hours,
-  });
+  };
+  if (startTime) {
+    assignment.start = startTime;
+    assignment.startTime = startTime;
+  }
+  if (endTime) {
+    assignment.end = endTime;
+    assignment.endTime = endTime;
+  }
+  if (duration !== undefined) assignment.duration = duration;
+  context.assignments.push(assignment);
 }
 
 // Runtime state authority point:

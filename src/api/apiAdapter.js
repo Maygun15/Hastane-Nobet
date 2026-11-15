@@ -6,7 +6,7 @@ import { invalidateScheduleCache } from "../store/monthlyScheduleModel.js";
 
 // Thin wrapper: api.js'nin retry + token-refresh mantığını kullanır,
 // eski httpRequest hata şeklini (err.body, err.details) korur.
-async function httpRequest(pathAndQuery, { method = "GET", body, token, headers, signal } = {}) {
+async function httpRequest(pathAndQuery, { method = "GET", body, token, headers, signal, timeoutMs } = {}) {
   try {
     return await http.req(pathAndQuery, {
       method,
@@ -16,6 +16,7 @@ async function httpRequest(pathAndQuery, { method = "GET", body, token, headers,
         ...(headers || {}),
       },
       signal,
+      timeoutMs,
       credentials: "include",
     });
   } catch (err) {
@@ -215,11 +216,12 @@ export async function fetchMonthlySchedule({ personId, year, month, token } = {}
 
 /* ================= Scheduler (backend) ================= */
 // Dönüş beklenen: { ok:true, data:{ assignments, issues, ... } }
-export async function generateSchedulerPlan(payload = {}, { token } = {}) {
+export async function generateSchedulerPlan(payload = {}, { token, timeoutMs = 120000 } = {}) {
   const data = await httpRequest(`/api/scheduler/generate`, {
     method: "POST",
     body: payload,
     token,
+    timeoutMs,
   });
   return data;
 }
@@ -429,6 +431,40 @@ export async function getAssignmentsForMonth({
   return Array.isArray(payload?.assignments) ? payload.assignments : [];
 }
 
+export async function getSchedulerHealth({
+  sectionId,
+  serviceId,
+  role,
+  year,
+  month,
+} = {}) {
+  if (!sectionId) throw new Error("sectionId gerekli");
+  const qs = new URLSearchParams({
+    sectionId,
+    serviceId: String(serviceId ?? ""),
+    role: String(role ?? ""),
+    year: String(year),
+    month: String(month),
+  });
+  return httpRequest(`/api/health/scheduler?${qs.toString()}`);
+}
+
+export async function carryForwardMonthlyTemplate({
+  sectionId,
+  serviceId,
+  role,
+  year,
+  month,
+} = {}) {
+  if (!sectionId) throw new Error("sectionId gerekli");
+  const payload = await httpRequest("/api/schedules/monthly/carry-forward-template", {
+    method: "POST",
+    body: { sectionId, serviceId, role, year, month },
+  });
+  invalidateScheduleCache(year, month);
+  return payload;
+}
+
 export async function saveMonthlySchedule({
   sectionId,
   serviceId = "",
@@ -544,6 +580,45 @@ export async function unassignSchedule({
   };
   const result = await httpRequest("/api/schedules/assign", { method: "DELETE", body });
   const detail = buildScheduleMutationDetail({ sectionId, serviceId, role, date });
+  if (detail.year && detail.month) invalidateScheduleCache(detail.year, detail.month);
+  emitScheduleMutation(detail);
+  return result;
+}
+
+export async function getRecentUndoOperations({
+  sectionId,
+  serviceId = "",
+  role = "",
+  year,
+  month,
+  limit = 10,
+} = {}) {
+  if (!sectionId) throw new Error("sectionId gerekli");
+  const qs = new URLSearchParams({
+    sectionId: String(sectionId),
+    serviceId: String(serviceId || ""),
+    role: String(role || ""),
+    year: String(year),
+    month: String(month),
+    limit: String(limit),
+  });
+  return httpRequest(`/api/undo/recent?${qs.toString()}`);
+}
+
+export async function undoOperation(operationId, reason = "") {
+  if (!operationId) throw new Error("operationId gerekli");
+  const result = await httpRequest(`/api/undo/${encodeURIComponent(operationId)}`, {
+    method: "POST",
+    body: { reason },
+  });
+  const scope = result?.scope || {};
+  const detail = buildScheduleMutationDetail({
+    sectionId: scope.sectionId,
+    serviceId: scope.serviceId,
+    role: scope.role,
+    year: scope.year,
+    month: scope.month,
+  });
   if (detail.year && detail.month) invalidateScheduleCache(detail.year, detail.month);
   emitScheduleMutation(detail);
   return result;

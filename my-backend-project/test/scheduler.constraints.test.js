@@ -150,6 +150,40 @@ describe('NIGHT_24H_NEXT_DAY_BLOCK constraint', () => {
   });
 });
 
+describe('MIN_REST_HOURS constraint', () => {
+  test('allows M to next-day M when shift times provide enough rest', () => {
+    const person = makePerson({
+      lastShift: { code: 'M', date: '2025-06-09', start: '08:00', end: '16:00' },
+    });
+    const day = makeDay('2025-06-10');
+    const shift = { code: 'M', start: '08:00', end: '16:00' };
+    const result = explainAvailability(person, day, makeContext({ MIN_REST_HOURS: 12 }), shift);
+    expect(result.allowed).toBe(true);
+  });
+
+  test('keeps blocking too-short rest when shift times are present', () => {
+    const person = makePerson({
+      lastShift: { code: 'V', date: '2025-06-09', start: '16:00', end: '23:00' },
+    });
+    const day = makeDay('2025-06-10');
+    const shift = { code: 'M', start: '08:00', end: '16:00' };
+    const result = explainAvailability(person, day, makeContext({ MIN_REST_HOURS: 12 }), shift);
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toBe('MIN_REST_HOURS');
+  });
+
+  test('keeps metadata-missing fallback behavior', () => {
+    const person = makePerson({
+      lastShift: { code: 'M', date: '2025-06-09' },
+    });
+    const day = makeDay('2025-06-10');
+    const shift = { code: 'M' };
+    const result = explainAvailability(person, day, makeContext({ MIN_REST_HOURS: 12 }), shift);
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toBe('MIN_REST_HOURS');
+  });
+});
+
 // ── MAX_SHIFTS_PER_WEEK ───────────────────────────────────────────────────────
 
 describe('MAX_SHIFTS_PER_WEEK constraint', () => {

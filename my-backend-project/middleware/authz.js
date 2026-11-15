@@ -13,13 +13,20 @@ function requireAuth(req, res, next) {
 }
 
 function requireRole(...roles) {
+  let forbiddenResponse = { error: 'Yetki yok' };
+  const options = roles.at(-1);
+  if (options && typeof options === 'object' && !Array.isArray(options)) {
+    roles.pop();
+    if (options.forbiddenResponse) forbiddenResponse = options.forbiddenResponse;
+  }
+
   const expected = roles.map(normalizeRole);
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Auth gerekli' });
     const actual = normalizeRole(req.user.role);
     if (actual === 'superadmin') return next();
     if (expected.includes(actual)) return next();
-    return res.status(403).json({ error: 'Yetki yok' });
+    return res.status(403).json(forbiddenResponse);
   };
 }
 

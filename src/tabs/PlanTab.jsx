@@ -10,7 +10,7 @@ import { useAppStore } from "../state/appStore";
 import PersonScheduleCalendar from "../components/PersonScheduleCalendar.jsx";
 import { WorkspaceHero, WorkspaceStatCard } from "../components/workspace/WorkspaceShell.jsx";
 import { API } from "../lib/api.js";
-import { generateSchedulerPlan, getMyRequests } from "../api/apiAdapter.js";
+import { generateSchedulerPlan, getGeneratedSchedule, getMyRequests } from "../api/apiAdapter.js";
 import { invalidateScheduleCache } from "../store/monthlyScheduleModel.js";
 import { services as STATIC_SERVICES } from "../constants/enums.js";
 import SchedulerAuditPanel from "../components/SchedulerAuditPanel.jsx";
@@ -859,6 +859,35 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
       alive = false;
     };
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!canManage || !selectedService || plannerStatus === "loading") return undefined;
+    let alive = true;
+    (async () => {
+      try {
+        const generated = await getGeneratedSchedule({
+          sectionId: "calisma-cizelgesi",
+          serviceId: selectedService,
+          role: activeRole,
+          year,
+          month,
+        });
+        if (!alive || !generated) return;
+        const data = generated?.data && typeof generated.data === "object" ? generated.data : generated;
+        const assignments = Array.isArray(data?.assignments) ? data.assignments : [];
+        const issues = Array.isArray(data?.issues) ? data.issues : [];
+        if (!assignments.length && !issues.length) return;
+        setPlannerIssues(issues);
+        setPlannerError("");
+        setPlannerStatus(issues.length > 0 ? "error" : "done");
+      } catch (err) {
+        console.warn("generated schedule status sync failed:", err?.message || err);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [canManage, selectedService, activeRole, year, month, plannerStatus]);
 
   useEffect(() => {
     if (!isStandardUser) return;

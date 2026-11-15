@@ -3,6 +3,7 @@ const Assignment = require('../models/Assignment');
 const Setting = require('../models/Setting');
 const Person = require('../models/Person');
 const MonthlySchedule = require('../models/MonthlySchedule');
+const { loadMergedLeavesV2Value } = require('./leavesV2SettingsService');
 
 function parseYM(dateStr) {
   const m = String(dateStr || '').slice(0, 7).match(/^(\d{4})-(\d{2})$/);
@@ -309,16 +310,9 @@ async function suggestSwaps({
     ? (assignCountByPerson[String(personId)] || 0)
     : (assignCountByPerson.__requesterByName || 0);
 
-  // Leaves: sadece ilgili servisin izin dokümanı — $in ile birden fazla servis
-  // çekip merge etmek servisler arası veri kirliliğine yol açıyordu (BUG-07).
-  const leaveDoc = await Setting.findOne({
-    key: 'leavesV2',
-    serviceId: String(serviceId || ''),
-    ...(hospitalId ? { hospitalId } : {}),
-  }).lean();
-  const leaveValue = leaveDoc?.value && typeof leaveDoc.value === 'object'
-    ? leaveDoc.value
-    : {};
+  // Leaves: global kova ('') + yalnızca ilgili servisin kovası. Başka servisler
+  // birleştirilmez (BUG-07); onaylı izinler global kovada olduğu için o da okunur.
+  const leaveValue = await loadMergedLeavesV2Value({ hospitalId, serviceId });
   const dayNum = String(parseInt(date.slice(8, 10), 10));
   const monthKey = date.slice(0, 7);
 

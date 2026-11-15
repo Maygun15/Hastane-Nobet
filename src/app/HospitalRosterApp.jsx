@@ -50,6 +50,7 @@ import AISchedulerPage from "../pages/AISchedulerPage.jsx";
 import AICostPage from "../pages/AICostPage.jsx";
 import FairnessReportPage from "../pages/FairnessReportPage.jsx";
 import ProjectionHealthPage from "../pages/ProjectionHealthPage.jsx";
+import SchedulerHealthPage from "../pages/SchedulerHealthPage.jsx";
 import useSSENotifications from "../hooks/useSSENotifications.js";
 import NotificationBell from "../components/NotificationBell.jsx";
 import AnnouncementsPanel from "../components/AnnouncementsPanel.jsx";
@@ -226,6 +227,8 @@ export default function HospitalRosterApp() {
   const canSeeAICost      = isAdmin;                   // AI Maliyet: yalnız Admin
   const canSeeFairness    = isAdmin || isAuthorized;   // Adillik Raporu: Admin + Yetkili
   const canSeeProjectionHealth =
+    isAdmin || ["AUTHORIZED", "STAFF"].includes(roleOf(user));
+  const canSeeSchedulerHealth =
     isAdmin || ["AUTHORIZED", "STAFF"].includes(roleOf(user));
 
   // Store değişikliklerini legacy window event'lerine köprüle (geriye dönük uyumluluk)
@@ -527,6 +530,7 @@ export default function HospitalRosterApp() {
       // Yeni: Analiz grubu
       if (hash.startsWith("#/analiz/genel-bakis"))  { if (canSeeDashboard)   setActiveTab("dashboard");            return; }
       if (hash.startsWith("#/analiz/projection-health")) { if (canSeeProjectionHealth) setActiveTab("projectionHealth"); return; }
+      if (hash.startsWith("#/analiz/scheduler-health")) { if (canSeeSchedulerHealth) setActiveTab("schedulerHealth"); return; }
       if (hash.startsWith("#/analiz/ai-cizelge"))   { if (canSeeAIScheduler) setActiveTab("aiScheduler");          return; }
       if (hash.startsWith("#/analiz/ai-maliyet"))   { if (canSeeAICost)      setActiveTab("aiCost");               return; }
       if (hash.startsWith("#/analiz/adillik"))       { if (canSeeFairness)    setActiveTab("fairness");             return; }
@@ -591,7 +595,7 @@ export default function HospitalRosterApp() {
       window.removeEventListener("hashchange",  syncFromLocation);
     };
   }, [activeTab, canSeePersonnel, canSeeSchedules, canSeeParameters, canSeeUsersTab,
-      canSeeDashboard, canSeeAIScheduler, canSeeAICost, canSeeFairness, canSeeProjectionHealth, isAdmin, isStaff]);
+      canSeeDashboard, canSeeAIScheduler, canSeeAICost, canSeeFairness, canSeeProjectionHealth, canSeeSchedulerHealth, isAdmin, isStaff]);
 
   // Quick-action callbacks (sidebar dışı: header toolbar)
   const openRequests = useCallback((status = "") => {
@@ -623,6 +627,7 @@ export default function HospitalRosterApp() {
       aiScheduler: "AI Çizelge",
       fairness: "Adillik",
       projectionHealth: "Projection Health",
+      schedulerHealth: "Scheduler Health",
       aiCost: "AI Maliyet",
       plannings: "Planlama Yönetimi",
       leaveBalance: "İzin Bakiyesi",
@@ -720,6 +725,10 @@ export default function HospitalRosterApp() {
 
           {activeTab === "projectionHealth" && canSeeProjectionHealth && (
             <ProjectionHealthPage activeYM={ymKey(getActiveYM())} />
+          )}
+
+          {activeTab === "schedulerHealth" && canSeeSchedulerHealth && (
+            <SchedulerHealthPage activeYM={ymKey(getActiveYM())} />
           )}
 
           {activeTab === "aiCost" && canSeeAICost && (

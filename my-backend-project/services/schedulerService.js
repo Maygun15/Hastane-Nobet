@@ -14,6 +14,7 @@ const { validateAssignments } = require('./scheduler/validator');
 const { applyHolidayPolicies } = require('./scheduler/holidayPolicyAdapter');
 const { buildSchedulerInput } = require('./scheduler/inputBuilder');
 const { assertSpecificServiceId } = require('../utils/serviceScopeGuard');
+const { loadMergedLeavesV2Value } = require('./leavesV2SettingsService');
 
 const MONTHLY_SCHEDULER_INPUT_PROJECTION = {
   _id: 1,
@@ -428,14 +429,11 @@ function buildMonthlyScheduleWriteback({ data = {}, existingRoster = {} } = {}) 
 // Array olarak döner; çağıran taraf ihtiyacına göre Set'e çevirir.
 async function buildLeavesByPersonFromDb({ serviceId, year, month, hospitalId }) {
   const monthKey = `${year}-${String(month).padStart(2, '0')}`;
-  const filter = { key: 'leavesV2', serviceId: String(serviceId || '') };
-  if (hospitalId) filter.hospitalId = hospitalId;
-
-  const doc = await Setting.findOne(filter).lean();
-  if (!doc?.value || typeof doc.value !== 'object') return {};
+  // BUG-02: onaylı izinler global kovaya (serviceId '') yazılıyor; servis kovasıyla birlikte oku.
+  const leavesValue = await loadMergedLeavesV2Value({ hospitalId, serviceId });
 
   const result = {};
-  for (const [pid, monthMap] of Object.entries(doc.value)) {
+  for (const [pid, monthMap] of Object.entries(leavesValue)) {
     if (!pid || typeof monthMap !== 'object') continue;
     const dayMap = monthMap[monthKey];
     if (!dayMap || typeof dayMap !== 'object') continue;

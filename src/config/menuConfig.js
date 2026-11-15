@@ -378,6 +378,14 @@ export const MENU_CONFIG = [
       },
       {
         type: 'leaf',
+        id: 'schedulerHealth',
+        label: 'Scheduler Health',
+        path: '#/analiz/scheduler-health',
+        icon: 'Activity',
+        visibleTo: ['admin', 'authorized', 'staff'],
+      },
+      {
+        type: 'leaf',
         id: 'aiScheduler',
         // ⚠ DÜZELTME: navOrder'da vardı, sidebar'da yoktu.
         label: 'AI Çizelge',

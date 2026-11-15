@@ -1,7 +1,7 @@
 # Hastane-Nobet — Proje Planı
 
 **Versiyon:** 1.2.0  
-**Son Güncelleme:** 2026-05-22  
+**Son Güncelleme:** 2026-11-14  
 **Dal:** `vercel-preview-stabilizasyon`
 
 ---
@@ -45,21 +45,23 @@ Array spread etmek `{ 0: {...}, 1: {...} }` üretir — DEFAULT_RULES'un hiçbir
 
 ---
 
-### BUG-02 — LeaveBalance scheduler tarafından sorgulanmıyor
+### BUG-02 — LeaveBalance scheduler tarafından sorgulanmıyor ✅ DÜZELTİLDİ (2026-11-14)
 **Dosya:** `services/schedulerService.js:442`  
 **Sorun:** Scheduler izinleri `payload.leavesByPerson` üzerinden alıyor; bu değer frontend'den gönderilmezse izinli kişiye nöbet yazılabiliyor.  
 **Düzeltilecek:** Scheduler başlamadan önce DB'deki onaylı izin talepleri (`Request.status='approved'`) sorgulanıp `leavesByPerson` otomatik oluşturulacak.
+**Çözüm (2026-11-14):** İzin onayı ve AI izin girişi `leavesV2` global kovasına (`serviceId: ''`) yazıyordu, scheduler ve takas önerileri yalnızca servis kovasını okuyordu. `leavesV2SettingsService.loadMergedLeavesV2Value` iki kovayı hastane filtresiyle birleştiriyor; `schedulerService` ve `swapSuggestionService` bunu kullanıyor. Test: `test/leavesV2MergedRead.test.js`.
 
 ---
 
-### BUG-03 — LeaveBalance.allocated hiçbir zaman set edilmiyor
+### BUG-03 — LeaveBalance.allocated hiçbir zaman set edilmiyor ✅ DÜZELTİLDİ (2026-11-14)
 **Dosya:** `routes/requests.routes.js:93`  
 **Sorun:** İzin onaylandığında `$setOnInsert: { allocated: 0 }` yazılıyor. `allocated` alanı (hakkedilen gün sayısı) hiçbir zaman doğru değerle güncellenmediği için `remaining` her zaman negatif.  
 **Düzeltilecek:** İzin tipi oluşturulurken veya personel işe alındığında yıllık hak günü atanacak; onay akışında sadece `used` değiştirilecek.
+**Durum (2026-11-14):** Bakiye ilk oluşturulurken `allocated` = `LeaveType.maxDaysPerYear` atanıyor (izin onayı ve izin tablosu). İzin tablosundan gün silinince `remaining` artık 0'ın altına düşmüyor. Not: bu düzeltmeden önce `allocated: 0` ile oluşmuş eski bakiyeler elle veya bir migration ile güncellenmeli.
 
 ---
 
-### BUG-04 — executeSwap validateAssignment çağırmıyor
+### BUG-04 — executeSwap validateAssignment çağırmıyor ✅ KODDA DOĞRULANDI (2026-11-14)
 **Dosya:** `routes/requests.routes.js` — `executeSwap` fonksiyonu  
 **Sorun:** Takas onaylandığında `rulesValidator.validateAssignment()` hiç çağrılmıyor.  
 ScheduleRules (maxShifts, minRest, maxConsecutive, restrictedDays) tamamen atlanıyor.  
@@ -76,7 +78,7 @@ DutyRowsEditor bu alandan okuduğu için manuel atamalar çizelgede görünmüyo
 
 ---
 
-### BUG-06 — findNameFallback boş string kabul ediyor
+### BUG-06 — findNameFallback boş string kabul ediyor ✅ KODDA DOĞRULANDI (2026-11-14)
 **Dosya:** `routes/requests.routes.js` — `findAndSwap` fonksiyonu  
 **Sorun:** Kişi adı bulunamazsa fallback olarak `""` (boş string) kullanılıyor.  
 Bu `namedAssignments` içine boş string yazdırarak veri bozulmasına neden oluyor.  
@@ -84,14 +86,14 @@ Bu `namedAssignments` içine boş string yazdırarak veri bozulmasına neden olu
 
 ---
 
-### BUG-07 — swapSuggestionService Setting.find çok geniş
+### BUG-07 — swapSuggestionService Setting.find çok geniş ✅ KODDA DOĞRULANDI (2026-11-14)
 **Dosya:** `services/swapSuggestionService.js`  
 **Sorun:** `Setting.find({ key: { $in: ['', serviceId] } })` — birden fazla servisin izin verisini birleştirip yanlış leave çakışması hesaplıyor.  
 **Düzeltilecek:** Tek bir `Setting.findOne({ key: serviceId })` yapılacak.
 
 ---
 
-### BUG-08 — RuleEngine koşullu; doküman yoksa çalışmıyor
+### BUG-08 — RuleEngine koşullu; doküman yoksa çalışmıyor ✅ KODDA DOĞRULANDI (2026-11-14)
 **Dosya:** `services/scheduler/engine.js` ve `constraints.js`  
 **Sorun:** `ruleEngineDoc` yoksa (DutyRule kaydı oluşturulmamışsa) RuleEngine hiç oluşturulmuyor.  
 `leaveRules`, `taskRequirements`, `personnelRules` kontrolleri tamamen atlanıyor.  
@@ -99,7 +101,7 @@ Bu `namedAssignments` içine boş string yazdırarak veri bozulmasına neden olu
 
 ---
 
-### BUG-09 — isNightShiftDef eşiği 18:00, olması gereken 22:00
+### BUG-09 — isNightShiftDef eşiği 18:00, olması gereken 22:00 ✅ KODDA DOĞRULANDI (2026-11-14)
 **Dosya:** `services/swapSuggestionService.js` veya constraints  
 **Sorun:** Gece vardiyası tespiti `startHour >= 18` ile yapılıyor; 18:00 başlayan vardiyaları gece sayıyor, ardından gelen güne kısıtlama uyguluyor.  
 Klinik standart gece vardiyası 22:00+.  

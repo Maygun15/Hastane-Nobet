@@ -18,6 +18,15 @@ jest.mock('../services/assignmentSyncService', () => ({
   replaceAssignmentsForSchedule: jest.fn(),
   removeAssignment: jest.fn().mockResolvedValue({ deletedCount: 1 }),
 }));
+jest.mock('../services/undoService', () => ({
+  captureMonthlyScheduleSnapshot: jest.fn((doc = {}, overrides = {}) => ({
+    scheduleId: doc?._id || null,
+    assignments: overrides.assignments || doc?.data?.assignments || [],
+    rosterNamedAssignments: overrides.rosterNamedAssignments || null,
+    changeLog: overrides.changeLog || doc?.data?.changeLog || [],
+  })),
+  recordUndoableOperation: jest.fn().mockResolvedValue({ _id: 'op-1' }),
+}));
 
 const MonthlySchedule = require('../models/MonthlySchedule');
 const { sendShiftChanged } = require('../services/notificationService');

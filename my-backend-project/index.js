@@ -461,6 +461,14 @@ function requireAnyRole(...roles) {
 
 const secureTenant = [auth, ensureActive, extractHospital, applyHospitalContext];
 
+/* ============== SCHEDULER HEALTH ROUTES ============== */
+try {
+  const healthRoutes = require('./routes/health.routes.js');
+  app.use('/api/health', ...secureTenant, healthRoutes);
+} catch (e) {
+  console.error('HEALTH ROUTE LOAD ERROR:', e);
+}
+
 /* ============== DEV LOGIN — ESNEK, DB'siz ============== */
 // .env → ALLOW_DEV_ENDPOINTS=true olmalı
 if (ALLOW_DEV) {
@@ -619,6 +627,14 @@ try {
   const schedulesRoutes = require('./routes/schedules.routes.js');
   app.use('/api/schedules', ...secureTenant, schedulesRoutes);
 } catch {}
+
+/* ============== UNDO ROUTER ============== */
+try {
+  const undoRoutes = require('./routes/undo.routes.js');
+  app.use('/api/undo', ...secureTenant, undoRoutes);
+} catch (e) {
+  console.error('UNDO ROUTE LOAD ERROR:', e);
+}
 
 /* ============== GOOGLE CALENDAR ROUTER ============== */
 try {

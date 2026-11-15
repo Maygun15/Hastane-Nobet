@@ -5,6 +5,7 @@ const router  = express.Router();
 const { parseCommand, clearSession }  = require('../../services/aiCommandService');
 const { executeCommand }              = require('../../services/aiExecutorService');
 const { AI_PROVIDER }                 = require('../../services/llmService');
+const { requireRole }                 = require('../../middleware/authz');
 const { aiSuggest, parseRequest }     = require('./ai.service.js'); // geriye dönük uyumluluk
 const { validateParsedRequest }       = require('./validators/ajv.js');
 
@@ -12,6 +13,13 @@ const isProd       = String(process.env.NODE_ENV || '').toLowerCase() === 'produ
 const safeMessage  = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
 const MONTH_RX     = /^\d{4}-(0[1-9]|1[0-2])$/;
+const requireAiActionRole = requireRole('admin', 'staff', {
+  forbiddenResponse: {
+    ok: false,
+    code: 'FORBIDDEN',
+    message: 'Bu işlem için yetkiniz yok.',
+  },
+});
 
 /* ─── Ping ─────────────────────────────────────────────── */
 router.get('/ping', (_req, res) => res.json({
@@ -53,7 +61,7 @@ router.post('/parse-command', async (req, res) => {
    Onaylanan intent'i çalıştırır.
    Body: { intent, entities, sessionId? }
    ─────────────────────────────────────────────────────────── */
-router.post('/confirm-action', async (req, res) => {
+router.post('/confirm-action', requireAiActionRole, async (req, res) => {
   try {
     const { intent, entities, sessionId } = req.body || {};
     if (!intent) return res.status(400).json({ ok: false, message: 'intent zorunlu' });

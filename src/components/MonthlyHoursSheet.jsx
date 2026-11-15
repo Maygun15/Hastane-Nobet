@@ -45,6 +45,7 @@ const stdKey = (year, month0) => `monthlyHoursSheet/stdHours/${ymKey(year, month
 const LEGACY_MONTHLY_DEFAULT = 168;
 const BUILD_TRIGGER_KEY = "scheduleBuildTrigger";
 const BUILD_HANDLED_KEY = "scheduleBuildHandledMonthly";
+const SCHEDULE_TRUTH_SOURCES = new Set(["monthly", "generated", "assignments", "monthly+generated"]);
 
 const daysInMonth = (y, m1) => new Date(y, m1, 0).getDate(); // m1: 1..12
 const dayStandardHours = (y, m1, d, hmap) => {
@@ -321,7 +322,7 @@ function useShiftCodeHours(workingHours){
   return map;
 }
 
-function resolveCellHours(value, shiftCodeHours, labelHint = "") {
+export function resolveCellHours(value, shiftCodeHours, labelHint = "") {
   const raw = String(value ?? "").trim();
   if (!raw) return 0;
   const direct = parseFloat(raw.replace(",", "."));
@@ -333,6 +334,29 @@ function resolveCellHours(value, shiftCodeHours, labelHint = "") {
     if (Number.isFinite(h) && h > 0) return h;
   }
   return fallbackShiftHours(raw, labelHint);
+}
+
+export function sumRowsWorkedHours(rows = [], days = [], shiftCodeHours = {}) {
+  return (Array.isArray(rows) ? rows : []).reduce((total, row) => {
+    return total + (Array.isArray(days) ? days : []).reduce((dayTotal, day) => {
+      const value = (row?.days?.[day.ymd] ?? "").toString().trim();
+      if (!value) return dayTotal;
+      return dayTotal + resolveCellHours(value, shiftCodeHours, row?.unvan || "");
+    }, 0);
+  }, 0);
+}
+
+export function sumTruthEntryHours(truthEntries = []) {
+  return (Array.isArray(truthEntries) ? truthEntries : []).reduce((total, entry) => {
+    return total + Object.values(entry?.byDay || {}).reduce((sum, value) => {
+      const n = Number(value);
+      return sum + (Number.isFinite(n) && n > 0 ? n : 0);
+    }, 0);
+  }, 0);
+}
+
+export function shouldUseOfficialRows({ hasOfficialTruth, manualMode, manualModeExplicit } = {}) {
+  return Boolean(hasOfficialTruth) && !(Boolean(manualMode) && Boolean(manualModeExplicit));
 }
 
 const looksDoctor = (title = "") => {
@@ -452,9 +476,18 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
   // Satırlar + yükleme durumu
   const [rows, setRows] = useState([]);
   const [truthAssignments, setTruthAssignments] = useState([]);
+  const [truthMeta, setTruthMeta] = useState({
+    source: "empty",
+    assignmentCount: 0,
+    refreshedAt: null,
+    hasScheduleTruth: false,
+  });
+  const [rowsSource, setRowsSource] = useState("loading");
   const [loaded, setLoaded] = useState(false);
   const [version, setVersion] = useState(1);
   const [truthRevision, setTruthRevision] = useState(0);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualModeExplicit, setManualModeExplicit] = useState(false);
   const fileRef = useRef(null);
 
   const storageKey = useMemo(() => `monthlyHoursSheet/${ymKey(year, month0)}`, [year, month0]);
@@ -488,6 +521,115 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
     }
     return Array.from(unique.values());
   }, [truthDayHoursIndex]);
+  const sourceLabel = useMemo(() => {
+    if (truthMeta.hasScheduleTruth && !manualModeExplicit) return "Resmi Çizelge";
+    if (manualModeExplicit || rowsSource === "manual" || rowsSource === "local") return "Excel / Manuel";
+    if (rowsSource !== "truth") return "Hazırlanıyor";
+    if (truthMeta.source === "monthly") return "MonthlySchedule";
+    if (truthMeta.source === "generated") return "GeneratedSchedule";
+    if (truthMeta.source === "assignments") return "Assignment";
+    if (truthMeta.source === "monthly+generated") return "MonthlySchedule";
+    return "Schedule truth";
+  }, [manualModeExplicit, rowsSource, truthMeta.hasScheduleTruth, truthMeta.source]);
+  const refreshedLabel = useMemo(() => {
+    if (!truthMeta.refreshedAt) return "";
+    const dt = new Date(truthMeta.refreshedAt);
+    if (Number.isNaN(dt.getTime())) return "";
+    return dt.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }, [truthMeta.refreshedAt]);
+
+  const buildTruthBackedRows = useCallback((previousRows = rows) => {
+    const prevByKey = new Map();
+    for (const row of previousRows || []) {
+      const pid = String(row?.id || "").trim();
+      const nameKey = canonName(row?.adsoyad || "");
+      if (pid) prevByKey.set(`id:${pid}`, row);
+      if (nameKey) prevByKey.set(`name:${nameKey}`, row);
+    }
+
+    const next = [];
+    for (const person of people || []) {
+      const pid = String(person?.id || "").trim();
+      const nameKey = canonName(person?.adsoyad || "");
+      const key = pid ? `id:${pid}` : `name:${nameKey}`;
+      const prevRow = prevByKey.get(key) || null;
+      const truthEntry =
+        (pid ? truthDayHoursIndex.get(`id:${pid}`) : null) ||
+        (nameKey ? truthDayHoursIndex.get(`name:${nameKey}`) : null);
+      const row = {
+        ...emptyRow(person, prevRow?.aylikCalisilacak || stdMonthly),
+        gecenAydanDevir: num(prevRow?.gecenAydanDevir, 0),
+        gelecekAyaDevir: num(prevRow?.gelecekAyaDevir, 0),
+        ucretNobet: num(prevRow?.ucretNobet, 0),
+        birimDisi: num(prevRow?.birimDisi, 0),
+        days: {},
+        editedDays: {},
+      };
+      for (const d of days || []) {
+        const truthVal = Number(truthEntry?.byDay?.[d.d]);
+        row.days[d.ymd] = Number.isFinite(truthVal) && truthVal > 0 ? truthVal : "";
+      }
+      next.push({ ...row, ...computeTotals(row, days, shiftCodeHours) });
+    }
+
+    for (const entry of truthEntries) {
+      const pid = String(entry?.personId || "").trim();
+      const nameKey = canonName(entry?.personName || "");
+      const key = pid ? `id:${pid}` : `name:${nameKey}`;
+      const exists = next.some((row) => {
+        const rowPid = String(row?.id || "").trim();
+        const rowName = canonName(row?.adsoyad || "");
+        return (rowPid && rowPid === pid) || (!rowPid && rowName && rowName === nameKey);
+      });
+      if (exists) continue;
+      const prevRow = prevByKey.get(key) || null;
+      const row = {
+        ...emptyRow({
+          id: pid,
+          adsoyad: entry?.personName || "",
+          unvan: prevRow?.unvan || "",
+          tckn: prevRow?.tckn || "",
+        }, prevRow?.aylikCalisilacak || stdMonthly),
+        gecenAydanDevir: num(prevRow?.gecenAydanDevir, 0),
+        gelecekAyaDevir: num(prevRow?.gelecekAyaDevir, 0),
+        ucretNobet: num(prevRow?.ucretNobet, 0),
+        birimDisi: num(prevRow?.birimDisi, 0),
+        days: {},
+        editedDays: {},
+      };
+      for (const d of days || []) {
+        const truthVal = Number(entry?.byDay?.[d.d]);
+        row.days[d.ymd] = Number.isFinite(truthVal) && truthVal > 0 ? truthVal : "";
+      }
+      next.push({ ...row, ...computeTotals(row, days, shiftCodeHours) });
+    }
+
+    return normalizeRows(next, { sort: true, renumber: true, filterEmpty: true });
+  }, [days, people, rows, shiftCodeHours, stdMonthly, truthDayHoursIndex, truthEntries]);
+
+  const hasOfficialTruth = truthMeta.hasScheduleTruth && truthEntries.length > 0;
+  const officialRows = useMemo(
+    () => (hasOfficialTruth ? buildTruthBackedRows(rows) : []),
+    [buildTruthBackedRows, hasOfficialTruth, rows]
+  );
+  const isOfficialMode = shouldUseOfficialRows({ hasOfficialTruth, manualMode, manualModeExplicit });
+  const visibleRows = isOfficialMode ? officialRows : rows;
+
+  const enterManualMode = useCallback(() => {
+    setManualMode(true);
+    setManualModeExplicit(true);
+    setRowsSource("manual");
+  }, []);
+
+  const returnToScheduleTruth = useCallback(() => {
+    if (!hasOfficialTruth) return;
+    setRows(officialRows);
+    setManualMode(false);
+    setManualModeExplicit(false);
+    setRowsSource("truth");
+    LS.remove(storageKey);
+    setLoaded(true);
+  }, [hasOfficialTruth, officialRows, storageKey]);
 
   // Takas/hızlı yerine atama ile değiştirilmiş atamaların kişi+gün kümesi
   const swappedPersonDays = useMemo(() => {
@@ -523,13 +665,29 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
         return { assignments: [] };
       });
       const assignments = Array.isArray(truth?.assignments) ? truth.assignments : [];
-      if (active) setTruthAssignments(assignments);
+      const snapshots = Array.isArray(truth?.snapshots) ? truth.snapshots : [];
+      const source = snapshots.find((item) => SCHEDULE_TRUTH_SOURCES.has(item?.source))?.source || "empty";
+      const hasScheduleTruth = snapshots.some(
+        (item) => SCHEDULE_TRUTH_SOURCES.has(item?.source) && Array.isArray(item?.assignments) && item.assignments.length > 0
+      );
+      if (active) {
+        setTruthAssignments(assignments);
+        setTruthMeta({
+          source,
+          assignmentCount: assignments.length,
+          refreshedAt: new Date().toISOString(),
+          hasScheduleTruth,
+        });
+      }
     })();
     return () => { active = false; };
   }, [year, month1, serviceId, peopleProp, resolvePlanHours, truthRevision, truthRoles]);
 
   useEffect(() => {
-    const refresh = () => setTruthRevision((v) => v + 1);
+    const refresh = () => {
+      LS.remove(storageKey);
+      setTruthRevision((v) => v + 1);
+    };
     window.addEventListener("schedule:saved", refresh);
     window.addEventListener("schedule:built", refresh);
     window.addEventListener("schedule:invalidated", refresh);
@@ -544,10 +702,12 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
       window.removeEventListener("leaves:changed", refresh);
       window.removeEventListener("storage", refresh);
     };
-  }, []);
+  }, [storageKey]);
 
   /* Yükle */
   useEffect(() => {
+    setManualMode(false);
+    setManualModeExplicit(false);
     setLoaded(false);
     const saved = LS.get(storageKey, null);
     if (Array.isArray(saved)) {
@@ -557,15 +717,17 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
         ...computeTotals(r, days, shiftCodeHours),
       }));
       setRows(ready);
+      setRowsSource("local");
       setLoaded(true);
     } else {
       const plist = Array.isArray(people) ? people : [];
-      if (plist.length === 0) { setRows([]); setLoaded(true); return; }
+      if (plist.length === 0) { setRows([]); setRowsSource("empty"); setLoaded(true); return; }
       const initial = normalizeRows(plist.map((p)=> emptyRow(p, stdMonthly)), { sort:true, renumber:true, filterEmpty:true }).map((r) => ({
         ...r,
         ...computeTotals(r, days, shiftCodeHours),
       }));
       setRows(initial);
+      setRowsSource("empty");
       setLoaded(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -574,17 +736,23 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
   /* Sadece yüklendikten sonra kaydet */
   useEffect(() => {
     if (!loaded) return;
+    if (hasOfficialTruth && !manualModeExplicit) {
+      LS.remove(storageKey);
+      return;
+    }
     const normalized = normalizeRows(rows, { sort:false, renumber:false, filterEmpty:true });
     // KVKK: TC kimlik numarası localStorage'a yazılmaz, sadece bellekte tutulur
     const toSave = normalized.map(({ tckn: _tc, ...rest }) => rest);
     LS.set(storageKey, toSave);
     LS.set(latestKey, { ym: {year, month: month1}, rows: toSave });
-  }, [loaded, storageKey, latestKey, rows, year, month1]);
+  }, [hasOfficialTruth, latestKey, loaded, manualModeExplicit, month1, rows, storageKey, year]);
 
   /* Hücre/Saha değişimleri */
   const setCell = (ri, dayYmd, value) => {
+    const baseRows = isOfficialMode ? visibleRows : rows;
+    enterManualMode();
     setRows((prev) => {
-      const next = [...(prev||[])];
+      const next = [...(isOfficialMode ? baseRows : (prev||[]))];
       const r = { ...(next[ri]||{}) };
       const daysMap = { ...((r.days)||{}) };
       const editedDays = { ...(r.editedDays || {}) };
@@ -598,15 +766,27 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
     });
   };
   const setField = (ri, field, value) => {
+    const baseRows = isOfficialMode ? visibleRows : rows;
+    enterManualMode();
     setRows((prev) => {
-      const next = [...(prev||[])];
+      const next = [...(isOfficialMode ? baseRows : (prev||[]))];
       const row = { ...(next[ri]||{}), [field]: value };
       next[ri] = { ...row, ...computeTotals(row, days, shiftCodeHours) };
       return next;
     });
   };
-  const addRow = () => setRows((p) => ([...(p||[]), emptyRow(null, stdMonthly)]));
-  const reset = () => { LS.remove(storageKey); setVersion(v=>v+1); };
+  const addRow = () => {
+    const baseRows = isOfficialMode ? visibleRows : rows;
+    enterManualMode();
+    setRows((p) => ([...(isOfficialMode ? baseRows : (p||[])), emptyRow(null, stdMonthly)]));
+  };
+  const reset = useCallback(() => {
+    LS.remove(storageKey);
+    setManualMode(false);
+    setManualModeExplicit(false);
+    setRowsSource("empty");
+    setVersion(v=>v+1);
+  }, [storageKey]);
 
   /* holidays */
   useEffect(() => {
@@ -667,88 +847,30 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
   }, [loaded, days, shiftCodeHours]);
 
   useEffect(() => {
-    if (!loaded || !truthEntries.length) return;
+    if (!loaded || !hasOfficialTruth || manualModeExplicit) return;
     setRows((prev) => {
-      const prevByKey = new Map();
-      for (const row of prev || []) {
-        const pid = String(row?.id || "").trim();
-        const nameKey = canonName(row?.adsoyad || "");
-        if (pid) prevByKey.set(`id:${pid}`, row);
-        if (nameKey) prevByKey.set(`name:${nameKey}`, row);
-      }
-
-      const next = [];
-      for (const person of people || []) {
-        const pid = String(person?.id || "").trim();
-        const nameKey = canonName(person?.adsoyad || "");
-        const key = pid ? `id:${pid}` : `name:${nameKey}`;
-        const prevRow = prevByKey.get(key) || null;
-        const truthEntry =
-          (pid ? truthDayHoursIndex.get(`id:${pid}`) : null) ||
-          (nameKey ? truthDayHoursIndex.get(`name:${nameKey}`) : null);
-        const row = {
-          ...emptyRow(person, prevRow?.aylikCalisilacak || stdMonthly),
-          gecenAydanDevir: num(prevRow?.gecenAydanDevir, 0),
-          gelecekAyaDevir: num(prevRow?.gelecekAyaDevir, 0),
-          ucretNobet: num(prevRow?.ucretNobet, 0),
-          birimDisi: num(prevRow?.birimDisi, 0),
-          days: {},
-          editedDays: {},
-        };
-        for (const d of days || []) {
-          const truthVal = Number(truthEntry?.byDay?.[d.d]);
-          row.days[d.ymd] = Number.isFinite(truthVal) && truthVal > 0 ? truthVal : "";
-        }
-        next.push({ ...row, ...computeTotals(row, days, shiftCodeHours) });
-      }
-
-      for (const entry of truthEntries) {
-        const pid = String(entry?.personId || "").trim();
-        const nameKey = canonName(entry?.personName || "");
-        const key = pid ? `id:${pid}` : `name:${nameKey}`;
-        const exists = next.some((row) => {
-          const rowPid = String(row?.id || "").trim();
-          const rowName = canonName(row?.adsoyad || "");
-          return (rowPid && rowPid === pid) || (!rowPid && rowName && rowName === nameKey);
-        });
-        if (exists) continue;
-        const prevRow = prevByKey.get(key) || null;
-        const row = {
-          ...emptyRow({
-            id: pid,
-            adsoyad: entry?.personName || "",
-            unvan: prevRow?.unvan || "",
-            tckn: prevRow?.tckn || "",
-          }, prevRow?.aylikCalisilacak || stdMonthly),
-          gecenAydanDevir: num(prevRow?.gecenAydanDevir, 0),
-          gelecekAyaDevir: num(prevRow?.gelecekAyaDevir, 0),
-          ucretNobet: num(prevRow?.ucretNobet, 0),
-          birimDisi: num(prevRow?.birimDisi, 0),
-          days: {},
-          editedDays: {},
-        };
-        for (const d of days || []) {
-          const truthVal = Number(entry?.byDay?.[d.d]);
-          row.days[d.ymd] = Number.isFinite(truthVal) && truthVal > 0 ? truthVal : "";
-        }
-        next.push({ ...row, ...computeTotals(row, days, shiftCodeHours) });
-      }
-
-      const normalized = normalizeRows(next, { sort: true, renumber: true, filterEmpty: true });
+      const normalized = buildTruthBackedRows(prev);
       const changed = JSON.stringify(normalized) !== JSON.stringify(prev);
       return changed ? normalized : prev;
     });
-  }, [loaded, truthEntries, truthDayHoursIndex, days, shiftCodeHours, people, stdMonthly]);
+    setManualMode(false);
+    setRowsSource("truth");
+    LS.remove(storageKey);
+  }, [buildTruthBackedRows, hasOfficialTruth, loaded, manualModeExplicit, storageKey, truthEntries]);
 
   /* Excel dışa aktar — ISO başlık */
-  const exportExcel = () => {
+  const exportExcel = (options = {}) => {
+    const rowsForExport =
+      !options?.currentView && hasOfficialTruth
+        ? officialRows
+        : visibleRows;
     const header = [
       ...(HEADER_STATIC_LEFT||[]).map((h) => h.title),
       ...(days||[]).map((d) => d.ymd), // "YYYY-MM-DD"
       ...(HEADER_STATIC_RIGHT||[]).map((h) => h.title),
     ];
     const aoa = [header];
-    (rows||[]).forEach((r, i) => {
+    (rowsForExport||[]).forEach((r, i) => {
       const row = [
         r?.sira || i + 1,
         r?.unvan || "",
@@ -841,6 +963,9 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
 
       const next = normalizeRows(read, { sort:true, renumber:true, filterEmpty:true });
       setRows(next);
+      setManualMode(true);
+      setManualModeExplicit(true);
+      setRowsSource("manual");
       setLoaded(true);
       LS.set(storageKey, next);
       LS.set(latestKey, { ym: {year, month: month1}, rows: next });
@@ -857,7 +982,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
     const perDay = {};
     (days||[]).forEach(d => { perDay[d.ymd]=0; });
     let sumAylik=0, sumGecen=0, sumGelecek=0, sumCalisilacak=0, sumToplam=0, sumUcret=0, sumBirimDisi=0;
-    (rows||[]).forEach(r=>{
+    (visibleRows||[]).forEach(r=>{
       sumAylik       += num(r?.aylikCalistigiSaat,0);
       sumGecen       += num(r?.gecenAydanDevir,0);
       sumGelecek     += num(r?.gelecekAyaDevir,0);
@@ -872,7 +997,22 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
       });
     });
     return { perDay, right:{ aylik:sumAylik, gecen:sumGecen, gelecek:sumGelecek, calisilacak:sumCalisilacak, toplam:sumToplam, ucret:sumUcret, birimDisi:sumBirimDisi } };
-  }, [rows, days, shiftCodeHours]);
+  }, [visibleRows, days, shiftCodeHours]);
+
+  const truthTotalHours = useMemo(() => Math.round(sumTruthEntryHours(truthEntries) * 100) / 100, [truthEntries]);
+  const renderedRowsTotalHours = useMemo(
+    () => Math.round(sumRowsWorkedHours(visibleRows, days, shiftCodeHours) * 100) / 100,
+    [visibleRows, days, shiftCodeHours]
+  );
+  const truthDifference = useMemo(
+    () => Math.round((truthTotalHours - renderedRowsTotalHours) * 100) / 100,
+    [truthTotalHours, renderedRowsTotalHours]
+  );
+  const showTruthDifferenceWarning =
+    truthMeta.hasScheduleTruth &&
+    manualModeExplicit &&
+    truthTotalHours > 0 &&
+    Math.abs(truthDifference) > 0.001;
 
   /* Plan’dan doldur */
   const fillFromPlanner = ({ silent = false } = {}) => {
@@ -914,6 +1054,9 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
           { sort: true, renumber: true, filterEmpty: true }
         );
         setRows(finalized);
+        setManualMode(!silent);
+        setManualModeExplicit(!silent);
+        setRowsSource("local");
         setLoaded(true);
         return true;
       }
@@ -972,6 +1115,9 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
     }
     const finalized = normalizeRows(next.map(r => ({ ...r, ...computeTotals(r, days, shiftCodeHours) })), { sort:true, renumber:true, filterEmpty:true });
     setRows(finalized);
+    setManualMode(!silent);
+    setManualModeExplicit(!silent);
+    setRowsSource("local");
     setLoaded(true);
     return true;
   };
@@ -1065,6 +1211,10 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
           { sort: true, renumber: true, filterEmpty: true }
         );
         setRows(finalized);
+        setManualMode(false);
+        setManualModeExplicit(false);
+        setRowsSource("truth");
+        LS.remove(storageKey);
         setLoaded(true);
         alert("Çalışma Çizelgesi'nden aylık tablo dolduruldu.");
         return;
@@ -1109,6 +1259,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
   /* ----- Dışa açılan API ----- */
   useImperativeHandle(ref, () => ({
     exportExcel,
+    exportCurrentViewExcel: () => exportExcel({ currentView: true }),
     triggerImport,
     importExcelFile: importExcel,
     fillFromPlanner,
@@ -1144,7 +1295,69 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
             {label}
           </button>
         ))}
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
+            <span className="font-semibold text-slate-700">Kaynak:</span> {sourceLabel}
+            {truthMeta.hasScheduleTruth && (
+              <>
+                <span className="mx-1 text-slate-300">|</span>
+                <span>{truthMeta.assignmentCount} atama</span>
+                <span className="mx-1 text-slate-300">|</span>
+                <span>{fmt(truthTotalHours)} saat</span>
+              </>
+            )}
+            {refreshedLabel && (
+              <>
+                <span className="mx-1 text-slate-300">|</span>
+                <span>Son yenileme {refreshedLabel}</span>
+              </>
+            )}
+          </div>
+          <button
+            className="h-9 rounded-lg border bg-white px-3 text-sm text-slate-700 hover:border-slate-500"
+            onClick={fillFromDutyRoster}
+          >
+            Çalışma Çizelgesi’nden Yenile
+          </button>
+          {isOfficialMode && (
+            <button
+              className="h-9 rounded-lg border bg-white px-3 text-sm text-slate-700 hover:border-slate-500"
+              onClick={() => {
+                setRows(visibleRows);
+                enterManualMode();
+              }}
+            >
+              Manuel görünümü kullan
+            </button>
+          )}
+          {hasOfficialTruth && !isOfficialMode && (
+            <button
+              className="h-9 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-800 hover:border-emerald-500"
+              onClick={returnToScheduleTruth}
+            >
+              Resmi çizelgeden hesapla
+            </button>
+          )}
+        </div>
       </div>
+
+      {showTruthDifferenceWarning && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <span className="font-semibold">Uyarı:</span>{" "}
+            Bu tablo resmi çalışma çizelgesinden farklı. Manuel/Excel toplamı{" "}
+            <span className="font-semibold">{fmt(renderedRowsTotalHours)} saat</span>, çalışma çizelgesi toplamı{" "}
+            <span className="font-semibold">{fmt(truthTotalHours)} saat</span>. Fark:{" "}
+            <span className="font-semibold">{fmt(Math.abs(truthDifference))} saat</span>.
+          </div>
+          <button
+            className="h-9 rounded-lg border border-amber-300 bg-white px-3 text-sm font-medium text-amber-900 hover:border-amber-500"
+            onClick={returnToScheduleTruth}
+          >
+            Resmi çizelgeye dön
+          </button>
+        </div>
+      )}
 
       {/* Tablo */}
       <div className="rounded-card border border-slate-200 bg-white overflow-x-auto shadow-card">
@@ -1163,7 +1376,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {(rows||[]).map((r,ri)=>(
+            {(visibleRows||[]).map((r,ri)=>(
               <tr key={r.tckn || r.adsoyad || ri} className="odd:bg-white even:bg-slate-50/50 hover:bg-blue-50/30 transition-colors">
                 <td className="px-2 py-1.5 border-r border-slate-100">
                   <input className="border border-slate-200 rounded-lg px-2 py-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 w-16 text-sm" value={r?.sira ?? ""} onChange={(e)=>setField(ri,"sira",e.target.value)} />

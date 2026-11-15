@@ -3,6 +3,12 @@ const router = express.Router();
 const Setting = require('../models/Setting');
 const { requireAuth, requireRole } = require('../middleware/authz');
 const { isSuperAdminRole, withHospitalFilter } = require('../middleware/hospital');
+const {
+  CONFLICT_CODE: LEAVES_V2_CONFLICT_CODE,
+  CONFLICT_MESSAGE: LEAVES_V2_CONFLICT_MESSAGE,
+  findLeavesV2Doc,
+  saveLeavesV2Value,
+} = require('../services/leavesV2SettingsService');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
@@ -70,7 +76,9 @@ router.get('/:key', requireAuth, async (req, res) => {
 
     const serviceId = normalizeServiceId(req.query?.serviceId || '');
 
-    const doc = await ensureScopedSetting(req, key, serviceId);
+    const doc = key === 'leavesV2'
+      ? await findLeavesV2Doc(req, serviceId)
+      : await ensureScopedSetting(req, key, serviceId);
 
     return res.json({
       ok: true,
@@ -100,6 +108,18 @@ router.put('/:key', requireAuth, requireRole('admin', 'authorized'), async (req,
 
     const serviceId = normalizeServiceId(req.body?.serviceId ?? req.query?.serviceId);
     const value = req.body?.value ?? null;
+
+    if (key === 'leavesV2') {
+      const doc = await saveLeavesV2Value(req, serviceId, value && typeof value === 'object' ? value : {});
+      return res.json({
+        ok: true,
+        key,
+        serviceId,
+        value: doc?.value ?? null,
+        updatedAt: doc?.updatedAt || null,
+        createdAt: doc?.createdAt || null,
+      });
+    }
 
     const legacyFilter = buildSettingScopeFilter(req, key, serviceId);
     const scopedFilter = buildScopedSettingFilter(req, key, serviceId);
@@ -152,6 +172,13 @@ router.put('/:key', requireAuth, requireRole('admin', 'authorized'), async (req,
       keyValue: err?.keyValue,
       stack: err?.stack,
     });
+    if (err?.code === LEAVES_V2_CONFLICT_CODE) {
+      return res.status(err.status || 409).json({
+        ok: false,
+        code: LEAVES_V2_CONFLICT_CODE,
+        message: LEAVES_V2_CONFLICT_MESSAGE,
+      });
+    }
     return res.status(500).json({ ok: false, message: safeMessage(err) });
   }
 });

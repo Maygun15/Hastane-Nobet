@@ -30,6 +30,7 @@ import {
   getMonthlySchedule,
   getGeneratedSchedule,
   getAssignmentsForMonth,
+  carryForwardMonthlyTemplate,
   saveMonthlySchedule,
   generateSchedulerPlan,
   fetchPersonnel,
@@ -47,6 +48,7 @@ import {
 import { runPlannerOnce } from "../lib/runPlannerOnce.js";
 import OverrideDialog from "./OverrideDialog.jsx";
 import SchedulerAuditPanel from "./SchedulerAuditPanel.jsx";
+import RecentOperationsPanel from "./undo/RecentOperationsPanel.jsx";
 import { toast } from "sonner";
 import {
   OPERATIONAL_SERVICE_WARNING,
@@ -176,6 +178,7 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const [saving, setSaving] = useState(false);
   const [lastSavedInfo, setLastSavedInfo] = useState(null);
   const [manualChangeLog, setManualChangeLog] = useState([]);
+  const [undoRefreshKey, setUndoRefreshKey] = useState(0);
   const [overrideDialog, setOverrideDialog] = useState({ open: false, errors: [], pendingPayload: null });
   const [rawGeneratedExplainability, setRawGeneratedExplainability] = useState(() => createEmptyExplainability());
   const [monthlyReadModelState, setMonthlyReadModelState] = useState(() => ({
@@ -193,7 +196,11 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const [staffLoading, setStaffLoading] = useState(true);
   const [staffRevision, setStaffRevision] = useState(0);
   const [buildLoading, setBuildLoading] = useState(false);
+  const [carryForwardLoading, setCarryForwardLoading] = useState(false);
   const savedAssignmentsRef = useRef([]);
+  const carryForwardPromptedRef = useRef(new Set());
+  const suppressNextAutoSaveRef = useRef(false);
+  const carryForwardRequestIdRef = useRef(0);
 
   const normalizeOverridesForSignature = useCallback((ovr) => {
     return Object.fromEntries(
@@ -1153,13 +1160,78 @@ const shouldShowRestRiskPanel =
     (async () => {
       setLoadingRemote(true);
       try {
-        const schedule = await getMonthlySchedule({
+        let schedule = await getMonthlySchedule({
           sectionId,
           serviceId: serviceKey,
           role,
           year,
           month: month1,
         });
+        if (cancelled) return;
+        const scheduleDefs = Array.isArray(schedule?.data?.defs)
+          ? schedule.data.defs
+          : Array.isArray(schedule?.data?.rows)
+            ? schedule.data.rows
+            : [];
+        const carryScopeKey = `${sectionId}|${serviceKey}|${role}|${year}|${month1}`;
+        const normalizedRole = String(role || "").trim().toLocaleLowerCase("tr-TR");
+        const hasSpecificRole = !["", "all", "all roles", "tümü", "tüm roller"].includes(normalizedRole);
+
+        if (
+          isSpecificService &&
+          hasSpecificRole &&
+          scheduleDefs.length === 0 &&
+          !carryForwardPromptedRef.current.has(carryScopeKey)
+        ) {
+          carryForwardPromptedRef.current.add(carryScopeKey);
+          const approved = window.confirm(
+            "Bu ay için şablon bulunamadı. Önceki ayın şablonu kullanılsın mı?"
+          );
+          if (approved) {
+            // requestId, bu carry-forward denemesini paylaşılan carryForwardLoading
+            // bayrağının "sahibi" olarak işaretler. Effect cleanup'ı (cancelled=true)
+            // sırasında ağ isteği hâlâ sürüyorsa, yalnızca hâlâ en güncel deneme
+            // olan istek finally'de loading'i false yapabilir; böylece eski bir istek
+            // güncel bir denemenin loading durumunu yanlışlıkla kapatamaz ve aynı
+            // zamanda hiçbir senaryoda loading kalıcı true takılı kalmaz.
+            const requestId = ++carryForwardRequestIdRef.current;
+            setCarryForwardLoading(true);
+            try {
+              const carryResult = await carryForwardMonthlyTemplate({
+                sectionId,
+                serviceId: serviceKey,
+                role,
+                year,
+                month: month1,
+              });
+              if (cancelled) return;
+              if (carryResult?.carried) {
+                suppressNextAutoSaveRef.current = true;
+                note(
+                  `Şablon taşındı (${carryResult.defsCount || 0} görev). Liste oluşturmak için ayrıca Yapay Zeka Destekli Liste / Liste Oluştur butonuna basın.`,
+                  "success"
+                );
+              }
+              schedule = await getMonthlySchedule({
+                sectionId,
+                serviceId: serviceKey,
+                role,
+                year,
+                month: month1,
+              });
+            } catch (carryErr) {
+              if (!cancelled) {
+                if (carryErr?.body?.code === "PREVIOUS_TEMPLATE_NOT_FOUND") {
+                  note(carryErr.body.message, "info");
+                } else {
+                  note(carryErr?.message || "Önceki ay şablonu taşınamadı.", "error");
+                }
+              }
+            } finally {
+              if (carryForwardRequestIdRef.current === requestId) setCarryForwardLoading(false);
+            }
+          }
+        }
         if (cancelled) return;
         if (schedule && schedule.data) {
           const data = schedule.data || {};
@@ -1274,7 +1346,7 @@ const shouldShowRestRiskPanel =
     return () => {
       cancelled = true;
     };
-  }, [sectionId, serviceKey, role, year, month1, replaceAllDefs, note, reloadKey]);
+  }, [sectionId, serviceKey, role, year, month1, replaceAllDefs, note, reloadKey, undoRefreshKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1517,6 +1589,13 @@ const shouldShowRestRiskPanel =
     if (!sectionId || loadingRemote) return;
     const sig = computeSignature();
     if (!sig) return;
+    if (suppressNextAutoSaveRef.current) {
+      suppressNextAutoSaveRef.current = false;
+      lastSavedSignatureRef.current = sig;
+      setAutoSaveStatus("idle");
+      setAutoSaveError(null);
+      return;
+    }
     if (saving) return;
     if (sig === lastSavedSignatureRef.current) {
       if (autoSaveStatus === "dirty" || autoSaveStatus === "saving" || autoSaveStatus === "error") {
@@ -1593,13 +1672,17 @@ const shouldShowRestRiskPanel =
   }
 
   /* Imperative API (üst toolbar buradan çağıracak) */
-  const doAi = () => {
+  const runExplicitGeneration = () => {
     if (!isSpecificService) {
       note(OPERATIONAL_SERVICE_WARNING, "warning");
       return;
     }
+    if (carryForwardLoading || loadingRemote) {
+      note("Şablon yükleniyor. Liste oluşturmak için yükleme tamamlandıktan sonra tekrar deneyin.", "info");
+      return;
+    }
     return doBuild();
-  };  // n8n/AI entegrasyonu sonra eklenecek
+  };
   const doAi_legacy = () => {
     try {
       generateAutoSchedule({ year, month1_12: month0 + 1, writeToLS: true });
@@ -1940,8 +2023,8 @@ const shouldShowRestRiskPanel =
   };
 
   useImperativeHandle(ref, () => ({
-    ai: doAi,
-    build: doBuild,
+    ai: runExplicitGeneration,
+    build: runExplicitGeneration,
     exportExcel: doExport,
     importTemplate: doImport,
     reset: doReset,
@@ -2179,6 +2262,11 @@ const shouldShowRestRiskPanel =
           </div>
         </div>
       )}
+
+      <RecentOperationsPanel
+        scope={{ sectionId, serviceId: serviceKey, role, year, month: month1 }}
+        onChanged={() => setUndoRefreshKey((value) => value + 1)}
+      />
 
       {/* Hızlı aksiyonlar */}
       <div className="flex items-center gap-2 flex-wrap">

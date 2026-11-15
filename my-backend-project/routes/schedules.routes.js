@@ -19,10 +19,68 @@ const {
   requireSpecificServiceScope,
   specificServiceErrorPayload,
 } = require('../utils/serviceScopeGuard');
+const {
+  carryForwardMonthlyTemplate,
+} = require('../services/monthlyTemplateCarryForwardService');
+const {
+  captureMonthlyScheduleSnapshot,
+  recordUndoableOperation,
+} = require('../services/undoService');
 const ExcelJS = require('exceljs');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
   isProd ? fallback : (err?.message || fallback);
+
+function buildUndoSummary(operationType, item = {}) {
+  const date = String(item?.date || item?.day || '').slice(0, 10) || '-';
+  const person = String(item?.personName || item?.name || item?.personId || '').trim() || '-';
+  const shift = String(item?.shiftCode || item?.shiftId || item?.code || '').trim() || '-';
+  const label = String(item?.roleLabel || item?.label || item?.area || '').trim();
+  if (operationType === 'MANUAL_ASSIGNMENT_DELETE') {
+    return `${date} ${shift}${label ? ` ${label}` : ''}: ${person} silindi`;
+  }
+  if (operationType === 'QUICK_REPLACE') {
+    const from = String(item?.changedFromPersonName || item?.replacePersonName || '').trim() || '-';
+    return `${date} ${shift}${label ? ` ${label}` : ''}: ${from} -> ${person}`;
+  }
+  if (operationType === 'MANUAL_ASSIGNMENT_EDIT') {
+    return `${date} ${shift}${label ? ` ${label}` : ''}: ${person} güncellendi`;
+  }
+  return `${date} ${shift}${label ? ` ${label}` : ''}: ${person} eklendi`;
+}
+
+async function recordScheduleUndoOperation({
+  scope,
+  operationType,
+  payload,
+  beforeSnapshot,
+  afterSnapshot,
+  scheduleId,
+  user,
+}) {
+  try {
+    await recordUndoableOperation({
+      scope,
+      operationType,
+      summary: buildUndoSummary(operationType, payload),
+      entityRefs: {
+        personId: payload?.personId || payload?.changedFromPersonId || null,
+        personName: payload?.personName || payload?.changedFromPersonName || null,
+        date: String(payload?.date || payload?.day || '').slice(0, 10) || null,
+        shiftCode: payload?.shiftCode || payload?.shiftId || null,
+        rowId: payload?.rowId || payload?.shiftId || null,
+      },
+      targetDocumentId: scheduleId ? String(scheduleId) : null,
+      sourceScheduleId: scheduleId ? String(scheduleId) : null,
+      beforeSnapshot,
+      afterSnapshot,
+      createdBy: user?.uid || null,
+      createdByName: user?.name || user?.email || '',
+    });
+  } catch (undoErr) {
+    console.error('[undo][recordScheduleUndoOperation] ERR:', undoErr);
+  }
+}
 
 function allowMonthlyRead(req, res, next) {
   const role = String(req.user?.role || '').toLowerCase();
@@ -212,6 +270,11 @@ function toDateParts(dateStr = '') {
 
 function getDailyDefRequiredCount(defs = [], targetTokens = [], dateParts = null) {
   if (!targetTokens.length || !dateParts) return null;
+  const readNeed = (sh = {}) => {
+    const need = Number(sh?.requiredCount ?? sh?.count ?? sh?.need ?? sh?.required ?? sh?.qty ?? 0);
+    return Number.isFinite(need) ? Math.max(0, need) : 0;
+  };
+  const matchingDailyShifts = [];
   for (const row of defs || []) {
     const rowDate = String(row?.date || '').slice(0, 10);
     const rowDay = Number(row?.day || 0);
@@ -233,30 +296,17 @@ function getDailyDefRequiredCount(defs = [], targetTokens = [], dateParts = null
         sh?.code,
         sh?.shiftCode
       );
-      if (!directIdMatch && !hasAnyTokenOverlap(targetTokens, shiftTokens)) continue;
-      const need = Number(sh?.requiredCount ?? sh?.count ?? sh?.need ?? sh?.required ?? sh?.qty ?? 0);
-      return Number.isFinite(need) ? Math.max(0, need) : 0;
+      if (directIdMatch) return readNeed(sh);
+      if (hasAnyTokenOverlap(targetTokens, shiftTokens)) matchingDailyShifts.push(sh);
     }
   }
+  if (matchingDailyShifts.length) return readNeed(matchingDailyShifts[0]);
   return null;
 }
 
 function getPatternDefRequiredCount(defs = [], overrides = {}, targetTokens = [], dateParts = null) {
   if (!targetTokens.length || !dateParts) return null;
-  for (const row of defs || []) {
-    const directIdMatch = hasAnyDirectIdMatch(
-      targetTokens,
-      row?.id,
-      row?.rowId
-    );
-    const rowTokens = buildTokens(
-      row?.id,
-      row?.rowId,
-      row?.shiftCode,
-      row?.code
-    );
-    if (!directIdMatch && !hasAnyTokenOverlap(targetTokens, rowTokens)) continue;
-
+  const readNeed = (row = {}) => {
     const rowId = String(row?.id || row?.rowId || '').trim();
     let value = undefined;
     if (rowId && overrides?.[rowId] && Object.prototype.hasOwnProperty.call(overrides[rowId], String(dateParts.day))) {
@@ -272,7 +322,25 @@ function getPatternDefRequiredCount(defs = [], overrides = {}, targetTokens = []
     }
     const need = Number(value || 0);
     return Number.isFinite(need) ? Math.max(0, need) : 0;
+  };
+
+  const overlapRows = [];
+  for (const row of defs || []) {
+    const directIdMatch = hasAnyDirectIdMatch(
+      targetTokens,
+      row?.id,
+      row?.rowId
+    );
+    const rowTokens = buildTokens(
+      row?.id,
+      row?.rowId,
+      row?.shiftCode,
+      row?.code
+    );
+    if (directIdMatch) return readNeed(row);
+    if (hasAnyTokenOverlap(targetTokens, rowTokens)) overlapRows.push(row);
   }
+  if (overlapRows.length) return readNeed(overlapRows[0]);
   return null;
 }
 
@@ -296,8 +364,33 @@ function getShiftCapacityForDate({ defs = [], overrides = {}, dateStr = '', shif
 
 function slotKey(item = {}) {
   const date = String(item?.date || item?.day || '').slice(0, 10);
+  const row = (
+    item?.rowId ||
+    item?.dutyRowId ||
+    item?.definitionId ||
+    item?.defId ||
+    item?.slotId ||
+    item?.templateRowId ||
+    item?.lineId ||
+    item?.rowKey ||
+    item?.taskKey ||
+    ''
+  );
+  const area = (
+    item?.areaId ||
+    item?.area ||
+    item?.unit ||
+    item?.location ||
+    item?.task ||
+    item?.label ||
+    item?.roleLabel ||
+    item?.rowLabel ||
+    ''
+  );
   const shift = normalizeShiftToken(item?.shiftId || item?.shiftCode || item?.shift || item?.code);
-  return `${date}|${shift}`;
+  const rowPart = normalizeShiftToken(row);
+  const areaPart = normalizeShiftToken(area);
+  return `${date}|${rowPart}|${areaPart}|${shift}`;
 }
 
 function trimOverbookedAssignments({ assignments = [], defs = [], overrides = {} }) {
@@ -410,6 +503,41 @@ function buildAssignmentsFromNamed({ year, month, defs = [], namedAssignments = 
     }
   }
   return out;
+}
+
+function chooseMonthlyResponseAssignments({ year, month, defs = [], scheduleData = {} } = {}) {
+  const assignments = Array.isArray(scheduleData.assignments) ? scheduleData.assignments : [];
+  const namedAssignments =
+    scheduleData?.roster?.namedAssignments && typeof scheduleData.roster.namedAssignments === 'object'
+      ? scheduleData.roster.namedAssignments
+      : scheduleData?.namedAssignments && typeof scheduleData.namedAssignments === 'object'
+      ? scheduleData.namedAssignments
+      : null;
+  const namedCount = namedAssignments ? countNamedAssignments(namedAssignments) : 0;
+
+  if (namedAssignments && namedCount > assignments.length) {
+    const rebuilt = buildAssignmentsFromNamed({
+      year,
+      month,
+      defs,
+      namedAssignments,
+    });
+    if (rebuilt.length > assignments.length) {
+      return {
+        assignments: rebuilt,
+        source: 'namedAssignments',
+        assignmentCount: assignments.length,
+        namedCount,
+      };
+    }
+  }
+
+  return {
+    assignments,
+    source: 'assignments',
+    assignmentCount: assignments.length,
+    namedCount,
+  };
 }
 
 function findDefForAssignment(item = {}, defs = []) {
@@ -582,6 +710,19 @@ function requireSpecificDeleteRole(req, res, next) {
       ok: false,
       code: 'SPECIFIC_ROLE_REQUIRED',
       message: 'A specific role must be selected before deleting assignments.',
+    });
+  }
+  req.body = { ...(req.body || {}), role: String(req.body.role).trim() };
+  return next();
+}
+
+function requireSpecificOperationalRole(req, res, next) {
+  const normalized = normalizeOperationalRole(req.body?.role);
+  if (['', 'all', 'all roles', 'tumu', 'tum roller'].includes(normalized)) {
+    return res.status(400).json({
+      ok: false,
+      code: 'SPECIFIC_ROLE_REQUIRED',
+      message: 'A specific role must be selected before carrying schedule templates forward.',
     });
   }
   req.body = { ...(req.body || {}), role: String(req.body.role).trim() };
@@ -972,28 +1113,14 @@ router.get('/monthly',
         : Array.isArray(scheduleData.rows)
         ? scheduleData.rows
         : [];
-      const namedAssignments =
-        scheduleData?.roster?.namedAssignments && typeof scheduleData.roster.namedAssignments === 'object'
-          ? scheduleData.roster.namedAssignments
-          : null;
-      const assignmentCount = Array.isArray(scheduleData.assignments) ? scheduleData.assignments.length : 0;
-      const namedCount = namedAssignments ? countNamedAssignments(namedAssignments) : 0;
-
-      if (namedAssignments && namedCount > 0) {
-        const looksCorrupted =
-          assignmentCount === 0 ||
-          (assignmentCount > 0 && assignmentCount < Math.ceil(namedCount * 0.2));
-        if (looksCorrupted) {
-          const rebuilt = buildAssignmentsFromNamed({
-            year: query.year,
-            month: query.month,
-            defs,
-            namedAssignments,
-          });
-          if (rebuilt.length > assignmentCount) {
-            scheduleData = { ...scheduleData, assignments: rebuilt };
-          }
-        }
+      const selectedAssignments = chooseMonthlyResponseAssignments({
+        year: query.year,
+        month: query.month,
+        defs,
+        scheduleData,
+      });
+      if (selectedAssignments.source === 'namedAssignments') {
+        scheduleData = { ...scheduleData, assignments: selectedAssignments.assignments };
       }
 
       if (doc && Array.isArray(scheduleData.assignments)) {
@@ -1046,6 +1173,47 @@ router.get('/monthly',
     } catch (err) {
       console.error('[GET /api/schedules/monthly] ERR:', err);
       return res.status(500).json({ ok: false, message: 'Sunucu hatası' });
+    }
+  }
+);
+
+router.post('/monthly/carry-forward-template',
+  requireAuth,
+  requireRole('admin', 'staff', 'authorized'),
+  requireSpecificServiceScope,
+  requireSpecificOperationalRole,
+  (req, res, next) => {
+    try {
+      const query = buildQuery(req);
+      req.scheduleQuery = query;
+      req.targetServiceId = query.serviceId;
+      next();
+    } catch (err) {
+      if (err?.code === 'SPECIFIC_SERVICE_REQUIRED') {
+        return res.status(400).json(specificServiceErrorPayload(err));
+      }
+      return res.status(400).json({ ok: false, message: err.message || 'Geçersiz istek' });
+    }
+  },
+  sameServiceOrAdmin,
+  async (req, res) => {
+    try {
+      const result = await carryForwardMonthlyTemplate({
+        ...req.scheduleQuery,
+        hospitalId: req.hospitalId,
+        userId: req.user?.uid || null,
+      });
+      return res.json({ ok: true, ...result });
+    } catch (err) {
+      if (err?.code === 'PREVIOUS_TEMPLATE_NOT_FOUND') {
+        return res.status(404).json({
+          ok: false,
+          code: err.code,
+          message: err.message,
+        });
+      }
+      console.error('[POST /api/schedules/monthly/carry-forward-template] ERR:', err);
+      return res.status(500).json({ ok: false, message: safeMessage(err) });
     }
   }
 );
@@ -1259,6 +1427,12 @@ router.post('/assign',
           namedAssignments,
         });
       }
+      const beforeSnapshot = captureMonthlyScheduleSnapshot(doc || { data }, {
+        assignments,
+        rosterNamedAssignments:
+          data?.roster?.namedAssignments !== undefined ? data.roster.namedAssignments : null,
+        changeLog: Array.isArray(data.changeLog) ? data.changeLog : [],
+      });
       const overrides =
         data?.overrides && typeof data.overrides === 'object'
           ? data.overrides
@@ -1384,6 +1558,11 @@ router.post('/assign',
 
       const idx = nextAssignments.findIndex((a) => assignmentKey(a) === key);
       const existingAssignment = idx === -1 ? null : (nextAssignments[idx] || null);
+      const undoOperationType = replacedAssignment
+        ? 'QUICK_REPLACE'
+        : existingAssignment
+        ? 'MANUAL_ASSIGNMENT_EDIT'
+        : 'MANUAL_ASSIGNMENT_ADD';
       const slotCapacity = getShiftCapacityForDate({
         defs,
         overrides,
@@ -1391,9 +1570,20 @@ router.post('/assign',
         shiftLike: payload,
       });
       if (idx === -1 && Number.isFinite(slotCapacity)) {
+        // Kapasite satır (def) bazlı çözülür; kullanım da aynı satırla sınırlanmalı.
+        // Aksi halde aynı vardiya kodunu (ör. N) paylaşan farklı satırlar birbirini
+        // "dolu" gösterir. Def çözülemezse eski (loose) davranışa güvenli şekilde düşülür.
+        const targetDef = findDefForAssignment(payload, defs);
+        const targetDefId = String(targetDef?.id || targetDef?.rowId || '').trim();
         const slotUsage = nextAssignments.filter((a) => {
           const aDate = String(a?.date || a?.day || '').slice(0, 10);
-          return aDate === req.assignQuery?.dateStr && shiftMatchLoose(a, payload);
+          if (aDate !== req.assignQuery?.dateStr) return false;
+          if (!shiftMatchLoose(a, payload)) return false;
+          if (!targetDefId) return true;
+          const aDef = findDefForAssignment(a, defs);
+          const aDefId = String(aDef?.id || aDef?.rowId || '').trim();
+          if (!aDefId) return true;
+          return aDefId === targetDefId;
         }).length;
         if (slotUsage >= Math.max(0, Number(slotCapacity))) {
           return res.status(409).json({
@@ -1443,6 +1633,7 @@ router.post('/assign',
         { new: true, upsert: true, setDefaultsOnInsert: true }
       ).lean();
 
+      let projectionSyncOk = true;
       try {
         await replaceAssignmentsForSchedule({
           scope: {
@@ -1455,7 +1646,20 @@ router.post('/assign',
           source: 'monthlySchedule',
         });
       } catch (syncErr) {
+        projectionSyncOk = false;
         console.error('[assignmentSync][assign] ERR:', syncErr);
+      }
+
+      if (projectionSyncOk) {
+        await recordScheduleUndoOperation({
+          scope: query,
+          operationType: undoOperationType,
+          payload,
+          beforeSnapshot,
+          afterSnapshot: captureMonthlyScheduleSnapshot(saved || { data: nextData }),
+          scheduleId: saved?._id || null,
+          user: req.user,
+        });
       }
 
       const outAssignments = Array.isArray(saved?.data?.assignments)
@@ -1558,6 +1762,12 @@ router.delete('/assign',
             namedAssignments,
           });
         }
+        const beforeSnapshot = captureMonthlyScheduleSnapshot(targetDoc || { data }, {
+          assignments,
+          rosterNamedAssignments:
+            data?.roster?.namedAssignments !== undefined ? data.roster.namedAssignments : null,
+          changeLog: Array.isArray(data.changeLog) ? data.changeLog : [],
+        });
         const { filtered, removed } = applyDeleteFilter(assignments, req.assignPayload, req.assignQuery);
         if (!removed) return { removed: false };
         const removedAssignment = assignments.find((item) => !filtered.includes(item)) || null;
@@ -1596,6 +1806,9 @@ router.delete('/assign',
           assignments: Array.isArray(saved?.data?.assignments) ? saved.data.assignments : filtered,
           updatedAt: saved?.updatedAt || null,
           removedAssignment,
+          beforeSnapshot,
+          afterSnapshot: captureMonthlyScheduleSnapshot(saved || { data: nextData }),
+          scheduleId: saved?._id || targetDoc?._id || null,
         };
       };
 
@@ -1609,6 +1822,7 @@ router.delete('/assign',
       }
 
       const removedItem = result.removedAssignment || null;
+      let projectionSyncOk = true;
       try {
         await removeAssignment({
           scope: {
@@ -1618,9 +1832,27 @@ router.delete('/assign',
           assignment: removedItem || req.assignPayload,
         });
       } catch (syncErr) {
+        projectionSyncOk = false;
         console.error('[assignmentSync][unassign-primary] ERR:', syncErr);
       }
-      const { removedAssignment: _ignoredRemovedAssignment, ...responsePayload } = result;
+      if (projectionSyncOk) {
+        await recordScheduleUndoOperation({
+          scope: exactQuery,
+          operationType: 'MANUAL_ASSIGNMENT_DELETE',
+          payload: removedItem || req.assignPayload,
+          beforeSnapshot: result.beforeSnapshot,
+          afterSnapshot: result.afterSnapshot,
+          scheduleId: result.scheduleId || doc?._id || null,
+          user: req.user,
+        });
+      }
+      const {
+        removedAssignment: _ignoredRemovedAssignment,
+        beforeSnapshot: _ignoredBeforeSnapshot,
+        afterSnapshot: _ignoredAfterSnapshot,
+        scheduleId: _ignoredScheduleId,
+        ...responsePayload
+      } = result;
       const changedByName = req.user?.name || req.user?.email || 'Yetkili';
       void sendShiftChanged({
         personId: req.assignPayload?.personId || removedItem?.personId,
@@ -2269,6 +2501,12 @@ router.post('/publish-notify',
     }
   }
 );
+
+router.__test = {
+  chooseMonthlyResponseAssignments,
+  slotKey,
+  trimOverbookedAssignments,
+};
 
 module.exports = router;
 

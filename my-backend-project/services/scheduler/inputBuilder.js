@@ -33,12 +33,83 @@ const normalizeRequiredCount = (value) => {
   return 1;
 };
 
+const CANONICAL_SHIFT_CATALOG = Object.freeze({
+  M: { start: '08:00', end: '16:00' },
+  M1: { start: '08:00', end: '15:00' },
+  M2: { start: '09:00', end: '16:00' },
+  M3: { start: '10:00', end: '17:00' },
+  M4: { start: '16:00', end: '00:00' },
+  M5: { start: '08:00', end: '13:00' },
+  M6: { start: '08:00', end: '14:00' },
+  N: { start: '08:00', end: '08:00', isNight: true },
+  N24: { start: '08:00', end: '08:00', isNight: true },
+  SV: { start: '08:00', end: '08:00', isNight: true },
+  V1: { start: '08:00', end: '00:00' },
+  V2: { start: '08:00', end: '08:00', isNight: true },
+});
+
 function resolveItemHours(item) {
   const explicit = Number(item?.hours);
   if (Number.isFinite(explicit) && explicit > 0) return explicit;
-  const fromTimes = calcShiftHours(item?.start, item?.end);
+  const totalHours = Number(item?.totalHours);
+  if (Number.isFinite(totalHours) && totalHours > 0) return totalHours;
+  const duration = Number(item?.duration);
+  if (Number.isFinite(duration) && duration > 0) return duration;
+  const start = item?.start ?? item?.startTime ?? item?.from ?? item?.begin;
+  const end = item?.end ?? item?.endTime ?? item?.to ?? item?.finish;
+  const fromTimes = calcShiftHours(start, end);
   if (fromTimes !== null && fromTimes > 0) return fromTimes;
   return null;
+}
+
+function resolveItemStart(item) {
+  return item?.start ?? item?.startTime ?? item?.from ?? item?.begin ?? null;
+}
+
+function resolveItemEnd(item) {
+  return item?.end ?? item?.endTime ?? item?.to ?? item?.finish ?? null;
+}
+
+function buildShiftMetaFromItem(item) {
+  const start = resolveItemStart(item);
+  const end = resolveItemEnd(item);
+  return {
+    hours: resolveItemHours(item) ?? undefined,
+    start,
+    end,
+    isNight: !!item?.isNight,
+  };
+}
+
+function hasUsableShiftMeta(meta) {
+  return !!(meta && (meta.start || meta.end || Number(meta.hours || 0) > 0));
+}
+
+function buildCanonicalShiftMeta(code) {
+  const key = normalizeCode(code);
+  const canonical = CANONICAL_SHIFT_CATALOG[key];
+  if (!canonical) return {};
+  return {
+    hours: calcShiftHours(canonical.start, canonical.end) ?? undefined,
+    start: canonical.start,
+    end: canonical.end,
+    isNight: !!canonical.isNight,
+    source: 'canonical',
+  };
+}
+
+function lookupShiftMeta(shiftMeta, code) {
+  const key = normalizeCode(code);
+  if (!key || !shiftMeta) return undefined;
+  return typeof shiftMeta.get === 'function' ? shiftMeta.get(key) : shiftMeta[key];
+}
+
+function resolveShiftMeta({ code, shiftMeta, item }) {
+  const explicit = lookupShiftMeta(shiftMeta, code);
+  if (hasUsableShiftMeta(explicit)) return explicit;
+  const fromItem = buildShiftMetaFromItem(item || {});
+  if (hasUsableShiftMeta(fromItem)) return fromItem;
+  return buildCanonicalShiftMeta(code);
 }
 
 function buildShiftMetaLookup(shiftOptions = []) {
@@ -46,12 +117,7 @@ function buildShiftMetaLookup(shiftOptions = []) {
   for (const item of shiftOptions || []) {
     const code = normalizeCode(item?.code || item?.id || '');
     if (!code) continue;
-    out[code] = {
-      hours: resolveItemHours(item),
-      start: item?.start || null,
-      end: item?.end || null,
-      isNight: !!item?.isNight,
-    };
+    out[code] = buildShiftMetaFromItem(item);
   }
   return out;
 }
@@ -60,14 +126,9 @@ function buildShiftMetaMap(data) {
   const map = new Map();
   const src = Array.isArray(data?.shiftOptions) ? data.shiftOptions : [];
   for (const s of src) {
-    const code = String(s.code || s.id || '').trim();
+    const code = normalizeCode(s.code || s.id || '');
     if (!code) continue;
-    map.set(code, {
-      hours: resolveItemHours(s) ?? undefined,
-      start: s.start || null,
-      end: s.end || null,
-      isNight: !!s.isNight,
-    });
+    map.set(code, buildShiftMetaFromItem(s));
   }
   return map;
 }
@@ -124,7 +185,7 @@ function buildDaysFromScheduleData({ year, month, data }) {
           sh.requiredCount ?? sh.count ?? sh.need ?? sh.required ?? sh.qty ?? 0
         );
         if (!code || need <= 0) continue;
-        const meta = shiftMeta.get(code) || {};
+        const meta = resolveShiftMeta({ code, shiftMeta, item: { ...def, ...sh } });
         arr.push({
           id: String(sh.id || code),
           code,
@@ -180,7 +241,7 @@ function buildDaysFromScheduleData({ year, month, data }) {
       const need = normalizeRequiredCount(v);
       if (need <= 0) continue;
 
-      const meta = shiftMeta.get(String(shiftCode)) || {};
+      const meta = resolveShiftMeta({ code: shiftCode, shiftMeta, item: def });
       shifts.push({
         id: rowId,
         code: shiftCode,
@@ -267,4 +328,5 @@ module.exports = {
   buildDaysFromScheduleData,
   buildShiftMetaLookup,
   buildSchedulerInput,
+  buildCanonicalShiftMeta,
 };

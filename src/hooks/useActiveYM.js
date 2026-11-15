@@ -39,7 +39,8 @@ function clampYear(y) {
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.trunc(n);
 }
-function fromLegacyMonth(val) {
+export function fromLegacyMonth(val) {
+  if (val === null || val === undefined || String(val).trim() === "") return null;
   const n = Number(val);
   if (!Number.isFinite(n)) return null;
   // 0..11 geldiyse 1-baz'a çevir
