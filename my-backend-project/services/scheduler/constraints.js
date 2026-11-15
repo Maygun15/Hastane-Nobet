@@ -298,4 +298,13 @@ function isAvailable(person, day, context, shift) {
   return result.allowed;
 }
 
-module.exports = { isAvailable, explainAvailability, areaMatches, normalizeArea, splitAreaTokens, isNightLikeShift };
+module.exports = {
+  isAvailable,
+  explainAvailability,
+  areaMatches,
+  normalizeArea,
+  splitAreaTokens,
+  isNightLikeShift,
+  isServiceSupervisorLabel,
+  hasServiceSupervisorEligibility,
+};

@@ -7,6 +7,7 @@ jest.mock('../models/MonthlySchedule', () => ({
   find: jest.fn(),
   findOne: jest.fn(),
   findOneAndUpdate: jest.fn(),
+  updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
 }));
 jest.mock('../models/Assignment', () => ({
   find: jest.fn(),
@@ -32,6 +33,18 @@ jest.mock('../services/assignmentSyncService', () => ({
 jest.mock('../services/undoService', () => ({
   captureMonthlyScheduleSnapshot: jest.fn(() => ({})),
   recordUndoableOperation: jest.fn().mockResolvedValue({ _id: 'op-1' }),
+}));
+// Yayın öncesi risk hesabının DB bağımlılıkları
+jest.mock('../services/scheduler/staffResolver', () => ({ resolveStaff: jest.fn() }));
+jest.mock('../services/scheduler/ruleResolver', () => ({
+  fetchDutyRules: jest.fn().mockResolvedValue({ rules: {} }),
+  DEFAULT_RULES: {},
+  DEFAULT_WEIGHTS: {},
+}));
+jest.mock('../services/preferenceRequestService', () => ({
+  loadPreferencesFromDb: jest.fn().mockResolvedValue({}),
+  normalizePreferenceKind: jest.fn((x) => x),
+  mergeWantIntoRequests: jest.fn((x) => x),
 }));
 
 const MonthlySchedule = require('../models/MonthlySchedule');
@@ -192,10 +205,67 @@ describe('Personel takvimi (Assignment okumaları)', () => {
 });
 
 describe('POST /publish', () => {
-  beforeEach(() => jest.clearAllMocks());
+  const { resolveStaff } = require('../services/scheduler/staffResolver');
+  const okPerson = { _id: 'p-1', name: 'Ayşe', meta: { areas: ['KIRMIZI'], shiftCodes: ['N'] } };
+  const noAreaPerson = { _id: 'p-9', name: 'Alanı Boş', meta: { areas: [], shiftCodes: ['M'] } };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resolveStaff.mockResolvedValue({ staff: [okPerson] });
+  });
+
+  test('karara bağlanmamış risk varken yayın engellenir (RISKS_PENDING)', async () => {
+    resolveStaff.mockResolvedValue({ staff: [okPerson, noAreaPerson] });
+    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', ...SCOPE, data: {}, publication: { status: 'draft' } }));
+
+    const r = await call('post', '/publish', { user: PLANNER, body: { ...SCOPE } });
+
+    expect(r.status).toBe(409);
+    expect(r.body).toMatchObject({ ok: false, code: 'RISKS_PENDING', pending: 1 });
+    expect(r.body.risks[0]).toMatchObject({ key: 'VERI_EKSIGI|p-9', type: 'VERI_EKSIGI' });
+    expect(MonthlySchedule.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('"Bu şekilde devam" kararı verilen risk yayını engellemez', async () => {
+    resolveStaff.mockResolvedValue({ staff: [okPerson, noAreaPerson] });
+    MonthlySchedule.findOne.mockReturnValue(selectLean({
+      _id: 'sched-1', ...SCOPE, data: {}, publication: { status: 'draft' },
+      riskAcks: { 'VERI_EKSIGI|p-9': { by: 'admin-1', at: new Date() } },
+    }));
+    MonthlySchedule.findOneAndUpdate.mockReturnValue(lean({ _id: 'sched-1', publication: { status: 'published' } }));
+    Assignment.distinct.mockResolvedValue([]);
+    computeMonthlyFairnessScores.mockResolvedValue({ people: [] });
+
+    const r = await call('post', '/publish', { user: PLANNER, body: { ...SCOPE } });
+    expect(r.status).toBe(200);
+  });
+
+  test('POST /risks/ack kararı kaydeder; personel karar veremez', async () => {
+    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', riskAcks: { 'eski|k': { by: 'x' } } }));
+    const r = await call('post', '/risks/ack', { user: PLANNER, body: { ...SCOPE, keys: ['BOS_SLOT|2026-12-05|r1'], note: 'kadro yok' } });
+    expect(r.status).toBe(200);
+    const [filter, update] = MonthlySchedule.updateOne.mock.calls[0];
+    expect(filter).toEqual({ _id: 'sched-1' });
+    expect(Object.keys(update.$set.riskAcks).sort()).toEqual(['BOS_SLOT|2026-12-05|r1', 'eski|k']);
+    expect(update.$set.riskAcks['BOS_SLOT|2026-12-05|r1']).toMatchObject({ by: 'admin-1', note: 'kadro yok' });
+
+    const denied = await call('post', '/risks/ack', { user: STAFF, body: { ...SCOPE, keys: ['x'] } });
+    expect(denied.status).toBe(403);
+  });
+
+  test('GET /risks: sorumlu riskleri görür, personel göremez', async () => {
+    resolveStaff.mockResolvedValue({ staff: [okPerson, noAreaPerson] });
+    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', ...SCOPE, data: {} }));
+    const r = await call('get', '/risks', { user: PLANNER, query: { ...SCOPE } });
+    expect(r.body).toMatchObject({ ok: true, total: 1, pending: 1 });
+    expect(r.body.context).toBeUndefined();
+    expect(r.body.doc).toBeUndefined();
+    const denied = await call('get', '/risks', { user: STAFF, query: { ...SCOPE } });
+    expect(denied.status).toBe(403);
+  });
 
   test('yayınlar ve sadece bu çizelgedeki kişilere bildirim gönderir', async () => {
-    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', publication: { status: 'draft' } }));
+    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', ...SCOPE, data: {}, publication: { status: 'draft' } }));
     MonthlySchedule.findOneAndUpdate.mockReturnValue(lean({ _id: 'sched-1', publication: { status: 'published' } }));
     Assignment.distinct.mockResolvedValue(['p-1']);
     computeMonthlyFairnessScores.mockResolvedValue({

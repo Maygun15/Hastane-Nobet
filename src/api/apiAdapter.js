@@ -483,6 +483,32 @@ export async function setSchedulePublication(
   return payload;
 }
 
+/** Yayın öncesi riskler: { risks, total, pending } */
+export async function getScheduleRisks({ sectionId, serviceId = "", role = "", year, month } = {}) {
+  if (!sectionId) throw new Error("sectionId gerekli");
+  const qs = new URLSearchParams({ sectionId, serviceId: String(serviceId ?? ""), role: String(role ?? ""), year: String(year), month: String(month) });
+  return httpRequest(`/api/schedules/risks?${qs.toString()}`);
+}
+
+/** Boş slot için uygun adaylar: { slot, candidates:[{personId, personName, eligible, reasons, ...}] } */
+export async function getSlotCandidates({ sectionId, serviceId = "", role = "", year, month } = {}, { date, rowId } = {}) {
+  if (!sectionId) throw new Error("sectionId gerekli");
+  const qs = new URLSearchParams({
+    sectionId, serviceId: String(serviceId ?? ""), role: String(role ?? ""),
+    year: String(year), month: String(month), date: String(date || ""), rowId: String(rowId || ""),
+  });
+  return httpRequest(`/api/schedules/slot-candidates?${qs.toString()}`);
+}
+
+/** Yöneticinin "Bu şekilde devam" kararı. */
+export async function ackScheduleRisks({ sectionId, serviceId = "", role = "", year, month } = {}, keys = [], note = "") {
+  if (!sectionId) throw new Error("sectionId gerekli");
+  return httpRequest("/api/schedules/risks/ack", {
+    method: "POST",
+    body: { sectionId, serviceId, role, year, month, keys, note },
+  });
+}
+
 export async function saveMonthlySchedule({
   sectionId,
   serviceId = "",

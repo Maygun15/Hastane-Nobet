@@ -2575,6 +2575,114 @@ async function notifyScheduleAudience(query) {
   return people.length;
 }
 
+/* ─── Yayın öncesi riskler (scheduleRiskService) ─── */
+async function loadScheduleRisks(query) {
+  const { buildSchedulerInput } = require('../services/scheduler/inputBuilder');
+  const { applyHolidayPolicies } = require('../services/scheduler/holidayPolicyAdapter');
+  const { resolveStaff } = require('../services/scheduler/staffResolver');
+  const { fetchDutyRules } = require('../services/scheduler/ruleResolver');
+  const { loadPreferencesFromDb } = require('../services/preferenceRequestService');
+  const { computeScheduleRisks } = require('../services/scheduleRiskService');
+
+  const doc = await MonthlySchedule.findOne(query).lean();
+  if (!doc) return null;
+  const holidays = await listHolidays({ year: query.year, month: query.month, hospitalId: query.hospitalId });
+  const input = buildSchedulerInput({ scheduleDoc: doc, payload: {}, year: query.year, month: query.month, hospitalId: query.hospitalId, holidays });
+  const days = applyHolidayPolicies({
+    days: input.days || [],
+    holidayKindByDate: input.holidayKindByDate,
+    shiftMetaByCode: input.shiftMetaByCode,
+  });
+  const { staff = [] } = await resolveStaff({ serviceId: query.serviceId, role: query.role, hospitalId: query.hospitalId });
+  const personIds = staff.map((p) => String(p?._id || p?.id || ''));
+  const [preferencesByPerson, ruleInfo] = await Promise.all([
+    loadPreferencesFromDb({ hospitalId: query.hospitalId, personIds, year: query.year, month: query.month }).catch(() => ({})),
+    fetchDutyRules({ sectionId: query.sectionId, serviceId: query.serviceId, role: query.role, hospitalId: query.hospitalId }).catch(() => ({ rules: {} })),
+  ]);
+  const assignments = Array.isArray(doc?.data?.assignments) ? doc.data.assignments : [];
+  const context = { assignments, days, staff, preferencesByPerson, limits: ruleInfo?.rules || {} };
+  return {
+    doc,
+    context,
+    ...computeScheduleRisks({ ...context, acks: doc.riskAcks || {} }),
+  };
+}
+
+// Boş slot için uygun adaylar ("Yerine ata"). Query: kapsam + date + rowId
+router.get('/slot-candidates',
+  requireAuth,
+  publicationScope,
+  allowMonthlyRead,
+  async (req, res) => {
+    try {
+      if (!canViewDrafts(req.user)) return res.status(403).json({ ok: false, message: 'Yetki yok' });
+      const date = String(req.query?.date || '').slice(0, 10);
+      const rowId = String(req.query?.rowId || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !rowId) {
+        return res.status(400).json({ ok: false, message: 'date (YYYY-MM-DD) ve rowId zorunlu' });
+      }
+      const { rankSlotCandidates } = require('../services/scheduleRiskService');
+      const result = await loadScheduleRisks(req.scheduleQuery);
+      if (!result) return res.status(404).json({ ok: false, code: 'SCHEDULE_NOT_FOUND_IN_SCOPE', message: 'Bu kapsamda çizelge bulunamadı.' });
+      const ranked = rankSlotCandidates({ ...result.context, date, rowId });
+      if (!ranked.slot) return res.status(404).json({ ok: false, message: 'Bu gün için böyle bir görev yok' });
+      return res.json({ ok: true, ...ranked });
+    } catch (err) {
+      console.error('[GET /api/schedules/slot-candidates] ERR:', err);
+      return res.status(500).json({ ok: false, message: 'Sunucu hatası' });
+    }
+  }
+);
+
+router.get('/risks',
+  requireAuth,
+  publicationScope,
+  allowMonthlyRead,
+  async (req, res) => {
+    try {
+      if (!canViewDrafts(req.user)) return res.status(403).json({ ok: false, message: 'Yetki yok' });
+      const result = await loadScheduleRisks(req.scheduleQuery);
+      if (!result) return res.json({ ok: true, risks: [], total: 0, pending: 0 });
+      const { doc, context, ...payload } = result; // iç veri (atamalar, personel) yanıta girmez
+      return res.json({ ok: true, ...payload });
+    } catch (err) {
+      console.error('[GET /api/schedules/risks] ERR:', err);
+      return res.status(500).json({ ok: false, message: 'Sunucu hatası' });
+    }
+  }
+);
+
+// Yönetici "Bu şekilde devam" kararı. Body: { ...kapsam, keys: [riskKey], note? }
+router.post('/risks/ack',
+  requireAuth,
+  requireRole('admin', 'authorized', 'manager'),
+  publicationScope,
+  sameServiceOrAdmin,
+  async (req, res) => {
+    try {
+      const keys = (Array.isArray(req.body?.keys) ? req.body.keys : [])
+        .map((k) => String(k || '').trim())
+        .filter((k) => k && k.length <= 300)
+        .slice(0, 500);
+      if (!keys.length) return res.status(400).json({ ok: false, message: 'keys zorunlu' });
+      const note = String(req.body?.note || '').slice(0, 300);
+      const ack = { by: req.user?.uid || null, byName: req.user?.name || req.user?.email || '', at: new Date(), note };
+      const $set = { updatedBy: req.user?.uid || null };
+      // Nokta içeren anahtarlar Mongo yolunu bozmasın diye "riskAcks.<key>" yerine tüm nesneyi birleştir.
+      const doc = await MonthlySchedule.findOne(req.scheduleQuery).select('_id riskAcks').lean();
+      if (!doc) return res.status(404).json({ ok: false, code: 'SCHEDULE_NOT_FOUND_IN_SCOPE', message: 'Bu kapsamda çizelge bulunamadı.' });
+      const riskAcks = { ...(doc.riskAcks || {}) };
+      for (const k of keys) riskAcks[k] = ack;
+      $set.riskAcks = riskAcks;
+      await MonthlySchedule.updateOne({ _id: doc._id }, { $set });
+      return res.json({ ok: true, acknowledged: keys.length });
+    } catch (err) {
+      console.error('[POST /api/schedules/risks/ack] ERR:', err);
+      return res.status(500).json({ ok: false, message: 'Sunucu hatası' });
+    }
+  }
+);
+
 router.post('/publish',
   requireAuth,
   requireRole('admin', 'authorized', 'manager'),
@@ -2583,9 +2691,19 @@ router.post('/publish',
   async (req, res) => {
     try {
       const query = req.scheduleQuery;
-      const existing = await MonthlySchedule.findOne(query).select('_id publication').lean();
-      if (!existing) {
+      const riskResult = await loadScheduleRisks(query);
+      if (!riskResult) {
         return res.status(404).json({ ok: false, code: 'SCHEDULE_NOT_FOUND_IN_SCOPE', message: 'Bu kapsamda çizelge bulunamadı.' });
+      }
+      // Karara bağlanmamış risk varken yayın yok (hastane kararı 2026-11-16).
+      if (riskResult.pending > 0) {
+        return res.status(409).json({
+          ok: false,
+          code: 'RISKS_PENDING',
+          message: `${riskResult.pending} risk yönetici kararı bekliyor. Her biri için "Yerine ata" ya da "Bu şekilde devam" seçin.`,
+          pending: riskResult.pending,
+          risks: riskResult.risks.filter((r) => !r.acknowledged).slice(0, 50),
+        });
       }
       const saved = await setPublicationStatus(query, PUBLICATION_STATUS.PUBLISHED, req.user);
 

@@ -26,6 +26,12 @@ const MonthlyScheduleSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: undefined,
     },
+    // Yöneticinin "bu şekilde devam" kararları: { [riskKey]: { by, byName, at, note } }
+    // — bkz. services/scheduleRiskService.js
+    riskAcks: {
+      type: mongoose.Schema.Types.Mixed,
+      default: undefined,
+    },
     createdBy: { type: String, default: null },
     updatedBy: { type: String, default: null },
   },

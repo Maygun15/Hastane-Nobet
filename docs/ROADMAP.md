@@ -213,6 +213,24 @@ Bilgisayardaki **ayrı bir deneme veritabanında** (`127.0.0.1:27018`, canlı At
 - Kod: indeks artık sadece dolu TC'de benzersiz (`hospitalId_1_tc_1_nonempty`, `partialFilterExpression`). Test: `test/personTcIndex.test.js`.
 - **Canlı veritabanı için taşıma gerekli:** `scripts/migratePersonTcIndex.js` (varsayılan kuru çalışma; `--apply` ile uygular, önce dolu TC kopyalarını kontrol eder). Yerel deneme veritabanında kuru + uygulama çalıştırıldı. **Canlıda henüz çalıştırılmadı — onay bekliyor.**
 
-**Netleşmesi gereken (hastane kararı):**
-- **V1 (08:00–24:00, 16 saat) gece sayılır mı?** Personel ekranı ve adalet raporu (16+ saat kuralı) V1'i gece sayıyor; çizelge motorunun gece dengesi saymıyor. Karar verilince üçü aynı tanıma bağlanmalı.
+**Hastane kararları (2026-11-16):**
+- **V1 gece çalışması sayılır.** Motorun gece dengesi, "gece istemiyorum" tercihi, adalet raporu ve personel ekranı aynı tanımı kullanıyor (`NIGHT_WORK_CODES`: N, NIGHT, N24, SV, V2, V1). Dinlenme kuralı (ertesi gün boş) değişmedi; V1 sonrası 12 saat kuralı geçerli.
+- **Cerrahi Müdahale** yükü olduğu gibi kabul edildi.
+- **Boş slot ve tüm riskli atamalar yönetici kararına bağlandı** (aşağıda).
 - Ekran personelin taslak ayını "Bu ay nöbet kaydı yok" diye gösteriyor; "Çizelge henüz yayınlanmadı" demek daha anlaşılır olur (küçük iyileştirme).
+
+### Yayın öncesi risk kararları (2026-11-16)
+
+Hastane kararı: sistem riskli durumları listeler, yönetici her biri için **"Yerine ata"** ya da **"Bu şekilde devam"** der; karara bağlanmamış risk varken **yayınlanamaz** (`POST /publish` → 409 `RISKS_PENDING`).
+
+| Risk | Ne zaman | "Yerine ata" |
+|---|---|---|
+| Boş görev (`BOS_SLOT`) | Gereken kişi sayısı doldurulamadı | Aday penceresi: alan (servis sorumlusu yetkisi dahil), vardiya kodu, aynı gün, 12 saat dinlenme / art arda gün / haftalık saat ve onaylı tercih kontrolünden geçen adaylar; ay saati ve gece sayısı az olan önce. Uygun olmayanlar gerekçesiyle gösterilir; **"Yine de ata"** gerekçeli zorla atama yapar ve doğan riskleri aynı kararla kapatır. |
+| Kural riski (`KURAL`) | Atama dinlenme, çakışma, alan, vardiya kodu, haftalık saat, hafta sonu M4 kuralını bozuyor (elle / zorla atamalar) | Hızlı değiştirme penceresi o kişiyle açılır |
+| Tercih çelişkisi (`TERCIH`) | Onaylı (yüksek) ya da bekleyen (orta) "çalışmak / gece istemiyorum" tercihine rağmen atama | Hızlı değiştirme penceresi |
+| Personel verisi eksik (`VERI_EKSIGI`) | Çalışma alanı veya vardiya kodu boş — kişi hiç atanamaz | Personel kartından düzeltilir |
+
+- Kararlar `MonthlySchedule.riskAcks` içinde kim / ne zaman / gerekçe ile saklanır; panelde "✓ Bu şekilde devam — ad" görünür.
+- Kod: `services/scheduleRiskService.js` (prova betiğinin bağımsız denetçisi de buraya taşındı), `GET /api/schedules/risks`, `POST /api/schedules/risks/ack`, `GET /api/schedules/slot-candidates`, `src/components/SchedulePublishBar.jsx`.
+- Yerel provada (Acil, Aralık 2026): 3 boş Servis Sorumlusu görevi + 1 veri eksiği listelendi, yayın engellendi; 07.12 için uygun aday çıkmadı (servis sorumlusu olabilen 3 kişi o gün çalışıyor ya da dinlenme kuralını bozuyor); "Yine de ata" ile atama, kalanlar için "Bu şekilde devam", ardından yayın — uçtan uca ekranda doğrulandı.
+- Provada düzeltilen: aday/denetçi alan eşleşmesi kelime bazlı olduğu için "EKİP SORUMLUSU" kişiler "SERVİS SORUMLUSU" için uygun görünüyordu; motorla aynı servis sorumlusu yetki kontrolü eklendi.

@@ -27,6 +27,7 @@ const { generateMonthlyPlan } = require('../services/scheduler');
 const { DEFAULT_RULES, DEFAULT_WEIGHTS } = require('../services/scheduler/ruleResolver');
 const { isNightLikeShift, isWeekendLikeDay } = require('../services/scheduler/fairnessCounters');
 const { areaMatches, normalizeArea } = require('../services/scheduler/constraints');
+const { auditAssignments } = require('../services/scheduleRiskService');
 
 function parseArgs(argv) {
   const out = {};
@@ -119,100 +120,13 @@ async function loadTemplateDefs(file) {
     });
 }
 
-/* ─── Bağımsız denetçi ─── */
-
-const toMin = (hhmm) => {
-  const m = String(hhmm || '').match(/^(\d{1,2}):(\d{2})$/);
-  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
-};
-
-function absInterval(date, start, end, hours) {
-  const base = Date.parse(`${date}T00:00:00Z`) / 60000;
-  const s = toMin(start);
-  let e = toMin(end);
-  if (s == null) return null;
-  if (e == null) e = s + Number(hours || 0) * 60;
-  if (e <= s) e += 1440; // gece yarısını geçen / 24 saat
-  return { from: base + s, to: base + e };
-}
-
-function isoWeek(date) {
-  const d = new Date(`${date}T12:00:00Z`);
-  const day = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - day);
-  const y = d.getUTCFullYear();
-  const w = Math.ceil(((d - Date.UTC(y, 0, 1)) / 86400000 + 1) / 7);
-  return `${y}-W${String(w).padStart(2, '0')}`;
-}
+/* ─── Bağımsız denetçi: services/scheduleRiskService.auditAssignments ─── */
 
 function audit({ assignments, days, staff, rules, maxWeeklyHours }) {
-  const shiftById = new Map();
-  for (const d of days) for (const s of d.shifts || []) shiftById.set(`${d.date}|${s.id}`, { day: d, shift: s });
-  const personById = new Map(staff.map((p) => [String(p.id), p]));
-  const v = [];
-  const add = (type, a, detail = '') => v.push({ type, date: a.date, person: a.personName || a.personId, shift: a.shiftCode, detail });
-
-  const byPerson = new Map();
-  for (const a of assignments) {
-    const k = String(a.personId);
-    if (!byPerson.has(k)) byPerson.set(k, []);
-    byPerson.get(k).push(a);
-
-    const ref = shiftById.get(`${a.date}|${a.shiftId}`);
-    const p = personById.get(k);
-    if (!p) { add('BILINMEYEN_KISI', a); continue; }
-    if (ref) {
-      const area = normalizeArea(ref.shift.area || '');
-      const personAreas = (p.meta?.areas || []).map(normalizeArea);
-      if (area && !areaMatches(personAreas, area)) add('ALAN_UYGUN_DEGIL', a, ref.shift.area);
-      if (ref.day && isWeekendLikeDay(ref.day) && String(a.shiftCode).toUpperCase() === 'M4') add('HAFTA_SONU_M4', a);
-    }
-    const codes = p.meta?.shiftCodes || [];
-    if (codes.length && !codes.includes(String(a.shiftCode).toUpperCase())) add('VARDIYA_KODU_UYGUN_DEGIL', a);
-  }
-
-  const minRest = Number(rules.MIN_REST_HOURS || 0) * 60;
-  const maxCons = Number(rules.MAX_CONSECUTIVE_DAYS || 0);
-  for (const list of byPerson.values()) {
-    list.sort((x, y) => (x.date === y.date ? toMin(x.start) - toMin(y.start) : x.date < y.date ? -1 : 1));
-    const perDay = new Map();
-    const weekly = new Map();
-    let cons = 0;
-    let prevDate = null;
-    for (let i = 0; i < list.length; i += 1) {
-      const a = list[i];
-      perDay.set(a.date, (perDay.get(a.date) || 0) + 1);
-      if (perDay.get(a.date) === 2) add('GUNDE_IKI_VARDIYA', a);
-      const wk = isoWeek(a.date);
-      weekly.set(wk, (weekly.get(wk) || 0) + Number(a.hours || 0));
-
-      if (prevDate !== a.date) {
-        const diff = prevDate ? (Date.parse(a.date) - Date.parse(prevDate)) / 86400000 : null;
-        cons = diff === 1 ? cons + 1 : 1;
-        if (maxCons && cons > maxCons) add('ART_ARDA_GUN', a, `${cons} gün`);
-        prevDate = a.date;
-      }
-
-      const prev = list[i - 1];
-      if (prev) {
-        const p = absInterval(prev.date, prev.start, prev.end, prev.hours);
-        const c = absInterval(a.date, a.start, a.end, a.hours);
-        if (p && c) {
-          const gap = c.from - p.to;
-          if (gap < 0) add('CAKISMA', a, `${prev.date} ${prev.shiftCode}`);
-          else if (minRest && gap < minRest) add('DINLENME_12S', a, `${(gap / 60).toFixed(1)} saat`);
-        }
-        const prevNight = isNightLikeShift({ code: prev.shiftCode, isNight: false })
-          || Number(prev.hours || 0) >= 24;
-        const dayGap = (Date.parse(a.date) - Date.parse(prev.date)) / 86400000;
-        if (rules.NIGHT_NEXT_DAY_OFF && prevNight && dayGap === 1) add('GECE_SONRASI_GUN', a, `${prev.date} ${prev.shiftCode}`);
-      }
-    }
-    if (maxWeeklyHours) {
-      for (const [wk, h] of weekly) if (h > maxWeeklyHours) v.push({ type: 'HAFTALIK_SAAT', date: wk, person: list[0].personName, detail: `${h} saat` });
-    }
-  }
-  return v;
+  return auditAssignments({
+    assignments, days, staff,
+    limits: { ...rules, MAX_WEEKLY_HOURS: maxWeeklyHours },
+  }).map((v) => ({ type: v.type, date: v.date, person: v.personName || v.personId, shift: v.shiftCode, detail: v.detail }));
 }
 
 function spreadStats(values) {
