@@ -1,6 +1,7 @@
 // services/scheduler/scoring.js
 
 const { isNightShift, isNightEquivalentShiftCode } = require("./utils/nightShift");
+const { fairnessBalancePenalty } = require("./fairnessCounters");
 
 // Onaysız tercih ("çalışmak istemiyorum" / "gece istemiyorum") için kaçınma cezası.
 // Saat dengesi (hourBalance=2) ile kıyaslanınca ~10 saatlik farka denk gelir:
@@ -68,6 +69,9 @@ function calculateScore(person, day, shift, context) {
     const w = Number(weights.requestBonus ?? -5);
     score += w;
   }
+
+  // Gece ve hafta sonu dengesi (hedefi aşan kişi geri itilir)
+  score += fairnessBalancePenalty(person, day, shift, context, weights);
 
   // Onaysız tercih: kaçınma cezası
   score += preferencePenalty(person, day, shift, context, weights);

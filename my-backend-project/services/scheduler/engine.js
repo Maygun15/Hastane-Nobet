@@ -1,6 +1,7 @@
 // services/scheduler/engine.js
 const { isAvailable } = require("./constraints");
 const { calculateScore } = require("./scoring");
+const { computeFairnessTargets, recordFairnessCounters } = require("./fairnessCounters");
 const { buildCandidates } = require("./candidateBuilder");
 const evaluatePolicies = require("./policies/evaluatePolicies");
 const {
@@ -115,6 +116,8 @@ function applyAssignmentStateMutation({ person, day, shift, hours = 0 } = {}) {
     person.weeklyCounts[weekKey] = Number(person.weeklyCounts[weekKey] || 0) + 1;
   }
 
+  recordFairnessCounters(person, day, shift);
+
   const weekday = Number(day.weekday ?? -1);
   if (!person.weekdayCount) person.weekdayCount = {};
   if (weekday >= 0 && weekday <= 6) {
@@ -162,6 +165,12 @@ function runScheduler(context) {
     context.audit = {};
   }
   if (!Array.isArray(context.audit.observations)) context.audit.observations = [];
+  // Gece / hafta sonu kişi başı hedefleri (dışarıdan verilmediyse aydaki slotlardan hesapla).
+  if (context.targetNights == null || context.targetWeekendShifts == null) {
+    const targets = computeFairnessTargets(context.days, context.staff.length);
+    if (context.targetNights == null) context.targetNights = targets.targetNights;
+    if (context.targetWeekendShifts == null) context.targetWeekendShifts = targets.targetWeekendShifts;
+  }
   const shadowAuditEnabled = context?.auditOptions?.enableShadowCollection === true;
   if (shadowAuditEnabled && !context.shadowAudit) {
     context.shadowAudit = createShadowAuditCollector({

@@ -73,6 +73,8 @@ function applyHolidayPolicies({ days = [], holidayKindByDate = {}, shiftMetaByCo
 
     const hasHolidayContext = weekday === 0 || weekday === 6 || !!holidayKind;
     if (!hasHolidayContext) return day;
+    // Motor adalet sayaçları için tatil türünü güne işle (scheduler/fairnessCounters.js).
+    if (holidayKind && !day?.holidayKind) day = { ...day, holidayKind };
 
     const shifts = (day?.shifts || []).flatMap((shift) =>
       applyPolicyToShift({ shift, weekday, holidayKind, shiftMetaByCode })

@@ -14,6 +14,8 @@ function createRuntimeCounters() {
   return {
     totalHours: 0,
     totalShifts: 0,
+    nightCount: 0,
+    weekendCount: 0,
     weekdayCount: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
     pairHistory: {},
     assignedDays: [],
