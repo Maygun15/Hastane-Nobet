@@ -48,11 +48,8 @@ async function saveConfig(hospitalId, incoming) {
 
 /* ─── Yardımcılar ─── */
 
-function isNightShift(s) {
-  const sc = (s.shiftCode || '').toUpperCase();
-  const startH = Number(s.startHour ?? -1);
-  return sc === 'G' || sc === 'GECE' || (s.shiftId || '').toLowerCase().includes('gece') || startH >= 22;
-}
+// Gece tanımı adalet raporuyla ortak (N / NIGHT / V2 / G / GECE / 16+ saat).
+const { isNightShift } = require('./fairnessEngine');
 
 // ISO hafta anahtarı: "2025-W21"
 function isoWeekKey(dateStr) {

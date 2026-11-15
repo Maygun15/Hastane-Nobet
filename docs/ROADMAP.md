@@ -132,7 +132,7 @@ Hepsi ilk sürümde zorunlu:
 | Adalet: gece sayısı | ✅ | 2026-11-15: motor kişi başı gece hedefi tutuyor (`nightBalance`); geceyi kapsayan 24 saat vardiyalar da sayılır. |
 | Adalet: hafta sonu | ✅ | 2026-11-15: Cumartesi + Pazar + tam gün resmi tatil toplamı için kişi başı hedef (`weekendBalance`). |
 | Adalet: bayram / yıl boyu dönüşüm | ❌ | Motor bayramda sadece kadroyu değiştiriyor; kimin bayram tuttuğunu hatırlamıyor. |
-| Adalet raporu | 🟡 | `fairnessEngine.js` gece/hafta sonu/bayramı ölçüyor ama: geceyi sadece `G`/`GECE` kodundan tanıyor (`N` kodu kaçabilir); bayram listesi koda gömülü ve 2026'da bitiyor (veritabanındaki tatil takvimini kullanmıyor). |
+| Adalet raporu | ✅ | 2026-11-15: gece tanımı motorla ortak (N/NIGHT/V2 + eski G/GECE + 16+ saat); bayramlar veritabanı tatil takviminden. Uyum raporu da aynı gece tanımını kullanıyor. |
 | İstek ("bu gün / gece istemiyorum") | ✅ | 2026-11-15: tercih talebinde tür seçilir (çalışmak istemiyorum / gece istemiyorum / çalışmak istiyorum) ve tarih aralığı girilir; motor veritabanından okur. |
 | Sorumlu onaylı istek = kesin kural | ✅ | 2026-11-15: onaylı "istemiyorum" tercihi motorda kesin engel; bekleyen tercih kaçınma puanı alır. |
 | İstek puanı/hakkı + karşılanamayanın sonraki aya devri | ❌ | Hiç yok. |
@@ -155,7 +155,7 @@ Süre ~2 hafta (Aralık çizelgesi Kasım sonunda yayınlanmalı). Önerilen sı
 1. ✅ **Taslak / yayınlandı durumu** — personel sadece yayınlanmış çizelgeyi görür; "Yayınla" bildirimi tetikler. *(2026-11-15: `MonthlySchedule.publication`, `POST /api/schedules/publish|unpublish`, `SchedulePublishBar`; eski kayıtlar yayınlanmış sayılır. Ekranda gerçek veriyle denenmedi.)*
 2. ✅ **Tercih talepleri motora bağlansın** — "bu gün / gece istemiyorum" desteği; sorumlu onaylı tercih = kesin engel, onaysız tercih = puanla kaçınma. *(2026-11-15: `Request.preferenceKind` (off | noNight | want), `services/preferenceRequestService.js`, motor kuralları `PREFERENCE_OFF` / `PREFERENCE_NO_NIGHT`, kaçınma ağırlığı `preferenceAvoid` = 20; talep formu ve onay ekranı güncellendi. Sadece varsayılan motor (`generateMonthlyPlan`) uyguluyor; `engine: "draft"` modu uygulamıyor. Türü olmayan eski serbest metin tercihleri yok sayılır.)*
 3. ✅ **Gece ve hafta sonu dengesi motora eklensin** — kişi başı gece sayısı ve hafta sonu sayısı için hedef/ceza puanı. *(2026-11-15: `services/scheduler/fairnessCounters.js`; ağırlıklar `nightBalance` = 10, `weekendBalance` = 8; tam gün resmi tatil hafta sonu sayılır. Simülasyon, Aralık 2026, 15 kişi: kişiler arası gece farkı 5,7 → 2,1, hafta sonu farkı 1,7 → 1,0; 60 kişi: 7,7 → 2,9 ve 3,4 → 1,2; boş slot yok, çizelge başına ~0,4 sn.)*
-4. **Adalet raporu düzeltmesi** — gece tanımı vardiya saatinden, bayramlar veritabanı tatil takviminden.
+4. ✅ **Adalet raporu düzeltmesi** — gece tanımı vardiya saatinden, bayramlar veritabanı tatil takviminden. *(2026-11-15: gece = motorun kodları (N, NIGHT, V2) + eski G/GECE + adında gece/night + 16 saat ve üzeri nöbet; bayram = `listHolidays` tam gün tatilleri (koddaki 2026 sonunda biten liste kaldırıldı). Uyum raporu (`complianceEngine`) da aynı gece tanımını kullanıyor. Not: atama kayıtlarında vardiya saati tutulmadığı için 12 saatlik ve kodu N olmayan bir gece (ör. "G12") yalnızca kod/ad kuralına uyarsa sayılır.)*
 5. **Acil verisiyle uçtan uca prova** — gerçek vardiya tanımları, 50–100 kişi, Aralık çizelgesini üret → kural ihlali sayısı 0 mı, süre kaç saniye, telefonda personel ekranı.
 6. **KVKK görüşmesi** (hastane tarafı) — onaya kadar sadece ad-soyad + nöbet bilgisi.
 

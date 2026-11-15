@@ -3,6 +3,8 @@
 
 const Assignment = require('../models/Assignment');
 const mongoose   = require('mongoose');
+const { listHolidays } = require('./holidayService');
+const { isNightShiftCode, isNightEquivalentShiftCode } = require('./scheduler/utils/nightShift');
 
 // Nöbet türü ağırlıkları — standart nöbet 1.0 baz puan
 const WEIGHTS = {
@@ -12,24 +14,25 @@ const WEIGHTS = {
   regular: 1.0,   // gündüz hafta içi baz
 };
 
-// Türkiye tatilleri (sabit set — bayram tarihleri tahmini)
-const HOLIDAYS = new Set([
-  '2025-01-01',
-  '2025-03-30','2025-03-31','2025-04-01',
-  '2025-04-23','2025-05-01','2025-05-19',
-  '2025-06-06','2025-06-07','2025-06-08','2025-06-09',
-  '2025-07-15','2025-08-30','2025-10-28','2025-10-29',
-  '2026-01-01',
-  '2026-03-19','2026-03-20','2026-03-21',
-  '2026-04-23','2026-05-01','2026-05-19',
-  '2026-05-26','2026-05-27','2026-05-28','2026-05-29',
-  '2026-07-15','2026-08-30','2026-10-28','2026-10-29',
-]);
+// Eski sürümlerin gece kodları (motorun N / NIGHT / V2 listesine ek olarak).
+const LEGACY_NIGHT_CODES = new Set(['G', 'GECE']);
+// 16 saat ve üzeri nöbet (16:00-08:00, 24 saat) geceyi kapsar.
+const NIGHT_COVERING_MIN_HOURS = 16;
 
-function isNightShift(a) {
-  const sc = (a.shiftCode || '').toUpperCase();
+/**
+ * Gece nöbeti mi? Çizelge motoruyla aynı kodları kullanır (N, NIGHT, V2),
+ * eski G/GECE kodlarını, adında gece/night geçen vardiyaları ve
+ * geceyi kapsayan uzun nöbetleri de sayar.
+ */
+function isNightShift(a = {}) {
+  const code = String(a.shiftCode || '').trim().toUpperCase();
+  const id = String(a.shiftId || '').trim();
+  if (isNightShiftCode(code) || isNightEquivalentShiftCode(code)) return true;
+  if (LEGACY_NIGHT_CODES.has(code)) return true;
+  if (/gece|night/i.test(id) || /gece|night/i.test(code)) return true;
+  if (Number(a.hours || 0) >= NIGHT_COVERING_MIN_HOURS) return true;
   const startH = Number(a.startHour ?? -1);
-  return sc === 'G' || sc === 'GECE' || (a.shiftId || '').toLowerCase().includes('gece') || startH >= 22;
+  return startH >= 22;
 }
 
 function isWeekend(a) {
@@ -37,8 +40,25 @@ function isWeekend(a) {
   return wd === 0 || wd === 6;
 }
 
-function isHoliday(a) {
-  return HOLIDAYS.has(String(a.date || '').slice(0, 10));
+/** Tatil takviminden tam gün tatil tarihleri (arife / yarım gün sayılmaz). */
+function buildFullHolidaySet(holidays = []) {
+  const set = new Set();
+  for (const h of Array.isArray(holidays) ? holidays : []) {
+    const kind = String(h?.kind || 'full').toLowerCase();
+    if (kind !== 'full') continue;
+    const date = String(h?.date || '').slice(0, 10);
+    if (date) set.add(date);
+  }
+  return set;
+}
+
+async function loadFullHolidaySet({ hospitalId, year, month }) {
+  try {
+    return buildFullHolidaySet(await listHolidays({ year: Number(year), month: Number(month), hospitalId }));
+  } catch (err) {
+    console.warn('[fairnessEngine] tatil takvimi okunamadı:', err?.message || err);
+    return new Set();
+  }
 }
 
 /**
@@ -107,6 +127,9 @@ async function computeMonthlyFairnessScores({ hospitalId, year, month }) {
     month: Number(month),
     status: 'active',
   }).select('personId personName serviceId shiftCode shiftId startHour weekday date hours').lean();
+
+  const holidaySet = await loadFullHolidaySet({ hospitalId, year, month });
+  const isHoliday = (a) => holidaySet.has(String(a.date || '').slice(0, 10));
 
   // Group by personId
   const byPerson = new Map();
@@ -200,4 +223,10 @@ async function computeMonthlyFairnessScores({ hospitalId, year, month }) {
   }
 }
 
-module.exports = { computeMonthlyFairnessScores, weightedLoad, WEIGHTS };
+module.exports = {
+  computeMonthlyFairnessScores,
+  weightedLoad,
+  WEIGHTS,
+  isNightShift,
+  buildFullHolidaySet,
+};
