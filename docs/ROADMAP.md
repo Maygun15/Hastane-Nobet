@@ -156,7 +156,7 @@ Süre ~2 hafta (Aralık çizelgesi Kasım sonunda yayınlanmalı). Önerilen sı
 2. ✅ **Tercih talepleri motora bağlansın** — "bu gün / gece istemiyorum" desteği; sorumlu onaylı tercih = kesin engel, onaysız tercih = puanla kaçınma. *(2026-11-15: `Request.preferenceKind` (off | noNight | want), `services/preferenceRequestService.js`, motor kuralları `PREFERENCE_OFF` / `PREFERENCE_NO_NIGHT`, kaçınma ağırlığı `preferenceAvoid` = 20; talep formu ve onay ekranı güncellendi. Sadece varsayılan motor (`generateMonthlyPlan`) uyguluyor; `engine: "draft"` modu uygulamıyor. Türü olmayan eski serbest metin tercihleri yok sayılır.)*
 3. ✅ **Gece ve hafta sonu dengesi motora eklensin** — kişi başı gece sayısı ve hafta sonu sayısı için hedef/ceza puanı. *(2026-11-15: `services/scheduler/fairnessCounters.js`; ağırlıklar `nightBalance` = 10, `weekendBalance` = 8; tam gün resmi tatil hafta sonu sayılır. Simülasyon, Aralık 2026, 15 kişi: kişiler arası gece farkı 5,7 → 2,1, hafta sonu farkı 1,7 → 1,0; 60 kişi: 7,7 → 2,9 ve 3,4 → 1,2; boş slot yok, çizelge başına ~0,4 sn.)*
 4. ✅ **Adalet raporu düzeltmesi** — gece tanımı vardiya saatinden, bayramlar veritabanı tatil takviminden. *(2026-11-15: gece = motorun kodları (N, NIGHT, V2) + eski G/GECE + adında gece/night + 16 saat ve üzeri nöbet; bayram = `listHolidays` tam gün tatilleri (koddaki 2026 sonunda biten liste kaldırıldı). Uyum raporu (`complianceEngine`) da aynı gece tanımını kullanıyor. Not: atama kayıtlarında vardiya saati tutulmadığı için 12 saatlik ve kodu N olmayan bir gece (ör. "G12") yalnızca kod/ad kuralına uyarsa sayılır.)*
-5. **Acil verisiyle uçtan uca prova** — gerçek vardiya tanımları, 50–100 kişi, Aralık çizelgesini üret → kural ihlali sayısı 0 mı, süre kaç saniye, telefonda personel ekranı.
+5. 🟡 **Acil verisiyle uçtan uca prova** — gerçek vardiya tanımları, 50–100 kişi, Aralık çizelgesini üret → kural ihlali sayısı 0 mı, süre kaç saniye, telefonda personel ekranı.
 6. **KVKK görüşmesi** (hastane tarafı) — onaya kadar sadece ad-soyad + nöbet bilgisi.
 
 **B. Pilot başladıktan sonra (Ocak 2027 çizelgesine kadar)**
@@ -165,3 +165,33 @@ Süre ~2 hafta (Aralık çizelgesi Kasım sonunda yayınlanmalı). Önerilen sı
 8. Bayram nöbetlerinin yıl boyu dönüşümlü dağıtımı (geçmiş yılları hatırlama).
 9. Telefona anlık bildirim (web push).
 10. "Zorla" yapılan elle değişiklikte gerekçe zorunluluğu.
+
+### Acil provası — motor (2026-11-16)
+
+`my-backend-project/scripts/acilProva.js` ile, **veritabanı kullanmadan** gerçek Acil verisiyle Aralık 2026 çizelgesi üretildi ve motordan bağımsız bir denetçiyle kontrol edildi.
+
+```bash
+cd my-backend-project
+node scripts/acilProva.js --staff ../../HEMŞIRELER.xlsx \
+  --template "../../nobet_cizelgesi_hemşireler_2026-03.xlsx" --year 2026 --month 12 --runs 10
+```
+
+- **Girdi:** 58 personel (HEMŞIRELER.xlsx), 41 görev satırı (Mart çizelgesinin "Cizelge-Sayı" sayfası; her görevin haftanın günlerine göre kişi sayısı Aralık'a uygulandı) → **488 slot, 9.792 saat**, kişi başı ort. 169 saat.
+- **Denetlenen kurallar:** günde tek vardiya, çakışma, 12 saat dinlenme, 24 saat nöbetin ertesi günü boş, art arda en fazla 6 gün, haftalık 72 saat (Kurallar m.7), alan uygunluğu, vardiya kodu uygunluğu, hafta sonu M4 yasağı (m.17). Denetçinin bu ihlalleri gerçekten yakaladığı `test/acilProvaAudit.test.js` ile kanıtlandı.
+
+| Ölçüm (10 çalıştırma) | Sonuç |
+|---|---|
+| Kural ihlali | **0** |
+| Çizelge üretim süresi | ~0,26 sn |
+| Boş kalan slot | ort. 1,8 / 488 (hepsi "SERVİS SORUMLUSU M") |
+| Aylık saat (57 kişi) | 160 – 192 saat |
+| Hafta sonu nöbeti | kişi başı 1 – 4 |
+| 24 saat nöbet (N/V2 tutabilen 56 kişi) | 2 – 8 |
+
+**Bulgular (veri tarafında, hastaneyle netleşmeli):**
+
+1. **HEMŞIRELER.xlsx 30. satırdaki kişinin "ÇALIŞMA ALANLARI" boş** → sistem bu kişiyi hiçbir göreve yazamıyor (0 saat).
+2. **Cerrahi Müdahale yükü:** günde 2 adet 24 saat N (ayda 62) var; bu alanda çalışabilen personelin tek alanı Cerrahi Müdahale ve kodları M/N. Bu kişiler ayda 8 kez 24 saat tutuyor, diğerleri 3–5. Denge için başka personele de bu alan tanımlanmalı.
+3. **Servis Sorumlusu M** satırı hafta içi her gün 2 kişi istiyor; uygun kişi sayısı az olduğu için ayda 0–3 slot boş kalıyor.
+4. Şablondaki SÜPERVİZÖR V2, KIRMIZI VE SARI GÖREVLENDİRME, AŞI ve TRİAJ V2 satırları Mart'ta hiç kişi istemiyor (0); gerçekte isteniyorsa şablon güncellenmeli.
+5. Kurallar m.13–16 (triaj/V1/M4 dağılımı, yeşil alanda hafta içi 3 / hafta sonu 4 V1) şablondaki kişi sayılarına bağlı; bu prova Mart şablonunun sayılarını kullandı.
