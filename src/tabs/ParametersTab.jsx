@@ -1,5 +1,6 @@
 // src/tabs/ParametersTab.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import "../styles/parameters-ui-v2.css";
 import {
   Building2,
@@ -501,7 +502,12 @@ export default function ParametersTab({
         await API.http.req(`/api/duty-rules`, { method: "PUT", body: payload, retries: 0 });
         lastSyncedRulesRef.current = serialized;
       } catch (err) {
+        // BUG-13: kayıt hatası sessiz kalmasın; kurallar sadece bu tarayıcıda kalmış olabilir.
         console.warn("DutyRules sync failed:", err?.message || err);
+        toast.error("Nöbet kuralları sunucuya kaydedilemedi", {
+          id: "duty-rules-sync-failed",
+          description: "Değişiklik sadece bu tarayıcıda duruyor. Bağlantıyı kontrol edip kuralı tekrar düzenleyin.",
+        });
       }
     }, 600);
     return () => {

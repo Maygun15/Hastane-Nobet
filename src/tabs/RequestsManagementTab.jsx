@@ -1,5 +1,5 @@
 // src/tabs/RequestsManagementTab.jsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { getMyRequests, updateRequest } from "../api/apiAdapter.js";
 import { loadLeavesFromBackend, emitLeavesChanged } from "../lib/leaves.js";
@@ -92,6 +92,9 @@ export default function RequestsManagementTab() {
   const [noteFor, setNoteFor] = useState(null);
   const [noteText, setNoteText] = useState("");
   const [processing, setProcessing] = useState("");
+  // BUG-11: state güncellemesi bir sonraki render'a kadar görünmez; aynı anda gelen
+  // ikinci tıklama kilidi boş görebilir. Ref anında güncellendiği için asıl kilit odur.
+  const processingRef = useRef("");
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async (signal) => {
@@ -132,10 +135,20 @@ export default function RequestsManagementTab() {
 
   const grouped = useMemo(() => groupRequestsByMonth(filtered), [filtered]);
 
+  const lockRequest = (id) => {
+    if (processingRef.current) return false;
+    processingRef.current = id;
+    setProcessing(id);
+    return true;
+  };
+  const unlockRequest = () => {
+    processingRef.current = "";
+    setProcessing("");
+  };
+
   const approve = async (r) => {
     const id = r._id || r.id;
-    if (processing) return;
-    setProcessing(id);
+    if (!lockRequest(id)) return;
     try {
       setError("");
       await updateRequest(id, { status: "approved", adminNote: "" });
@@ -150,14 +163,13 @@ export default function RequestsManagementTab() {
     } catch (e) {
       setError(e?.message || "Onaylanamadı");
     } finally {
-      setProcessing("");
+      unlockRequest();
     }
   };
 
   const reject = async (r) => {
     const id = r._id || r.id;
-    if (processing) return;
-    setProcessing(id);
+    if (!lockRequest(id)) return;
     try {
       setError("");
       await updateRequest(id, { status: "rejected", adminNote: noteText });
@@ -167,7 +179,7 @@ export default function RequestsManagementTab() {
     } catch (e) {
       setError(e?.message || "Reddedilemedi");
     } finally {
-      setProcessing("");
+      unlockRequest();
     }
   };
 

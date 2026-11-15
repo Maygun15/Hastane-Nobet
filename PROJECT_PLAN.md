@@ -110,34 +110,38 @@ Klinik standart gece vardiyası 22:00+.
 
 ---
 
-### BUG-10 — onAssigned callback'te race condition
+### BUG-10 — onAssigned callback'te race condition ✅ KODDA DOĞRULANDI (2026-11-15)
 **Dosya:** `src/components/PersonScheduleCalendar.jsx`  
 **Sorun:** `onAssigned` callback içinde `setSwappedDates` ve `refreshRemote()` sırayla çağrılıyor.  
 `refreshRemote` network'ten döndüğünde `swappedDates` state'i zaten silinmiş olabilir.  
 **Düzeltilecek:** Refresh tamamlandıktan sonra swappedDates güncellenecek; ya da tek bir atomic state güncellemesi yapılacak.
+**Durum (2026-11-15):** `onAssigned` önce `await refreshRemote()` ile verinin gelmesini bekliyor, `swappedDates` ondan sonra güncelleniyor.
 
 ---
 
-### BUG-11 — RequestsManagementTab processing guard çift tıklamaya karşı yetersiz
+### BUG-11 — RequestsManagementTab processing guard çift tıklamaya karşı yetersiz ✅ DÜZELTİLDİ (2026-11-15)
 **Dosya:** `src/tabs/RequestsManagementTab.jsx`  
 **Sorun:** Onay/ret butonu tıklandığında `processing` state güncelleniyor; fakat optimistic update yoksa ikinci tıklamada API iki kez çağrılabiliyor.  
 **Düzeltilecek:** `processing` state'i buton disabled ile senkron tutulacak; API yanıtı gelmeden ikinci istek gönderilmeyecek.
+**Çözüm (2026-11-15):** Kilit artık `useRef` ile tutuluyor (`lockRequest`/`unlockRequest`); aynı anda gelen ikinci tıklama API'yi çağırmıyor. Backend de `status: previousStatus` koşuluyla çift onayı reddediyor. Test: `src/test/requestsManagementDoubleClick.test.jsx`.
 
 ---
 
-### BUG-12 — PersonScheduleCalendar QuickReplacePanel DutyRowsEditor'a bağlı değil
+### BUG-12 — PersonScheduleCalendar QuickReplacePanel DutyRowsEditor'a bağlı değil ✅ KODDA DOĞRULANDI (2026-11-15)
 **Dosya:** `src/components/QuickReplacePanel.jsx`, `src/tabs/SchedulesTab.jsx`  
 **Sorun:** Hızlı yerine atama yaptıktan sonra `schedule:changed` event'i dispatch edilmiyor.  
 DutyRowsEditor grid'i güncellemiyor — atama yapılmış görünse de çizelgede aynı kalıyor.  
 **Düzeltilecek:** `onAssigned` callback'ten `window.dispatchEvent(new CustomEvent('schedule:changed'))` atılacak; DutyRowsEditor bu eventi dinleyecek.
+**Durum (2026-11-15):** `QuickReplacePanel` atama sonrası `schedule:changed` gönderiyor; `SchedulesTab` bunu dinleyip çizelgeyi yeniliyor.
 
 ---
 
-### BUG-13 — DutyRule localStorage → backend sync belirsiz
+### BUG-13 — DutyRule localStorage → backend sync belirsiz ✅ DÜZELTİLDİ (2026-11-15)
 **Dosya:** `src/tabs/DutyRulesTab.Explained.jsx`  
 **Sorun:** Kurallar önce localStorage'a kaydediliyor, backend sync ayrı bir "kaydet" butonuyla oluyor.  
 Kullanıcı kaydetmeyi unutursa localStorage ve DB arasında tutarsızlık oluşuyor.  
 **Düzeltilecek:** Kural değiştiğinde debounce ile otomatik backend sync; ya da kalıcı "kaydedilmemiş değişiklik" uyarısı.
+**Çözüm (2026-11-15):** ParametersTab ve DutyRulesPage kural değişince 600 ms sonra otomatik `PUT /api/duty-rules` yapıyor. ParametersTab'ta kayıt hatası artık sessiz değil, ekranda uyarı (toast) gösteriliyor.
 
 ---
 
