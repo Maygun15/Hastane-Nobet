@@ -3,6 +3,7 @@
 const {
   isNightEquivalentShiftCode,
   isNightShift,
+  isNightWorkShift,
   normalizeNightCode,
 } = require("./utils/nightShift");
 
@@ -40,11 +41,8 @@ const shiftIsNight = (shift) => {
   return isNightShift(shift);
 };
 
-// "Gece istemiyorum" için gece + geceyi kapsayan (ör. V2/24 saat) vardiyalar.
-const isNightLikeShift = (shift) => {
-  if (!shift) return false;
-  return isNightShift(shift) || isNightEquivalentShiftCode(shift.code || shift.id || shift.shiftCode || "");
-};
+// "Gece istemiyorum" için gece çalışması: N, NIGHT, N24, SV, V2, V1.
+const isNightLikeShift = (shift) => isNightWorkShift(shift);
 
 const normalizeCode = (s) =>
   (s || "").toString().normalize("NFD").replace(/\p{Diacritic}/gu, "").toUpperCase().trim();

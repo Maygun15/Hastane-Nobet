@@ -1,6 +1,6 @@
 // services/scheduler/scoring.js
 
-const { isNightShift, isNightEquivalentShiftCode } = require("./utils/nightShift");
+const { isNightWorkShift } = require("./utils/nightShift");
 const { fairnessBalancePenalty } = require("./fairnessCounters");
 
 // Onaysız tercih ("çalışmak istemiyorum" / "gece istemiyorum") için kaçınma cezası.
@@ -16,8 +16,7 @@ function preferencePenalty(person, day, shift, context, weights) {
   let penalty = 0;
   if (Array.isArray(pref.softOff) && pref.softOff.includes(date)) penalty += w;
   if (Array.isArray(pref.softNoNight) && pref.softNoNight.includes(date) && shift) {
-    const nightLike = isNightShift(shift) || isNightEquivalentShiftCode(shift.code || shift.id || shift.shiftCode || "");
-    if (nightLike) penalty += w;
+    if (isNightWorkShift(shift)) penalty += w;
   }
   return penalty;
 }

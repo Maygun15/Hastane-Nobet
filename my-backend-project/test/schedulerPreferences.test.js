@@ -90,6 +90,7 @@ describe('motor kuralları', () => {
     const ctx = { rules: {}, preferencesByPerson: { p1: { hardNoNight: ['2026-12-05'] } } };
     expect(explainAvailability(person, day, ctx, nightShift).reason).toBe('PREFERENCE_NO_NIGHT');
     expect(explainAvailability(person, day, ctx, v2Shift).reason).toBe('PREFERENCE_NO_NIGHT');
+    expect(explainAvailability(person, day, ctx, { id: 'V1', code: 'V1', start: '08:00', end: '00:00', hours: 16 }).reason).toBe('PREFERENCE_NO_NIGHT');
     expect(explainAvailability(person, day, ctx, dayShift).allowed).toBe(true);
   });
 

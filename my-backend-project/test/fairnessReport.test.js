@@ -19,6 +19,8 @@ describe('isNightShift (rapor)', () => {
     [{ shiftCode: 'n' }, true],
     [{ shiftCode: 'NIGHT' }, true],
     [{ shiftCode: 'V2' }, true],
+    [{ shiftCode: 'V1', hours: 16 }, true],
+    [{ shiftCode: 'M4', hours: 8 }, false],
     [{ shiftCode: 'G' }, true],
     [{ shiftCode: 'GECE' }, true],
     [{ shiftCode: 'X', shiftId: 'acil-gece' }, true],

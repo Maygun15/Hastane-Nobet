@@ -19,6 +19,8 @@ describe('fairnessCounters', () => {
   test('gece ve 24 saat vardiya gece sayılır', () => {
     expect(isNightLikeShift(N)).toBe(true);
     expect(isNightLikeShift({ code: 'V2' })).toBe(true);
+    expect(isNightLikeShift({ code: 'V1' })).toBe(true); // hastane kararı: V1 gece çalışması
+    expect(isNightLikeShift({ code: 'M4' })).toBe(false);
     expect(isNightLikeShift(D)).toBe(false);
   });
 

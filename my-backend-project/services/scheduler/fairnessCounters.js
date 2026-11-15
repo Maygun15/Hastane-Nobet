@@ -9,11 +9,11 @@
 // hedef = aydaki toplam gece (hafta sonu) slotu / personel sayısı.
 // Puanlama, hedefin üstüne çıkan kişiyi geri iter (scoring.js).
 
-const { isNightShift, isNightEquivalentShiftCode } = require("./utils/nightShift");
+const { isNightWorkShift } = require("./utils/nightShift");
 
+// Gece çalışması: N, NIGHT, N24, SV, V2 ve V1 (utils/nightShift.NIGHT_WORK_CODES).
 function isNightLikeShift(shift) {
-  if (!shift) return false;
-  return isNightShift(shift) || isNightEquivalentShiftCode(shift.code || shift.id || shift.shiftCode || "");
+  return isNightWorkShift(shift);
 }
 
 function isWeekendLikeDay(day) {

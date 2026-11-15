@@ -4,7 +4,7 @@
 const Assignment = require('../models/Assignment');
 const mongoose   = require('mongoose');
 const { listHolidays } = require('./holidayService');
-const { isNightShiftCode, isNightEquivalentShiftCode } = require('./scheduler/utils/nightShift');
+const { isNightWorkCode } = require('./scheduler/utils/nightShift');
 
 // Nöbet türü ağırlıkları — standart nöbet 1.0 baz puan
 const WEIGHTS = {
@@ -27,7 +27,7 @@ const NIGHT_COVERING_MIN_HOURS = 16;
 function isNightShift(a = {}) {
   const code = String(a.shiftCode || '').trim().toUpperCase();
   const id = String(a.shiftId || '').trim();
-  if (isNightShiftCode(code) || isNightEquivalentShiftCode(code)) return true;
+  if (isNightWorkCode(code)) return true; // N, NIGHT, N24, SV, V2, V1
   if (LEGACY_NIGHT_CODES.has(code)) return true;
   if (/gece|night/i.test(id) || /gece|night/i.test(code)) return true;
   if (Number(a.hours || 0) >= NIGHT_COVERING_MIN_HOURS) return true;
