@@ -234,3 +234,38 @@ Hastane kararı: sistem riskli durumları listeler, yönetici her biri için **"
 - Kod: `services/scheduleRiskService.js` (prova betiğinin bağımsız denetçisi de buraya taşındı), `GET /api/schedules/risks`, `POST /api/schedules/risks/ack`, `GET /api/schedules/slot-candidates`, `src/components/SchedulePublishBar.jsx`.
 - Yerel provada (Acil, Aralık 2026): 3 boş Servis Sorumlusu görevi + 1 veri eksiği listelendi, yayın engellendi; 07.12 için uygun aday çıkmadı (servis sorumlusu olabilen 3 kişi o gün çalışıyor ya da dinlenme kuralını bozuyor); "Yine de ata" ile atama, kalanlar için "Bu şekilde devam", ardından yayın — uçtan uca ekranda doğrulandı.
 - Provada düzeltilen: aday/denetçi alan eşleşmesi kelime bazlı olduğu için "EKİP SORUMLUSU" kişiler "SERVİS SORUMLUSU" için uygun görünüyordu; motorla aynı servis sorumlusu yetki kontrolü eklendi.
+
+---
+
+## 04–05 — UX / UI incelemesi (2026-11-16)
+
+Yerel prova ortamında pilot akışları gerçekten kullanılarak incelendi: **personel** (telefon, 375 px) — giriş, Takvimim, menü, Taleplerim, yeni talep, bildirimler; **sorumlu** (masaüstü) — çalışma çizelgesi, risk paneli, yayın.
+
+### Öncelik 1 — pilottan önce (kullanıcıyı yanıltan ya da veriyi bozan)
+
+| # | Ekran | Bulgu | Öneri |
+|---|---|---|---|
+| U1 | Yeni talep → İzin | **İzin türü seçilmiyor; onayda açıklama metni izin kodu oluyor** (`leaveTypeCode \|\| message`). "Düğünüm var" → "DÜĞÜNÜM VAR" adlı izin türü, bakiye ve izin tablosu bozulur | Formda izin türü seçimi (izin türleri listesinden); sunucuda açıklama metni asla kod olmasın (varsayılan yıllık izin) |
+| U2 | Bildirimler (telefon) | Panel ekranın soluna taşıyor, başlık ve metinler kesik | Telefonda tam genişlik panel |
+| U3 | Tüm sayfalar (telefon) | Üst başlık (program adı, sürüm, "Kullanıcı / Kişisel görünüm", "user") kaydırırken sabit, ekranın ~1/3'ü | Telefonda tek satırlık ince başlık; sürüm ve rol rozetleri gizli |
+| U4 | Takvimim | Taslak ayda "Bu ay nöbet kaydı yok" | "Aralık 2026 çizelgesi henüz yayınlanmadı. Yayınlanınca bildirim alacaksınız." |
+| U5 | Takvimim | Gün kutusunda sadece kod ("N"); alan ve saat yok. Gün adları kesik ("PE", "CU"), başlıkla tekrarlı | Kutuda kod + alan (ör. "N · Çocuk"); kesik gün adları kaldırılır |
+| U6 | Takvimim | İlk görülen "Gece nöbeti yoğunluğu yüksek" uyarısı ile "Aylık yoğunluk: Normal" çelişiyor; "176s" (saniye gibi); "Eksik mesai 8 s" tedirgin edici | Önce **Sonraki nöbet** büyük; birim "sa"; çelişen/kaygı verici rozetler personelden gizli |
+| U7 | Çalışma çizelgesi (sorumlu) | Kaydırınca yapışkan "Tablo çalışma alanı" kutusu yayın çubuğunun üstünü (Yayınla düğmesini) örtüyor | Yapışkan kutu yayın çubuğunu örtmesin |
+| U8 | Çalışma çizelgesi (sorumlu) | Geliştirici metinleri: "Explainability: 488 slot audit, 0 shadow observation…", "(MONTHLY_UPDATED_AFTER_GENERATION)"; İngilizce "Please select a specific service…" | Teknik satırlar sadece geliştirici modunda; uyarı Türkçe |
+
+### Öncelik 2 — pilot sırasında / Ocak
+
+| # | Bulgu |
+|---|---|
+| U9 | Personel menüsünde "Planlama" yazıyor ("Takvimim" için tanım var ama uygulanmıyor); sayfa başlığı da "Planlama" |
+| U10 | Giriş: "TC / Telefon / E-posta" — KVKK onayına kadar TC önerilmemeli; "Kayıt Ol" herkese açık (hesaplar yönetici tarafından açılmalı mı?) |
+| U11 | Tercih/izin formunda "Açıklama" zorunlu — tercih için isteğe bağlı olabilir |
+| U12 | Menü çekmecesi yarı saydam, arka plan okunuyor |
+| U13 | Erişilebilirlik: tarih kutularının etiketleri bağlı değil (ekran okuyucu adı yok) |
+| U14 | Bildirim metni "…adil nöbet politikasına göre %95 uyum…" teknik; yeniden yayında aynı bildirim tekrar geliyor |
+| U15 | Sekme başlığı "Hastane Nöbet \| Hastane Nöbet Sistemi" tekrarlı |
+| U16 | "Otomatik Plan (AI) — Önizleme: Henüz otomatik plan yok" — plan üretilmişken yanıltıcı |
+| U17 | Takvim altındaki teknik not ("…parse edebildiğimiz…") personele gösteriliyor |
+
+İyi bulunanlar: giriş ekranı sade; boş talep listesi açıklayıcı; tercih formunun açıklama satırı anlaşılır; risk paneli ve "Yayınla" akışı net.
