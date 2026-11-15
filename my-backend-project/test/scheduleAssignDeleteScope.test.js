@@ -182,6 +182,36 @@ describe('DELETE /api/schedules/assign exact scope', () => {
     expect(sendShiftChanged).toHaveBeenCalledTimes(1);
   });
 
+  // BUG-05: çizelge ekranı roster.namedAssignments'tan okur; silme sonrası o da güncellenmeli.
+  test('keeps roster.namedAssignments in sync and preserves other roster fields', async () => {
+    const other = { ...BASE_BODY, date: '2026-06-11', personId: 'person-2', personName: 'Other Person' };
+    const docs = configureScheduleStore([
+      {
+        _id: 'schedule-a-nurse',
+        hospitalId: HOSPITAL_ID,
+        sectionId: BASE_BODY.sectionId,
+        serviceId: 'service-a',
+        role: 'Nurse',
+        year: 2026,
+        month: 6,
+        data: {
+          assignments: [{ ...BASE_BODY }, other],
+          roster: {
+            meta: { keep: true },
+            namedAssignments: { 10: { N: ['Test Person'] }, 11: { N: ['Other Person'] } },
+          },
+        },
+      },
+    ]);
+
+    const result = await deleteAssignment();
+
+    expect(result.status).toBe(200);
+    const roster = docs[0].data.roster;
+    expect(roster.namedAssignments).toEqual({ 11: { N: ['Other Person'] } });
+    expect(roster.meta).toEqual({ keep: true });
+  });
+
   test.each([
     ['wrong role', { role: 'Doctor' }],
     ['wrong service', { serviceId: 'service-b' }],

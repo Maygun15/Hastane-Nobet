@@ -70,11 +70,12 @@ Yani takas işlemi nöbet yazma kurallarını ihlal edebiliyor.
 
 ---
 
-### BUG-05 — /assign endpoint namedAssignments güncellemiyor
+### BUG-05 — /assign endpoint namedAssignments güncellemiyor ✅ KODDA DOĞRULANDI (2026-11-15)
 **Dosya:** `routes/schedules.routes.js` — `/assign` endpoint  
 **Sorun:** Manuel atama yapıldığında `Assignment` koleksiyonu güncelleniyor fakat `MonthlySchedule.data.roster.namedAssignments` güncellenmemiş kalıyor.  
 DutyRowsEditor bu alandan okuduğu için manuel atamalar çizelgede görünmüyor.  
 **Düzeltilecek:** Assign endpoint; atama sonrası `buildAssignmentsFromNamed` veya `assignmentsToNamed` çağırarak `namedAssignments`'ı sync'leyecek.
+**Durum (2026-11-15):** `POST /assign` ve `DELETE /assign` kaydetmeden önce `syncRosterNamedAssignments` ile `roster.namedAssignments`'ı yeniden oluşturuyor; roster'ın diğer alanları korunuyor. Test: `test/scheduleAssignDeleteScope.test.js`.
 
 ---
 
