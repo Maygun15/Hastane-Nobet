@@ -8,7 +8,7 @@ Teknik hata listesi ve modül planı için: [`PROJECT_PLAN.md`](../PROJECT_PLAN.
 |---|---|---|
 | 01 | Problem ve kullanıcı | ✅ Taslak (2026-11-15) |
 | 02 | Gereksinimler ve kapsam | ✅ Taslak (2026-11-15); kalite hedefleri eksik |
-| 03 | Proje planı | ⏳ |
+| 03 | Proje planı | ✅ Eksik listesi çıkarıldı (2026-11-15) |
 | 04–05 | UX / UI | Kısmen var (25 sekme), sistemli kontrol yok |
 | 06 | Mimari | Var; tek sayfalık şema ve API sözleşmesi yok |
 | 07 | Veritabanı | Var (26 model) |
@@ -112,3 +112,56 @@ Hepsi ilk sürümde zorunlu:
 - ⚠️ **KVKK / hastane bilgi işlem onayı henüz konuşulmadı.** Gerçek personel verisi (TC, telefon) sisteme girmeden önce hastanenin KVKK ve bilgi işlem birimiyle görüşülmeli. Onay gelene kadar pilot yalnızca ad-soyad ve nöbet bilgisiyle yürütülebilir.
 - ⚠️ **Süre kısa.** 2 haftada dört özelliğin Acil'in gerçek verisiyle uçtan uca denenmesi gerekiyor; ekranda (tarayıcıda) uçtan uca test henüz yok.
 - Hız, erişilebilirlik, güvenlik gibi kalite hedefleri henüz yazılmadı.
+
+---
+
+## 03 — Proje planı
+
+**Çıktı: Uygulanabilir çalışma planı**
+
+### Mevcut durum: gereksinim → kod (2026-11-15 incelemesi)
+
+✅ hazır · 🟡 kısmen · ❌ yok
+
+| Gereksinim | Durum | Kodda ne var / ne eksik |
+|---|---|---|
+| Zorunlu kurallar (günde tek vardiya, izin engeli, gece sonrası dinlenme, 12 saat ara, art arda gün sınırı, rol/servis uygunluğu) | ✅ | Sunucu motoru (`services/scheduler`) bunları sert kural olarak uyguluyor. |
+| Onaylı izin çizelgede kesin uygulanır | ✅ | BUG-02 düzeltmesiyle izin onayları motora ulaşıyor. |
+| Otomatik çizelge (tek tık) | ✅ | `POST /api/scheduler/generate`; ekrandaki "Oluştur" bunu kullanıyor. 50–100 kişiyle hız denenmedi. |
+| Adalet: toplam saat | ✅ | `scoring.js` hourBalance. |
+| Adalet: gece sayısı | ❌ | Motorda gece sayısını dengeleyen bir puan yok. (Ön yüzdeki eski `rosterEngine` gece/hafta sonu kotası içeriyor ama artık çağrılmıyor.) |
+| Adalet: hafta sonu | 🟡 | Haftanın her günü ayrı dengeleniyor (weekdayBalance); "hafta sonu toplamı" diye ayrı hedef yok. |
+| Adalet: bayram / yıl boyu dönüşüm | ❌ | Motor bayramda sadece kadroyu değiştiriyor; kimin bayram tuttuğunu hatırlamıyor. |
+| Adalet raporu | 🟡 | `fairnessEngine.js` gece/hafta sonu/bayramı ölçüyor ama: geceyi sadece `G`/`GECE` kodundan tanıyor (`N` kodu kaçabilir); bayram listesi koda gömülü ve 2026'da bitiyor (veritabanındaki tatil takvimini kullanmıyor). |
+| İstek ("bu gün / gece istemiyorum") | ❌ | Talep türü `tercih` var ama motora hiç ulaşmıyor; motor isteği yalnızca "bu gün çalışmak istiyorum" olarak yorumluyor. |
+| Sorumlu onaylı istek = kesin kural | ❌ | Onaylanan tercih çizelgeye yansımıyor. |
+| İstek puanı/hakkı + karşılanamayanın sonraki aya devri | ❌ | Hiç yok. |
+| İzin ve takas talebi + onay | ✅ | Talep, onay, kural kontrolü, çift onay koruması (BUG-04, BUG-11) var. |
+| Sorumlunun elle düzenlemesi kayda geçer | ✅ | `changeLog` + işlem geçmişi ve geri alma (undo). |
+| Elle düzenleme kuralı bozarsa uyarı | ✅ | `/assign` kural ihlalinde 409 döner; "zorla" seçeneği var. Zorla yapılan değişiklikte gerekçe zorunlu değil. |
+| Taslak / yayınlandı ayrımı | ❌ | Çizelgede yayın durumu yok; personel taslağı yayından önce görebilir. `publish-notify` sadece bildirim gönderiyor. |
+| Bildirimler | 🟡 | Uygulama içi (canlı) + e-posta var. E-posta için SMTP ayarı gerekli. Uygulama kapalıyken telefona anlık bildirim (push) yok. |
+| Raporlar | ✅ | Adalet, doluluk, izin istatistik, çalışma saati sayfaları var. |
+| Personel telefondan kullanır | 🟡 | Personel menüsü (Takvimim, Taleplerim, Duyurular, Profilim) ve telefona uygun sayfa ayarı var; telefonda ekran ekran denenmedi. |
+| Doktor + hemşire birlikte | ✅ | Rol bazlı (`role`) çizelge ve personel bölümleri var. |
+| KVKK / hastane onayı | ❌ | Teknik değil; hastaneyle görüşülmeli. |
+
+### Aralık 2026 pilotu için öncelik sırası
+
+Süre ~2 hafta (Aralık çizelgesi Kasım sonunda yayınlanmalı). Önerilen sıra:
+
+**A. Pilot için şart (yayından önce)**
+
+1. **Taslak / yayınlandı durumu** — personel sadece yayınlanmış çizelgeyi görür; "Yayınla" bildirimi tetikler.
+2. **Tercih talepleri motora bağlansın** — "bu gün / gece istemiyorum" desteği; sorumlu onaylı tercih = kesin engel, onaysız tercih = puanla kaçınma.
+3. **Gece ve hafta sonu dengesi motora eklensin** — kişi başı gece sayısı ve hafta sonu sayısı için hedef/ceza puanı.
+4. **Adalet raporu düzeltmesi** — gece tanımı vardiya saatinden, bayramlar veritabanı tatil takviminden.
+5. **Acil verisiyle uçtan uca prova** — gerçek vardiya tanımları, 50–100 kişi, Aralık çizelgesini üret → kural ihlali sayısı 0 mı, süre kaç saniye, telefonda personel ekranı.
+6. **KVKK görüşmesi** (hastane tarafı) — onaya kadar sadece ad-soyad + nöbet bilgisi.
+
+**B. Pilot başladıktan sonra (Ocak 2027 çizelgesine kadar)**
+
+7. İstek puanı/hakkı ve karşılanamayan isteğin sonraki aya devri.
+8. Bayram nöbetlerinin yıl boyu dönüşümlü dağıtımı (geçmiş yılları hatırlama).
+9. Telefona anlık bildirim (web push).
+10. "Zorla" yapılan elle değişiklikte gerekçe zorunluluğu.
