@@ -15,7 +15,7 @@ Teknik hata listesi ve modül planı için: [`PROJECT_PLAN.md`](../PROJECT_PLAN.
 | 08 | Backend ve API | Var; PROJECT_PLAN BUG-01…13 kapandı (2026-11-15) |
 | 09 | Frontend | Var; büyük bileşenler bölünmeli |
 | 10 | Test ve kalite | Backend 325, frontend 42 test; E2E yok |
-| 11 | Yayınlama | CI/CD var; yedek/geri dönüş prosedürü yok |
+| 11 | Yayınlama | 🟡 Plan hazır: [`CANLIYA_ALMA_PLANI.md`](CANLIYA_ALMA_PLANI.md) (2026-11-16) |
 | 12 | Bakım | Sentry var; geri bildirim kanalı yok |
 
 ---
