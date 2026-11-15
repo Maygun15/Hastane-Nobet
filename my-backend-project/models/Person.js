@@ -37,7 +37,18 @@ const personSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 personSchema.index({ tc: 1 }, { sparse: true });
-personSchema.index({ hospitalId: 1, tc: 1 }, { unique: true, sparse: true });
+// TC benzersizliği sadece TC girilmişse uygulanır. Eski tanım ({ unique, sparse })
+// birleşik indekste işe yaramıyordu: TC'si boş ('' / null) ikinci kişi eklenemiyordu.
+// Eski 'hospitalId_1_tc_1' indeksi için: scripts/migratePersonTcIndex.js
+const PERSON_TC_INDEX_NAME = 'hospitalId_1_tc_1_nonempty';
+personSchema.index(
+  { hospitalId: 1, tc: 1 },
+  {
+    name: PERSON_TC_INDEX_NAME,
+    unique: true,
+    partialFilterExpression: { tc: { $type: 'string', $gt: '' } },
+  }
+);
 personSchema.index({ hospitalId: 1, serviceId: 1 });
 // Personel arama: ?q= sorguları için
 personSchema.index({ hospitalId: 1, name: 1 });

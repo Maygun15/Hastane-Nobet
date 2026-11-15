@@ -156,7 +156,7 @@ Süre ~2 hafta (Aralık çizelgesi Kasım sonunda yayınlanmalı). Önerilen sı
 2. ✅ **Tercih talepleri motora bağlansın** — "bu gün / gece istemiyorum" desteği; sorumlu onaylı tercih = kesin engel, onaysız tercih = puanla kaçınma. *(2026-11-15: `Request.preferenceKind` (off | noNight | want), `services/preferenceRequestService.js`, motor kuralları `PREFERENCE_OFF` / `PREFERENCE_NO_NIGHT`, kaçınma ağırlığı `preferenceAvoid` = 20; talep formu ve onay ekranı güncellendi. Sadece varsayılan motor (`generateMonthlyPlan`) uyguluyor; `engine: "draft"` modu uygulamıyor. Türü olmayan eski serbest metin tercihleri yok sayılır.)*
 3. ✅ **Gece ve hafta sonu dengesi motora eklensin** — kişi başı gece sayısı ve hafta sonu sayısı için hedef/ceza puanı. *(2026-11-15: `services/scheduler/fairnessCounters.js`; ağırlıklar `nightBalance` = 10, `weekendBalance` = 8; tam gün resmi tatil hafta sonu sayılır. Simülasyon, Aralık 2026, 15 kişi: kişiler arası gece farkı 5,7 → 2,1, hafta sonu farkı 1,7 → 1,0; 60 kişi: 7,7 → 2,9 ve 3,4 → 1,2; boş slot yok, çizelge başına ~0,4 sn.)*
 4. ✅ **Adalet raporu düzeltmesi** — gece tanımı vardiya saatinden, bayramlar veritabanı tatil takviminden. *(2026-11-15: gece = motorun kodları (N, NIGHT, V2) + eski G/GECE + adında gece/night + 16 saat ve üzeri nöbet; bayram = `listHolidays` tam gün tatilleri (koddaki 2026 sonunda biten liste kaldırıldı). Uyum raporu (`complianceEngine`) da aynı gece tanımını kullanıyor. Not: atama kayıtlarında vardiya saati tutulmadığı için 12 saatlik ve kodu N olmayan bir gece (ör. "G12") yalnızca kod/ad kuralına uyarsa sayılır.)*
-5. 🟡 **Acil verisiyle uçtan uca prova** — gerçek vardiya tanımları, 50–100 kişi, Aralık çizelgesini üret → kural ihlali sayısı 0 mı, süre kaç saniye, telefonda personel ekranı.
+5. ✅ **Acil verisiyle uçtan uca prova** — gerçek vardiya tanımları, 50–100 kişi, Aralık çizelgesini üret → kural ihlali sayısı 0 mı, süre kaç saniye, telefonda personel ekranı.
 6. **KVKK görüşmesi** (hastane tarafı) — onaya kadar sadece ad-soyad + nöbet bilgisi.
 
 **B. Pilot başladıktan sonra (Ocak 2027 çizelgesine kadar)**
@@ -195,3 +195,24 @@ node scripts/acilProva.js --staff ../../HEMŞIRELER.xlsx \
 3. **Servis Sorumlusu M** satırı hafta içi her gün 2 kişi istiyor; uygun kişi sayısı az olduğu için ayda 0–3 slot boş kalıyor.
 4. Şablondaki SÜPERVİZÖR V2, KIRMIZI VE SARI GÖREVLENDİRME, AŞI ve TRİAJ V2 satırları Mart'ta hiç kişi istemiyor (0); gerçekte isteniyorsa şablon güncellenmeli.
 5. Kurallar m.13–16 (triaj/V1/M4 dağılımı, yeşil alanda hafta içi 3 / hafta sonu 4 V1) şablondaki kişi sayılarına bağlı; bu prova Mart şablonunun sayılarını kullandı.
+
+### Acil provası — gerçek sunucu + ekran (2026-11-16)
+
+Bilgisayardaki **ayrı bir deneme veritabanında** (`127.0.0.1:27018`, canlı Atlas'a bağlantı yok; e-posta, bildirim e-postası ve Sentry kapalı) sunucu ve ekran çalıştırıldı. Veri `scripts/acilProvaSeed.js` ile yüklendi; betik yerel olmayan veritabanına yazmayı reddeder, `.env` okumaz, TC/telefon yazmaz.
+
+| Adım | Sonuç |
+|---|---|
+| `POST /api/scheduler/generate` (Acil, Aralık 2026) | 488 slotun 485'i dolu (3 boş: Servis Sorumlusu M), kalite puanı 91, ~0,37 sn (DB yazma dahil) |
+| Taslakken personel (telefon, 375 px) | "Bu ay nöbet kaydı yok"; API: 0 nöbet, aylık çizelge `unpublished` |
+| Yönetici ekranı | "Taslak — personel bu çizelgeyi henüz göremiyor" çubuğu + **Yayınla** |
+| Yayınla | Çubuk yeşil: "Yayınlandı — tarih (Prova Yönetici)"; "57 personele bildirim gönderildi" |
+| Yayın sonrası personel (telefon) | Aralık takvimi: 8 nöbet, 176 saat, sonraki nöbet; zilde 1 bildirim |
+
+**Provada bulunan ve düzeltilen hata — TC'siz personel eklenemiyordu (pilotu engelliyordu):**
+`Person` üzerindeki `{ hospitalId, tc }` benzersiz indeksi `sparse` tanımlıydı; birleşik indekste bu işe yaramadığı için bir hastanede TC'si boş ('' / null) **ikinci kişi eklenemiyordu** (E11000). HEMŞIRELER.xlsx'te TC sütunu boş olduğundan Acil listesi canlıya aktarılamazdı ve KVKK onayı gelene kadar TC'siz çalışma planı imkânsızdı.
+- Kod: indeks artık sadece dolu TC'de benzersiz (`hospitalId_1_tc_1_nonempty`, `partialFilterExpression`). Test: `test/personTcIndex.test.js`.
+- **Canlı veritabanı için taşıma gerekli:** `scripts/migratePersonTcIndex.js` (varsayılan kuru çalışma; `--apply` ile uygular, önce dolu TC kopyalarını kontrol eder). Yerel deneme veritabanında kuru + uygulama çalıştırıldı. **Canlıda henüz çalıştırılmadı — onay bekliyor.**
+
+**Netleşmesi gereken (hastane kararı):**
+- **V1 (08:00–24:00, 16 saat) gece sayılır mı?** Personel ekranı ve adalet raporu (16+ saat kuralı) V1'i gece sayıyor; çizelge motorunun gece dengesi saymıyor. Karar verilince üçü aynı tanıma bağlanmalı.
+- Ekran personelin taslak ayını "Bu ay nöbet kaydı yok" diye gösteriyor; "Çizelge henüz yayınlanmadı" demek daha anlaşılır olur (küçük iyileştirme).
