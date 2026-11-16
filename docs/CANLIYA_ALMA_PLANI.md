@@ -39,15 +39,48 @@ Tampon: C'de sorun çıkarsa D → **Çar 25**, E → **Cum 27**. Daha fazla kay
 ## A. Hazırlık ve erişimler (16–17 Kasım)
 
 - [ ] **Canlıda hangi sürüm çalışıyor?** Railway → servis → Deployments: son deploy'un commit'i ve dalı. Vercel → Deployments → Production: commit ve dal. (Sen bakıp yazarsın ya da erişim verirsin.)
-- [ ] **Canlı veritabanı yedeği:** Atlas → Cluster → Backup → anlık yedek (on-demand snapshot). Yedeğin tarihini buraya not et.
+- [x] **Canlı veritabanı yedeği — ALINDI 16 Kas 2026 14:06** (`mongodump`, salt-okur). Yer: `~/nöbet/.yedek-2026-11-16/dump` (klasör izni 700, repoda değil). 28 koleksiyon, 2336 kayıt, 7,3 MB (gzip). Geçici bir yerel veritabanına geri yüklendi: 0 hata. ~~Eski not:~~ Atlas → Cluster → Backup → anlık yedek (on-demand snapshot). Yedeğin tarihini buraya not et.
 - [ ] Railway'de **canlı ortam değişkenleri** listesi (değerler değil, adlar): `NOTIFICATIONS_ENABLED`, `SENTRY_DSN`, `FRONTEND_ORIGIN`, `CORS_ORIGINS` vb.
 - [ ] **KVKK / hastane bilgi işlem** görüşmesi için tarih. Onay gelene kadar: personelde sadece ad-soyad + nöbet bilgisi; TC, telefon, e-posta girilmez.
 - [ ] HEMŞIRELER.xlsx düzeltmesi: **30. satır (çalışma alanı boş)**. (Düzeltilmezse sistem "Personel verisi eksik" diye uyarır, yönetici "Bu şekilde devam" diyebilir.)
 - [ ] Acil'de **Servis Sorumlusu M** için yeterli kişi var mı? Provada 3 gün boş kaldı; servis sorumlusu yetkisi olan kişi sayısı artırılabilir mi?
 
+### A — Bulgular (16 Kasım 2026, dışarıdan salt-okur kontrol)
+
+| Kontrol | Sonuç |
+|---|---|
+| Canlı ön yüz `hastane-nobet.vercel.app` | Açılıyor (200). **Eski sürüm:** "Yayınla", risk paneli, "Sonraki nöbetiniz" yok |
+| Ön yüzün bağlandığı sunucu | `hastane-backend-production-dcf1.up.railway.app` |
+| O sunucu | **Cevap vermiyor:** Railway "Application not found" (`x-railway-fallback: true`). Bu adreste çalışan servis yok |
+| Diğer eski adres `hastane-backend-production.up.railway.app` | Aynı, çalışan servis yok |
+| GitHub deploy kayıtları | Son 4 kayıt bizim dalın **Preview** deploy'ları (15 Kas). Production kaydı yok |
+
+**Anlamı:** Şu an canlı sistemde kimse giriş yapamaz, çünkü sunucu kapalı, silinmiş ya da adresi değişmiş. Canlıda koruyacağımız "çalışan bir sürüm" yok; sadece **Atlas'taki veri** korunmalı.
+
+**Railway paneli (16 Kas, sahibiyle birlikte bakıldı):**
+- Hesapta **"Trial Ended / Trial expired"**. Deneme süresi bitmiş, 4 projenin hepsinde 0/1 servis çalışıyor.
+- Canlı sunucu `courageous-elegance` projesindeki `hastane-backend` servisi. Kaynak `Maygun15/Hastane-Nobet`, dal `main`, otomatik deploy açık, alan adı `hastane-backend-production-dcf1.up.railway.app`, port 8080.
+- Bu servisin durumu "Service offline" ve aktif deploy yok. Son deploy **8 ay önce** (Mart 2026, "Kural 3 STABLE"), kaydı REMOVED.
+- Diğer projeler eski ve kullanılmıyor: `respectful-dedication` (eski `hastane-backend` reposu), `gleaming-happiness` ve `helpful-intuition` (alan adı yok).
+- **Yapılacak:** Ücretli plana geçmeden ne staging ne canlı açılabilir. En düşük plan Hobby ($5/ay) bu yük için yeterli. Ödeme kararı ve işlemi hesap sahibinde.
+- Kullanılmayan 3 proje sonra temizlenebilir. Sadece sahibinin onayıyla.
+
+
+**Atlas paneli (16 Kas, sahibiyle birlikte bakıldı):**
+- Cluster `hastane`: **FREE (M0)**, AWS Frankfurt, MongoDB 8.0.37, 3 düğüm.
+- Veri **duruyor**: 255 MB / 512 MB kullanılmış. Son 4 saatte bağlantı yok; Railway kapalı olduğu için beklenen durum.
+- **Yedekleme kapalı** ("Backups Inactive"). Ücretsiz planda Atlas anlık yedek (snapshot) almıyor.
+- **Bu yüzden yedek `mongodump` ile alınır:** sadece okur, veriyi değiştirmez. Dosya bilgisayarda şifreli bir klasörde saklanır, KVKK gereği paylaşılmaz.
+- Not: 512 MB sınırının yarısı dolu. Pilot büyürse ücretli kümeye (M10) ya da Flex'e geçiş gerekebilir.
+
 ## B. Deneme ortamı — canlı verinin kopyası (18–19 Kasım)
 
 Amaç: yeni sürümü **gerçek canlı verinin kopyasında** çalıştırıp indeks / veri sorunlarını canlıdan önce görmek.
+
+> **16 Kas kararı:** Deneme ortamı **ücretsiz** kurulur. Railway kararı kabul testinden sonra verilecek.
+> - Veritabanı: Atlas'ta **ayrı proje + ücretsiz M0 küme** (`hastane-staging`). Ayrı küme şart, çünkü sunucu veritabanı adını her zaman `hastane` olarak açıyor.
+> - Sunucu + site: **Render** ücretsiz plan, `render.yaml` blueprint'i (`nobet-staging-api` + `nobet-staging`). Sunucu 15 dk kullanılmayınca uyur; ilk açılış 30–60 sn sürer.
+> - Bağlantı adresi sohbete yazılmaz: yerelde `~/nöbet/.staging-uri` dosyasına konur (izin 600).
 
 1. Atlas'ta A'daki yedekten **ayrı bir veritabanına geri yükleme** (ör. `hastane_staging`) — canlı veritabanı etkilenmez.
 2. Railway'de **ikinci servis** (staging) bu dalla, `MONGODB_URI` → staging veritabanı, `NOTIFICATIONS_ENABLED=false`, `SENTRY_DSN` boş.

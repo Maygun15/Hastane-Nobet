@@ -1,0 +1,55 @@
+# Render Blueprint — SADECE DENEME ORTAMI (staging)
+# Canlı (production) ile ilgisi yoktur: ayrı veritabanı, bildirim kapalı.
+# Kurulum: Render → New → Blueprint → bu repo, dal vercel-preview-stabilizasyon.
+# "sync: false" olan değerleri Render kurulum ekranında sen girersin (repoya yazılmaz).
+
+services:
+  # Sunucu (API) — ücretsiz plan: 15 dk kullanılmayınca uyur, ilk açılış ~30–60 sn
+  - type: web
+    name: nobet-staging-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: vercel-preview-stabilizasyon
+    rootDir: my-backend-project
+    buildCommand: npm ci --omit=dev
+    startCommand: node index.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI          # DENEME veritabanı (canlı DEĞİL)
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: FRONTEND_ORIGIN
+        value: https://nobet-staging.onrender.com
+      - key: NOTIFICATIONS_ENABLED
+        value: "false"
+      - key: ALLOW_DEV_ENDPOINTS
+        value: "false"
+      - key: SENTRY_DSN
+        value: ""
+
+  # Site (ön yüz) — statik, ücretsiz, uyumaz
+  - type: web
+    name: nobet-staging
+    runtime: static
+    branch: vercel-preview-stabilizasyon
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: VITE_API_BASE
+        value: https://nobet-staging-api.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
