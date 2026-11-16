@@ -32,7 +32,7 @@ export default function DayCard({
 
   return (
     <div
-      className={`print-compact-day relative min-h-[128px] rounded-xl border-2 p-2.5 flex flex-col transition-all ${
+      className={`print-compact-day relative min-h-[96px] sm:min-h-[128px] rounded-lg sm:rounded-xl border sm:border-2 p-1 sm:p-2.5 flex flex-col transition-all ${
         isOutsideMonth
           ? "bg-slate-50/80 border-slate-200 text-slate-400"
           : hasConflict
@@ -54,7 +54,8 @@ export default function DayCard({
           }`}>
             {dayNum}
           </span>
-          <span className={`text-xs uppercase font-medium ${isOutsideMonth ? "text-slate-300" : "text-slate-400"}`}>
+          {/* Telefonda dar kutuda kesiliyor ve sütun başlığıyla tekrar ediyor → sm ve üstünde göster */}
+          <span className={`hidden sm:inline text-xs uppercase font-medium ${isOutsideMonth ? "text-slate-300" : "text-slate-400"}`}>
             {dow}
           </span>
         </div>

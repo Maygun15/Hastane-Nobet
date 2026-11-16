@@ -450,7 +450,8 @@ async function approveLeaveWithTransaction(req, request, previousStatus, adminNo
     return { updated: upd, error: upd ? null : 'CONFLICT' };
   }
 
-  const leaveCode = normalizeLeaveTypeCode(leaveTypeCode || message);
+  // Açıklama metni (message) ASLA izin kodu olarak kullanılmaz; kod yoksa yıllık izin ('Y').
+  const leaveCode = normalizeLeaveTypeCode(leaveTypeCode);
   const start = new Date(`${String(targetDate).slice(0, 10)}T00:00:00`);
   const end   = new Date(`${String(targetDateEnd || targetDate).slice(0, 10)}T00:00:00`);
   if (isNaN(start) || isNaN(end) || end < start) return { updated: null, error: 'Geçersiz tarih aralığı' };

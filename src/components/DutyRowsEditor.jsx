@@ -189,6 +189,14 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   }));
   const serviceKey = serviceId == null ? "" : String(serviceId);
   const isSpecificService = isSpecificServiceSelected(serviceKey);
+  // Geliştirici teşhis satırları (explainability) son kullanıcıya gösterilmez.
+  const showDevDiagnostics = useMemo(() => {
+    try {
+      return /(?:^|[?&#])debug=1(?:&|$)/.test(window.location.search + window.location.hash);
+    } catch {
+      return false;
+    }
+  }, []);
   const autoSaveTimerRef = useRef(null);
   const lastSavedSignatureRef = useRef(null);
   const hasRemoteLoadedRef = useRef(false);
@@ -2231,12 +2239,13 @@ const shouldShowRestRiskPanel =
           {!loadingRemote && !saving && !hasLastSaved && autoSaveStatus === "idle" && (
             <span>Otomatik kaydetme aktif. İlk kayıt için değişiklik yapın.</span>
           )}
-          {!loadingRemote && explainabilityReady && (
+          {/* UX U8: geliştirici bilgileri yalnızca geliştirme modunda ya da ?debug=1 ile */}
+          {showDevDiagnostics && !loadingRemote && explainabilityReady && (
             <span className="text-slate-600">
               Explainability: {generatedExplainability.candidateAudit.length} slot audit, {shadowObservationCount} shadow observation, {generatedExplainability.selectedPolicyBreakdowns.length} policy trace
             </span>
           )}
-          {!loadingRemote && generatedExplainability.isStale && (
+          {showDevDiagnostics && !loadingRemote && generatedExplainability.isStale && (
             <span className="text-amber-700">
               Explainability uyarısı: bu trace mevcut monthly revision ile tam eşleşmeyebilir
               {generatedExplainability.staleReasons.length

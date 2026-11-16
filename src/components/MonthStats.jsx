@@ -195,7 +195,7 @@ export default function MonthStats({
           <div className="text-xs text-slate-500 font-medium mb-1">Aylık Gereken</div>
           <div className="text-2xl font-bold text-amber-700">
             {requiredBase !== null ? formatHours(requiredBase) : "—"}
-            {requiredBase !== null && <span className="text-xs text-slate-400 ml-1 font-normal">s</span>}
+            {requiredBase !== null && <span className="text-xs text-slate-400 ml-1 font-normal">sa</span>}
           </div>
         </div>
 
@@ -203,7 +203,7 @@ export default function MonthStats({
           <div className="text-xs text-slate-500 font-medium mb-1">İzin (ÇS)</div>
           <div className="text-2xl font-bold text-rose-600">
             {leaveCredit !== null ? formatHours(leaveCredit) : "—"}
-            {leaveCredit !== null && <span className="text-xs text-slate-400 ml-1 font-normal">s</span>}
+            {leaveCredit !== null && <span className="text-xs text-slate-400 ml-1 font-normal">sa</span>}
           </div>
         </div>
 
@@ -213,7 +213,7 @@ export default function MonthStats({
           </div>
           <div className="text-2xl font-bold text-indigo-700">
             {requiredFinal !== null ? formatHours(requiredFinal) : "—"}
-            {requiredFinal !== null && <span className="text-xs text-slate-400 ml-1 font-normal">s</span>}
+            {requiredFinal !== null && <span className="text-xs text-slate-400 ml-1 font-normal">sa</span>}
           </div>
         </div>
 
@@ -221,18 +221,18 @@ export default function MonthStats({
           <div className="text-xs text-slate-500 font-medium mb-1">Çalıştığı Toplam</div>
           <div className="text-2xl font-bold text-emerald-700">
             {formatHours(workedHours)}
-            <span className="text-xs text-slate-400 ml-1 font-normal">s</span>
+            <span className="text-xs text-slate-400 ml-1 font-normal">sa</span>
           </div>
         </div>
 
         <div className="rounded-lg bg-white/60 p-3 border border-slate-100">
           <div className="text-xs text-slate-500 font-medium mb-1 flex items-center gap-1">
             <OtIcon className="w-3 h-3" />
-            {ot !== null && ot < 0 ? "Eksik Mesai" : "Fazla Mesai"}
+            {ot !== null && ot < 0 ? "Normun altında" : "Fazla mesai"}
           </div>
           <div className={`text-2xl font-bold ${otColor}`}>
             {ot !== null ? `${otSign}${formatHours(Math.abs(ot))}` : "—"}
-            {ot !== null && <span className="text-xs text-slate-400 ml-1 font-normal">s</span>}
+            {ot !== null && <span className="text-xs text-slate-400 ml-1 font-normal">sa</span>}
           </div>
         </div>
       </div>

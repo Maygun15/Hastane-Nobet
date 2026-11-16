@@ -241,7 +241,7 @@ Hastane kararı: sistem riskli durumları listeler, yönetici her biri için **"
 
 Yerel prova ortamında pilot akışları gerçekten kullanılarak incelendi: **personel** (telefon, 375 px) — giriş, Takvimim, menü, Taleplerim, yeni talep, bildirimler; **sorumlu** (masaüstü) — çalışma çizelgesi, risk paneli, yayın.
 
-### Öncelik 1 — pilottan önce (kullanıcıyı yanıltan ya da veriyi bozan)
+### Öncelik 1 — pilottan önce (kullanıcıyı yanıltan ya da veriyi bozan) — ✅ hepsi düzeltildi (2026-11-16)
 
 | # | Ekran | Bulgu | Öneri |
 |---|---|---|---|
@@ -269,3 +269,18 @@ Yerel prova ortamında pilot akışları gerçekten kullanılarak incelendi: **p
 | U17 | Takvim altındaki teknik not ("…parse edebildiğimiz…") personele gösteriliyor |
 
 İyi bulunanlar: giriş ekranı sade; boş talep listesi açıklayıcı; tercih formunun açıklama satırı anlaşılır; risk paneli ve "Yayınla" akışı net.
+
+#### Öncelik 1 düzeltmeleri (2026-11-16) — yerel provada ekranda doğrulandı
+
+| # | Yapılan |
+|---|---|
+| U1 | Talep formunda **İzin türü** seçimi (izin türleri listesinden; liste alınamazsa "Yıllık izin"); sunucu açıklama metnini artık izin kodu yapmıyor (kod yoksa `Y`). Test: `src/test/myRequestsPreference.test.jsx` |
+| U2 | Bildirim paneli telefonda ekran genişliğinde (`fixed inset-x-3`), masaüstünde eski yerinde |
+| U3 | Telefonda başlık tek satır: simge + ad + zil + menü; sürüm, rol rozetleri, e-posta md ve üstünde |
+| U4 | Boş/taslak ay: "Bu ay için yayınlanmış nöbetiniz yok. Çizelge yayınlanınca bildirim alacaksınız." |
+| U5 | Motor atamalara görev adını (`roleLabel`, ör. "TRİAJ") yazıyor; takvim kutusunda kodun altında görev kısaltması ("V1 / TRİAJ", "N / KIR…"); telefonda kesik gün adları gizli, kutu iç boşluğu küçültüldü |
+| U6 | En üstte **"Sonraki nöbetiniz: 3 Ara · V1 (TRİAJ)"** kartı; çelişen "Aylık yoğunluk" kartı kaldırıldı; uyarı eşikleri gece ≥10, hafta sonu ≥6 (Acil'de herkese uyarı çıkıyordu); birim "sa"; "Eksik mesai" → "Normun altında" |
+| U7 | Çizelge sayfasındaki yapışkan "Tablo çalışma alanı" kutusu yapışkan değil — Yayınla çubuğunu örtmüyor |
+| U8 | "Explainability…" satırları sadece `?debug=1` ile; servis uyarısı Türkçe |
+
+Kalan küçük teknik metinler (sonraki tur): "Kişilere atama — önizleme" satırındaki "Veri kaynağı: Assignment Projection / kapsam kimliği"; "Son 10 işlem" listesi çizelge yeniden üretilince eski işlemleri göstermeye devam ediyor (geri alma eski çizelgeye uygulanmamalı — kontrol edilecek).

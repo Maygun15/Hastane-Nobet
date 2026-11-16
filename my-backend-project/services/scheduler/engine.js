@@ -83,6 +83,9 @@ function assign(person, day, shift, context) {
     personName: person.name || "",
     hours,
   };
+  // Görev / alan adı (ör. "ÇOCUK"): personel takvimi ve raporlar "N" yerine "N · Çocuk" gösterebilsin.
+  const roleLabel = String(shift.area || shift.label || "").trim();
+  if (roleLabel) assignment.roleLabel = roleLabel;
   if (startTime) {
     assignment.start = startTime;
     assignment.startTime = startTime;

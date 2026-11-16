@@ -1412,7 +1412,7 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
       return (
         <div
           key={assg.id ?? `${visibleShift}-${assg.roleLabel || ""}-${idx}`}
-          className={`rounded bg-blue-50 border border-blue-200 px-1 py-0.5 text-[11px] text-blue-700 mt-1 flex items-center justify-between gap-2 group overflow-hidden ${
+          className={`w-full rounded bg-blue-50 border border-blue-200 px-1 py-0.5 text-[11px] text-blue-700 mt-1 flex items-center justify-between gap-2 group overflow-hidden ${
             isEditable ? "cursor-pointer hover:bg-blue-100" : ""
           }`}
           title={[visibleShift, assg.roleLabel || ""].filter(Boolean).join(" · ")}
@@ -1430,10 +1430,15 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
               : undefined
           }
         >
-          <span className="flex min-w-0 items-center gap-1">
-            {isPinned && <span title="Sabitlenmiş">📌</span>}
-            <span className="shrink-0 font-semibold">{visibleShift}</span>
-            {assg.roleLabel ? <span className="ml-1 truncate">{assg.roleLabel}</span> : null}
+          {/* Telefonda dar kutu: görev adı kodun altında küçük; sm ve üstünde yan yana */}
+          <span className="flex w-full min-w-0 flex-col items-start sm:flex-row sm:items-center sm:gap-1">
+            <span className="flex items-center gap-1">
+              {isPinned && <span title="Sabitlenmiş">📌</span>}
+              <span className="shrink-0 font-semibold">{visibleShift}</span>
+            </span>
+            {assg.roleLabel ? (
+              <span className="block w-full truncate text-[8px] leading-tight sm:ml-1 sm:w-auto sm:text-[11px]">{assg.roleLabel}</span>
+            ) : null}
           </span>
           {isEditable && (
             <span className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -2175,10 +2180,6 @@ const PersonScheduleCalendar = forwardRef(function PersonScheduleCalendar({
         <div className="mt-1">
           <span className="inline-block h-3 w-3 bg-orange-100 border border-orange-200 mr-2 align-middle rounded" />
           Resmi tatil (Türkiye)
-        </div>
-        <div className="text-[10px] text-slate-400 mt-2">
-          Not: Excel'den içe aktarılan görevler, serbest metin tarih ve vardiya alanlarını düzgün biçimde
-          parse edebildiğimiz sürece burada gösterilir.
         </div>
       </div>
 

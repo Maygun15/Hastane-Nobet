@@ -53,3 +53,21 @@ describe("MyRequestsTab tercih formu", () => {
     expect(toast.error).toHaveBeenCalledWith("Tercih için tarih zorunludur");
   });
 });
+
+describe("MyRequestsTab izin formu", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("izin türünü gönderir (açıklama metni izin türü olmaz)", async () => {
+    render(<MyRequestsTab />);
+    fireEvent.click(await screen.findByRole("button", { name: /Yeni Talep/ }));
+    const typeSelect = screen.getByLabelText(/İzin türü/);
+    expect(typeSelect.value).toBe("Y");
+    const [start] = document.querySelectorAll('input[type="date"]');
+    fireEvent.change(start, { target: { value: "2026-12-10" } });
+    fireEvent.change(screen.getByPlaceholderText("Talebinizi açıklayın..."), { target: { value: "Düğünüm var" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Gönder" })); });
+    expect(createRequest).toHaveBeenCalledWith(expect.objectContaining({
+      type: "izin", leaveTypeCode: "Y", message: "Düğünüm var", targetDate: "2026-12-10",
+    }));
+  });
+});

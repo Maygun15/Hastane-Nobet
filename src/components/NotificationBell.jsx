@@ -111,8 +111,9 @@ export default function NotificationBell() {
         )}
       </button>
 
+      {/* Telefonda ekran genişliğinde sabit panel (taşmasın); sm ve üstünde düğmeye hizalı */}
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 rounded-2xl border bg-white shadow-xl z-50">
+        <div className="fixed inset-x-3 top-16 max-h-[75vh] overflow-y-auto rounded-2xl border bg-white shadow-xl z-50 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80">
           <div className="flex items-center justify-between px-4 py-3 border-b">
             <span className="text-[13px] font-semibold text-slate-800">Bildirimler</span>
             <div className="flex items-center gap-1">

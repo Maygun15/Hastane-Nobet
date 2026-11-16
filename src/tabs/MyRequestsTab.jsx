@@ -30,6 +30,7 @@ const EMPTY_FORM = {
   targetDateEnd: "",
   message: "",
   preferenceKind: "off",
+  leaveTypeCode: "Y",
   swapWithPersonId: "",
   swapWithPersonName: "",
   swapMyDate: "",
@@ -272,6 +273,19 @@ export default function MyRequestsTab() {
 
   useEffect(() => { load(); }, [load]);
 
+  // İzin türleri (izin formu açılınca). Liste alınamazsa yıllık izin varsayılır.
+  const [leaveTypes, setLeaveTypes] = useState([]);
+  useEffect(() => {
+    if (!open || form.type !== "izin" || leaveTypes.length) return;
+    http.get("/api/parameters/leave-types").then((res) => {
+      const list = (Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [])
+        .filter((t) => t?.code && t?.active !== false)
+        .map((t) => ({ code: String(t.code).toUpperCase(), name: String(t.name || t.code) }))
+        .sort((a, b) => a.name.localeCompare(b.name, "tr"));
+      if (list.length) setLeaveTypes(list);
+    }).catch(() => {});
+  }, [open, form.type, leaveTypes.length]);
+
   // Lazy-load personnel only when takas modal opens
   useEffect(() => {
     if (open && form.type === "takas" && personnel.length === 0) {
@@ -321,6 +335,7 @@ export default function MyRequestsTab() {
         targetDateEnd: form.targetDateEnd || "",
       };
       if (form.type === "tercih") payload.preferenceKind = form.preferenceKind || "off";
+      if (form.type === "izin") payload.leaveTypeCode = form.leaveTypeCode || "Y";
       if (form.type === "takas") {
         Object.assign(payload, {
           swapWithPersonId:     form.swapWithPersonId,
@@ -547,6 +562,16 @@ export default function MyRequestsTab() {
               </div>
 
               {/* İzin: tarih aralığı */}
+              {form.type === "izin" && (
+                <div className="space-y-1">
+                  <label className={labelCls} htmlFor="leave-type">İzin türü <span className="text-rose-500">*</span></label>
+                  <select id="leave-type" className={inputCls} value={form.leaveTypeCode} onChange={(e) => set("leaveTypeCode", e.target.value)}>
+                    {(leaveTypes.length ? leaveTypes : [{ code: "Y", name: "Yıllık izin" }]).map((t) => (
+                      <option key={t.code} value={t.code}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {form.type === "izin" && (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">

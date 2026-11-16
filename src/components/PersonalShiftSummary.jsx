@@ -114,7 +114,7 @@ function getNextShift(mine) {
     .filter(({ d }) => d > todayYmd)
     .sort((x, y) => (x.d < y.d ? -1 : x.d > y.d ? 1 : 0));
   if (!future.length) return null;
-  return { dateStr: future[0].d, shiftCode: future[0].a.shiftCode || "" };
+  return { dateStr: future[0].d, shiftCode: future[0].a.shiftCode || "", roleLabel: future[0].a.roleLabel || "" };
 }
 
 // Kayıt zenginlik puanı: saat > 0 → 4, shiftCode dolu → 2, roleLabel dolu → 1
@@ -209,9 +209,11 @@ function getRiskWarnings(stats) {
   const warnings = [];
   if (stats.totalHours > 220)
     warnings.push("Aylık çalışma yükünüz yüksek");
-  if (stats.nightShifts >= 6)
+  // Eşikler Acil gerçeğine göre (2026-11-16): motor gece/hafta sonu dengesini zaten sağlıyor;
+  // düşük eşik herkese uyarı gösterip anlamını yitiriyordu.
+  if (stats.nightShifts >= 10)
     warnings.push("Gece nöbeti yoğunluğu yüksek");
-  if (stats.weekendShifts >= 5)
+  if (stats.weekendShifts >= 6)
     warnings.push("Hafta sonu nöbet yoğunluğu yüksek");
   if (stats.holidayShifts >= 2)
     warnings.push("Resmi tatil nöbet yoğunluğu yüksek");
@@ -454,7 +456,7 @@ export default function PersonalShiftSummary({ me, people = [], year, month }) {
       const summaryItems = [
         { v: String(stats.totalShifts),                        l: "Toplam Nobet", bg: [219,234,254], fg: [30,64,175]   },
         { v: String(stats.nightShifts),                        l: "Gece Nobeti",  bg: [243,232,255], fg: [109,40,217]  },
-        { v: `${stats.totalHours}s`,                           l: "Toplam Saat", bg: [220,252,231], fg: [21,128,61]   },
+        { v: `${stats.totalHours} sa`,                           l: "Toplam Saat", bg: [220,252,231], fg: [21,128,61]   },
         { v: String(stats.weekendShifts),                      l: "Hafta Sonu",  bg: [255,237,213], fg: [194,65,12]   },
         { v: forPdf(monthIntensityLabel(stats.totalHours)),    l: "Yogunluk",    bg: [254,249,195], fg: [133,77,14]   },
       ];
@@ -608,7 +610,7 @@ export default function PersonalShiftSummary({ me, people = [], year, month }) {
   if (!stats || stats.totalShifts === 0) {
     return (
       <div className="mb-4 text-sm text-slate-500 text-center py-3 bg-slate-50 rounded-xl border border-slate-200">
-        Bu ay nöbet kaydı yok
+        Bu ay için yayınlanmış nöbetiniz yok. Çizelge yayınlanınca bildirim alacaksınız.
       </div>
     );
   }
@@ -650,6 +652,17 @@ export default function PersonalShiftSummary({ me, people = [], year, month }) {
               ? "Bugün nöbetiniz var"
               : `Yaklaşan nöbetiniz var: ${fmtTurkishDate(banner.dateStr)}${banner.shiftCode ? ` • ${banner.shiftCode}` : ""}`}
           </span>
+        </div>
+      )}
+
+      {/* UX U6: personelin en çok aradığı bilgi en üstte */}
+      {nextShift && (
+        <div className="mb-3 rounded-2xl bg-sky-700 px-4 py-3 text-white" data-testid="next-shift-hero">
+          <div className="text-[12px] text-sky-100">Sonraki nöbetiniz</div>
+          <div className="text-xl font-semibold">
+            {fmtTurkishDate(nextShift.dateStr)}{nextShift.shiftCode ? ` · ${nextShift.shiftCode}` : ""}
+            {nextShift.roleLabel ? <span className="ml-1 text-sm font-normal text-sky-100">({nextShift.roleLabel})</span> : null}
+          </div>
         </div>
       )}
 
@@ -698,7 +711,7 @@ export default function PersonalShiftSummary({ me, people = [], year, month }) {
         />
         <StatCard
           label="Toplam Saat"
-          value={`${totalHours}s`}
+          value={`${totalHours} sa`}
           colorClass="bg-green-50 text-green-700"
         />
         <StatCard
@@ -711,14 +724,8 @@ export default function PersonalShiftSummary({ me, people = [], year, month }) {
       {/* Faz-2: 6 yeni kart */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
         <StatCard
-          label="Sonraki Nöbet"
-          value={nextShift ? fmtTurkishDate(nextShift.dateStr) : "—"}
-          sub={nextShift?.shiftCode || undefined}
-          colorClass="bg-sky-50 text-sky-700"
-        />
-        <StatCard
           label="Bu Hafta"
-          value={`${thisWeekHours}s`}
+          value={`${thisWeekHours} sa`}
           sub={weekIntensityLabel(thisWeekHours)}
           colorClass="bg-teal-50 text-teal-700"
         />
@@ -729,15 +736,9 @@ export default function PersonalShiftSummary({ me, people = [], year, month }) {
           colorClass="bg-red-50 text-red-700"
         />
         <StatCard
-          label="Aylık Yoğunluk"
-          value={monthIntensityLabel(totalHours)}
-          sub={`${totalHours}s toplam`}
-          colorClass="bg-amber-50 text-amber-700"
-        />
-        <StatCard
           label="En Yoğun Gün"
           value={busiestDay ? fmtTurkishDate(busiestDay.dateStr) : "—"}
-          sub={busiestDay ? `${busiestDay.hours}s` : undefined}
+          sub={busiestDay ? `${busiestDay.hours} sa` : undefined}
           colorClass="bg-rose-50 text-rose-700"
         />
         <StatCard

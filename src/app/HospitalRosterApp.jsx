@@ -647,28 +647,29 @@ export default function HospitalRosterApp() {
       <Toaster richColors position="bottom-right" />
       <div className="w-screen h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_16%,#f8fafc_100%)] text-slate-800 flex flex-col">
         <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
-          <div className="w-full px-4 py-3 md:px-6 md:py-4">
-            <div className="rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_42px_-34px_rgba(15,23,42,0.28)]">
-              <div className="flex flex-col gap-4 px-4 py-4 md:px-5">
-                <div className="grid gap-3 lg:grid-cols-[minmax(320px,1fr)_auto] lg:items-center">
-                  <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 px-4 py-3">
-                    <div className="flex min-w-0 items-center gap-4">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-[0_12px_28px_-18px_rgba(15,23,42,0.8)]">
+          {/* UX U3: telefonda tek satırlık ince başlık; md ve üstünde eski görünüm */}
+          <div className="w-full px-2 py-1.5 md:px-6 md:py-4">
+            <div className="md:rounded-[28px] md:border md:border-slate-200 bg-white md:shadow-[0_18px_42px_-34px_rgba(15,23,42,0.28)]">
+              <div className="flex flex-col gap-2 px-2 py-1 md:gap-4 md:px-5 md:py-4">
+                <div className="flex items-center justify-between gap-2 lg:grid lg:gap-3 lg:grid-cols-[minmax(320px,1fr)_auto]">
+                  <div className="min-w-0 md:rounded-[22px] md:border md:border-slate-200 md:bg-slate-50/70 md:px-4 md:py-3">
+                    <div className="flex min-w-0 items-center gap-2 md:gap-4">
+                      <div className="flex h-8 w-8 md:h-11 md:w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-[0_12px_28px_-18px_rgba(15,23,42,0.8)]">
                         <CalendarIcon className="h-5 w-5" />
                       </div>
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2.5">
-                          <div className="truncate text-[19px] font-semibold tracking-tight text-slate-900">
+                          <div className="truncate text-[15px] md:text-[19px] font-semibold tracking-tight text-slate-900">
                             Hastane Nöbet Sistemi
                           </div>
-                          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+                          <span className="hidden md:inline-flex rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
                             v1.0.1
                           </span>
-                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                          <span className="hidden md:inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
                             {isAdmin ? "Yönetim" : isStaff ? "Yetkili" : "Kullanıcı"}
                           </span>
                         </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
+                        <div className="mt-1 hidden md:flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
                           <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1">
                             <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
                             {isAdmin ? "Yönetim oturumu" : isStaff ? "Yetkili görünümü" : "Kişisel görünüm"}
@@ -882,8 +883,9 @@ function UserBadge({ user, onLogout, onChanged, isAdmin }) {
   };
 
   return (
-    <div className="flex items-center gap-2 rounded-[22px] border border-slate-200 bg-white px-3 py-2.5">
-      <div className="flex min-w-0 items-center gap-3">
+    <div className="flex items-center gap-2 md:rounded-[22px] md:border md:border-slate-200 bg-white md:px-3 md:py-2.5">
+      {/* UX U3: telefonda e-posta ve rol gizli; zil ve menü kalır */}
+      <div className="hidden md:flex min-w-0 items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
           <UserRound className="h-4 w-4" />
         </div>

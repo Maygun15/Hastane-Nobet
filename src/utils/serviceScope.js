@@ -2,7 +2,7 @@
 import { ROLE } from "../constants/roles.js";
 
 export const OPERATIONAL_SERVICE_WARNING =
-  "Please select a specific service before editing or generating schedules. 'All Services' is read-only and cannot be used for operational schedule actions.";
+  "Çizelge oluşturmak veya düzenlemek için önce bir servis seçin. \"Tümü\" seçiliyken çizelge sadece görüntülenebilir.";
 
 export function isSpecificServiceSelected(serviceId) {
   const normalized = String(serviceId ?? "")

@@ -1390,7 +1390,8 @@ export default function SchedulesTab({ workAreas, workingHours, peopleAll: peopl
         </div>
 
         <div className="min-w-0 rounded-[30px] border border-slate-200 bg-white p-3 shadow-sm md:p-4">
-          <div className="sticky top-3 z-10 mb-4 rounded-[24px] border border-slate-200 bg-white/92 px-4 py-3 shadow-sm backdrop-blur">
+          {/* UX U7: yapışkan değil — kaydırınca yayın çubuğunu (Yayınla) örtüyordu */}
+          <div className="mb-4 rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Tablo Çalışma Alanı</div>
             <div className="mt-1 text-lg font-semibold text-slate-900">{active?.name || "Çizelgeler"}</div>
           </div>
