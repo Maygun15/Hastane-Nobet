@@ -97,6 +97,17 @@ Amaç: yeni sürümü **gerçek canlı verinin kopyasında** çalıştırıp ind
    - [ ] Adalet raporu: gece (N/V1/V2) ve bayram sayıları mantıklı
 6. Acil verisinin staging'e yüklenmesi (58 kişi + görev şablonu) — canlıda nasıl yapılacaksa öyle (Excel'den yükle / personel ekranı).
 
+**B — Yapılanlar (16 Kas):**
+- [x] Atlas `hastane-staging` projesi, ücretsiz `staging` kümesi (Frankfurt). İzinli IP: sadece geliştirici bilgisayarı. Render için `0.0.0.0/0` henüz eklenmedi.
+- [x] 16 Kas yedeği deneme kümesine yüklendi: **2336 kayıt, 0 hata**.
+- [x] TC taşıması: kuru çalıştırma temiz (boş TC 1 kişi, kopya TC 0) → deneme kümesinde `--apply` başarılı.
+- [x] Yeni sürüm (yerelde, `NODE_ENV=production`) deneme verisiyle açıldı: MongoDB bağlı, sağlık OK, hata yok. Kısa `JWT_SECRET` güvenlik kontrolünce reddediliyor (iyi).
+- [x] İndeks karşılaştırması (`diffIndexes`, salt-okur): **eksik kritik indeks yok**. Production'da `autoIndex` kapalı olduğu için bu kontrol gerekliydi. Bulgular:
+  - `people.tc_1` ve `people.userId_1` mevcut ama `sparse` değil (model `sparse` istiyor). Benzersiz olmadıkları için **zararsız**, düzeltme isteğe bağlı.
+  - Birçok koleksiyonda eski tek-alan indeksler "fazla". Zararsız, sadece yazmayı biraz yavaşlatır. Pilottan sonra temizlenebilir.
+- [ ] Render: `nobet-staging-api` + `nobet-staging` (blueprint) — hesap sahibinde
+- [ ] Duman testi (aşağıdaki liste)
+
 **Çıkış kriteri:** duman testinin hepsi geçti, açıklanmamış sunucu hatası yok.
 
 ## C. Kullanıcı kabul testi (20–23 Kasım)
