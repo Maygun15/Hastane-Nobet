@@ -127,6 +127,8 @@ Amaç: yeni sürümü **gerçek canlı verinin kopyasında** çalıştırıp ind
   - Deneme: kuru çalıştırma 30 kayıt / 0 çakışma → `--apply` → 30 güncellendi, tekrar kuru çalıştırma 0. Talepler ekranı artık **17/17** gösteriyor.
   - Görev kuralı kayıtlarının içi boş/deneme amaçlı. Görünür olmaları üretimi değiştirmez.
 - **İzin onayı kod hatası:** bakiye güncellemesi `used` alanını hem `$setOnInsert` hem `$inc` ile yazıyordu. MongoDB bunu **her seferinde** reddeder, yani düşülen izin türünde hiçbir onay yapılamıyordu. Düzeltildi: `services/requestService.js`. Yerel MongoDB'de eski hali hata verdi, yeni hali 4+2=6 gün doğru saydı. Sunucu testleri 386/386 geçti.
+- **Deneme sitesinde doğrulandı (bfe76c3 sonrası):** Gamze Öztürk 1–4 Temmuz izni onaylandı. Bakiye kullanılan 4 gün, izin günleri çizelge verisine "Y" olarak yazıldı. Ayar kaydı güncellendi, kopya oluşmadı (6 ayar).
+- **Kabul testinde bakılacak:** izin türlerinde yıllık hak tanımlı değil (hak 0 → kalan 0 görünüyor). Pilot öncesi izin hakları girilmeli ya da bu alan gizlenmeli.
 - Not: sunucu kayıtlarında sık "Dev login path reached in production — blocked" uyarısı var. Ön yüz bir yerde geliştirici giriş yolunu çağırıyor. Zararsız (engelleniyor) ama incelenmeli.
 
 **D (canlıya alma) için eklenecek adım:** TC taşımasından sonra `MONGODB_URI=<canlı> node scripts/backfillLegacyHospitalId.js` (kuru) → çıktı birlikte incelenir → açık onayla `--apply`.
