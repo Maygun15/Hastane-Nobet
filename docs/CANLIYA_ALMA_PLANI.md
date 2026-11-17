@@ -89,12 +89,12 @@ Amaç: yeni sürümü **gerçek canlı verinin kopyasında** çalıştırıp ind
    - `MONGODB_URI=<staging> node scripts/migratePersonTcIndex.js` (kuru) → çıktıyı incele → `--apply`
    - Sunucu açılışındaki indeks hata kayıtlarını (`E11000`, `IndexOptionsConflict`) tara; çıkan her çakışma için ayrı taşıma yazılır.
 5. **Duman testi (staging):**
-   - [ ] Yönetici ve personel girişi
-   - [ ] Mevcut aylar personelde **görünmeye devam ediyor** (eski kayıtlar "yayınlanmış" sayılır)
+   - [x] Yönetici ve personel girişi *(personel C'de)*
+   - [x] Mevcut aylar personelde **görünmeye devam ediyor** (eski kayıtlar "yayınlanmış" sayılır)
    - [ ] Mevcut izin / takas talepleri listeleniyor, onay çalışıyor
-   - [ ] Yeni ay oluşturunca **taslak** başlıyor, personel görmüyor
-   - [ ] Acil için Aralık çizelgesi üretiliyor; risk paneli çıkıyor; Yayınla → personel görüyor
-   - [ ] Adalet raporu: gece (N/V1/V2) ve bayram sayıları mantıklı
+   - [x] Yeni ay oluşturunca **taslak** başlıyor, personel görmüyor
+   - [x] Acil için Aralık çizelgesi üretiliyor; risk paneli çıkıyor; Yayınla → personel görüyor
+   - [x] Adalet raporu: gece (N/V1/V2) ve bayram sayıları mantıklı
 6. Acil verisinin staging'e yüklenmesi (58 kişi + görev şablonu) — canlıda nasıl yapılacaksa öyle (Excel'den yükle / personel ekranı).
 
 **B — Yapılanlar (16 Kas):**
@@ -105,8 +105,31 @@ Amaç: yeni sürümü **gerçek canlı verinin kopyasında** çalıştırıp ind
 - [x] İndeks karşılaştırması (`diffIndexes`, salt-okur): **eksik kritik indeks yok**. Production'da `autoIndex` kapalı olduğu için bu kontrol gerekliydi. Bulgular:
   - `people.tc_1` ve `people.userId_1` mevcut ama `sparse` değil (model `sparse` istiyor). Benzersiz olmadıkları için **zararsız**, düzeltme isteğe bağlı.
   - Birçok koleksiyonda eski tek-alan indeksler "fazla". Zararsız, sadece yazmayı biraz yavaşlatır. Pilottan sonra temizlenebilir.
-- [ ] Render: `nobet-staging-api` + `nobet-staging` (blueprint) — hesap sahibinde
-- [ ] Duman testi (aşağıdaki liste)
+- [x] Render (17 Kas): `nobet-staging-api` + `nobet-staging` ayakta. `ADMIN_PASSWORD` blueprint'te `generateValue` (sadece ilk admin oluşturmada kullanılır). Atlas'a `0.0.0.0/0` eklendi (sadece deneme kümesi). CORS doğru.
+- [x] Deneme ortamı yönetici şifresi yalnızca deneme veritabanında yenilendi (canlı şifre değişmedi).
+
+**B.5 duman testi sonuçları (17 Kas, deneme sitesi):**
+- [x] Yönetici girişi. *(Personel girişi C'de gerçek personelle denenecek.)*
+- [x] Eski aylar korunmuş: Temmuz 2026 Acil hemşire çizelgesi dolu ve "Yayınlandı". Veride 58 kişi, 17 talep (2 bekleyen).
+- [x] Yeni ay **taslak** başlıyor. Boş ay açınca hiçbir şey kendiliğinden kaydedilmiyor.
+- [x] Aralık 2026 üretildi: 486 atama / 58 kişi (ort. 8,4). Risk paneli 2 boş görev gösterdi (7 ve 28 Ara, Servis Sorumlusu: iki sorumlu da uygun değil). "Hepsi için bu şekilde devam" kararı yönetici adıyla kaydedildi → **Yayınla** çalıştı.
+- [x] Adillik raporu Aralık için açılıyor: genel puan 73 (Orta), gece dengesi 84, hafta sonu 70, eksik slot 0. En çok yük: iki servis sorumlusu (20'şer). Diğerleri 7–10 arası.
+- **Bulunan ve düzeltilen hata (82dd6ff):** boş bir aya geçince önceki görüntülenen ayın isimleri o aya kopyalanıp **otomatik kaydediliyordu** (Şubat 2026'dan beri var). Düzeltildi, yerelde ve deneme sitesinde doğrulandı. Hatanın deneme verisine yazdığı Aralık 2026 / Haziran 2027 taslakları silindi.
+- **Gözlemler (pilot öncesi karar gerekir):**
+  - Şablon taşıma yalnızca **bir önceki aya** bakıyor. Canlıda son dolu ay Temmuz, Kasım boş. Bu yüzden Aralık açılınca "önceki ay şablonu" bulunamaz. Görev satırları, aynı tarayıcıda önce Temmuz açıldıysa ekranda kalıyor. Öneri: taşıma en son şablonu olan aya baksın.
+  - Adillik raporunda "Eksik slot 0" görünüyor ama risk panelinde 2 boş görev var. Gece oranı sütununda "100% / 8 nöbet (0%)" gibi çelişkili etiketler var. Rapor dili gözden geçirilmeli.
+  - Onay pencereleri (`window.confirm`) yerleşik tarayıcıda otomatik "hayır" sayılıyor. Gerçek tarayıcıda sorun yok.
+- Deneme sitesinde Aralık 2026 şu an **yayınlanmış** durumda (test verisi).
+
+**Talep testi (17 Kas) — iki engel bulundu:**
+- **Hastanesiz eski kayıtlar:** 17 talepten 13'ü, 6/6 ayar, 3/3 görev kuralı, 1/1 çizelge kuralı ve 7 eski otomatik plan `hospitalId`'siz. Yeni sürüm bunları göremiyordu: ekranda 4 talep vardı, bekleyen 1 takas gizliydi. Ayrıca izin onayı, eski `settings.key_1_serviceId_1` benzersiz indeksine çarpıp geri alınıyordu.
+  - Çözüm: `scripts/backfillLegacyHospitalId.js`. Varsayılan kuru çalışır, `.env` okumaz, tek hastane yoksa durur, çakışma varsa koleksiyonu atlar. Tatiller dahil değil: 2026–27 için hastaneli kopyalar var.
+  - Deneme: kuru çalıştırma 30 kayıt / 0 çakışma → `--apply` → 30 güncellendi, tekrar kuru çalıştırma 0. Talepler ekranı artık **17/17** gösteriyor.
+  - Görev kuralı kayıtlarının içi boş/deneme amaçlı. Görünür olmaları üretimi değiştirmez.
+- **İzin onayı kod hatası:** bakiye güncellemesi `used` alanını hem `$setOnInsert` hem `$inc` ile yazıyordu. MongoDB bunu **her seferinde** reddeder, yani düşülen izin türünde hiçbir onay yapılamıyordu. Düzeltildi: `services/requestService.js`. Yerel MongoDB'de eski hali hata verdi, yeni hali 4+2=6 gün doğru saydı. Sunucu testleri 386/386 geçti.
+- Not: sunucu kayıtlarında sık "Dev login path reached in production — blocked" uyarısı var. Ön yüz bir yerde geliştirici giriş yolunu çağırıyor. Zararsız (engelleniyor) ama incelenmeli.
+
+**D (canlıya alma) için eklenecek adım:** TC taşımasından sonra `MONGODB_URI=<canlı> node scripts/backfillLegacyHospitalId.js` (kuru) → çıktı birlikte incelenir → açık onayla `--apply`.
 
 **Çıkış kriteri:** duman testinin hepsi geçti, açıklanmamış sunucu hatası yok.
 
@@ -129,7 +152,7 @@ Sıra önemli:
 1. [ ] Kullanıcılara kısa duyuru: "19:00–20:00 arası bakım."
 2. [ ] **Taze yedek**: Atlas on-demand snapshot (tarih/saat not edilir).
 3. [ ] TC indeksi taşıması (canlı): kuru çalışma → çıktıyı birlikte okuma → **senin onayınla** `--apply`.
-4. [ ] B'de bulunan diğer taşımalar (varsa) aynı şekilde.
+4. [ ] **Hastanesiz eski kayıtlar** (B'de bulundu): `scripts/backfillLegacyHospitalId.js` kuru → çıktıyı birlikte okuma → **senin onayınla** `--apply`. Yapılmazsa talepler görünmez ve izin onayı çalışmaz.
 5. [ ] `main` ← `vercel-preview-stabilizasyon` birleştirme (hızlı ileri: `main` dalın atası, çakışma yok) ve GitHub'a gönderme → `deploy.yml` Vercel + Railway'i otomatik yayınlar.
 6. [ ] **Duman testi (canlı)** — B.5 listesinin aynısı, Acil yerine test edilmeyen bir serviste sadece görüntüleme.
 7. [ ] 30 dk sunucu kayıtlarını izleme (hata oranı, `E11000`, 5xx).
