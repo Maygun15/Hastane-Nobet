@@ -27,6 +27,10 @@ services:
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
+      # Sadece veritabanında hiç admin yoksa ilk admini oluşturmak için kullanılır.
+      # Deneme verisinde admin zaten var → bu değer kullanılmaz; açılış kontrolü için gerekli.
+      - key: ADMIN_PASSWORD
+        generateValue: true
       - key: FRONTEND_ORIGIN
         value: https://nobet-staging.onrender.com
       - key: NOTIFICATIONS_ENABLED
