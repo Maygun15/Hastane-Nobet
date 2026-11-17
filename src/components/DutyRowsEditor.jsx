@@ -1216,7 +1216,7 @@ const shouldShowRestRiskPanel =
         ) {
           carryForwardPromptedRef.current.add(carryScopeKey);
           const approved = window.confirm(
-            "Bu ay için şablon bulunamadı. Önceki ayın şablonu kullanılsın mı?"
+            "Bu ay için şablon bulunamadı. Şablonu olan en son ayın görev satırları kullanılsın mı? (İsimler taşınmaz.)"
           );
           if (approved) {
             // requestId, bu carry-forward denemesini paylaşılan carryForwardLoading
@@ -1238,8 +1238,11 @@ const shouldShowRestRiskPanel =
               if (cancelled) return;
               if (carryResult?.carried) {
                 suppressNextAutoSaveRef.current = true;
+                const fromLabel = carryResult.from?.year && carryResult.from?.month
+                  ? ` — ${new Date(carryResult.from.year, carryResult.from.month - 1, 1).toLocaleDateString("tr-TR", { month: "long", year: "numeric" })} ayından`
+                  : "";
                 note(
-                  `Şablon taşındı (${carryResult.defsCount || 0} görev). Liste oluşturmak için ayrıca Yapay Zeka Destekli Liste / Liste Oluştur butonuna basın.`,
+                  `Şablon taşındı (${carryResult.defsCount || 0} görev${fromLabel}). Liste oluşturmak için ayrıca Yapay Zeka Destekli Liste / Liste Oluştur butonuna basın.`,
                   "success"
                 );
               }

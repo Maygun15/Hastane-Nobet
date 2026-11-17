@@ -23,7 +23,8 @@ const SCOPE = {
 };
 
 function queryResult(value) {
-  return { lean: jest.fn().mockResolvedValue(value) };
+  const lean = jest.fn().mockResolvedValue(value);
+  return { lean, sort: jest.fn(() => ({ lean })) };
 }
 
 describe('monthly template carry forward service', () => {
@@ -39,6 +40,8 @@ describe('monthly template carry forward service', () => {
       }))
       .mockReturnValueOnce(queryResult({
         _id: 'may-id',
+        year: 2026,
+        month: 5,
         data: {
           defs: [{
             id: 'row-1',
@@ -74,13 +77,11 @@ describe('monthly template carry forward service', () => {
       year: 2026,
       month: 6,
     });
-    expect(MonthlySchedule.findOne.mock.calls[1][0]).toEqual({
+    expect(MonthlySchedule.findOne.mock.calls[1][0]).toMatchObject({
       hospitalId: 'hospital-1',
       sectionId: 'calisma-cizelgesi',
       serviceId: 'service-a',
       role: 'Nurse',
-      year: 2026,
-      month: 5,
     });
     expect(result).toMatchObject({
       carried: true,
@@ -133,6 +134,36 @@ describe('monthly template carry forward service', () => {
       status: 404,
     });
     expect(MonthlySchedule.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('skips empty months and carries from the latest month that has a template', async () => {
+    MonthlySchedule.findOne
+      .mockReturnValueOnce(queryResult(null)) // hedef: Aralık 2026 yok
+      .mockReturnValueOnce(queryResult({
+        _id: 'july-id',
+        year: 2026,
+        month: 7,
+        data: { defs: [{ id: 'row-1', label: 'Triaj', shiftCode: 'N' }] },
+      }));
+    MonthlySchedule.findOneAndUpdate.mockReturnValue(queryResult({ _id: 'dec-id' }));
+
+    const result = await carryForwardMonthlyTemplate({ ...SCOPE, year: 2026, month: 12 });
+
+    const sourceQuery = MonthlySchedule.findOne.mock.calls[1][0];
+    // önceki aylar, en fazla 12 ay geriye, yalnızca şablonu olanlar
+    expect(sourceQuery.$and).toEqual([
+      { $or: [{ 'data.defs.0': { $exists: true } }, { 'data.rows.0': { $exists: true } }] },
+      { $or: [{ year: { $lt: 2026 } }, { year: 2026, month: { $lt: 12 } }] },
+      { $or: [{ year: { $gt: 2025 } }, { year: 2025, month: { $gte: 12 } }] },
+    ]);
+    const sortArg = MonthlySchedule.findOne.mock.results[1].value.sort.mock.calls[0][0];
+    expect(sortArg).toEqual({ year: -1, month: -1 });
+    expect(result).toMatchObject({
+      carried: true,
+      from: { year: 2026, month: 7 },
+      to: { year: 2026, month: 12 },
+      defsCount: 1,
+    });
   });
 
   test('uses December of previous year for January', () => {

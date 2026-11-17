@@ -83,6 +83,37 @@ function getScheduleDefs(doc) {
   return Array.isArray(doc?.data?.defs) ? doc.data.defs : [];
 }
 
+const LOOKBACK_MONTHS = 12;
+
+function monthsBack(year, month, count) {
+  let y = year;
+  let m = month;
+  for (let i = 0; i < count; i += 1) ({ year: y, month: m } = previousYearMonth(y, m));
+  return { year: y, month: m };
+}
+
+async function findLatestTemplateSource({ hospitalId, sectionId, serviceId, role, year, month }) {
+  const oldest = monthsBack(year, month, LOOKBACK_MONTHS);
+  const hasTemplate = {
+    $or: [{ 'data.defs.0': { $exists: true } }, { 'data.rows.0': { $exists: true } }],
+  };
+  const before = {
+    $or: [{ year: { $lt: year } }, { year, month: { $lt: month } }],
+  };
+  const notOlder = {
+    $or: [{ year: { $gt: oldest.year } }, { year: oldest.year, month: { $gte: oldest.month } }],
+  };
+  return MonthlySchedule.findOne({
+    hospitalId,
+    sectionId,
+    serviceId,
+    role,
+    $and: [hasTemplate, before, notOlder],
+  })
+    .sort({ year: -1, month: -1 })
+    .lean();
+}
+
 function createPreviousTemplateNotFoundError() {
   const error = new Error('Önceki ay için taşınabilecek çizelge şablonu bulunamadı.');
   error.code = 'PREVIOUS_TEMPLATE_NOT_FOUND';
@@ -112,18 +143,15 @@ async function carryForwardMonthlyTemplate({
     };
   }
 
-  const from = previousYearMonth(year, month);
-  const previousScope = {
-    hospitalId,
-    sectionId,
-    serviceId,
-    role,
-    year: from.year,
-    month: from.month,
-  };
-  const previous = await MonthlySchedule.findOne(previousScope).lean();
+  // Şablonu olan EN SON önceki ayı bul (en fazla LOOKBACK_MONTHS geriye).
+  // Yalnızca bir önceki aya bakmak, arada boş ay varsa (ör. Kasım boş,
+  // son dolu ay Temmuz) Aralık'ın şablonsuz açılmasına yol açıyordu.
+  const previous = await findLatestTemplateSource({
+    hospitalId, sectionId, serviceId, role, year, month,
+  });
   const defs = sanitizeTemplateDefs(getScheduleDefs(previous));
   if (!defs.length) throw createPreviousTemplateNotFoundError();
+  const from = { year: previous.year, month: previous.month };
 
   const shiftOptions = sanitizeShiftOptions(previous?.data?.shiftOptions);
   const templateData = {
@@ -207,6 +235,8 @@ async function carryForwardMonthlyTemplate({
 module.exports = {
   carryForwardMonthlyTemplate,
   createPreviousTemplateNotFoundError,
+  findLatestTemplateSource,
+  LOOKBACK_MONTHS,
   previousYearMonth,
   sanitizeShiftOptions,
   sanitizeTemplateDefs,
