@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { getUiRuleMetaByUiRuleId } from "../rules/uiRuleAdapter.js";
 import UnifiedRulePreviewPanel from "../components/UnifiedRulePreviewPanel.jsx";
+import { ENFORCEMENT_LABEL, getRuleEnforcement } from "../rules/ruleEnforcement.js";
 
 /**
  * Nöbet Kuralları — Tam Sürüm
@@ -914,6 +915,14 @@ export default function DutyRulesTabExplained({ rules, setRules }) {
                       {it.id}
                     </span>
                     {badgeFor(it)}
+                    {(() => {
+                      const enf = ENFORCEMENT_LABEL[getRuleEnforcement(it.id)];
+                      return (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${enf.className}`} title={enf.title}>
+                          {enf.text}
+                        </span>
+                      );
+                    })()}
                     {!RULE_LIBRARY[it.id] && it.priority && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded border bg-slate-50 text-slate-600 border-slate-200">
                         {PRIORITY_LABEL[it.priority] || it.priority}
