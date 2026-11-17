@@ -1166,6 +1166,28 @@ const shouldShowRestRiskPanel =
   useEffect(() => {
     let cancelled = false;
     if (!sectionId) return () => { cancelled = true; };
+    // Bu ay için sunucuda kayıt yok: ekranda önceki baktığımız ayın isimleri
+    // ve önizlemesi kalmamalı; aksi halde otomatik kayıt
+    // onları bu aya yazıyordu. Görev satırları (şablon) korunur. Kullanıcı bir
+    // değişiklik yapana kadar hiçbir şey otomatik kaydedilmez.
+    const resetForEmptyMonth = () => {
+      savedAssignmentsRef.current = [];
+      setLastSavedInfo(null);
+      setManualChangeLog([]);
+      setMonthlyReadModelState({ scheduleId: null, updatedAt: null, generatedAt: null });
+      setAiPlan(readAiPlanFallback(year, month0));
+      setRoster(null);
+      setPreview(null);
+      setPins([]);
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      lastSavedSignatureRef.current = null;
+      suppressNextAutoSaveRef.current = true;
+      setAutoSaveStatus("idle");
+      setAutoSaveError(null);
+    };
     (async () => {
       setLoadingRemote(true);
       try {
@@ -1311,34 +1333,12 @@ const shouldShowRestRiskPanel =
           setAutoSaveStatus("idle");
           setAutoSaveError(null);
         } else {
-          savedAssignmentsRef.current = [];
-          setLastSavedInfo(null);
-          setManualChangeLog([]);
-          setMonthlyReadModelState({ scheduleId: null, updatedAt: null, generatedAt: null });
-          setAiPlan(readAiPlanFallback(year, month0));
-          if (autoSaveTimerRef.current) {
-            clearTimeout(autoSaveTimerRef.current);
-            autoSaveTimerRef.current = null;
-          }
-          lastSavedSignatureRef.current = null;
-          setAutoSaveStatus("dirty");
-          setAutoSaveError(null);
+          resetForEmptyMonth();
         }
       } catch (err) {
         if (cancelled) return;
         if (err?.status === 404) {
-          savedAssignmentsRef.current = [];
-          setLastSavedInfo(null);
-          setManualChangeLog([]);
-          setMonthlyReadModelState({ scheduleId: null, updatedAt: null, generatedAt: null });
-          setAiPlan(readAiPlanFallback(year, month0));
-          if (autoSaveTimerRef.current) {
-            clearTimeout(autoSaveTimerRef.current);
-            autoSaveTimerRef.current = null;
-          }
-          lastSavedSignatureRef.current = null;
-          setAutoSaveStatus("dirty");
-          setAutoSaveError(null);
+          resetForEmptyMonth();
         } else {
           console.error("[DutyRowsEditor] getMonthlySchedule err:", err);
           note(err?.message || "Sunucudan çizelge yüklenemedi.", "error");
