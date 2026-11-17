@@ -39,9 +39,11 @@ const LeaveTypeSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  // Bakiyeden düşülür mü? Varsayılan HAYIR: yalnızca yıllık izin gibi açıkça
+  // işaretlenen türler düşer (rapor, doğum izni vb. düşmemeli).
   isDeductible: {
     type: Boolean,
-    default: true
+    default: false
   },
   isActive: {
     type: Boolean,

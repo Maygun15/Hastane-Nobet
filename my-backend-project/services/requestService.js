@@ -33,6 +33,13 @@ function normalizeLeaveTypeCode(raw) {
   return value;
 }
 
+// Bakiyeden yalnızca AÇIKÇA "düşülür" işaretli izin türleri düşer (ör. yıllık izin).
+// Eski kayıtlarda alan boş olabiliyor; boş = düşülmez (rapor, doğum izni vb. bakiyeyi
+// yememeli). Tür bulunamazsa da düşülmez.
+function isDeductibleLeaveType(leaveType) {
+  return leaveType?.isDeductible === true;
+}
+
 function getDefaultAllocatedDays(leaveType) {
   const value = Number(leaveType?.maxDaysPerYear);
   return Number.isFinite(value) && value > 0 ? value : 0;
@@ -497,7 +504,7 @@ async function approveLeaveWithTransaction(req, request, previousStatus, adminNo
   }
 
   async function writeBalance(sess) {
-    if (leaveType && leaveType.isDeductible === false) return;
+    if (!isDeductibleLeaveType(leaveType)) return;
 
     const updateOptions = { upsert: true, new: true, setDefaultsOnInsert: true };
     if (sess) updateOptions.session = sess;
@@ -623,7 +630,7 @@ async function revertLeaveBalance(request) {
 
   const leaveType   = await LeaveType.findOne({ hospitalId: hid, code: leaveCode });
   const leaveTypeId = leaveType ? String(leaveType._id) : leaveCode;
-  const balance = await LeaveBalance.findOneAndUpdate(
+  const balance = !isDeductibleLeaveType(leaveType) ? null : await LeaveBalance.findOneAndUpdate(
     { hospitalId: hid, personId: pid, leaveTypeId, year },
     { $inc: { used: -totalDays } },
     { new: true }

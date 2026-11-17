@@ -15,6 +15,8 @@
 //   - Veritabanında tam olarak 1 hastane yoksa durur.
 //   - Bir kayda hospitalId eklemek, aynı benzersiz anahtarla zaten hastaneli bir
 //     kayıt varken çakışma yaratacaksa o koleksiyonu ATLAR ve raporlar.
+//   - hospitalId'si metin olarak kaydedilmiş kayıtları da gerçek kimlik tipine çevirir
+//     (izin türleri, kullanıcılar, vardiya tanımları); bkz. bölüm 2.
 //   - holidays bilerek dahil değil (2026–2027 için hastaneli kopyalar zaten var;
 //     eklemek (hospitalId,date) benzersizliğinde çakışır).
 'use strict';
@@ -93,6 +95,42 @@ async function main() {
       total += res.modifiedCount;
     } else {
       total += legacy.length;
+    }
+  }
+
+  // 2) Tip düzeltmesi: hospitalId metin (string) olarak kaydedilmiş kayıtlar.
+  // Sorgular ObjectId ile yapıldığından bu kayıtlar hiç bulunmuyordu
+  // (ör. izin türleri → izin onayında tür bulunamıyor; 55 kullanıcı ekranda yok).
+  // Değer bu hastanenin kimliğiyle aynıysa ObjectId'ye çevrilir. Farklıysa (geçersiz,
+  // ör. bir kullanıcı kimliği) yalnızca INVALID_FIX listesindeki koleksiyonlarda
+  // hastaneye bağlanır; diğerleri raporlanır.
+  const INVALID_FIX = new Set(['working_hours']);
+  const hidStr = String(hospitalId);
+  for (const name of [...existing].sort()) {
+    if (name === 'hospitals' || name.startsWith('system.')) continue;
+    const col = db.collection(name);
+    const sameStr = await col.countDocuments({ hospitalId: hidStr });
+    const otherStr = await col.countDocuments({ hospitalId: { $type: 'string', $ne: hidStr } });
+    if (!sameStr && !otherStr) continue;
+    if (sameStr) {
+      console.log(`  ${name}: ${sameStr} kayıtta hospitalId metin → ObjectId`);
+      if (APPLY) {
+        const res = await col.updateMany({ hospitalId: hidStr }, { $set: { hospitalId } });
+        console.log(`    yazıldı: ${res.modifiedCount}`);
+        total += res.modifiedCount;
+      } else total += sameStr;
+    }
+    if (otherStr) {
+      if (INVALID_FIX.has(name)) {
+        console.log(`  ${name}: ${otherStr} kayıtta hospitalId geçersiz metin → bu hastane`);
+        if (APPLY) {
+          const res = await col.updateMany({ hospitalId: { $type: 'string', $ne: hidStr } }, { $set: { hospitalId } });
+          console.log(`    yazıldı: ${res.modifiedCount}`);
+          total += res.modifiedCount;
+        } else total += otherStr;
+      } else {
+        console.log(`  ${name}: ${otherStr} kayıtta hospitalId geçersiz metin — ATLANDI (elle incelenmeli)`);
+      }
     }
   }
 
