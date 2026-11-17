@@ -510,7 +510,9 @@ async function approveLeaveWithTransaction(req, request, previousStatus, adminNo
           leaveTypeId,
           year,
           allocated: getDefaultAllocatedDays(leaveType),
-          used: 0,
+          // `used` burada OLMAMALI: aynı alanı $setOnInsert ve $inc birlikte
+          // güncelleyemez (MongoDB "would create a conflict at 'used'"). Yeni
+          // kayıtta $inc alanı 0'dan başlatır.
           remaining: getDefaultAllocatedDays(leaveType),
         },
         $inc: { used: totalDays },
