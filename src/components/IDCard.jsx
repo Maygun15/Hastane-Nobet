@@ -1,7 +1,7 @@
 // src/components/IDCard.jsx
 import React, { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
-import { maskPhone, maskTC } from "../utils/format.js";
+import { maskEmail, maskPhone, maskTC } from "../utils/format.js";
 
 const clean = (s) => (s ?? "").toString().trim();
 const uniq = (arr) => {
@@ -150,7 +150,7 @@ export default function IDCard({ person, serviceNames }) {
             </button>
           )}
         </div>
-        <Row label="Mail" value={person?.mail || person?.email || "-"} />
+        <Row label="Mail" value={maskEmail(person?.mail || person?.email)} />
       </div>
 
       {hasExtra && (

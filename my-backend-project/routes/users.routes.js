@@ -327,6 +327,8 @@ router.post('/quick-create', requireAdminOrStaff, async (req, res) => {
       await person.save();
     }
 
+    // Geçici şifre YALNIZCA bu yanıtta, bir kez döner (kayıtta sadece özeti tutulur).
+    // Önceden döndürülmüyordu → hesap açılıyor ama kimse şifreyi bilmiyordu.
     return res.json({
       ok: true,
       user: {
@@ -334,6 +336,8 @@ router.post('/quick-create', requireAdminOrStaff, async (req, res) => {
         personId: person ? String(person._id) : null,
         mustChangePassword: true,
       },
+      identifier: user.tc || user.email || user.phone || '',
+      tempPassword,
     });
   } catch (err) {
     console.error('POST /api/users/quick-create ERR:', err);
@@ -354,6 +358,7 @@ router.post('/bulk-from-personnel', requireAdmin, async (req, res) => {
     const persons = await Person.find(withHospitalFilter(req, { _id: { $in: personIds } })).lean();
     let created = 0;
     let skipped = 0;
+    const credentials = [];
 
     for (const p of persons) {
       const or = [{ personId: p._id }];
@@ -384,10 +389,12 @@ router.post('/bulk-from-personnel', requireAdmin, async (req, res) => {
       await user.save();
 
       await Person.findOneAndUpdate(withHospitalFilter(req, { _id: p._id }), { userId: user._id });
+      credentials.push({ name: user.name || '', identifier: user.tc || user.email || user.phone || '', tempPassword });
       created++;
     }
 
-    return res.json({ created, skipped });
+    // Geçici şifreler yalnızca bu yanıtta bir kez döner; yönetici personele elden verir.
+    return res.json({ created, skipped, credentials });
   } catch (err) {
     console.error('POST /api/users/bulk-from-personnel ERR:', err);
     return res.status(500).json({ message: 'Toplu oluşturma başarısız' });

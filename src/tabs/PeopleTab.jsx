@@ -18,7 +18,7 @@ import {
 import * as XLSX from "xlsx";
 import IDCard from "../components/IDCard.jsx";
 import PersonProfileModal from "../components/PersonProfileModal.jsx";
-import { maskPhone, maskTC } from "../utils/format.js";
+import { maskEmail, maskPhone, maskTC } from "../utils/format.js";
 import { toast } from "sonner";
 import { API, getToken, REQUIRE_BACKEND } from "../lib/api.js";
 import { useServices } from "../hooks/useServicesModel.js";
@@ -998,7 +998,7 @@ export default function PeopleTab({
                       >
                         <div className="text-sm font-medium">{p.name}</div>
                         <div className="text-xs text-slate-500">
-                          {maskTC(p.tc)} · {maskPhone(p.phone)} · {p.mail || p.email || "-"}
+                          {maskTC(p.tc)} · {maskPhone(p.phone)} · {maskEmail(p.mail || p.email)}
                         </div>
                       </li>
                     ))}
@@ -1044,7 +1044,7 @@ function PersonCard({ person: p, serviceOptions, onEdit, onDelete, onProfile, on
       toast.info("Bu personel için zaten kullanıcı hesabı mevcut.");
       return;
     }
-    if (!window.confirm(`"${p.name}" için giriş hesabı oluşturulsun mu?\nİlk şifre TC numarası olacak. TC yoksa sistem geçici şifre üretir.\nİlk girişte şifre değişimi istenecek.`)) return;
+    if (!window.confirm(`"${p.name}" için giriş hesabı oluşturulsun mu?\nSistem rastgele bir geçici şifre üretir ve bir kez gösterir.\nİlk girişte şifre değişimi istenecek.`)) return;
     setCreating(true);
     try {
       const res = await API.http.post("/api/users/quick-create", {
@@ -1057,6 +1057,14 @@ function PersonCard({ person: p, serviceOptions, onEdit, onDelete, onProfile, on
       });
       onUserCreated?.({ userId: String(res?.user?.id || "") });
       toast.success(`"${p.name}" için giriş hesabı oluşturuldu.`);
+      if (res?.tempPassword) {
+        window.alert(
+          `${p.name} — giriş bilgileri\n\n` +
+          `Kullanıcı adı: ${res.identifier || "(TC / e-posta / telefon)"}\n` +
+          `Geçici şifre: ${res.tempPassword}\n\n` +
+          `Bu şifre bir daha gösterilmez. Personele elden verin; ilk girişte değiştirmesi istenecek.`
+        );
+      }
     } catch (e) {
       toast.error(e?.message || "Kullanıcı oluşturulamadı.");
     } finally {
@@ -1110,7 +1118,7 @@ function PersonCard({ person: p, serviceOptions, onEdit, onDelete, onProfile, on
               {creating ? "Oluşturuluyor…" : "Giriş Hesabı Oluştur"}
             </button>
             <div className="px-1 text-[11px] text-slate-500">
-              İlk şifre TC numarası olacak, ilk girişte şifre değişimi istenecek.
+              Geçici şifre rastgele üretilir ve bir kez gösterilir; ilk girişte değiştirilir.
             </div>
           </div>
         )

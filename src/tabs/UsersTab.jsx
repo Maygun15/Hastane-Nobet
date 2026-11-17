@@ -13,7 +13,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { maskTC } from "../utils/format.js";
+import { maskTC, maskPhone, maskEmail } from "../utils/format.js";
 import useServicesModel from "../hooks/useServicesModel.js";
 import { API, http, getToken, REQUIRE_BACKEND } from "../lib/api.js";
 
@@ -595,7 +595,7 @@ export default function UsersTab() {
     }
 
     const ok = window.confirm(
-      `${unlinked.length} personel için otomatik kullanıcı oluşturulsun mu?\nGeçici şifre: TC numarası (TC yoksa Hastane2026!)`
+      `${unlinked.length} personel için otomatik kullanıcı oluşturulsun mu?\nHer biri için rastgele geçici şifre üretilir; liste bir kez indirilir (CSV). Dağıttıktan sonra dosyayı silin.`
     );
     if (!ok) return;
 
@@ -604,6 +604,22 @@ export default function UsersTab() {
         personIds: unlinked.map((p) => p.id || p._id),
       });
       toast.success(`${res.created || 0} kullanıcı oluşturuldu. ${res.skipped || 0} atlandı.`);
+      const creds = Array.isArray(res?.credentials) ? res.credentials : [];
+      if (creds.length) {
+        // Geçici şifreler yalnızca bu yanıtta gelir; yöneticiye bir kez indirilir.
+        const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+        const csv = ["Ad Soyad;Kullanıcı adı;Geçici şifre", ...creds.map((c) => [c.name, c.identifier, c.tempPassword].map(esc).join(";"))].join("\r\n");
+        const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `gecici-sifreler-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        toast.info("Geçici şifre listesi indirildi. Personele dağıttıktan sonra dosyayı silin.");
+      }
       refresh();
     } catch (e) {
       toast.error(e?.message || "Hata oluştu.");
@@ -840,8 +856,8 @@ export default function UsersTab() {
 
               <div className="mt-3 text-[12px] space-y-1.5 text-slate-600">
                 <div>TC: {maskTC(u.tc)}</div>
-                <div>Tel: {u.phone || "-"}</div>
-                <div>Mail: {u.email || "-"}</div>
+                <div>Tel: {maskPhone(u.phone)}</div>
+                <div>Mail: {maskEmail(u.email)}</div>
                 <div>Rol: {roleBadge(u.role)}</div>
                 <div>Servisler: {formatServiceNames(currentServiceIds)}</div>
                 <div className="pt-1">
