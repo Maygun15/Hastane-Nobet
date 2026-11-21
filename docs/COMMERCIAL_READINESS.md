@@ -187,11 +187,68 @@ A merkezi kurallar → B aylar arası → C eş zamanlı düzenleme → D zorunl
   - Planlama izinli kişiyi o günlere atamadı.
 - **Deneme sitesinde (Render) aynı test: doğrulama bekliyor** (yönetici girişi kullanıcıda).
 
+### G. Kod sağlığı ve işletim — ✅ tamamlandı (açıklar aşağıda)
+**Lint (G1):**
+- ESLint kuruldu (`npm run lint`). Başlangıç: 335 hata, 40 uyarı. Şimdi: **0 hata**, 177 uyarı.
+- Uyarılar: kullanılmayan değişken 115, kanca bağımlılığı 40, diğer 22.
+- Lint'in bulduğu **gerçek hatalar**:
+  - `HospitalRosterApp`, `ServicesTab`, `PinningModal`: erken `return` sonrası kanca çağrısı (oturum açınca/kapatınca "Rendered more hooks" çökmesi riski). Oturumlu gövde ayrı bileşene alındı.
+  - `DutyRowsEditor` çakışma yedeği: `payload` `catch` içinde tanımsızdı (C paketinde benim hatam). Yedek alınamıyordu.
+  - Tanımsız `emitPlannerAiPlan` çağrısı; `finally` içinde `return`.
+  - `RosterTable` eksik `</div>` (ölü dosya); `validators.js` ESM'de `module.exports`.
+
+**Paket açıkları (G2):**
+- `npm audit fix` yalnız uyumlu sürümlerle uygulandı.
+- Ön yüz 17 → 3 bulgu. Sunucu 43 → 20 orta; yüksek/kritik 0 (mongoose, proxy-addr, multer, axios, body-parser …).
+- Kullanılmayan `nodemailer` (yüksek) kaldırıldı; e-posta Resend API ile gidiyor.
+- Kalan: `xlsx` (yüksek, düzeltmesi yok, **pakete giriyor**), `vite`/`esbuild` (ana sürüm), `exceljs` → `uuid`.
+
+**CI (G3):** ön yüzde lint + node testleri + vitest + üretim bağımlılığı denetimi (engelleyici) + tüm paket denetimi (bilgi) + derleme; sunucuda denetim + sözdizimi + jest. Adımlar yerelde çalıştırıldı.
+
+**Günlük hijyeni (G4):**
+- `utils/safeLog.js`: e-posta, TC/telefon, `mongodb://` adresi ve Bearer jetonu maskelenir.
+- Mongo çift kayıt hatasında değer değil alan adı yazılır.
+- 27 rota hata kaydı ve genel hata yakalayıcı buna geçti.
+- Personel pasifleştirmede ad yerine kimlik yazılır; geliştirme istek günlüğünde sorgu dizgesi yazılmaz.
+- Sentry: `sendDefaultPii: false`, `beforeSend` gövde, çerez ve yetki başlığını çıkarır.
+- Test: `safeLog.test.js` 3.
+
+**Yedek / geri yükleme (G5):**
+- Bulgu: eski `backup.js` `.env`'i okuyordu. Yereldeki `.env` **üretim kümesini** gösteriyor. Adres komut satırına yazılıyor, hata mesajında açığa çıkabiliyordu.
+- Yeni `backup.js` + `restore-verify.js` + `backupLib.js`:
+  - `.env` okunmaz; adres 0600 geçici dosyayla verilir.
+  - Üretim kümesi açık izin (`BACKUP_ALLOW_PROD=1`) olmadan reddedilir.
+  - Manifest: koleksiyon sayısı ve `_id` özeti.
+- **Doğrulandı (yerel):** 29 koleksiyon, 63 709 belge; yedek → ayrı veritabanı → birebir aynı. Üretim adresiyle deneme reddedildi.
+- **Deneme (Atlas) kümesinde doğrulanmadı:** adres yalnız Render'da (engel).
+
+**Dizin taşıması (G5):**
+- Bulgu: üretimde `autoIndex` kapalı. F'nin tekrar gönderim koruması (`clientRequestId` tekil dizini) ve E'nin geçmiş dizinleri **üretimde kendiliğinden oluşmazdı**. Koruma yalnız "önce ara" mantığıyla çalışırdı; aynı anda iki gönderimde çift kayıt olabilirdi.
+- `scripts/ensureCommercialIndexes.js`: kuru çalıştırma varsayılan; yalnız oluşturur; çift kayıt kontrolü yapar.
+- Boş veritabanında doğrulandı: 11 dizin oluştu, ikinci çalıştırmada 0.
+
+**Belge:** `docs/OPERASYON.md` — kurulum, güncelleme sırası, yedek, geri yükleme, kod geri dönüşü, açık işletim konuları.
+
+**Test:** sunucu 444, vitest 57, node 16, derleme ✅, E2E 37/37 (paket güncellemelerinden sonra).
+
 ## Commit'ler
-(her paketten sonra eklenir)
+| Commit | Paket |
+|---|---|
+| 80a217b | A — kurum kuralları sunucuda, kural sürümü |
+| b70750d | B — aylar arası planlama |
+| c94a552 | C + E — revizyon kontrolü, yayın sürümleri, işlem geçmişi |
+| 49e9b62 | D — zorunlu kurallar, haftalık saat, açıklamalar |
+| 812afd6 | F — izin türü kısaltması, tekrar güvenli talep |
+| be58c56 | G1 — ESLint, 0 hata, kanca hataları |
+| ea917d0 | G2 — paket güncellemeleri |
+| 0189be7 | G3 — CI |
+| 34d8b6d | G4 — günlük hijyeni |
+| 0180001 | G5 — yedek/geri yükleme, dizin taşıması |
 
 ## Açık engeller
-- **Deneme sitesinde izin onayı testi — bekliyor:** Render deneme sitesinin yönetici oturumu kapalı; şifre kullanıcıda. Aynı senaryo yerelde F paketinde test edilecek.
+- **Deneme sitesinde izin onayı testi — bekliyor:** Render deneme sitesinin yönetici oturumu kapalı; şifre kullanıcıda. Aynı senaryo yerelde F paketinde geçti (7/7).
+- **Deneme kümesinde yedek/geri yükleme — bekliyor:** Atlas deneme adresi yalnız Render ortam değişkeninde. Erişim bilgisi alınmadı (yetki kapsamı dışında).
+- **Bu dal deneme sitesine yayınlanmadı:** `render.yaml` `vercel-preview-stabilizasyon` dalını izliyor. Dal gönderimi (push) ve birleştirme onay bekliyor.
 
 ## Sıradaki somut işlem
-G — lint, paket açıkları, CI testleri, kayıt temizliği, yedek/geri yükleme, kurulum/güncelleme/geri dönüş belgesi.
+Bütünleşik doğrulama (tarayıcıda yerel arayüz) ve teslim raporu.

@@ -34,6 +34,11 @@ jobs:
       - name: Security audit (üretim bağımlılıkları)
         run: npm audit --omit=dev --audit-level=high
 
+      # xlsx devDependencies'te görünür ama pakete girer; düzeltmesi yok (docs/OPERASYON.md §7).
+      - name: Security audit (tümü — bilgi)
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
       - name: Build
         run: npm run build
         env:
