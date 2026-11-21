@@ -250,5 +250,91 @@ A merkezi kurallar → B aylar arası → C eş zamanlı düzenleme → D zorunl
 - **Deneme kümesinde yedek/geri yükleme — bekliyor:** Atlas deneme adresi yalnız Render ortam değişkeninde. Erişim bilgisi alınmadı (yetki kapsamı dışında).
 - **Bu dal deneme sitesine yayınlanmadı:** `render.yaml` `vercel-preview-stabilizasyon` dalını izliyor. Dal gönderimi (push) ve birleştirme onay bekliyor.
 
-## Sıradaki somut işlem
-Bütünleşik doğrulama (tarayıcıda yerel arayüz) ve teslim raporu.
+## Bütünleşik doğrulama (son)
+| Kontrol | Sonuç |
+|---|---|
+| Sunucu testleri (jest) | 40 dosya, **444/444** ✅ |
+| Ön yüz birim (node --test) | **16/16** ✅ |
+| Ön yüz bileşen (vitest) | **57/57** ✅ |
+| Lint | **0 hata**, 177 uyarı |
+| Derleme (vite) | ✅ (büyük parça uyarısı mevcut) |
+| E2E A, B, C, E, F (yerel, paket güncellemesi sonrası) | **37/37** ✅, tekrarlanabilir |
+| Yedek → geri yükleme (yerel) | 29 koleksiyon / 63 709 belge birebir ✅ |
+| Dizin taşıması (boş veritabanı) | 11 dizin oluştu; ikinci çalıştırma 0 ✅ |
+| Tarayıcı (yerel arayüz) | Yönetici girişi → Aralık / Acil: yayın durumu, işlem geçmişi (sürüm 2), kural sürümü uyarısı + "Güncel kurallarla doğrula", ay başı kontrol notu ✅. Çıkış → personel girişi: kanca hatası yok, kişisel görünüm açıldı ✅ |
+| Deneme sitesi (Render) | **Bu dal yayınlanmadı.** Yönetici girişi kullanıcıda; izin onayı testi bekliyor |
+
+## Teslim raporu
+
+### Kullanıcının göreceği iyileştirmeler
+1. **Kurum kuralları tek yerde (sunucu).**
+   - Tarayıcıya göre değişen kural yok; plan hangi kural sürümüyle yapıldıysa görünür.
+   - Kural değişince yayın engellenir ve "Güncel kurallarla doğrula" sunulur.
+2. **Ay dönümü güvenli.** Ayın ilk günleri önceki ayın görevleriyle kontrol edilir (dinlenme, gece sonrası, art arda gün, haftalık saat). Önceki ay yoksa açık uyarı verilir.
+3. **Eş zamanlı düzenlemede sessiz kayıp yok.**
+   - İkinci kaydeden "X tarafından değiştirildi" mesajını görür.
+   - Kendi değişiklikleri yedeklenir: "Güncel planı yükle / yedeğimi geri getir / benimkini kaydet".
+   - Bağlantı kopup tekrar gönderilince çift kayıt olmaz.
+4. **Yayın sürümleri ve işlem geçmişi.**
+   - "Değişiklikleri yayınla (sürüm N)"; yalnız etkilenen personele bildirim gider.
+   - Kim / hangi nöbet / ne zaman listesi tutulur.
+5. **Zorunlu kurallar.**
+   - Haftalık saat sınırı motor ve risk panelinde aynı değerle çalışır; gizli 72 saat kaldırıldı.
+   - "Atanamadı" nedenleri Türkçe ve öneriyle gösterilir.
+6. **İzin.**
+   - İzin türü kısaltması ve "düşülür" bilgisi kaydedilir.
+   - Rapor yıllık izinden düşmez; çift onay iki kez düşmez.
+   - Talep formu bağlantı kopunca korunur ve güvenle tekrar gönderilir.
+7. **Kararlılık.** Oturum açma/kapamada çökme riski taşıyan kanca hataları ve düzenleyicinin çakışma yedeği hatası giderildi.
+
+### Değişen dosyalar ve commit'ler
+- `258ff30..HEAD`: 82 dosya, +8056 / −2370 (kilit dosyalar dahil). Commit listesi yukarıda.
+- Başlıca dosyalar:
+  - **Sunucu:** `services/institutionRules.js`, `services/scheduler/monthBoundary.js`, `services/scheduleChangeService.js`, `models/ScheduleChange.js`, `routes/schedules.routes.js`, `routes/dutyRules.routes.js`, `routes/requests.routes.js`, `utils/safeLog.js`, `scripts/backup*.js`, `scripts/restore-verify.js`, `scripts/ensureCommercialIndexes.js`.
+  - **Ön yüz:** `InstitutionRulesPanel.jsx`, `SchedulePublishBar.jsx`, `DutyRowsEditor.jsx`, `MyRequestsTab.jsx`, `HospitalRosterApp.jsx`.
+  - **Belgeler:** `docs/OPERASYON.md`, `docs/KURAL_ENVANTERI.md`, bu dosya.
+
+### Taşımalar ve geri dönüş
+`docs/OPERASYON.md` §3 ve §6'da. Sıra:
+1. Yedek.
+2. Sunucu, sonra ön yüz.
+3. `ensureCommercialIndexes.js --apply`. **Üretimde zorunlu:** autoIndex kapalı; dizin olmadan aynı anda iki gönderimde çift talep oluşabilir.
+4. `fixLeaveTypes.js --apply`.
+5. Kurum kurallarını gir veya taşı.
+6. Planları yeniden doğrula.
+
+Diğer yeni alanlar taşıma gerektirmez. Kod geri dönüşü veri bozmaz; geri dönülen eski sürümde eş zamanlı düzenleme koruması kalkar.
+
+### Açık kalanlar
+- Bu dal deneme sitesine yayınlanmadı. Deneme sitesinde izin onayı ve yedek/geri yükleme doğrulanmadı (yönetici girişi ve Atlas adresi kullanıcıda).
+- `xlsx` (yüksek, düzeltmesi yok, kullanıcı paketine giriyor) → SheetJS CDN sürümü veya `exceljs`. `vite` 5→8 ana sürüm.
+- Lint uyarıları: 177 (kanca bağımlılığı 40 — olası eski değer hataları).
+- Motorda henüz olmayan kurallar: hamile/sağlık kısıtı, haftada 1 boş gün, onaylı boşluk isteği engeli, bayram eşitliği (`KURAL_ENVANTERI.md`).
+- Bildirim yalnız uygulama içi; e-posta/SMS kararı yok.
+- Otomatik zamanlanmış yedek yok. `deploy.yml` (Railway) ile deneme (Render) dağıtım hedefi farklı.
+
+### Ürün sahibi / kurum / hukuk kararı gerekenler
+1. **Kural değerleri ve kaynakları:** haftalık saat sınırı (önceki 72 saatin kaynağı belirsiz), en az dinlenme, art arda gün. Her biri için mevzuat maddesi veya kurum kararı tarihi (**kurum**).
+2. **Eksik saat devri ve aylık norm:** devredilsin mi, sıfırlansın mı (**kurum**).
+3. **Hamile / sağlık kısıtı:** personel kartında hangi bilgi, kim görür. Sağlık verisi KVKK m.6 kapsamında özel nitelikli (**hukuk**).
+4. **Dağıtım modeli ve veri yeri:** bulut (Atlas yurt dışı bölge) ya da kurum içi; yedek yeri ve saklama süresi (**hukuk + kurum BT**).
+5. **Bildirim kanalı:** e-posta / SMS, rıza metni (**ürün + hukuk**).
+6. **Yayın sonrası değişiklikte** yalnız etkilenene bildirim yeterli mi; onay zorunluluğu (**ürün**).
+
+### İlk sonraki iş
+`ticari-hazirlik` dalını deneme ortamına yayınlamak (onayınızla):
+1. Dalı gönder (push), `render.yaml`'ın izlediği dala al.
+2. Deneme veritabanında `ensureCommercialIndexes.js` (kuru → uygula).
+3. Kurum kurallarını gir; yönetici girişiyle E2E A–F akışlarını deneme sitesinde tekrarla (izin onayı dahil).
+
+### Hazırlık değerlendirmesi
+- **Pilot (tek servis, Acil, gözetimli): hazır sayılabilir.** Koşullar: deneme sitesinde doğrulama (yukarıdaki ilk iş) ve kural değerlerinin kurumca onaylanması.
+  - Veri kaybı riskleri (eş zamanlı kayıt, kişi kimliği kaybı, tekrar gönderim) ve kural tutarsızlıkları giderildi.
+  - Testlerle ve uçtan uca gösterildi.
+- **Ticari satış (çok kurumlu, gözetimsiz): henüz değil.** Eksikler:
+  - Zorunlu kural setinin tamamı (hamile/sağlık, haftalık boş gün).
+  - KVKK kararları (veri yeri, sağlık verisi, saklama).
+  - Otomatik yedek ve izleme.
+  - `xlsx` açığı.
+  - Deneme sitesinde bağımsız kabul testi.
+- Tahmini kalan: 2–3 iş paketi (zorunlu kurallar, işletim otomasyonu, KVKK uygulaması) + kurum kararları.
