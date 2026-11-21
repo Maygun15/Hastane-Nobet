@@ -8,7 +8,7 @@ on:
 
 jobs:
   frontend:
-    name: Frontend Build
+    name: Frontend Lint, Test, Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +21,18 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Lint (0 hata zorunlu; uyarılar izlemede)
+        run: npm run lint
+
+      - name: Unit tests (node --test)
+        run: npm test
+
+      - name: UI tests (vitest)
+        run: npm run test:ui
+
+      - name: Security audit (üretim bağımlılıkları)
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Build
         run: npm run build
@@ -47,8 +59,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Security audit
-        run: npm audit --audit-level=high
+      - name: Security audit (üretim bağımlılıkları)
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Syntax check — routes
         run: node --check $(find routes models middleware services -name "*.js" | tr '\n' ' ') index.js
