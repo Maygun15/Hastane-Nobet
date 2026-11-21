@@ -1,76 +1,41 @@
 #!/usr/bin/env node
-// scripts/backup.js — Otomatik MongoDB yedekleme
-// Kullanım: node scripts/backup.js
-// Cron örneği: 0 3 * * * cd /app && node scripts/backup.js >> /var/log/backup.log 2>&1
-//
-// Gerektirilen: mongodump PATH'te olmalı (MongoDB Tools paketi)
-// Ortam değişkenleri: MONGODB_URI, BACKUP_DIR (varsayılan: ./backups), BACKUP_KEEP_DAYS (varsayılan: 7)
-
+// scripts/backup.js — MongoDB yedeği (tek dosya, gzip arşiv) + doğrulama bildirimi (manifest).
+// Kullanım:  MONGODB_URI=... BACKUP_DIR=/guvenli/yol node scripts/backup.js
+// Ortam: MONGODB_URI (zorunlu, .env OKUNMAZ — yanlışlıkla üretime bağlanmasın), BACKUP_DIR
+//        (varsayılan ./backups), BACKUP_KEEP_DAYS (7), BACKUP_DB_NAME (varsayılan hastane — uygulamayla aynı).
+//        Üretim kümesi için BACKUP_ALLOW_PROD=1 açıkça verilmelidir.
+// Geri yükleme ve doğrulama: scripts/restore-verify.js — docs/OPERASYON.md
 'use strict';
-const { execSync, spawnSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
-const fs   = require('fs');
+const { assertAllowed, runTool, collectionManifest, hostOf } = require('./backupLib');
 
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+async function main() {
+  const uri = process.env.MONGODB_URI;
+  assertAllowed(uri, { label: 'yedek', allowProdEnv: 'BACKUP_ALLOW_PROD' });
+  // Uygulama her zaman 'hastane' veritabanını kullanır (index.js dbName); adresteki ad dikkate alınmaz.
+  const dbName = process.env.BACKUP_DB_NAME || 'hastane';
+  const dir = path.resolve(process.env.BACKUP_DIR || path.join(__dirname, '..', 'backups'));
+  const keepDays = parseInt(process.env.BACKUP_KEEP_DAYS || '7', 10);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 
-const MONGODB_URI    = process.env.MONGODB_URI;
-const BACKUP_DIR     = path.resolve(process.env.BACKUP_DIR || path.join(__dirname, '..', 'backups'));
-const KEEP_DAYS      = parseInt(process.env.BACKUP_KEEP_DAYS || '7', 10);
-const DB_NAME        = process.env.BACKUP_DB_NAME || 'hastane';
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const archive = path.join(dir, `backup-${dbName}-${ts}.archive.gz`);
+  console.log(`[yedek] başlıyor: veritabanı ${dbName}`);
+  runTool('mongodump', uri, [`--db=${dbName}`, `--archive=${archive}`, '--gzip']);
+  fs.chmodSync(archive, 0o600);
+  const collections = await collectionManifest(uri, dbName);
+  const manifest = { createdAt: new Date().toISOString(), db: dbName, host: hostOf(uri).replace(/^[^.]*/, '<küme>'), archive: path.basename(archive), bytes: fs.statSync(archive).size, collections };
+  fs.writeFileSync(`${archive}.manifest.json`, JSON.stringify(manifest, null, 2), { mode: 0o600 });
+  const total = Object.values(collections).reduce((s, c) => s + c.count, 0);
+  console.log(`[yedek] tamam: ${Object.keys(collections).length} koleksiyon, ${total} belge, ${manifest.bytes} bayt → ${archive}`);
 
-if (!MONGODB_URI) {
-  console.error('[backup] MONGODB_URI tanımlı değil. .env dosyasını kontrol edin.');
-  process.exit(1);
-}
-
-// mongodump mevcut mu?
-const dumpCheck = spawnSync('mongodump', ['--version'], { stdio: 'pipe' });
-if (dumpCheck.status !== 0 && dumpCheck.error) {
-  console.error('[backup] mongodump bulunamadı. MongoDB Database Tools kurulu olmalı.');
-  process.exit(1);
-}
-
-// Yedek klasörü oluştur
-fs.mkdirSync(BACKUP_DIR, { recursive: true });
-
-// Zaman damgalı klasör adı
-const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-const outDir = path.join(BACKUP_DIR, `backup-${ts}`);
-
-console.log(`[backup] Başlatılıyor: ${ts}`);
-console.log(`[backup] Hedef: ${outDir}`);
-
-try {
-  execSync(
-    `mongodump --uri="${MONGODB_URI}" --db="${DB_NAME}" --out="${outDir}"`,
-    { stdio: 'inherit', timeout: 5 * 60 * 1000 }
-  );
-  console.log('[backup] Yedekleme tamamlandı.');
-} catch (err) {
-  console.error('[backup] mongodump hatası:', err?.message || err);
-  process.exit(1);
-}
-
-// Eski yedekleri temizle (KEEP_DAYS'den eski)
-const cutoff = Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000;
-let removed = 0;
-try {
-  const entries = fs.readdirSync(BACKUP_DIR);
-  for (const entry of entries) {
-    if (!entry.startsWith('backup-')) continue;
-    const fullPath = path.join(BACKUP_DIR, entry);
-    const stat = fs.statSync(fullPath);
-    if (stat.isDirectory() && stat.mtimeMs < cutoff) {
-      fs.rmSync(fullPath, { recursive: true, force: true });
-      removed++;
-      console.log(`[backup] Eski yedek silindi: ${entry}`);
-    }
+  const cutoff = Date.now() - keepDays * 86400000;
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.startsWith('backup-')) continue;
+    const p = path.join(dir, f);
+    if (fs.statSync(p).mtimeMs < cutoff) { fs.rmSync(p, { recursive: true, force: true }); console.log(`[yedek] eski yedek silindi: ${f}`); }
   }
-} catch (e) {
-  console.warn('[backup] Temizlik hatası:', e?.message || e);
 }
 
-// Mevcut yedek listesi
-const remaining = fs.readdirSync(BACKUP_DIR).filter((e) => e.startsWith('backup-'));
-console.log(`[backup] Tamamlandı. Mevcut yedekler: ${remaining.length}, Silinen: ${removed}`);
-console.log(`[backup] Sonuç: ${outDir}`);
+main().catch((e) => { console.error('[yedek] HATA:', e.message); process.exit(1); });

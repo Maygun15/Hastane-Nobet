@@ -33,3 +33,4 @@ dist-ssr
 my-backend-project/audit-input.json
 my-backend-project/kullanicilar.xlsx
 request.json
+my-backend-project/backups/
