@@ -89,7 +89,7 @@ function shiftRef(days) {
 }
 
 /** Atamaları bağımsız denetler; ihlal listesi döner. */
-function auditAssignments({ assignments = [], days = [], staff = [], limits = {} }) {
+function auditAssignments({ assignments = [], days = [], staff = [], limits = {}, priorAssignments = [] }) {
   const L = { ...DEFAULT_LIMITS, ...limits };
   const refs = shiftRef(days);
   const people = new Map(staff.map((p) => [personKey(p), p]));
@@ -105,7 +105,9 @@ function auditAssignments({ assignments = [], days = [], staff = [], limits = {}
       _ref: ref,
     };
   };
-  const add = (type, a, detail = '') => out.push({
+  // Önceki dönem görevleri (İP-2) yalnız sıralı kontrollere katılır; ihlal yalnız bu ayın
+  // görevine yazılır (önceki ayın görevi bu planda değiştirilemez).
+  const add = (type, a, detail = '') => a?._prior ? null : out.push({
     type, date: a.date, personId: String(a.personId || ''), personName: a.personName || '',
     rowId: String(a.shiftId || a.rowId || ''), shiftCode: a.shiftCode || '', detail,
   });
@@ -123,6 +125,12 @@ function auditAssignments({ assignments = [], days = [], staff = [], limits = {}
     if (a._ref?.day && isWeekendLikeDay(a._ref.day) && String(a.shiftCode).toUpperCase() === 'M4') add('HAFTA_SONU_M4', a);
     const codes = personCodes(p);
     if (codes.length && a.shiftCode && !codes.includes(String(a.shiftCode).toUpperCase())) add('VARDIYA_KODU_UYGUN_DEGIL', a);
+  }
+
+  for (const raw of priorAssignments || []) {
+    const k = String(raw.personId || '');
+    if (!byPerson.has(k)) continue; // bu ay görevi olmayan kişinin önceki görevi önemsiz
+    byPerson.get(k).push({ ...raw, hours: Number(raw.hours || 0), _prior: true });
   }
 
   const minRest = Number(L.MIN_REST_HOURS || 0) * 60;
@@ -218,7 +226,7 @@ const fmtDate = (d) => {
  * Tüm riskleri tek listede, kararlarıyla birlikte döner.
  * acks: { [key]: { by, byName, at, note } } — MonthlySchedule.riskAcks
  */
-function computeScheduleRisks({ assignments = [], days = [], staff = [], preferencesByPerson = {}, acks = {}, limits = {} } = {}) {
+function computeScheduleRisks({ assignments = [], days = [], staff = [], preferencesByPerson = {}, acks = {}, limits = {}, priorAssignments = [] } = {}) {
   const rowLabel = new Map();
   for (const d of days || []) for (const s of d.shifts || []) rowLabel.set(String(s.id), `${s.area || s.label || ''} (${s.code || ''})`.trim());
   const risks = [];
@@ -244,7 +252,7 @@ function computeScheduleRisks({ assignments = [], days = [], staff = [], prefere
   }
 
   const seen = new Set();
-  for (const v of auditAssignments({ assignments, days, staff, limits })) {
+  for (const v of auditAssignments({ assignments, days, staff, limits, priorAssignments })) {
     const key = `KURAL|${v.type}|${v.date}|${v.personId}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -285,7 +293,7 @@ function computeScheduleRisks({ assignments = [], days = [], staff = [], prefere
  * engellemiyor ve atama yeni bir kural ihlali doğurmuyor. Uygun olmayanlar
  * gerekçesiyle döner (yönetici bilerek seçebilir; atama ekranı ayrıca uyarır).
  */
-function rankSlotCandidates({ assignments = [], days = [], staff = [], preferencesByPerson = {}, date, rowId, limits = {} } = {}) {
+function rankSlotCandidates({ assignments = [], days = [], staff = [], preferencesByPerson = {}, date, rowId, limits = {}, priorAssignments = [] } = {}) {
   const ref = shiftRef(days).get(`${date}|${rowId}`);
   if (!ref) return { slot: null, candidates: [] };
   const { shift, day } = ref;
@@ -299,7 +307,7 @@ function rankSlotCandidates({ assignments = [], days = [], staff = [], preferenc
     if (!byPerson.has(k)) byPerson.set(k, []);
     byPerson.get(k).push(a);
   }
-  const countViolations = (list, person) => auditAssignments({ assignments: list, days, staff: [person], limits })
+  const countViolations = (list, person) => auditAssignments({ assignments: list, days, staff: [person], limits, priorAssignments })
     .filter((v) => v.type !== 'ALAN_UYGUN_DEGIL' && v.type !== 'VARDIYA_KODU_UYGUN_DEGIL').length;
 
   const candidates = [];

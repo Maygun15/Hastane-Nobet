@@ -61,6 +61,33 @@ A merkezi kurallar → B aylar arası → C eş zamanlı düzenleme → D zorunl
 - vitest 50 ✅
 - E2E A 13/13 ✅ (`node scripts/e2e/run.mjs A`)
 
+### B. Aylar arası planlama — ✅ tamamlandı
+**Önceki davranış (kanıt):** Motor girdisi yalnız seçili ayın günleri (`inputBuilder.js`); kişi sayaçları `consecutiveDays: 0` ile başlıyordu (`contracts/staff.js:24`); risk paneli ay içi. 1 Ocak'ta 31 Aralık gece nöbetçisi yazılabiliyordu: önceki görev olmadan 40 denemenin 19'unda.
+
+**Kabul kriterleri:**
+1. Geriye bakış etkin kurallardan türetilir.
+2. Önceki görevler kişi durumunu kurar ve aday kurallarında görünür; çıktıya ve bu ayın toplamlarına girmez.
+3. Gece yarısını aşan vardiya, yıl değişimi ve ay uzunlukları doğru.
+4. Önceki dönem yoksa "missing" + açıklama.
+5. Planlama ve risk/yayın kontrolü aynı veri ve aynı kural.
+
+**Değişiklik:**
+- `services/scheduler/monthBoundary.js`
+  - `computeLookbackDays`: dinlenme = ⌈(en uzun vardiya + en az dinlenme)/24⌉, gece sonrası 1, ardışık N, haftalık ISO pazartesi; üst sınır 31.
+  - `loadPriorAssignments`: Assignment koleksiyonu, personel bazında, servisler arası. Projeksiyon yoksa önceki ay planı. İsimle eşleşen eski kayıtlar da alınır.
+  - `seedPersonStateFromPrior`
+- `generateMonthlyPlan({priorAssignments})`
+- `buildCandidateContext`: önceki görevleri ekler.
+- `scheduleRiskService.auditAssignments({priorAssignments})`: ihlal yalnız bu ayın görevine yazılır.
+- Planlama yanıtı ve `ruleContext.boundary`, `/risks` ve `/revalidate` → `boundary`.
+- Ön yüz: yayın çubuğunda "Ay başı kontrolü" satırı; planlama sonrası "missing" uyarısı.
+
+**Test:**
+- `test/monthBoundary.test.js` 15/15. Motor senaryoları 20'şer tekrar, kural kontrolüyle.
+- Ayırt edicilik kanıtı: aynı senaryo önceki görevsiz 40 denemede 19 ihlal, önceki görevle 0.
+- vitest 52 ✅.
+- E2E B 5/5: 31 Ara gece nöbetçisi 10 kişi → 1 Oca ihlal 0; V1 sonrası dinlenme ihlali 0; Mart yokken "missing".
+
 ## Commit'ler
 (her paketten sonra eklenir)
 
@@ -68,4 +95,4 @@ A merkezi kurallar → B aylar arası → C eş zamanlı düzenleme → D zorunl
 - **Deneme sitesinde izin onayı testi — bekliyor:** Render deneme sitesinin yönetici oturumu kapalı; şifre kullanıcıda. Aynı senaryo yerelde F paketinde test edilecek.
 
 ## Sıradaki somut işlem
-B — aylar arası planlama.
+C — eş zamanlı düzenleme ve tekrar koruması.

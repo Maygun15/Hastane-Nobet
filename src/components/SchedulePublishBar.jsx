@@ -225,6 +225,21 @@ export function RuleVersionLine({ status, block, busy, onRevalidate }) {
   );
 }
 
+
+export function BoundaryLine({ boundary }) {
+  if (!boundary || !boundary.status) return null;
+  const warn = boundary.status === "missing";
+  return (
+    <div
+      data-testid="boundary-line"
+      role={warn ? "alert" : undefined}
+      className={`mt-2 rounded-lg border px-3 py-1.5 text-[12px] ${warn ? "border-amber-300 bg-white text-amber-900" : "border-slate-200 bg-white text-slate-600"}`}
+    >
+      <span className="font-semibold">Ay başı kontrolü:</span> {boundary.message}
+    </div>
+  );
+}
+
 export default function SchedulePublishBar({ sectionId, serviceId = "", role = "", year, month, refreshKey }) {
   const [publication, setPublication] = useState(null);
   const [exists, setExists] = useState(false);
@@ -236,6 +251,7 @@ export default function SchedulePublishBar({ sectionId, serviceId = "", role = "
   // Kurum kuralı sürümü (İP-1): { status: 'current'|'outdated'|'unknown', planVersion, currentVersion, ... }
   const [ruleStatus, setRuleStatus] = useState(null);
   const [ruleBlock, setRuleBlock] = useState(null); // yayın/kayıt sırasında gelen kural engeli
+  const [boundary, setBoundary] = useState(null);   // aylar arası kontrol durumu (İP-2)
   const scope = { sectionId, serviceId, role, year, month };
 
   const load = useCallback(async () => {
@@ -248,6 +264,7 @@ export default function SchedulePublishBar({ sectionId, serviceId = "", role = "
       if (schedule) {
         const r = await getScheduleRisks({ sectionId, serviceId, role, year, month }).catch(() => null);
         setRisks(Array.isArray(r?.risks) ? r.risks : []);
+        setBoundary(r?.boundary || null);
       } else {
         setRisks([]);
       }
@@ -388,6 +405,7 @@ export default function SchedulePublishBar({ sectionId, serviceId = "", role = "
       </div>
 
       <RuleVersionLine status={ruleStatus} block={ruleBlock} busy={busy} onRevalidate={revalidate} />
+      <BoundaryLine boundary={boundary} />
 
       {risks.length > 0 && (
         <div className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-800" data-testid="risk-panel">

@@ -2653,11 +2653,24 @@ async function loadScheduleRisks(query) {
   ]);
   const assignments = Array.isArray(doc?.data?.assignments) ? doc.data.assignments : [];
   const limits = ruleInfo ? institutionRules.toSchedulerRules(ruleInfo) : {};
-  const context = { assignments, days, staff, preferencesByPerson, limits, resolvedRules: ruleInfo };
+  // Aylar arası (İP-2): planlamayla aynı geriye bakış ve aynı veri kaynağı.
+  const monthBoundary = require('../services/scheduler/monthBoundary');
+  const lookback = monthBoundary.computeLookbackDays({ rules: limits, shiftMetaByCode: input.shiftMetaByCode, year: query.year, month: query.month });
+  const boundary = await monthBoundary.loadPriorAssignments({
+    hospitalId: query.hospitalId, sectionId: query.sectionId, serviceId: query.serviceId, role: query.role,
+    year: query.year, month: query.month, staff: staff.map((p) => ({ ...p, id: String(p?._id || p?.id || '') })),
+    lookbackDays: lookback.days, shiftMetaByCode: input.shiftMetaByCode,
+  }).catch(() => ({ assignments: [], status: 'missing', message: 'Önceki dönem görevleri okunamadı; ay başı kontrolü sınırlı.', lookbackDays: lookback.days }));
+  const boundarySummary = {
+    status: boundary.status, message: boundary.message, lookbackDays: boundary.lookbackDays,
+    from: boundary.from || null, to: boundary.to || null, priorCount: (boundary.assignments || []).length,
+  };
+  const context = { assignments, days, staff, preferencesByPerson, limits, resolvedRules: ruleInfo, priorAssignments: boundary.assignments || [], boundary: boundarySummary };
   return {
     doc,
     context,
     ...computeScheduleRisks({ ...context, acks: doc.riskAcks || {} }),
+    boundary: boundarySummary,
   };
 }
 
@@ -2766,6 +2779,7 @@ router.post('/monthly/revalidate',
         total: riskResult.total,
         pending: riskResult.pending,
         ruleViolations: ruleViolations.length,
+        boundary: riskResult.boundary,
       });
     } catch (err) {
       console.error('[POST /api/schedules/monthly/revalidate] ERR:', err);

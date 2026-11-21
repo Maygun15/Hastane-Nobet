@@ -1,5 +1,7 @@
 // services/scheduler/index.js
-const { runScheduler } = require("./engine");
+const { seedPersonStateFromPrior } = require("./monthBoundary");
+const { isNightShiftCode } = require("./utils/nightShift");
+const { runScheduler, getISOWeekKey } = require("./engine");
 const { resolveSchedulerAreas } = require("./personAreaProjection");
 const RuleEngine = require("../ruleEngine");
 const { buildRuntimeContext } = require("./contracts");
@@ -70,6 +72,7 @@ async function generateMonthlyPlan({
   targetShifts,
   debug,
   auditOptions,
+  priorAssignments = [],
 } = {}) {
   if (!getActiveStaff || !getMonthlyShifts) {
     throw new Error("generateMonthlyPlan: getActiveStaff ve getMonthlyShifts zorunlu");
@@ -99,6 +102,15 @@ async function generateMonthlyPlan({
   context.ruleEngine = new RuleEngine(
     ruleEngineDoc || { basicRules: {}, leaveRules: null, taskRequirements: null }
   );
+  // Aylar arası (İP-2): önceki dönem görevleri kişi durumunu kurar ve aday kuralları
+  // (gece sonrası, günde tek vardiya) için mevcut görev listesine eklenir; çıktıya girmez.
+  if (Array.isArray(priorAssignments) && priorAssignments.length) {
+    seedPersonStateFromPrior(context.staff || [], priorAssignments, {
+      getISOWeekKey,
+      isNightCode: isNightShiftCode,
+    });
+    context.priorAssignments = priorAssignments;
+  }
   return runScheduler(context);
 }
 

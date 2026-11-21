@@ -2001,6 +2001,10 @@ const shouldShowRestRiskPanel =
         ruleVersionRef.current = res.ruleContext.version;
         ruleConflictRef.current = false;
       }
+      if (res?.boundary?.status === "missing") {
+        // Önceki ay verisi yok: ay başı dinlenme/ardışıklık kontrolü sınırlı — kullanıcı bilsin.
+        note(res.boundary.message, "warning");
+      }
       if (data?.assignments?.length) {
         savedAssignmentsRef.current = Array.isArray(data.assignments) ? data.assignments : [];
         const rosterFromServer = buildRosterFromBackend(

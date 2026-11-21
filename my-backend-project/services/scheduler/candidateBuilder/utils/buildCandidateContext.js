@@ -145,7 +145,11 @@ function resolveLeavesForPerson(leavesForPerson, schedulerContext, personId) {
 function resolveExistingAssignments(existingAssignments, assignmentState, schedulerContext) {
   if (Array.isArray(existingAssignments)) return existingAssignments;
   if (Array.isArray(assignmentState?.assignments)) return assignmentState.assignments;
-  if (Array.isArray(schedulerContext?.assignments)) return schedulerContext.assignments;
+  if (Array.isArray(schedulerContext?.assignments)) {
+    // Aylar arası (İP-2): önceki dönem görevleri aday kurallarında da görünür.
+    const prior = Array.isArray(schedulerContext?.priorAssignments) ? schedulerContext.priorAssignments : [];
+    return prior.length ? prior.concat(schedulerContext.assignments) : schedulerContext.assignments;
+  }
   return [];
 }
 

@@ -9,6 +9,7 @@ const { generateMonthlyPlan } = require('./scheduler');
 const { generateDraftRoster } = require('./scheduler/draftRoster');
 const { fetchDutyRules, DEFAULT_RULES, DEFAULT_WEIGHTS } = require('./scheduler/ruleResolver');
 const institutionRules = require('./institutionRules');
+const monthBoundary = require('./scheduler/monthBoundary');
 const { replaceAssignmentsForSchedule } = require('./assignmentSyncService');
 const { resolveStaff } = require('./scheduler/staffResolver');
 const { validateAssignments } = require('./scheduler/validator');
@@ -471,6 +472,20 @@ function mergeLeavesByPerson(dbLeaves, payloadLeaves) {
   return result;
 }
 
+function summarizeBoundary(b = {}) {
+  return {
+    status: b.status || 'missing',
+    message: b.message || '',
+    lookbackDays: b.lookbackDays || 0,
+    lookbackParts: b.lookbackParts || {},
+    from: b.from || null,
+    to: b.to || null,
+    previousMonth: b.previousMonth || null,
+    priorCount: Array.isArray(b.assignments) ? b.assignments.length : 0,
+    source: b.source || null,
+  };
+}
+
 async function generateSchedule({ sectionId, serviceId = '', role = '', year, month, dryRun = false, userId, payload = {}, hospitalId = null }) {
   serviceId = assertSpecificServiceId(serviceId);
   const query = hospitalId ? { hospitalId, sectionId, year, month } : { sectionId, year, month };
@@ -569,6 +584,21 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   const weights = { ...dbWeights, ...(payload.weights || {}) };
   const ruleContext = institutionRules.buildRuleSnapshot(resolvedRules, { by: userId || null, mode: 'generated' });
 
+  // Aylar arası (İP-2): önceki dönemin ilgili görevleri — geriye bakış etkin kurallardan.
+  const lookback = monthBoundary.computeLookbackDays({ rules, shiftMetaByCode, year, month });
+  let boundary;
+  try {
+    boundary = await monthBoundary.loadPriorAssignments({
+      hospitalId, sectionId, serviceId, role, year, month,
+      staff, lookbackDays: lookback.days, shiftMetaByCode,
+    });
+  } catch (boundaryErr) {
+    console.warn('[scheduler] önceki dönem görevleri okunamadı:', boundaryErr?.message || boundaryErr);
+    boundary = { assignments: [], status: 'missing', message: 'Önceki dönem görevleri okunamadı; ay başı kontrolü sınırlı.', lookbackDays: lookback.days };
+  }
+  boundary.lookbackParts = lookback.parts;
+  ruleContext.boundary = summarizeBoundary(boundary);
+
   let context = null;
   let draftResult = null;
   if (useDraft) {
@@ -601,6 +631,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
       weights,
       targetHours,
       targetShifts,
+      priorAssignments: boundary.assignments,
       debug: {
         logBlocks: payload?.debug?.logBlocks || process.env.SCHEDULER_DEBUG === '1',
       },
@@ -640,7 +671,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   });
 
   if (dryRun) {
-    return { data, rules, weights, quality, sourceScheduleId: scheduleDoc?._id || null, ruleContext, ignoredClientRules };
+    return { data, rules, weights, quality, sourceScheduleId: scheduleDoc?._id || null, ruleContext, ignoredClientRules, boundary: summarizeBoundary(boundary) };
   }
 
   let persistedData = data;
@@ -739,7 +770,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     console.warn('[scheduler] Assignment sync hatası:', syncErr?.message || syncErr);
   }
 
-  return { data: persistedData, rules, weights, quality, generatedId: String(doc._id), ruleContext, ignoredClientRules };
+  return { data: persistedData, rules, weights, quality, generatedId: String(doc._id), ruleContext, ignoredClientRules, boundary: summarizeBoundary(boundary) };
 }
 
 module.exports = {

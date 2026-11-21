@@ -155,3 +155,17 @@ describe("Plan kural sürümü", () => {
     window.removeEventListener("rules:revalidated", onEv);
   });
 });
+
+describe("Ay başı kontrolü satırı (İP-2)", () => {
+  it("önceki ay verisi yoksa uyarı olarak gösterilir", async () => {
+    const { BoundaryLine } = await import("../components/SchedulePublishBar.jsx");
+    render(<BoundaryLine boundary={{ status: "missing", message: "Önceki dönem (2026-12) verisi yok" }} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Ay başı kontrolü: Önceki dönem (2026-12) verisi yok");
+  });
+  it("veri varsa bilgi olarak gösterilir", async () => {
+    const { BoundaryLine } = await import("../components/SchedulePublishBar.jsx");
+    render(<BoundaryLine boundary={{ status: "found", message: "Önceki dönemden 3 görev" }} />);
+    expect(screen.getByTestId("boundary-line")).toHaveTextContent("Önceki dönemden 3 görev");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});

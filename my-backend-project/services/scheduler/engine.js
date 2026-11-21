@@ -1050,4 +1050,4 @@ function recordNoCandidateIssue({ context = null, day = null, shift = null, miss
   });
 }
 
-module.exports = { runScheduler, assign };
+module.exports = { runScheduler, assign, getISOWeekKey };
