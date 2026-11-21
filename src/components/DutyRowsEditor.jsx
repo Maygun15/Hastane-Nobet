@@ -1171,7 +1171,8 @@ const shouldShowRestRiskPanel =
     const updated = { ...saved, rows: newRows };
     LS.set("scheduleRowsV2", updated);
     setAiPlan(updated);
-    emitPlannerAiPlan();
+    // (Önceden tanımsız emitPlannerAiPlan() çağrılıyordu → düğme hata veriyordu.)
+    try { window.dispatchEvent(new Event("planner:changed")); } catch {}
     note(`${patched} satırın ismi dolduruldu.`, "success");
   }
 
@@ -1444,9 +1445,10 @@ const shouldShowRestRiskPanel =
       } catch (e) {
         console.warn("Personel senkronizasyonu yapılamadı:", e);
       } finally {
-        if (!alive) return;
-        setStaffLoading(false);
-        setStaffRevision((v) => v + 1);
+        if (alive) {
+          setStaffLoading(false);
+          setStaffRevision((v) => v + 1);
+        }
       }
     }
     syncStaffToLocal();
@@ -1490,6 +1492,8 @@ const shouldShowRestRiskPanel =
       autoSaveTimerRef.current = null;
     }
     setSaving(true);
+    // Çakışma yedeği catch bloğunda da kullanılır: try dışında tanımlı olmalı.
+    let payload = null;
     try {
       // --- namedAssignments → assignments[] çevirisi ---
       // DutyRowsEditor namedAssignments üretiyor ama MonthlyHoursSheet ve
@@ -1509,7 +1513,7 @@ const shouldShowRestRiskPanel =
         }
       }
 
-      const payload = payloadOverride || {
+      payload = payloadOverride || {
         version: 1,
         defs: rows,
         overrides,

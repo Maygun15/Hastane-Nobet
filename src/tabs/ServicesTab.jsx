@@ -237,14 +237,6 @@ export default function ServicesTab() {
     if (canView) refresh();
   }, [canView, refresh]);
 
-  if (!canView) {
-    return (
-      <div className="p-4 text-sm text-slate-600">
-        Bu sayfa için yetkiniz yok.
-      </div>
-    );
-  }
-
   const [query, setQuery] = useState("");
   const [onlyActive, setOnlyActive] = useState("all"); // all | active | passive
   const [sortKey, setSortKey] = useState("name"); // name | code | active
@@ -433,6 +425,14 @@ export default function ServicesTab() {
     } finally {
       e.target.value = "";
     }
+  }
+
+  if (!canView) {
+    return (
+      <div className="p-4 text-sm text-slate-600">
+        Bu sayfa için yetkiniz yok.
+      </div>
+    );
   }
 
   return (

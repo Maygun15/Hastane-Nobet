@@ -15,8 +15,6 @@ export default function PinningModal({
   const [form, setForm] = useState({ personId: "", day: "", rowId: "" });
   const [search, setSearch] = useState("");
 
-  if (!open) return null;
-
   const filteredPeople = useMemo(() => {
     if (!search) return people;
     const q = search.toLocaleLowerCase("tr-TR");
@@ -33,6 +31,8 @@ export default function PinningModal({
     });
     setForm({ ...form, day: "" }); // Kişi ve görev kalsın, günü temizle
   };
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">

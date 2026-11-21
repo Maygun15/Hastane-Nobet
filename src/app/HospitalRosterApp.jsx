@@ -185,11 +185,17 @@ const navIdle   = "bg-white hover:bg-slate-50 text-slate-700 border-slate-200 ho
 /* ======================= APP ======================= */
 export default function HospitalRosterApp() {
   ensureHistoryPatched();
-
-  const { user, logout, refresh } = useAuth();
+  const auth = useAuth();
 
   /* Giriş yapılmamışsa yeni AuthDemo sayfasını göster */
-  if (!user) return <AuthDemo />;
+  if (!auth.user) return <AuthDemo />;
+  // Kancalar (hooks) koşulsuz çağrılsın diye oturumlu gövde ayrı bileşende
+  // (önceden erken return sonrası 50+ kanca vardı → girişte "Rendered more hooks" riski).
+  return <HospitalRosterAppSignedIn auth={auth} />;
+}
+
+function HospitalRosterAppSignedIn({ auth }) {
+  const { user, logout, refresh } = auth;
 
   /* ---- RBAC bayrakları ---- */
   const roleOf = (u) => String(u?.role || u?.roleKey || u?.type || "").toUpperCase();

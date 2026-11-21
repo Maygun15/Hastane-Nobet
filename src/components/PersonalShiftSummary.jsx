@@ -120,8 +120,8 @@ function getNextShift(mine) {
 // Kayıt zenginlik puanı: saat > 0 → 4, shiftCode dolu → 2, roleLabel dolu → 1
 function richScore(a) {
   return (resolveHours(a) > 0 ? 4 : 0)
-    + (!!String(a.shiftCode || a.shiftId || a.shift || a.code || "").trim() ? 2 : 0)
-    + (!!String(a.roleLabel || a.rowLabel || a.label || "").trim() ? 1 : 0);
+    + (String(a.shiftCode || a.shiftId || a.shift || a.code || "").trim() ? 2 : 0)
+    + (String(a.roleLabel || a.rowLabel || a.label || "").trim() ? 1 : 0);
 }
 
 // Birden fazla servis bucket'ından gelen atamaları birleştirip tekilleştirir.

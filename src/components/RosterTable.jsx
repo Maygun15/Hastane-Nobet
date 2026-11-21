@@ -668,6 +668,7 @@ const RosterTable = forwardRef(function RosterTable({
           )}
         </tbody>
       </table>
+      </div>
 
       {/* Detay Modalı */}
       {selectedCell && (

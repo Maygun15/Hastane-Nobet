@@ -54,11 +54,7 @@ export function setRefreshToken(token) {
 async function safeJson(resp) {
   const text = await resp.text();
   if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch (e) {
-    throw e;
-  }
+  return JSON.parse(text);
 }
 async function okOrThrow(resp) {
   const data = await safeJson(resp);

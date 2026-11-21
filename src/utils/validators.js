@@ -111,7 +111,7 @@ function validateRegisterPayload(payload = {}) {
   return { ok: errors.length === 0, data: out, errors };
 }
 
-module.exports = {
+export {
   // normalize
   normalizeEmail,
   normalizePhoneTR,
