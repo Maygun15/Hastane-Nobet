@@ -1,5 +1,6 @@
 // routes/auth.routes.js
 const express = require('express');
+const { logError } = require('../utils/safeLog');
 const bcrypt  = require('bcrypt');
 const crypto  = require('crypto');
 const jwt     = require('jsonwebtoken');
@@ -280,7 +281,7 @@ router.post('/register', registerRateLimit, ...registerValidation, async (req, r
       },
     });
   } catch (err) {
-    console.error('REGISTER ERR:', err);
+    logError('REGISTER ERR:', err);
     res.status(500).json({ message: 'Kayıt sırasında hata' });
   }
 });
@@ -324,7 +325,7 @@ router.post('/login', ...loginValidation, async (req, res) => {
           const devUser = { _id: DEV_OBJECT_ID, role: 'admin', personId: null, hospitalId: null };
           const accessToken  = makeAccessToken(devUser);
           const refreshToken = makeRefreshToken(devUser);
-          console.warn(`[dev-login] Dev login kullanıldı — email: ${DEV_EMAIL} | id: ${DEV_OBJECT_ID}`);
+          console.warn(`[dev-login] Dev login kullanıldı — id: ${DEV_OBJECT_ID}`);
           return res.json({
             accessToken,
             refreshToken,
@@ -385,7 +386,7 @@ router.post('/login', ...loginValidation, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('LOGIN ERR:', err);
+    logError('LOGIN ERR:', err);
     res.status(500).json({ message: 'Giriş sırasında hata' });
   }
 });
@@ -420,7 +421,7 @@ router.post('/refresh', async (req, res) => {
 
     return res.json({ accessToken: makeAccessToken(user) });
   } catch (err) {
-    console.error('REFRESH ERR:', err);
+    logError('REFRESH ERR:', err);
     return res.status(500).json({ message: 'Token yenilenemedi' });
   }
 });
@@ -461,7 +462,7 @@ Bu baglanti 15 dakika gecerlidir.`,
 
     return res.json({ ok: true });
   } catch (err) {
-    console.error('REQUEST RESET ERR:', err);
+    logError('REQUEST RESET ERR:', err);
     return res.status(500).json({ message: 'Reset istegi basarisiz' });
   }
 });
@@ -493,7 +494,7 @@ router.post('/password/reset', resetApplyRateLimit, ...resetPasswordValidation, 
 
     return res.json({ ok: true });
   } catch (err) {
-    console.error('RESET PASSWORD ERR:', err);
+    logError('RESET PASSWORD ERR:', err);
     return res.status(500).json({ message: 'Şifre sıfırlanamadı' });
   }
 });
@@ -531,7 +532,7 @@ async function handleChangePassword(req, res) {
 
     return res.json({ ok: true });
   } catch (err) {
-    console.error('CHANGE PASSWORD ERR:', err);
+    logError('CHANGE PASSWORD ERR:', err);
     return res.status(500).json({ message: 'Şifre değiştirilemedi' });
   }
 }

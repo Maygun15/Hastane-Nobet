@@ -1,5 +1,6 @@
 // routes/personnel.routes.js
 const express = require('express');
+const { logError } = require('../utils/safeLog');
 const router = express.Router();
 const Person = require('../models/Person');
 const User = require('../models/User');
@@ -72,7 +73,7 @@ router.get('/',
 
       return res.json({ items: mapped, total, page, size: limit });
     } catch (err) {
-      console.error('GET /api/personnel ERR:', err);
+      logError('GET /api/personnel ERR:', err);
       return res.status(500).json({ error: 'Liste alınamadı' });
     }
   }
@@ -146,7 +147,7 @@ router.post('/',
         }
       });
     } catch (err) {
-      console.error('POST /api/personnel ERR:', err);
+      logError('POST /api/personnel ERR:', err);
       return res.status(500).json({ error: 'Personel oluşturulamadı' });
     }
   }
@@ -165,7 +166,7 @@ router.put('/:id',
       req.person = person;
       return next();
     } catch (err) {
-      console.error('PUT /api/personnel/:id ERR:', err);
+      logError('PUT /api/personnel/:id ERR:', err);
       return res.status(500).json({ error: 'Sunucu hatası' });
     }
   },
@@ -214,7 +215,7 @@ router.put('/:id',
           status: 'active',
         });
         if (deleted.deletedCount > 0) {
-          console.log(`[Personnel] ${person.name} deactivated — ${deleted.deletedCount} gelecek atama silindi`);
+          console.log(`[Personnel] ${person._id} deactivated — ${deleted.deletedCount} gelecek atama silindi`);
         }
       }
 
@@ -230,7 +231,7 @@ router.put('/:id',
         }
       });
     } catch (err) {
-      console.error('PUT /api/personnel/:id ERR:', err);
+      logError('PUT /api/personnel/:id ERR:', err);
       return res.status(500).json({ error: 'Personel güncellenemedi' });
     }
   }
@@ -249,7 +250,7 @@ router.delete('/:id',
       req.person = person;
       return next();
     } catch (err) {
-      console.error('DELETE /api/personnel/:id ERR:', err);
+      logError('DELETE /api/personnel/:id ERR:', err);
       return res.status(500).json({ error: 'Sunucu hatası' });
     }
   },
@@ -259,7 +260,7 @@ router.delete('/:id',
       await req.person.deleteOne();
       return res.json({ ok: true });
     } catch (err) {
-      console.error('DELETE /api/personnel/:id ERR:', err);
+      logError('DELETE /api/personnel/:id ERR:', err);
       return res.status(500).json({ error: 'Personel silinemedi' });
     }
   }
@@ -327,7 +328,7 @@ router.post('/bulk',
         : [];
       return res.json({ ok: true, count: inserted.length, cleared: !!(replaceAll && clear) });
     } catch (err) {
-      console.error('POST /api/personnel/bulk ERR:', err);
+      logError('POST /api/personnel/bulk ERR:', err);
       return res.status(500).json({ error: safeMessage(err, 'Bulk ekleme hatası') });
     }
   }

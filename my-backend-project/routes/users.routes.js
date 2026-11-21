@@ -1,5 +1,6 @@
 // routes/users.routes.js
 const express  = require('express');
+const { logError } = require('../utils/safeLog');
 const router   = express.Router();
 const mongoose = require('mongoose');
 
@@ -198,7 +199,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     return res.json(rows);
   } catch (err) {
-    console.error('GET /api/users ERR:', err);
+    logError('GET /api/users ERR:', err);
     return res.status(500).json({ error: 'Liste alınamadı' });
   }
 });
@@ -240,7 +241,7 @@ router.put('/:userId/link-person', requireAdmin, async (req, res) => {
     });
     res.json({ ok: true });
   } catch (err) {
-    console.error('PUT /link-person ERR:', err);
+    logError('PUT /link-person ERR:', err);
     res.status(500).json({ message: safeMessage(err) });
   } finally {
     session.endSession();
@@ -340,7 +341,7 @@ router.post('/quick-create', requireAdminOrStaff, async (req, res) => {
       tempPassword,
     });
   } catch (err) {
-    console.error('POST /api/users/quick-create ERR:', err);
+    logError('POST /api/users/quick-create ERR:', err);
     return res.status(500).json({ message: 'Kullanıcı oluşturulamadı' });
   }
 });
@@ -396,7 +397,7 @@ router.post('/bulk-from-personnel', requireAdmin, async (req, res) => {
     // Geçici şifreler yalnızca bu yanıtta bir kez döner; yönetici personele elden verir.
     return res.json({ created, skipped, credentials });
   } catch (err) {
-    console.error('POST /api/users/bulk-from-personnel ERR:', err);
+    logError('POST /api/users/bulk-from-personnel ERR:', err);
     return res.status(500).json({ message: 'Toplu oluşturma başarısız' });
   }
 });
@@ -448,7 +449,7 @@ router.patch('/:id/profile', requireAuth, async (req, res) => {
 
     return res.json({ ok: true });
   } catch (err) {
-    console.error('PATCH /api/users/:id/profile ERR:', err);
+    logError('PATCH /api/users/:id/profile ERR:', err);
     return res.status(500).json({ error: 'Profil güncellenemedi' });
   }
 });
@@ -476,7 +477,7 @@ router.patch('/:id/identity', requireAdminOrStaff, async (req, res) => {
 
     return res.json({ ok: true });
   } catch (err) {
-    console.error('PATCH /api/users/:id/identity ERR:', err);
+    logError('PATCH /api/users/:id/identity ERR:', err);
     return res.status(500).json({ error: 'Kimlik güncellenemedi' });
   }
 });
@@ -508,7 +509,7 @@ router.post('/change-password', requireAuth, async (req, res) => {
 
     return res.json({ ok: true });
   } catch (err) {
-    console.error('POST /api/users/change-password ERR:', err);
+    logError('POST /api/users/change-password ERR:', err);
     return res.status(500).json({ error: 'Şifre güncellenemedi' });
   }
 });
@@ -585,7 +586,7 @@ router.post('/', requireAuth, async (req, res) => {
       const key = Object.keys(err.keyPattern || {})[0] || 'unique';
       return res.status(409).json({ error: `Bu ${key} zaten kullanımda` });
     }
-    console.error('[POST /api/users] ERR:', err);
+    logError('[POST /api/users] ERR:', err);
     return res.status(500).json({ error: 'Sunucu hatası' });
   }
 });
@@ -645,7 +646,7 @@ Giris yaptiktan sonra sifrenizi degistirmenizi oneririz.`,
 
     return res.json({ ok: true, emailed, tempPassword: emailed ? undefined : tempPassword, mustChangePassword: true });
   } catch (err) {
-    console.error('RESET PASSWORD ERR:', err);
+    logError('RESET PASSWORD ERR:', err);
     return res.status(500).json({ error: 'Sifre sifirlama basarisiz' });
   }
 });
@@ -677,7 +678,7 @@ router.patch('/:id/role', requireAuth, async (req, res) => {
     if (!u) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
     return res.json({ ok: true, user: { id: String(u._id), role: u.role } });
   } catch (err) {
-    console.error('ROLE UPDATE ERR:', err);
+    logError('ROLE UPDATE ERR:', err);
     return res.status(500).json({ error: 'Rol güncellenemedi' });
   }
 });
@@ -706,7 +707,7 @@ router.patch('/:id/services', requireAuth, async (req, res) => {
     if (!u) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
     return res.json({ ok: true, user: { id: String(u._id), serviceIds: u.serviceIds || [] } });
   } catch (err) {
-    console.error('SERVICES UPDATE ERR:', err);
+    logError('SERVICES UPDATE ERR:', err);
     return res.status(500).json({ error: 'Servisler güncellenemedi' });
   }
 });
@@ -726,7 +727,7 @@ router.post('/:id/activate', requireAdmin, async (req, res) => {
     if (!u) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
     return res.json({ ok: true, user: { id: String(u._id), active: u.active } });
   } catch (err) {
-    console.error('ACTIVATE ERR:', err);
+    logError('ACTIVATE ERR:', err);
     return res.status(500).json({ error: 'Aktivasyon başarısız' });
   }
 });
@@ -745,7 +746,7 @@ router.post('/:id/deactivate', requireAdmin, async (req, res) => {
     if (!u) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
     return res.json({ ok: true, user: { id: String(u._id), active: u.active } });
   } catch (err) {
-    console.error('DEACTIVATE ERR:', err);
+    logError('DEACTIVATE ERR:', err);
     return res.status(500).json({ error: 'Deaktivasyon başarısız' });
   }
 });
@@ -781,7 +782,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
 
     return res.json({ ok: true });
   } catch (err) {
-    console.error('USER DELETE ERR:', err);
+    logError('USER DELETE ERR:', err);
     return res.status(500).json({ error: 'Silinemedi' });
   }
 });

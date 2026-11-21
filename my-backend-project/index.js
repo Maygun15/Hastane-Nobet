@@ -18,6 +18,8 @@ if (process.env.SENTRY_DSN) {
       dsn: process.env.SENTRY_DSN,
       environment: process.env.NODE_ENV || 'development',
       tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 0,
+      sendDefaultPii: false,
+      beforeSend: require('./utils/safeLog').scrubSentryEvent,
     });
     console.log('[BOOT] Sentry aktif');
   } catch (e) { console.warn('[BOOT] Sentry yüklenemedi:', e?.message); }
@@ -296,7 +298,7 @@ app.use((req, _res, next) => {
   next();
 });
 if (!IS_PROD) {
-  app.use((req, _res, next) => { console.log('[REQ]', req.method, req.originalUrl); next(); });
+  app.use((req, _res, next) => { console.log('[REQ]', req.method, req.path); next(); });
 }
 const globalApiLimiter = rateLimit({
   windowMs: API_RATE_WINDOW_MS,
@@ -942,7 +944,7 @@ app.use((err, req, res, _next) => {
   if (Sentry && (!err?.status || err.status >= 500)) {
     try { Sentry.captureException(err); } catch {}
   }
-  console.error('ERR:', err);
+  require('./utils/safeLog').logError('ERR:', err);
   const status = err?.status || err?.statusCode || 500;
   const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
   const payload = {
