@@ -2667,10 +2667,10 @@ const shouldShowRestRiskPanel =
               <ul className="list-disc pl-5 max-h-60 overflow-auto">
                 {roster.issues.map((x, i) => (
                   <li key={i}>
-                    Gün {x.day}, “{x.label}” için yeterli aday bulunamadı{ x.reason ? ` (${x.reason})` : "" }.
+                    {x.day}. gün, “{x.label}” görevi doldurulamadı{ x.reason && x.reason !== "NO_CANDIDATE" ? ` (${formatIssueReason(x.reason)})` : "" }.
                     {x.auditSummary ? (
                       <div className="text-xs text-amber-900/80">
-                        Neden özeti: {x.auditSummary}
+                        Neden: {x.auditSummary}
                       </div>
                     ) : null}
                   </li>

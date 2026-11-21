@@ -1,6 +1,8 @@
 'use strict';
 
 const { computeScheduleRisks } = require('../services/scheduleRiskService');
+// Kurum kuralları (yetkili kaynak) — risk servisi gizli varsayılan kullanmaz.
+const INSTITUTION_LIMITS = { ONE_SHIFT_PER_DAY: true, LEAVE_BLOCK: true, NIGHT_NEXT_DAY_OFF: true, MIN_REST_HOURS: 11, MAX_CONSECUTIVE_DAYS: 6 };
 
 const day = (date, weekday, shifts) => ({ date, weekday, shifts });
 const shift = (id, code, area, start, end, hours, requiredCount = 1) => ({ id, code, area, start, end, hours, requiredCount });
@@ -38,7 +40,7 @@ describe('computeScheduleRisks', () => {
       day('2026-12-01', 2, [shift('rN', 'N', 'KIRMIZI', '08:00', '08:00', 24)]),
       day('2026-12-02', 3, [shift('rM', 'M', 'KIRMIZI', '08:00', '16:00', 8)]),
     ];
-    const res = computeScheduleRisks({
+    const res = computeScheduleRisks({ limits: INSTITUTION_LIMITS,
       assignments: [
         { date: '2026-12-01', shiftId: 'rN', shiftCode: 'N', personId: 'p2', personName: 'Fatma' },
         { date: '2026-12-02', shiftId: 'rM', shiftCode: 'M', personId: 'p2', personName: 'Fatma' },
@@ -108,7 +110,7 @@ describe('rankSlotCandidates', () => {
   ];
 
   test('uygun aday önce; gece çıkışı, alan ve onaylı tercih gerekçeli elenir', () => {
-    const res = rankSlotCandidates({
+    const res = rankSlotCandidates({ limits: INSTITUTION_LIMITS,
       assignments: [{ date: '2026-12-06', shiftId: 'rN', shiftCode: 'N', personId: 'b', personName: 'Gece Çıkışı' }],
       days, staff: people,
       preferencesByPerson: { d: { hardOff: ['2026-12-07'] } },

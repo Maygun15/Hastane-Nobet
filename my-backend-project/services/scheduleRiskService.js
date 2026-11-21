@@ -32,7 +32,10 @@ function areaAllowed(person, shiftArea) {
 const { isWeekendLikeDay, isNightLikeShift } = require('./scheduler/fairnessCounters');
 const { isNightCleanupCode } = require('./scheduler/utils/nightShift');
 
-const DEFAULT_LIMITS = Object.freeze({ MIN_REST_HOURS: 12, MAX_CONSECUTIVE_DAYS: 6, NIGHT_NEXT_DAY_OFF: true, MAX_WEEKLY_HOURS: 72 });
+// Sayısal sınırlar kurum kurallarından gelir (services/institutionRules.js). Gizli varsayılan
+// yok: kurum bir sınırı tanımlamadıysa o kontrol yapılmaz (önceden 72 saat/hafta kaynaksız
+// varsayılandı ve motor bu sınırı uygulamıyordu → panel, motorun ürettiği planı işaretliyordu).
+const DEFAULT_LIMITS = Object.freeze({});
 
 const KURAL_LABEL = {
   GUNDE_IKI_VARDIYA: 'Aynı gün iki vardiya',

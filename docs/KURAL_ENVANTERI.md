@@ -53,3 +53,35 @@ Diğerleri politika / iletişim notu niteliğinde:
 
 ## Sonraki adım
 Acil sorumlusuyla "olmazsa olmaz" kurallar seçilir (öneri: hamile/sağlık kısıtı, haftada 1 boş gün, haftalık saat sınırı, boşluk isteği). Her biri motora eklenir ve testle gösterilir. Motor değişince `src/rules/ruleEnforcement.js` ve bu belge birlikte güncellenir.
+
+
+## Uygulanma durumu ve kanıtı (22 Kasım 2026, İP-4 / D)
+
+Etkin değerler **Parametreler → Nöbet Kuralları → Kurum kuralları** panelinden gelir (sunucu, `services/institutionRules.js`). Kaynak alanı: mevzuat / kurum kararı / tercih / belirsiz. Mevzuata dayandığı doğrulanmış bir değer **yok**; deneme ortamındaki değerler "kurum" ya da "belirsiz" işaretli.
+
+| Kural (kurum anahtarı) | Durum | Nerede | Kanıt (test) |
+|---|---|---|---|
+| Günde tek vardiya / zaman çakışması (`ONE_SHIFT_PER_DAY`) | ✅ Uygulanıyor | `candidateBuilder/rules/oneShiftPerDay.rule.js`, `constraints.js` | `mandatoryRules.test.js` (15 tekrar, CAKISMA/GUNDE_IKI_VARDIYA = 0) |
+| İzin günü atama yok (`LEAVE_BLOCK`) | ✅ | `leaveBlock.rule.js` | `mandatoryRules.test.js` (3 izin günü, 15 tekrar) |
+| Gece (24 s) ertesi gün yok (`NIGHT_NEXT_DAY_OFF`) | ✅ | `restAfterNight.rule.js`, `constraints.js` | `scheduler.restAfterNight.test.js`, `mandatoryRules`, `monthBoundary` (ay dönümü) |
+| En az dinlenme (`MIN_REST_HOURS`) | ✅ | `constraints.js` (gece yarısını aşan vardiya dahil) | `monthBoundary.test.js` (V1→M), `mandatoryRules` |
+| Art arda gün (`MAX_CONSECUTIVE_DAYS`) | ✅ | `maxConsecutiveDays.rule.js` | `monthBoundary.test.js` (26–31 Ara → 1 Oca), `mandatoryRules` |
+| Haftalık vardiya (`MAX_SHIFTS_PER_WEEK`) | ✅ (değer girilirse) | `maxWeeklyShifts.rule.js` | `scheduler.constraints.test.js` |
+| Haftalık saat (`MAX_WEEKLY_HOURS`) | ✅ **yeni**: motor + risk paneli aynı değer | `constraints.js` | `mandatoryRules.test.js` (72 s ile 10 tekrar; değer yokken gizli sınır yok) |
+| Kişi başı aynı görev (`MAX_TASK_PER_PERSON`) | ✅ (değer girilirse) | `constraints.js` | `scheduler.constraints.test.js` |
+| Alan / vardiya kodu uygunluğu | ✅ (kural değil, personel kartı) | `taskPlaceTaxonomy.js`, `constraints.js` | `mandatoryRules` (yalnız triaj personeli), Aralık deneme verisi 486/486 |
+| Günlük ihtiyaç (görev satırı kişi sayısı) | 🟡 Hedef: aday yoksa boş bırakılır + açıklama + yayın öncesi karar | `engine.js`, `scheduleRiskService` BOS_SLOT | `mandatoryRules` ("3 kişi gerekli, 2 atandı") |
+| Hamile / sağlık kısıtı, haftada 1 boş gün, bayram eşitliği, boşluk isteği | ❌ Uygulanmıyor | — | Sonraki iş paketi (aşağıda) |
+
+**Önceki tutarsızlık (giderildi):** risk paneli kaynaksız 72 s/hafta varsayılanı uyguluyordu, motor uygulamıyordu.
+
+**Yayın öncesi:** zorunlu kural seti tam değilse yayın 422; plan güncel kural sürümüyle doğrulanmamışsa 409 (`/monthly/revalidate`).
+
+**Çözüm bulunamadığında:** düzenleyici "X kişiden Y kişi bu göreve uygun; kurallardan sonra Z aday kaldı. Başlıca nedenler … Öneri …" gösterir (`describeCandidatePipeline`). Yayın çubuğu boş görevi "Yerine ata" adaylarıyla sunar.
+
+### Sonraki iş paketine somut görevler (zorunlu kural seti)
+1. Personel kartına kısıt alanları: `nightAllowed`, `maxShiftsPerMonth`, `onlyDayShifts`. Motor kuralı + test (hamile / sağlık).
+2. `WEEKLY_MIN_1_OFF`: 7 günlük kayan pencerede en az 1 boş gün. Motor + risk + ay dönümü.
+3. Onaylı "boşluk isteği (B)" → izin gibi engel (şu an tercih cezası).
+4. Bayram sayacını adalet puanına ekle (`fairnessCounters`).
+5. Her kural için kaynak (mevzuat maddesi / kurum kararı tarihi) kurumla doldurulmalı.

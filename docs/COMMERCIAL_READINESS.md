@@ -145,6 +145,23 @@ A merkezi kurallar → B aylar arası → C eş zamanlı düzenleme → D zorunl
 ### E2E tekrarlanabilirlik
 `scripts/e2e/run.mjs` başta ilgili koleksiyonların anlık görüntüsünü alır, sonda geri yükler (`E2E_KEEP_DATA=1` ile tutulur). Tam koşu 30/30, art arda iki kez aynı sonuç.
 
+### D. Pilot için zorunlu kurallar — ✅ tamamlandı (kalanlar somut görev olarak devredildi)
+**Kanıt / bulgular:**
+- Risk paneli kaynaksız **72 saat/hafta** sınırı uyguluyordu (`scheduleRiskService.js` `DEFAULT_LIMITS`); motor uygulamıyordu.
+- Bağımsız denetimli motor testi bu yüzden kırıldı: "HAFTALIK_SAAT 2026-W50".
+
+**Değişiklik:**
+- `MAX_WEEKLY_HOURS` kurum kuralı (isteğe bağlı, kaynaklı). Motor `constraints.js` + `person.weeklyHours`; ay dönümünde de tohumlanır.
+- Risk servisinde gizli varsayılan yok.
+- Engel kodları Türkçe + öneri: `ISSUE_REASON_LABELS` / `ISSUE_REASON_HINTS`, `describeCandidatePipeline`.
+- Uygulanma tablosu: `docs/KURAL_ENVANTERI.md`.
+
+**Test:**
+- `mandatoryRules.test.js` 3: 14 gün × 15 tekrar, bağımsız denetçi 0 ihlal; izin, alan, ihtiyaç; karşılanamayan ihtiyaç açıklaması; haftalık saat.
+- `scheduleRiskService` testleri kurum değerleriyle güncellendi.
+- vitest `issueExplanations` 2.
+- Sunucu 441 ✅, vitest 56 ✅.
+
 ## Commit'ler
 (her paketten sonra eklenir)
 
@@ -152,4 +169,4 @@ A merkezi kurallar → B aylar arası → C eş zamanlı düzenleme → D zorunl
 - **Deneme sitesinde izin onayı testi — bekliyor:** Render deneme sitesinin yönetici oturumu kapalı; şifre kullanıcıda. Aynı senaryo yerelde F paketinde test edilecek.
 
 ## Sıradaki somut işlem
-D — zorunlu kuralların doğrulama tablosu ve anlaşılır engel açıklamaları.
+F — izin/saat senaryoları (rapor bakiyeyi etkilemez, 3 günlük yıllık izin düşer), form durumları, işlem kimliği.

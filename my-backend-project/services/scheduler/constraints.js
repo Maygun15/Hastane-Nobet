@@ -276,6 +276,18 @@ function explainAvailability(person, day, context, shift) {
     }
   }
 
+  // Haftalık en fazla çalışma saati (kurum kuralı; İP-4/D). Risk paneliyle aynı değer.
+  if (rules.MAX_WEEKLY_HOURS) {
+    const max = Number(rules.MAX_WEEKLY_HOURS);
+    if (Number.isFinite(max) && max > 0) {
+      const wk = getISOWeekKey(dayKey);
+      const add = Number(shift?.hours || 0);
+      if (wk && Number(person.weeklyHours?.[wk] || 0) + add > max) {
+        return { allowed: false, reason: "MAX_WEEKLY_HOURS" };
+      }
+    }
+  }
+
   if (rules.MAX_TASK_PER_PERSON && shift) {
     const max = Number(rules.MAX_TASK_PER_PERSON);
     if (Number.isFinite(max) && max > 0) {

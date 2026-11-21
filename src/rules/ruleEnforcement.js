@@ -32,6 +32,7 @@ const ENGINE_RULES = [
   "WEEKLY_MAX_SHIFTS",
   "MAX_TASK_PER_PERSON",
   "LEAVE_BLOCK_GENERIC",
+  "WEEKLY_MAX_80H", // Kurum kuralları → "Haftada en fazla çalışma saati" (değer girilirse)
 ];
 
 const TEMPLATE_RULES = [

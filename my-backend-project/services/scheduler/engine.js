@@ -117,6 +117,8 @@ function applyAssignmentStateMutation({ person, day, shift, hours = 0 } = {}) {
   if (weekKey) {
     if (!person.weeklyCounts) person.weeklyCounts = {};
     person.weeklyCounts[weekKey] = Number(person.weeklyCounts[weekKey] || 0) + 1;
+    if (!person.weeklyHours) person.weeklyHours = {};
+    person.weeklyHours[weekKey] = Number(person.weeklyHours[weekKey] || 0) + safeHours;
   }
 
   recordFairnessCounters(person, day, shift);

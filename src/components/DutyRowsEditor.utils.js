@@ -347,16 +347,50 @@ export function createEmptyExplainability() {
   };
 }
 
+// Motorun aday eleme / kural kodları → planlayıcının anlayacağı Türkçe (İP-4 / D).
 export const ISSUE_REASON_LABELS = {
-  SERVICE_MATCH: "servis uyumsuz",
-  ROLE_ELIGIBILITY: "rol uygun değil",
+  SERVICE_MATCH: "başka servisin personeli",
+  SERVICE_ID_MISSING: "personelin servisi tanımlı değil",
+  PERSON_SERVICE_MISSING: "personelin servisi tanımlı değil",
+  ROLE_ELIGIBILITY: "meslek uygun değil",
   SECTION_ELIGIBILITY: "birim uygun değil",
-  ACTIVE_REQUIRED: "aktif personel değil",
-  REST_AFTER_NIGHT: "gece sonrası dinlenme",
-  MAX_WEEKLY_SHIFTS: "haftalık limit",
-  MAX_CONSECUTIVE_DAYS: "ardışık gün limiti",
-  ONE_SHIFT_PER_DAY: "aynı gün tek vardiya",
-  LEAVE_BLOCK: "izin çakışması",
+  ACTIVE_REQUIRED: "personel aktif değil",
+  REST_AFTER_NIGHT: "gece nöbeti ertesi gün",
+  REST_AFTER_NIGHT_VIOLATION: "gece nöbeti ertesi gün",
+  NIGHT_NEXT_DAY_OFF: "gece nöbeti ertesi gün",
+  NIGHT_24H_NEXT_DAY_BLOCK: "24 saatlik nöbetin ertesi günü",
+  MIN_REST_HOURS: "en az dinlenme süresi dolmamış",
+  MAX_WEEKLY_SHIFTS: "haftalık vardiya sınırı dolmuş",
+  MAX_SHIFTS_PER_WEEK: "haftalık vardiya sınırı dolmuş",
+  MAX_CONSECUTIVE_DAYS: "art arda gün sınırı dolmuş",
+  MAX_TASK_PER_PERSON: "aynı görevde aylık sınır dolmuş",
+  MAX_WEEKLY_HOURS: "haftalık saat sınırı dolmuş",
+  ONE_SHIFT_PER_DAY: "aynı gün başka vardiyada",
+  SAME_DAY_ASSIGNMENT_FOUND: "aynı gün başka vardiyada",
+  LEAVE_BLOCK: "izinli",
+  UNAVAILABLE: "uygun değil (izin/rapor)",
+  SERVICE_SUPERVISOR_ONLY: "bu görev yalnız servis sorumlusuna",
+  AREA_NOT_ALLOWED: "çalışma alanı bu görevi kapsamıyor",
+  AREA_PROFILE_MISSING: "personelin çalışma alanı tanımlı değil",
+  SHIFT_CODE_NOT_ALLOWED: "bu vardiya kodu personele tanımlı değil",
+  PREFERENCE_OFF: "onaylı boş gün isteği",
+  PREFERENCE_NO_NIGHT: "gece çalışmama isteği",
+};
+
+// En sık engel için "ne yapabilirim" önerisi.
+export const ISSUE_REASON_HINTS = {
+  SERVICE_SUPERVISOR_ONLY: "Servis Sorumlusu alanına bir kişi daha ekleyin ya da bu günü 'Bu şekilde devam' ile bilinçli boş bırakın.",
+  AREA_NOT_ALLOWED: "Personel kartlarında bu görevin çalışma alanını daha fazla kişiye tanımlayın.",
+  AREA_PROFILE_MISSING: "Personel kartlarında çalışma alanlarını tamamlayın.",
+  SHIFT_CODE_NOT_ALLOWED: "Personel kartlarında bu vardiya kodunu uygun kişilere ekleyin.",
+  LEAVE_BLOCK: "O gün izinli kişi çok; izinleri ya da günlük ihtiyacı gözden geçirin.",
+  UNAVAILABLE: "O gün izinli kişi çok; izinleri ya da günlük ihtiyacı gözden geçirin.",
+  MIN_REST_HOURS: "Dinlenme kuralı nedeniyle aday kalmadı; önceki günün vardiyalarını ya da kuralı (Kurum kuralları) gözden geçirin.",
+  NIGHT_24H_NEXT_DAY_BLOCK: "Önceki gün gece nöbeti tutanlar çalışamaz; gece nöbetini daha fazla kişiye dağıtın.",
+  REST_AFTER_NIGHT: "Önceki gün gece nöbeti tutanlar çalışamaz; gece nöbetini daha fazla kişiye dağıtın.",
+  MAX_CONSECUTIVE_DAYS: "Art arda gün sınırı doldu; ay başında önceki ayın son günlerine de bakın.",
+  SERVICE_ID_MISSING: "Personel kartlarında servis bilgisini tamamlayın.",
+  ONE_SHIFT_PER_DAY: "Aynı gün iki görev çakışıyor; günlük ihtiyacı ya da kadroyu gözden geçirin.",
 };
 
 export function formatIssueReason(code) {
@@ -402,9 +436,19 @@ export function summarizeIssueAudit(audits = []) {
   const topBlockers = Array.from(blockers.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
-    .map(([code, count]) => `${formatIssueReason(code)} x${count}`);
-  const pipeline = `havuz ${inputStaffCount} -> builder ${candidateBuilderEligibleCount} -> runtime ${postConstraintCount}`;
-  return topBlockers.length ? `${pipeline}; engeller: ${topBlockers.join(", ")}` : pipeline;
+    .map(([code, count]) => `${formatIssueReason(code)} (${count})`);
+  return describeCandidatePipeline({
+    inputStaffCount, candidateBuilderEligibleCount, postConstraintCount,
+    topBlockers, topCode: Array.from(blockers.entries()).sort((a, b) => b[1] - a[1])[0]?.[0],
+  });
+}
+
+/** "havuz 57 -> builder 47 -> runtime 0" yerine planlayıcının anlayacağı cümle + öneri. */
+export function describeCandidatePipeline({ inputStaffCount = 0, candidateBuilderEligibleCount = 0, postConstraintCount = 0, topBlockers = [], topCode = null } = {}) {
+  const head = `${inputStaffCount} kişiden ${candidateBuilderEligibleCount} kişi bu göreve uygun; kurallar uygulandıktan sonra ${postConstraintCount} aday kaldı`;
+  const why = topBlockers.length ? `. Başlıca nedenler: ${topBlockers.join(", ")}` : "";
+  const hint = topCode && ISSUE_REASON_HINTS[String(topCode).toUpperCase()] ? `. Öneri: ${ISSUE_REASON_HINTS[String(topCode).toUpperCase()]}` : "";
+  return `${head}${why}${hint}`;
 }
 
 export function summarizeIssueDiagnostic(diagnostic = null) {
@@ -417,13 +461,13 @@ export function summarizeIssueDiagnostic(diagnostic = null) {
         .map((item) => {
           const label = formatIssueReason(item?.code);
           const count = Number(item?.count || 0);
-          return label && count > 0 ? `${label} x${count}` : null;
+          return label && count > 0 ? `${label} (${count})` : null;
         })
         .filter(Boolean)
         .slice(0, 3)
     : [];
-  const pipeline = `havuz ${inputStaffCount} -> builder ${candidateBuilderEligibleCount} -> runtime ${postConstraintCount}`;
-  return topBlockers.length ? `${pipeline}; engeller: ${topBlockers.join(", ")}` : pipeline;
+  const topCode = Array.isArray(diagnostic?.topBlockers) && diagnostic.topBlockers[0]?.code;
+  return describeCandidatePipeline({ inputStaffCount, candidateBuilderEligibleCount, postConstraintCount, topBlockers, topCode });
 }
 
 export function extractGeneratedExplainability(scheduleDoc) {

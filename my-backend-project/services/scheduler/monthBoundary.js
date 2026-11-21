@@ -66,7 +66,7 @@ function computeLookbackDays({ rules = {}, shiftMetaByCode = {}, year, month } =
   if (rules.NIGHT_NEXT_DAY_OFF) parts.night = 1;
   const maxCons = Number(rules.MAX_CONSECUTIVE_DAYS || 0);
   if (maxCons > 0) parts.consecutive = maxCons;
-  if (Number(rules.MAX_SHIFTS_PER_WEEK || 0) > 0 && year && month) {
+  if ((Number(rules.MAX_SHIFTS_PER_WEEK || 0) > 0 || Number(rules.MAX_WEEKLY_HOURS || 0) > 0) && year && month) {
     const wd = monthStart(year, month).getUTCDay(); // 0=Pazar
     parts.weekly = (wd + 6) % 7; // pazartesiye kadar gün
   }
@@ -176,6 +176,8 @@ function seedPersonStateFromPrior(staff = [], prior = [], { getISOWeekKey, isNig
       if (wk) {
         if (!person.weeklyCounts) person.weeklyCounts = {};
         person.weeklyCounts[wk] = Number(person.weeklyCounts[wk] || 0) + 1;
+        if (!person.weeklyHours) person.weeklyHours = {};
+        person.weeklyHours[wk] = Number(person.weeklyHours[wk] || 0) + Number(a.hours || 0);
       }
     }
     person.lastShift = {

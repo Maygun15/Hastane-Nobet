@@ -86,7 +86,17 @@ const RULE_CATALOG = Object.freeze({
     zeroMeans: 'sınır yok',
     legacyUiIds: ['WEEKLY_MAX_SHIFTS', 'WEEKLY_MAX_DUTIES', 'WEEKLY_MAX_SHIFTS_PER_PERSON'],
   },
-  MAX_TASK_PER_PERSON: {
+  MAX_WEEKLY_HOURS: {
+    label: 'Haftada en fazla çalışma saati',
+    type: 'number',
+    unit: 'saat/hafta',
+    min: 0,
+    max: 168,
+    required: false,
+    zeroMeans: 'sınır yok',
+    legacyUiIds: ['WEEKLY_MAX_80H'],
+  },
+    MAX_TASK_PER_PERSON: {
     label: 'Kişi başına aynı görevde en fazla atama (ay)',
     type: 'number',
     unit: 'atama/ay',
