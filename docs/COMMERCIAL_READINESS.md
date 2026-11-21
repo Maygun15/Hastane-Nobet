@@ -88,6 +88,63 @@ A merkezi kurallar → B aylar arası → C eş zamanlı düzenleme → D zorunl
 - vitest 52 ✅.
 - E2E B 5/5: 31 Ara gece nöbetçisi 10 kişi → 1 Oca ihlal 0; V1 sonrası dinlenme ihlali 0; Mart yokken "missing".
 
+### C. Eş zamanlı düzenlemede veri kaybını önleme — ✅ tamamlandı
+**Önceki davranış (kanıt):** `PUT /monthly` tüm belgeyi sürüm kontrolsüz yazıyordu (son yazan kazanır); otomatik kayıt 1,2 sn.
+
+**Kabul kriterleri:**
+1. Eski revizyonla kayıt 409 + kim / ne zaman.
+2. Karşılaştırma ve güncelleme atomik.
+3. Aynı anda iki kayıtta biri 409.
+4. Aynı işlem kimliği tekrarı yazmaz.
+5. Kullanıcının düzenlemeleri korunur; güncel plan görülür ve değişiklikler yeniden değerlendirilir.
+
+**Değişiklik:**
+- `MonthlySchedule.revision`, `lastOpId`, `updatedByName`.
+- `PUT /monthly`:
+  - `baseRevision` + `opId`
+  - Filtre okunan revizyonu içerir, `$inc revision`.
+  - Kaçan CAS / eşzamanlı ilk kayıt → 409 `SCHEDULE_REVISION_CONFLICT`.
+  - Aynı `opId` → `replayed`.
+- İçerik değiştiren tüm yollar revizyonu artırır: `/assign`, `DELETE /assign`, planlama write-back, geri alma, şablon taşıma, AI yürütücü.
+- Düzenleyici:
+  - Revizyon + işlem kimliği gönderir; ağ hatasında aynı kimlikle güvenli tekrar.
+  - Çakışmada otomatik kayıt durur, değişiklikler tarayıcıya yedeklenir.
+  - Seçenekler: "Güncel planı yükle", "Yedekteki değişikliklerimi geri getir", "Benimkini kaydet".
+  - Aynı sayfada "Yerine ata" yapılınca güncel plan yeniden yüklenir.
+- **Bulunan ek hata (veri kaybı):** GET isim tablosundan atama döndürüyor (personId yok); geri kaydedilince personId siliniyordu. Artık kaydederken önce mevcut kayıttan, sonra hastanede benzersiz isimli personelden geri yazılıyor (`restorePersonIds`). Yerel veride 486/486 personId geri geldi.
+
+**Test:**
+- `scheduleRevisionConcurrency.test.js` 7/7.
+- E2E C 5/5: iki oturum; tekrar; `Promise.all` ile aynı anda iki kayıt → 200 / 409.
+
+### E. Yayın ve işlem geçmişi — ✅ tamamlandı
+**Önceki davranış (kanıt):**
+- Yayın yalnız taslak / yayınlandı; her "Yayınla" herkese yeniden bildirim gönderiyordu.
+- Yayından sonraki değişiklik kayıtsız ve bildirimsizdi.
+- İşlem günlüğü yalnız HTTP istekleri.
+
+**İlişki (karar):**
+- Taslak → yayın (sürüm 1).
+- Yayından sonra içerik değişirse "yayınlanmamış değişiklik var". Personel güncel hâli görür (ayrı yayın kopyası tutulmaz) ama bildirim almaz.
+- "Değişiklikleri yayınla" → sürüm 2; önceki yayına göre fark yalnız etkilenen kişilere uygulama içi bildirim olarak gider.
+- İçerik değişmeden tekrar yayın: işlem ve bildirim yok.
+
+**Değişiklik:**
+- `models/ScheduleChange.js`, `services/scheduleChangeService.js`: fark, kayıt, yayın hazırlığı (önceki yayın anlık görüntüsü).
+- `publication.contentRevision` + `version`; `hasUnpublishedChanges`.
+- `GET /api/schedules/changes`.
+- `sendScheduleRevised` (mevcut uygulama içi bildirim altyapısı). E-posta / SMS ayrı karar, ek ücretli servis yok.
+- Yayın çubuğu: sürüm, "Yayından sonra değişiklik" uyarısı, "Değişiklikleri yayınla (sürüm N)", işlem geçmişi listesi.
+
+**Test:**
+- `scheduleChangeService.test.js` 4.
+- Yayın testleri +2 (tekrar yayın, revizyon yayını).
+- vitest +2.
+- E2E E 7/7: sürüm 1 → tekrar yayın bildirimsiz → değişiklik → geçmişte "Prova Yönetici −1 (03.12 V1 ABDULLAH AYDOĞDU)" → yeni risk kararsızken yayın engellendi → sürüm 2, tek etkilenene 1 bildirim.
+
+### E2E tekrarlanabilirlik
+`scripts/e2e/run.mjs` başta ilgili koleksiyonların anlık görüntüsünü alır, sonda geri yükler (`E2E_KEEP_DATA=1` ile tutulur). Tam koşu 30/30, art arda iki kez aynı sonuç.
+
 ## Commit'ler
 (her paketten sonra eklenir)
 
@@ -95,4 +152,4 @@ A merkezi kurallar → B aylar arası → C eş zamanlı düzenleme → D zorunl
 - **Deneme sitesinde izin onayı testi — bekliyor:** Render deneme sitesinin yönetici oturumu kapalı; şifre kullanıcıda. Aynı senaryo yerelde F paketinde test edilecek.
 
 ## Sıradaki somut işlem
-C — eş zamanlı düzenleme ve tekrar koruması.
+D — zorunlu kuralların doğrulama tablosu ve anlaşılır engel açıklamaları.

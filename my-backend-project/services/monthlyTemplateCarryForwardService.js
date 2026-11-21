@@ -182,6 +182,7 @@ async function carryForwardMonthlyTemplate({
           },
           updatedBy: userId,
         },
+        $inc: { revision: 1 },
       },
       { new: true }
     ).lean();

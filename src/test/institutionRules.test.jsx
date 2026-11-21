@@ -14,6 +14,7 @@ vi.mock("../api/apiAdapter.js", () => ({
   getSlotCandidates: vi.fn(),
   assignSchedule: vi.fn(),
   revalidateMonthlySchedule: vi.fn(),
+  getScheduleChanges: vi.fn().mockResolvedValue({ items: [] }),
 }));
 vi.mock("../lib/api.js", () => ({ http: { get: vi.fn().mockResolvedValue({ items: [{ _id: "svc-a", name: "Acil Servis" }] }) } }));
 const authState = { user: { role: "admin", name: "Yönetici", serviceIds: [] } };
@@ -167,5 +168,33 @@ describe("Ay başı kontrolü satırı (İP-2)", () => {
     render(<BoundaryLine boundary={{ status: "found", message: "Önceki dönemden 3 görev" }} />);
     expect(screen.getByTestId("boundary-line")).toHaveTextContent("Önceki dönemden 3 görev");
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("Yayın sürümü ve işlem geçmişi (İP-5)", () => {
+  it("işlem geçmişi kim / ne zaman / hangi nöbet bilgisini gösterir", async () => {
+    const { ChangeHistory } = await import("../components/SchedulePublishBar.jsx");
+    render(<ChangeHistory items={[
+      { _id: "1", at: "2026-11-21T21:00:00Z", byName: "Planlayıcı İki", kind: "edit", addedCount: 1, removedCount: 1,
+        added: [{ date: "2026-12-05", shiftCode: "N", personName: "AYŞE" }], removed: [{ date: "2026-12-05", personName: "FATMA" }] },
+      { _id: "2", at: "2026-11-21T22:00:00Z", byName: "Sorumlu", kind: "publish", publishVersion: 2, note: "Sürüm 1 → 2" },
+    ]} />);
+    const list = screen.getByTestId("change-history");
+    expect(list).toHaveTextContent("Planlayıcı İki · Düzenleme · +1 / −1");
+    expect(list).toHaveTextContent("+ 05.12 N AYŞE");
+    expect(list).toHaveTextContent("− 05.12 FATMA");
+    expect(list).toHaveTextContent("Yayın (sürüm 2)");
+  });
+
+  it("yayından sonra değişen planda uyarı ve 'Değişiklikleri yayınla (sürüm 3)' görünür; tekrar yayın bildirim göndermez", async () => {
+    getMonthlySchedule.mockResolvedValue({ publication: { status: "published", version: 2 }, hasUnpublishedChanges: true,
+      rules: { status: "current", rulesConfigured: true, rulesComplete: true } });
+    getScheduleRisks.mockResolvedValue({ risks: [] });
+    setSchedulePublication.mockResolvedValue({ ok: true, alreadyPublished: true, publication: { status: "published", version: 2 }, notified: 0 });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<SchedulePublishBar sectionId="calisma-cizelgesi" serviceId="svc-a" role="Nurse" year={2026} month={12} />);
+    expect(await screen.findByTestId("unpublished-changes")).toHaveTextContent("bildirim almadı");
+    fireEvent.click(screen.getByRole("button", { name: "Değişiklikleri yayınla (sürüm 3)" }));
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith("Değişiklik yok — çizelge zaten bu hâliyle yayında", expect.anything()));
   });
 });

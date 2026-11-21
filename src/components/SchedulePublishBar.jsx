@@ -9,6 +9,7 @@ import {
   ackScheduleRisks,
   assignSchedule,
   getMonthlySchedule,
+  getScheduleChanges,
   getScheduleRisks,
   getSlotCandidates,
   revalidateMonthlySchedule,
@@ -67,6 +68,7 @@ function SlotAssignDialog({ scope, risk, onClose, onAssigned }) {
         if (keys.length) await ackScheduleRisks(scope, keys, `"Yine de ata" ile onaylandı: ${c.reasons.join(", ")}`);
       }
       toast.success(`${c.personName} atandı`);
+      try { window.dispatchEvent(new CustomEvent("schedule:changed", { detail: { source: "publish-bar" } })); } catch {}
       onAssigned?.();
       onClose();
     } catch (e) {
@@ -240,6 +242,38 @@ export function BoundaryLine({ boundary }) {
   );
 }
 
+
+const KIND_LABEL = { edit: "Düzenleme", generate: "Otomatik planlama", undo: "Geri alma", publish: "Yayın", unpublish: "Taslağa alma" };
+function slotText(x) {
+  const d = x?.date ? x.date.slice(8, 10) + "." + x.date.slice(5, 7) : "";
+  return [d, x?.shiftCode, x?.personName || x?.personId].filter(Boolean).join(" ");
+}
+export function ChangeHistory({ items }) {
+  if (items === null) return <div className="mt-1 text-slate-500" role="status">Yükleniyor…</div>;
+  if (items?.error) return <div className="mt-1 text-rose-700" role="alert">{items.error}</div>;
+  if (!items.length) return <div className="mt-1 text-slate-500">Henüz kayıtlı işlem yok.</div>;
+  return (
+    <ul className="mt-1 max-h-64 divide-y divide-slate-100 overflow-auto rounded-lg border border-slate-200 bg-white" data-testid="change-history">
+      {items.map((it) => (
+        <li key={it._id || `${it.at}-${it.kind}`} className="px-3 py-1.5">
+          <div>
+            <span className="text-slate-500">{formatDate(it.at)}</span> · <b>{it.byName || "Sistem"}</b> · {KIND_LABEL[it.kind] || it.kind}
+            {it.publishVersion ? ` (sürüm ${it.publishVersion})` : ""}
+            {it.addedCount || it.removedCount ? ` · +${it.addedCount} / −${it.removedCount}` : ""}
+            {it.note ? <span className="text-slate-500"> · {it.note}</span> : null}
+          </div>
+          {(it.added?.length || it.removed?.length) ? (
+            <div className="text-slate-600">
+              {it.added?.slice(0, 6).map((x, i) => <span key={`a${i}`} className="mr-2 text-emerald-700">+ {slotText(x)}</span>)}
+              {it.removed?.slice(0, 6).map((x, i) => <span key={`r${i}`} className="mr-2 text-rose-700">− {slotText(x)}</span>)}
+            </div>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function SchedulePublishBar({ sectionId, serviceId = "", role = "", year, month, refreshKey }) {
   const [publication, setPublication] = useState(null);
   const [exists, setExists] = useState(false);
@@ -252,6 +286,9 @@ export default function SchedulePublishBar({ sectionId, serviceId = "", role = "
   const [ruleStatus, setRuleStatus] = useState(null);
   const [ruleBlock, setRuleBlock] = useState(null); // yayın/kayıt sırasında gelen kural engeli
   const [boundary, setBoundary] = useState(null);   // aylar arası kontrol durumu (İP-2)
+  const [unpublished, setUnpublished] = useState(false); // yayından sonra değişiklik (İP-5)
+  const [history, setHistory] = useState(null);           // işlem geçmişi (açılınca yüklenir)
+  const [showHistory, setShowHistory] = useState(false);
   const scope = { sectionId, serviceId, role, year, month };
 
   const load = useCallback(async () => {
@@ -261,6 +298,7 @@ export default function SchedulePublishBar({ sectionId, serviceId = "", role = "
       setExists(!!schedule);
       setPublication(schedule?.publication || null);
       setRuleStatus(schedule?.rules || null);
+      setUnpublished(!!schedule?.hasUnpublishedChanges);
       if (schedule) {
         const r = await getScheduleRisks({ sectionId, serviceId, role, year, month }).catch(() => null);
         setRisks(Array.isArray(r?.risks) ? r.risks : []);
@@ -318,7 +356,13 @@ export default function SchedulePublishBar({ sectionId, serviceId = "", role = "
     try {
       const res = await setSchedulePublication(scope, publish);
       setPublication(res?.publication || null);
-      if (publish) {
+      if (publish && res?.alreadyPublished) {
+        toast.info("Değişiklik yok — çizelge zaten bu hâliyle yayında", { description: "Tekrar bildirim gönderilmedi." });
+      } else if (publish && res?.revision) {
+        toast.success(`Sürüm ${res.version} yayınlandı`, {
+          description: `${res.revision.added} nöbet eklendi, ${res.revision.removed} çıkarıldı; ${Number(res?.notified || 0)} etkilenen personele bildirim gönderildi.`,
+        });
+      } else if (publish) {
         toast.success("Çizelge yayınlandı", { description: `${Number(res?.notified || 0)} personele bildirim gönderildi.` });
       } else {
         toast.success("Çizelge taslağa alındı");
@@ -332,7 +376,18 @@ export default function SchedulePublishBar({ sectionId, serviceId = "", role = "
       toast.error(publish ? "Çizelge yayınlanamadı" : "Taslağa alınamadı", { description: e?.body?.message || e?.message || "" });
       await load();
     }
+    if (showHistory) loadHistory();
+    await load();
   });
+
+  const loadHistory = useCallback(async () => {
+    try {
+      const r = await getScheduleChanges({ sectionId, serviceId, role, year, month });
+      setHistory(Array.isArray(r?.items) ? r.items : []);
+    } catch (e) {
+      setHistory({ error: e?.message || "Geçmiş okunamadı." });
+    }
+  }, [sectionId, serviceId, role, year, month]);
 
   // Güncel kurum kurallarıyla yeniden doğrula → plan sürümü güncellenir, riskler yeniden hesaplanır.
   const revalidate = () => withLock(async () => {
@@ -393,18 +448,43 @@ export default function SchedulePublishBar({ sectionId, serviceId = "", role = "
             {busy ? "…" : pendingRisks.length ? `Yayınla (${pendingRisks.length} risk karar bekliyor)` : "Yayınla"}
           </button>
         ) : (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => change(false)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-slate-700 disabled:opacity-60"
-          >
-            {busy ? "…" : "Taslağa al"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {unpublished && (
+              <button
+                type="button"
+                disabled={busy || pendingRisks.length > 0}
+                onClick={() => change(true)}
+                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-white disabled:opacity-50"
+                title={pendingRisks.length ? "Önce riskler için karar verin" : undefined}
+              >
+                {busy ? "…" : `Değişiklikleri yayınla (sürüm ${Number(publication?.version || 1) + 1})`}
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => change(false)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-slate-700 disabled:opacity-60"
+            >
+              {busy ? "…" : "Taslağa al"}
+            </button>
+          </div>
         )}
       </div>
 
-      <RuleVersionLine status={ruleStatus} block={ruleBlock} busy={busy} onRevalidate={revalidate} />
+      {!isDraft && unpublished && (
+        <div data-testid="unpublished-changes" role="status" className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[12px] text-amber-900">
+          Yayından sonra değişiklik yapıldı. Personel güncel hâli görüyor ama <b>bildirim almadı</b>.
+          "Değişiklikleri yayınla" yeni sürüm oluşturur ve yalnız nöbeti değişen kişilere bildirir.
+        </div>
+      )}
+            <RuleVersionLine status={ruleStatus} block={ruleBlock} busy={busy} onRevalidate={revalidate} />
+      <div className="mt-2 text-[12px]">
+        <button type="button" className="text-sky-700 underline" onClick={() => { const next = !showHistory; setShowHistory(next); if (next) loadHistory(); }}>
+          {showHistory ? "İşlem geçmişini gizle" : `İşlem geçmişi${publication?.version ? ` · yayın sürümü ${publication.version}` : ""}`}
+        </button>
+        {showHistory && <ChangeHistory items={history} />}
+      </div>
       <BoundaryLine boundary={boundary} />
 
       {risks.length > 0 && (

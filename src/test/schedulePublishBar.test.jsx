@@ -11,6 +11,7 @@ vi.mock("../api/apiAdapter.js", () => ({
   getSlotCandidates: vi.fn(),
   assignSchedule: vi.fn(),
   revalidateMonthlySchedule: vi.fn(),
+  getScheduleChanges: vi.fn().mockResolvedValue({ items: [] }),
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -41,7 +42,10 @@ describe("SchedulePublishBar", () => {
   });
 
   it("risk yokken taslağı Yayınla ile yayınlar (çift tıklamada tek istek)", async () => {
-    getMonthlySchedule.mockResolvedValue({ publication: { status: "draft" } });
+    // Yayından sonra çubuk durumu sunucudan yeniden okur (yayınlandı).
+    getMonthlySchedule
+      .mockResolvedValueOnce({ publication: { status: "draft" } })
+      .mockResolvedValue({ publication: { status: "published" } });
     setSchedulePublication.mockResolvedValue({ ok: true, publication: { status: "published" }, notified: 42 });
 
     render(<SchedulePublishBar {...props} />);

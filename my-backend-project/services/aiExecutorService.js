@@ -252,7 +252,7 @@ async function execAssignShift({ entities, hospitalId }) {
     shiftLabel: shiftLabel || shiftCode,
   });
 
-  await MonthlySchedule.findByIdAndUpdate(doc._id, { $set: { 'data.assignments': assignments } });
+  await MonthlySchedule.findByIdAndUpdate(doc._id, { $set: { 'data.assignments': assignments }, $inc: { revision: 1 } });
   try {
     await upsertAssignment({
       scope: {
@@ -324,7 +324,7 @@ async function execRemoveShift({ entities, hospitalId }) {
     return { ok: false, message: `${resolvedPerson.name} için ${date} tarihinde silinecek atama bulunamadı` };
   }
 
-  await MonthlySchedule.findByIdAndUpdate(doc._id, { $set: { 'data.assignments': filtered } });
+  await MonthlySchedule.findByIdAndUpdate(doc._id, { $set: { 'data.assignments': filtered }, $inc: { revision: 1 } });
   try {
     for (const removedAssignment of removedAssignments) {
       const result = await removeAssignment({

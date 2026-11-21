@@ -436,7 +436,48 @@ async function sendSchedulePublished({ hospitalId, year, month, people = [] }) {
   }
 }
 
+/**
+ * Yayınlanmış çizelgede revizyon (İP-5 / E): yalnız nöbeti değişen kişilere uygulama içi
+ * bildirim. (E-posta/SMS ayrı karar: mevcut SMTP altyapısı kapalıyken ek maliyet yok.)
+ */
+async function sendScheduleRevised({ hospitalId, year, month, version, added = [], removed = [] }) {
+  const monthLabel = TR_MONTHS_NS[(Number(month) - 1)] || `Ay ${month}`;
+  // Kişi: personId varsa o; yoksa isimle (aynı hastanede benzersiz isim) eşleştir.
+  const keyOf = (x) => String(x.personId || '') || (x.personName ? `n:${String(x.personName).toLocaleUpperCase('tr-TR')}` : '');
+  const byPerson = new Map();
+  for (const a of added) { const k = keyOf(a); if (!k) continue; const v = byPerson.get(k) || { added: [], removed: [], name: a.personName }; v.added.push(a); byPerson.set(k, v); }
+  for (const r of removed) { const k = keyOf(r); if (!k) continue; const v = byPerson.get(k) || { added: [], removed: [], name: r.personName }; v.removed.push(r); byPerson.set(k, v); }
+  let sent = 0;
+  for (const [key, ch] of byPerson) {
+    let userId = null;
+    try {
+      let person = null;
+      if (!key.startsWith('n:')) person = await Person.findById(key).select('userId').lean();
+      else {
+        const list = await Person.find({ ...(hospitalId ? { hospitalId } : {}), name: new RegExp(`^${key.slice(2).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }).select('userId').limit(2).lean();
+        person = list.length === 1 ? list[0] : null;
+      }
+      userId = person?.userId ? String(person.userId) : null;
+    } catch {}
+    if (!userId) continue;
+    const parts = [];
+    if (ch.added.length) parts.push(`eklenen: ${ch.added.map((x) => `${x.date} ${x.shiftCode || ''}`.trim()).join(', ')}`);
+    if (ch.removed.length) parts.push(`çıkarılan: ${ch.removed.map((x) => x.date).join(', ')}`);
+    void saveAndBroadcast({
+      userId,
+      hospitalId: String(hospitalId || ''),
+      type: 'warning',
+      title: `${monthLabel} ${year} çizelgesi güncellendi (sürüm ${version})`,
+      message: `Nöbetleriniz değişti — ${parts.join('; ')}.`,
+      data: { year: Number(year), month: Number(month), version, added: ch.added, removed: ch.removed },
+    });
+    sent += 1;
+  }
+  return sent;
+}
+
 module.exports = {
+  sendScheduleRevised,
   sendLeaveApproved,
   sendLeaveRejected,
   sendShiftChanged,

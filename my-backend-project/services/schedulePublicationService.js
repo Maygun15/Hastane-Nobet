@@ -35,13 +35,24 @@ function draftPublication(user = null, reason = '') {
   };
 }
 
-function publishedPublication(user = null) {
+function publishedPublication(user = null, { contentRevision = null, version = null } = {}) {
   return {
     status: PUBLICATION_STATUS.PUBLISHED,
     publishedAt: new Date(),
     publishedBy: user?.uid || user || null,
     publishedByName: user?.name || user?.email || '',
+    // Yayınlanan içerik revizyonu (MonthlySchedule.revision) ve yayın sürümü (1, 2, 3 …).
+    ...(contentRevision !== null ? { contentRevision } : {}),
+    ...(version !== null ? { version } : {}),
   };
+}
+
+/** Yayınlanmış plan, yayından sonra değiştiyse true. */
+function hasUnpublishedChanges(doc) {
+  if (String(doc?.publication?.status || '') !== PUBLICATION_STATUS.PUBLISHED) return false;
+  const published = doc?.publication?.contentRevision;
+  if (published === undefined || published === null) return false; // eski yayın: bilinmiyor
+  return Number(doc?.revision || 0) !== Number(published);
 }
 
 /**
@@ -77,9 +88,9 @@ function excludeDraftScopes(query = {}, draftScopes = []) {
   };
 }
 
-async function setPublicationStatus(scopeQuery, status, user = null) {
+async function setPublicationStatus(scopeQuery, status, user = null, extra = {}) {
   const publication = status === PUBLICATION_STATUS.PUBLISHED
-    ? publishedPublication(user)
+    ? publishedPublication(user, extra)
     : draftPublication(user, 'manual');
   return MonthlySchedule.findOneAndUpdate(
     scopeQuery,
@@ -93,6 +104,7 @@ module.exports = {
   canViewDrafts,
   draftPublication,
   excludeDraftScopes,
+  hasUnpublishedChanges,
   findDraftScopes,
   isDraftSchedule,
   publishedPublication,

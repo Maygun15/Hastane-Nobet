@@ -215,7 +215,9 @@ async function restoreBeforeSnapshot(operation, { user = {}, reason = '' } = {})
       $set: {
         data: restoredData,
         updatedBy: user?.uid || null,
+        updatedByName: user?.name || null,
       },
+      $inc: { revision: 1 },
     },
     { new: true }
   ).lean();
@@ -223,6 +225,13 @@ async function restoreBeforeSnapshot(operation, { user = {}, reason = '' } = {})
   if (!saved) {
     throw makeError('SCHEDULE_NOT_FOUND_IN_SCOPE', 'No schedule was found in the requested scope.', 404);
   }
+  try {
+    await require('./scheduleChangeService').recordChange({
+      scope: query, scheduleId: saved._id, kind: 'undo', source: 'undo',
+      before: current?.data?.assignments || [], after: saved?.data?.assignments || [],
+      contentRevision: Number(saved.revision || 0), user,
+    });
+  } catch { /* geçmiş yazımı geri almayı bozmaz */ }
 
   await replaceAssignmentsForSchedule({
     scope: {

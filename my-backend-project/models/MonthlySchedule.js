@@ -39,6 +39,12 @@ const MonthlyScheduleSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: undefined,
     },
+    // Eş zamanlı düzenleme (İP-3 / C): içerik her değiştiğinde +1. Eski kayıtlarda yok (=0).
+    // Kaydetme isteği baseRevision taşır; uyuşmazsa 409 (sessiz üzerine yazma yok).
+    revision: { type: Number, default: undefined },
+    // Tekrarlanan isteği tanımak için son işlem kimliği (aynı opId → aynı sonuç, ikinci yazma yok).
+    lastOpId: { type: String, default: undefined },
+    updatedByName: { type: String, default: undefined },
     createdBy: { type: String, default: null },
     updatedBy: { type: String, default: null },
   },

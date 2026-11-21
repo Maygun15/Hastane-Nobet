@@ -201,6 +201,8 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const lastSavedSignatureRef = useRef(null);
   const hasRemoteLoadedRef = useRef(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState("idle");
+  const autoSaveStatusRef = useRef("idle");
+  useEffect(() => { autoSaveStatusRef.current = autoSaveStatus; }, [autoSaveStatus]);
   const [autoSaveError, setAutoSaveError] = useState(null);
   const [staffLoading, setStaffLoading] = useState(true);
   const [staffRevision, setStaffRevision] = useState(0);
@@ -213,6 +215,12 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   // bildirilir; sunucuda kurallar değiştiyse kayıt 409 alır ve otomatik kayıt durur.
   const ruleVersionRef = useRef(null);
   const ruleConflictRef = useRef(false);
+  // Eş zamanlı düzenleme (İP-3 / C): planın sunucudaki revizyonu, çakışma durumu ve
+  // ağ hatasından sonra aynı işlem kimliğiyle güvenli tekrar.
+  const revisionRef = useRef(null);
+  const pendingOpRef = useRef(null); // { opId, sig }
+  const [revisionConflict, setRevisionConflict] = useState(null); // { message, currentRevision, updatedByName }
+  const revisionConflictRef = useRef(null);
   const carryForwardRequestIdRef = useRef(0);
 
   const normalizeOverridesForSignature = useCallback((ovr) => {
@@ -1190,6 +1198,9 @@ const shouldShowRestRiskPanel =
       lastSavedSignatureRef.current = null;
       ruleVersionRef.current = null;
       ruleConflictRef.current = false;
+      revisionRef.current = 0;
+      revisionConflictRef.current = null;
+      setRevisionConflict(null);
       suppressNextAutoSaveRef.current = true;
       setAutoSaveStatus("idle");
       setAutoSaveError(null);
@@ -1319,6 +1330,9 @@ const shouldShowRestRiskPanel =
           }
           ruleVersionRef.current = schedule?.ruleContext?.version || null;
           ruleConflictRef.current = false;
+          revisionRef.current = Number.isFinite(Number(schedule?.revision)) ? Number(schedule.revision) : 0;
+          revisionConflictRef.current = null;
+          setRevisionConflict(null);
           setLastSavedInfo({
             updatedAt: schedule.updatedAt || schedule.createdAt || null,
             updatedBy: schedule.updatedBy || schedule.createdBy || null,
@@ -1537,6 +1551,13 @@ const shouldShowRestRiskPanel =
         source: "DutyRowsEditor",
         ...(payload._forceOverride ? { forceOverride: true } : {}),
       };
+      // Aynı içerik için ağ hatasından sonraki tekrar aynı işlem kimliğini kullanır:
+      // ilk istek sunucuya ulaşmışsa ikincisi yazmaz, aynı sonucu döner.
+      const saveSig = makeSignature(payload.defs, payload.overrides, payload.roster, payload.preview, payload.aiPlan, payload.pins, payload.rules);
+      const opId = pendingOpRef.current?.sig === saveSig
+        ? pendingOpRef.current.opId
+        : `op-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      pendingOpRef.current = { opId, sig: saveSig };
       const saved = await saveMonthlySchedule({
         sectionId,
         serviceId: serviceKey,
@@ -1546,7 +1567,11 @@ const shouldShowRestRiskPanel =
         data: payload,
         meta,
         ruleVersion: ruleVersionRef.current || undefined,
+        baseRevision: Number.isFinite(revisionRef.current) ? revisionRef.current : undefined,
+        opId,
       });
+      pendingOpRef.current = null;
+      if (Number.isFinite(Number(saved?.revision))) revisionRef.current = Number(saved.revision);
       setLastSavedInfo({
         updatedAt: saved?.updatedAt || new Date().toISOString(),
         updatedBy: saved?.updatedBy || null,
@@ -1578,6 +1603,24 @@ const shouldShowRestRiskPanel =
       return saved;
     } catch (err) {
       console.error("[DutyRowsEditor] saveMonthlySchedule err:", err);
+      if (err?.status) pendingOpRef.current = null; // sunucu yanıt verdi: yeni denemede yeni işlem
+      if (err?.status === 409 && err?.body?.code === "SCHEDULE_REVISION_CONFLICT") {
+        // Başkası değiştirmiş: kendi değişikliklerimizi yedekle, otomatik kaydı durdur, karar kullanıcıda.
+        try {
+          localStorage.setItem(conflictBackupKey(), JSON.stringify({ savedAt: new Date().toISOString(), payload }));
+        } catch {}
+        const info = {
+          message: err.body.message,
+          currentRevision: Number(err.body.currentRevision || 0),
+          updatedByName: err.body.updatedByName || null,
+        };
+        revisionConflictRef.current = info;
+        setRevisionConflict(info);
+        setAutoSaveStatus("error");
+        setAutoSaveError("Plan başka biri tarafından değiştirildi — değişiklikleriniz yedeklendi, aşağıdan seçim yapın.");
+        if (!silent) note(err.body.message, "warning");
+        throw err;
+      }
       if (err?.status === 409 && err?.body?.code === "RULE_VERSION_CONFLICT") {
         // Düzenlemeler ekranda korunur; otomatik kayıt, kullanıcı güncel kurallarla
         // doğrulayana kadar durur (sonsuz 409 döngüsü olmasın).
@@ -1598,6 +1641,64 @@ const shouldShowRestRiskPanel =
       setSaving(false);
     }
   }, [sectionId, serviceKey, role, year, month1, rows, overrides, roster, preview, aiPlan, pins, rules, manualChangeLog, daysInMonth, note, makeSignature, isSpecificService]);
+
+  const conflictBackupKey = useCallback(
+    () => `cizelgeYedek:${sectionId}|${serviceKey}|${role}|${year}-${month1}`,
+    [sectionId, serviceKey, role, year, month1]
+  );
+  const readConflictBackup = useCallback(() => {
+    try { return JSON.parse(localStorage.getItem(conflictBackupKey()) || "null"); } catch { return null; }
+  }, [conflictBackupKey]);
+  const [backupTick, setBackupTick] = useState(0);
+  const conflictBackup = useMemo(() => readConflictBackup(), [readConflictBackup, backupTick, revisionConflict]);
+
+  // Çakışmada seçenek 1: güncel planı yükle (değişiklikler yedekte kalır).
+  const loadLatestAfterConflict = useCallback(() => {
+    revisionConflictRef.current = null;
+    setRevisionConflict(null);
+    setAutoSaveError(null);
+    setUndoRefreshKey((k) => k + 1);
+  }, []);
+  // Seçenek 2: yedekteki değişikliklerimi güncel planın üzerine geri getir (kaydetmeden önce gözden geçir).
+  const restoreConflictBackup = useCallback(() => {
+    const b = readConflictBackup();
+    if (!b?.payload) return;
+    const p = b.payload;
+    if (Array.isArray(p.defs)) replaceAllDefs(p.defs);
+    if (p.overrides && typeof p.overrides === "object") setOverrides(p.overrides);
+    if ("roster" in p) setRoster(p.roster || null);
+    if ("preview" in p) setPreview(p.preview || null);
+    try { localStorage.removeItem(conflictBackupKey()); } catch {}
+    setBackupTick((t) => t + 1);
+    note("Yedekteki değişiklikleriniz geri getirildi; gözden geçirip kaydedin.", "info");
+  }, [readConflictBackup, replaceAllDefs, conflictBackupKey, note]);
+  // Seçenek 3: benimkini bilerek kaydet (diğer değişikliğin üzerine yazar).
+  const overwriteAfterConflict = useCallback(async () => {
+    const c = revisionConflictRef.current;
+    if (!c) return;
+    revisionRef.current = c.currentRevision;
+    revisionConflictRef.current = null;
+    setRevisionConflict(null);
+    try {
+      await doSave({ silent: false });
+      try { localStorage.removeItem(conflictBackupKey()); } catch {}
+      setBackupTick((t) => t + 1);
+    } catch { /* hata durumu doSave içinde gösterilir */ }
+  }, [doSave, conflictBackupKey]);
+
+  // Aynı sayfadaki başka bileşen planı değiştirdiyse (ör. "Yerine ata"): bekleyen değişiklik
+  // yoksa güncel planı yeniden yükle; varsa sonraki kayıt revizyon çakışmasıyla yakalanır.
+  useEffect(() => {
+    const onChanged = (e) => {
+      const d = e?.detail || {};
+      if (!d.source || d.source === "editor") return;
+      if (autoSaveStatusRef.current === "idle" || autoSaveStatusRef.current === "saved") {
+        setUndoRefreshKey((k) => k + 1);
+      }
+    };
+    window.addEventListener("schedule:changed", onChanged);
+    return () => window.removeEventListener("schedule:changed", onChanged);
+  }, []);
 
   // Yayın çubuğundan "Güncel kurallarla doğrula" yapılınca: yeni sürümü al, çakışmayı kaldır,
   // bekleyen değişiklik varsa otomatik kayıt kaldığı yerden devam etsin.
@@ -1640,6 +1741,7 @@ const shouldShowRestRiskPanel =
     }
     if (!sectionId || loadingRemote) return;
     if (ruleConflictRef.current) return; // kural sürümü çakışması çözülene kadar otomatik kayıt yok
+    if (revisionConflictRef.current) return; // plan revizyonu çakışması çözülene kadar otomatik kayıt yok
     const sig = computeSignature();
     if (!sig) return;
     if (suppressNextAutoSaveRef.current) {
@@ -2001,6 +2103,7 @@ const shouldShowRestRiskPanel =
         ruleVersionRef.current = res.ruleContext.version;
         ruleConflictRef.current = false;
       }
+      if (Number.isFinite(Number(res?.scheduleRevision))) revisionRef.current = Number(res.scheduleRevision);
       if (res?.boundary?.status === "missing") {
         // Önceki ay verisi yok: ay başı dinlenme/ardışıklık kontrolü sınırlı — kullanıcı bilsin.
         note(res.boundary.message, "warning");
@@ -2274,6 +2377,20 @@ const shouldShowRestRiskPanel =
             <span className="text-rose-600">
               Kaydetme hatası: {autoSaveError || "Bilinmeyen hata"}
             </span>
+          )}
+          {revisionConflict && (
+            <div role="alert" data-testid="revision-conflict" className="mt-1 flex w-full flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+              <span>{revisionConflict.message}</span>
+              <button type="button" onClick={loadLatestAfterConflict} className="rounded border border-amber-400 bg-white px-2 py-0.5">Güncel planı yükle (değişikliklerim yedekte)</button>
+              <button type="button" onClick={overwriteAfterConflict} className="rounded border border-rose-300 bg-white px-2 py-0.5 text-rose-700">Benimkini kaydet (diğer değişikliğin üzerine yaz)</button>
+            </div>
+          )}
+          {!revisionConflict && conflictBackup?.payload && (
+            <div data-testid="conflict-backup" className="mt-1 flex w-full flex-wrap items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-[12px] text-sky-900">
+              <span>Çakışma nedeniyle kaydedilmeyen değişiklikleriniz yedekte ({new Date(conflictBackup.savedAt).toLocaleString("tr-TR")}).</span>
+              <button type="button" onClick={restoreConflictBackup} className="rounded border border-sky-300 bg-white px-2 py-0.5">Yedekteki değişikliklerimi geri getir</button>
+              <button type="button" onClick={() => { try { localStorage.removeItem(conflictBackupKey()); } catch {} setBackupTick((t) => t + 1); }} className="rounded border border-slate-300 bg-white px-2 py-0.5">Yedeği sil</button>
+            </div>
           )}
           {!loadingRemote && !saving && autoSaveStatus === "saved" && hasLastSaved && (
             <span>

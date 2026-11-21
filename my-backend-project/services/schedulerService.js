@@ -10,6 +10,7 @@ const { generateDraftRoster } = require('./scheduler/draftRoster');
 const { fetchDutyRules, DEFAULT_RULES, DEFAULT_WEIGHTS } = require('./scheduler/ruleResolver');
 const institutionRules = require('./institutionRules');
 const monthBoundary = require('./scheduler/monthBoundary');
+const scheduleChanges = require('./scheduleChangeService');
 const { replaceAssignmentsForSchedule } = require('./assignmentSyncService');
 const { resolveStaff } = require('./scheduler/staffResolver');
 const { validateAssignments } = require('./scheduler/validator');
@@ -27,6 +28,7 @@ const MONTHLY_SCHEDULER_INPUT_PROJECTION = {
   'data.overrides': 1,
   'data.shiftOptions': 1,
   'data.roster': 1,
+  'data.assignments': 1,
 };
 
 function normalizeRuleCode(code) {
@@ -714,13 +716,15 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     );
   }
 
+  let scheduleRevision = null;
   // MonthlySchedule write-back intentionally stays assignment-only:
   // legacy monthly readers should not become explainability authorities.
   try {
     if (scheduleDoc?._id) {
-      await MonthlySchedule.findByIdAndUpdate(
+      const written = await MonthlySchedule.findByIdAndUpdate(
         scheduleDoc._id,
         {
+          $inc: { revision: 1 },
           $set: {
             ...buildMonthlyScheduleWriteback({ data: persistedData, existingRoster: scheduleDoc?.data?.roster }),
             // Yeni üretilen çizelge sorumlu yayınlayana kadar personele görünmez.
@@ -731,6 +735,13 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
         },
         { new: true }
       );
+      scheduleRevision = Number(written?.revision || 0);
+      await scheduleChanges.recordChange({
+        scope: { hospitalId, sectionId, serviceId, role, year, month }, scheduleId: scheduleDoc._id,
+        kind: 'generate', source: 'scheduler',
+        before: scheduleDoc?.data?.assignments || [], after: written?.data?.assignments || [],
+        contentRevision: scheduleRevision, user: userId ? { uid: userId } : null,
+      });
     }
   } catch (e) {
     const monthlyWriteBackDiagnostic = buildMonthlyWriteBackDiagnostic(e);
@@ -770,7 +781,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     console.warn('[scheduler] Assignment sync hatası:', syncErr?.message || syncErr);
   }
 
-  return { data: persistedData, rules, weights, quality, generatedId: String(doc._id), ruleContext, ignoredClientRules, boundary: summarizeBoundary(boundary) };
+  return { data: persistedData, rules, weights, quality, generatedId: String(doc._id), ruleContext, ignoredClientRules, boundary: summarizeBoundary(boundary), scheduleRevision };
 }
 
 module.exports = {

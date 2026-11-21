@@ -64,3 +64,19 @@ export async function db() {
 export async function closeDb() {
   if (mongoose) await mongoose.disconnect();
 }
+
+// Tekrarlanabilirlik: senaryolar yerel veriyi değiştirir; başta anlık görüntü alınır, sonda geri yüklenir.
+const SNAPSHOT_COLLECTIONS = ['monthlyschedules', 'assignments', 'dutyrules', 'schedulechanges', 'leavebalances', 'requests', 'settings'];
+export async function snapshotData() {
+  const d = await db();
+  const snap = {};
+  for (const c of SNAPSHOT_COLLECTIONS) snap[c] = await d.collection(c).find({}).toArray();
+  return snap;
+}
+export async function restoreData(snap) {
+  const d = await db();
+  for (const [c, docs] of Object.entries(snap || {})) {
+    await d.collection(c).deleteMany({});
+    if (docs.length) await d.collection(c).insertMany(docs);
+  }
+}

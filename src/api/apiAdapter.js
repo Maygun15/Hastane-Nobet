@@ -518,6 +518,8 @@ export async function saveMonthlySchedule({
   data,
   meta,
   ruleVersion,
+  baseRevision,
+  opId,
 } = {}) {
   if (!sectionId) throw new Error("sectionId gerekli");
   const body = {
@@ -530,6 +532,9 @@ export async function saveMonthlySchedule({
     meta: meta ?? {},
     // Planın düzenlendiği kurum kuralı sürümü; sunucuda değiştiyse 409 RULE_VERSION_CONFLICT.
     ...(ruleVersion ? { ruleVersion } : {}),
+    // Eş zamanlı düzenleme: üzerine çalışılan revizyon (uyuşmazsa 409) ve tekrar-güvenli işlem kimliği.
+    ...(Number.isFinite(baseRevision) ? { baseRevision } : {}),
+    ...(opId ? { opId } : {}),
   };
   const payload = await httpRequest("/api/schedules/monthly", {
     method: "PUT",
@@ -969,4 +974,11 @@ export async function revalidateMonthlySchedule({ sectionId, serviceId = "", rol
     token,
     body: { sectionId, serviceId, role, year, month },
   });
+}
+
+/** Çizelge işlem geçmişi ve yayın sürümleri (kim, hangi nöbet, ne zaman). */
+export async function getScheduleChanges({ sectionId, serviceId = "", role = "", year, month } = {}, { limit = 30 } = {}) {
+  if (!sectionId) throw new Error("sectionId gerekli");
+  const qs = new URLSearchParams({ sectionId, serviceId: String(serviceId ?? ""), role: String(role ?? ""), year: String(year), month: String(month), limit: String(limit) });
+  return httpRequest(`/api/schedules/changes?${qs.toString()}`);
 }

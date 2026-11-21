@@ -18,6 +18,12 @@ jest.mock('../services/holidayService', () => ({ listHolidays: jest.fn().mockRes
 jest.mock('../services/notificationService', () => ({
   sendShiftChanged: jest.fn().mockResolvedValue(undefined),
   sendSchedulePublished: jest.fn().mockResolvedValue(undefined),
+  sendScheduleRevised: jest.fn().mockResolvedValue(2),
+}));
+jest.mock('../services/scheduleChangeService', () => ({
+  recordChange: jest.fn().mockResolvedValue({ _id: 'ev-1' }),
+  listChanges: jest.fn().mockResolvedValue([]),
+  preparePublish: jest.fn().mockResolvedValue({ version: 1, isRevision: false, added: [], removed: [], affectedPersonIds: [], snapshot: [] }),
 }));
 jest.mock('../services/fairnessEngine', () => ({
   computeMonthlyFairnessScores: jest.fn(),
@@ -293,6 +299,37 @@ describe('POST /publish', () => {
     expect(sendSchedulePublished).toHaveBeenCalledWith(expect.objectContaining({
       people: [{ personId: 'p-1', fairnessScore: 90 }],
     }));
+  });
+
+  test('içerik değişmediyse tekrar yayın: yeniden yayın ve bildirim yok', async () => {
+    const { sendScheduleRevised } = require('../services/notificationService');
+    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', ...SCOPE, data: {}, revision: 7,
+      publication: { status: 'published', contentRevision: 7, version: 2 }, ruleContext: { version: 'kv-test' } }));
+    const r = await call('post', '/publish', { user: PLANNER, body: { ...SCOPE } });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ alreadyPublished: true, notified: 0 });
+    expect(MonthlySchedule.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(sendSchedulePublished).not.toHaveBeenCalled();
+    expect(sendScheduleRevised).not.toHaveBeenCalled();
+  });
+
+  test('yayından sonra değişen plan yeni sürüm olarak yayınlanır; yalnız etkilenenlere bildirim', async () => {
+    const scheduleChanges = require('../services/scheduleChangeService');
+    const { sendScheduleRevised } = require('../services/notificationService');
+    scheduleChanges.preparePublish.mockResolvedValueOnce({
+      version: 3, isRevision: true, previousVersion: 2,
+      added: [{ date: '2026-12-05', personId: 'p-1', shiftCode: 'N' }], removed: [{ date: '2026-12-05', personId: 'p-2' }],
+      affectedPersonIds: ['p-1', 'p-2'], snapshot: ['k'],
+    });
+    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', ...SCOPE, data: {}, revision: 9,
+      publication: { status: 'published', contentRevision: 7, version: 2 }, ruleContext: { version: 'kv-test' } }));
+    MonthlySchedule.findOneAndUpdate.mockReturnValue(lean({ _id: 'sched-1', publication: { status: 'published', version: 3, contentRevision: 9 } }));
+    const r = await call('post', '/publish', { user: PLANNER, body: { ...SCOPE } });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ version: 3, notified: 2, revision: { previousVersion: 2, added: 1, removed: 1, affected: 2 } });
+    expect(MonthlySchedule.findOneAndUpdate.mock.calls[0][1].$set.publication).toMatchObject({ contentRevision: 9, version: 3 });
+    expect(sendScheduleRevised).toHaveBeenCalledWith(expect.objectContaining({ version: 3 }));
+    expect(sendSchedulePublished).not.toHaveBeenCalled();
   });
 
   test('çizelge yoksa 404', async () => {

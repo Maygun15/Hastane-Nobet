@@ -1,6 +1,7 @@
 // routes/schedules.routes.js
 const express = require('express');
 const institutionRules = require('../services/institutionRules');
+const scheduleChanges = require('../services/scheduleChangeService');
 const router = express.Router();
 
 const MonthlySchedule = require('../models/MonthlySchedule');
@@ -1181,6 +1182,9 @@ router.get('/monthly',
           meta: doc.meta || {},
           publication: doc.publication || { status: PUBLICATION_STATUS.PUBLISHED, legacy: true },
           ruleContext: doc.ruleContext || null,
+          revision: currentRevisionOf(doc),
+          hasUnpublishedChanges: require('../services/schedulePublicationService').hasUnpublishedChanges(doc),
+          updatedByName: doc.updatedByName || null,
           rules: ruleStatusOf(doc, await resolveRulesForQuery(query).catch(() => null)),
           issues,
           createdAt: doc.createdAt,
@@ -1238,12 +1242,88 @@ router.post('/monthly/carry-forward-template',
   }
 );
 
+
+/* ─── Eş zamanlı düzenleme (İP-3 / C) ─── */
+function currentRevisionOf(doc) {
+  return Number(doc?.revision || 0);
+}
+// Eski kayıtta revision alanı yok: "yok" ile 0 aynı sayılır.
+function revisionFilter(doc) {
+  return doc && doc.revision !== undefined && doc.revision !== null
+    ? { revision: doc.revision }
+    : { $or: [{ revision: { $exists: false } }, { revision: null }, { revision: 0 }] };
+}
+function revisionConflictPayload(doc) {
+  return {
+    ok: false,
+    code: 'SCHEDULE_REVISION_CONFLICT',
+    message: `Bu çizelge siz düzenlerken ${doc?.updatedByName || 'başka bir kullanıcı'} tarafından değiştirildi${doc?.updatedAt ? ` (${new Date(doc.updatedAt).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })})` : ''}. Değişiklikleriniz kaydedilmedi ve ekranda korunuyor.`,
+    currentRevision: currentRevisionOf(doc),
+    updatedAt: doc?.updatedAt || null,
+    updatedBy: doc?.updatedBy || null,
+    updatedByName: doc?.updatedByName || null,
+  };
+}
+function monthlyResponse(doc, query) {
+  return {
+    id: String(doc._id),
+    ...query,
+    data: doc.data || {},
+    meta: doc.meta || {},
+    revision: currentRevisionOf(doc),
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+    createdBy: doc.createdBy || null,
+    updatedBy: doc.updatedBy || null,
+    updatedByName: doc.updatedByName || null,
+  };
+}
+
+
+// Çizelge tablosundan (isim) gelen atamalarda personId olmayabilir; kaydederken kaybolmasın.
+// Önce mevcut kayıttaki aynı isimli atamalardan, sonra hastanedeki benzersiz isimli personelden.
+async function restorePersonIds(assignments = [], existing = [], hospitalId = null) {
+  const norm = (v) => String(v || '').trim().toLocaleUpperCase('tr-TR');
+  const missing = assignments.filter((a) => a && !a.personId && a.personName);
+  if (!missing.length) return { assignments, restored: 0 };
+  const byName = new Map();
+  for (const a of existing || []) if (a?.personId && a?.personName) byName.set(norm(a.personName), String(a.personId));
+  const unresolved = [...new Set(missing.map((a) => norm(a.personName)).filter((n) => !byName.has(n)))];
+  if (unresolved.length) {
+    const Person = require('../models/Person');
+    const people = await Person.find({ ...(hospitalId ? { hospitalId } : {}) }).select('name').lean();
+    const counts = new Map();
+    for (const p of people) counts.set(norm(p.name), (counts.get(norm(p.name)) || 0) + 1);
+    for (const p of people) if (counts.get(norm(p.name)) === 1 && unresolved.includes(norm(p.name))) byName.set(norm(p.name), String(p._id));
+  }
+  let restored = 0;
+  const out = assignments.map((a) => {
+    if (!a || a.personId || !a.personName) return a;
+    const id = byName.get(norm(a.personName));
+    if (!id) return a;
+    restored += 1;
+    return { ...a, personId: id };
+  });
+  return { assignments: out, restored };
+}
+
 async function upsertMonthly(req, res) {
   try {
     const query = req.scheduleQuery;
     let payload = req.body?.data || {};
     const meta = req.body?.meta || {};
     const existingDoc = await MonthlySchedule.findOne(query).lean();
+
+    // Tekrarlanan istek (aynı opId): ikinci kez yazma; aynı sonucu döndür.
+    const opId = typeof req.body?.opId === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(req.body.opId) ? req.body.opId : null;
+    if (opId && existingDoc?.lastOpId === opId) {
+      return res.json({ ok: true, replayed: true, schedule: monthlyResponse(existingDoc, query) });
+    }
+    // Eş zamanlı düzenleme: istemci üzerine çalıştığı revizyonu bildirir (baseRevision).
+    const baseRevision = req.body?.baseRevision;
+    if (baseRevision !== undefined && baseRevision !== null && Number(baseRevision) !== currentRevisionOf(existingDoc)) {
+      return res.status(409).json(revisionConflictPayload(existingDoc));
+    }
 
     // Kural sürümü kontrolü: istemci planı hangi kural sürümüyle düzenlediğini bildirirse
     // ve bu sürüm artık güncel değilse kaydetme 409 ile durur (sessizce eski kurala göre
@@ -1279,6 +1359,8 @@ async function upsertMonthly(req, res) {
     }
 
     if (payload && typeof payload === 'object' && Array.isArray(payload.assignments)) {
+      const { assignments: withIds } = await restorePersonIds(payload.assignments, existingData.assignments, req.hospitalId || null);
+      payload = { ...payload, assignments: withIds };
       const holidays = await listHolidays({ year: query.year, month: query.month, hospitalId: req.hospitalId });
       const holidayKindByDate = buildHolidayKindByDateMap(holidays);
       const defs = Array.isArray(payload.defs)
@@ -1312,20 +1394,36 @@ async function upsertMonthly(req, res) {
       data: payload,
       meta,
       updatedBy: req.user?.uid || null,
+      updatedByName: req.user?.name || null,
+      ...(opId ? { lastOpId: opId } : {}),
     };
 
+    // Atomik karşılaştır-ve-güncelle: yalnız okunan revizyon hâlâ geçerliyse yazar.
+    const casFilter = existingDoc
+      ? { ...query, _id: existingDoc._id, ...revisionFilter(existingDoc) }
+      : query;
     const doc = await MonthlySchedule.findOneAndUpdate(
-      query,
+      casFilter,
       {
         $set: update,
+        $inc: { revision: 1 },
         $setOnInsert: {
           ...query,
           publication: draftPublication(req.user, 'created'),
           createdBy: req.user?.uid || null,
         },
       },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      { new: true, upsert: !existingDoc, setDefaultsOnInsert: true }
     ).lean();
+    if (!doc) {
+      const latest = await MonthlySchedule.findOne(query).lean();
+      return res.status(409).json(revisionConflictPayload(latest));
+    }
+    await scheduleChanges.recordChange({
+      scope: query, scheduleId: doc._id, kind: 'edit', source: 'monthly-save',
+      before: existingDoc?.data?.assignments || [], after: doc?.data?.assignments || [],
+      contentRevision: currentRevisionOf(doc), user: req.user,
+    });
 
     try {
       await replaceAssignmentsForSchedule({
@@ -1342,23 +1440,13 @@ async function upsertMonthly(req, res) {
       console.error('[assignmentSync][upsertMonthly] ERR:', syncErr);
     }
 
-    return res.json({
-      ok: true,
-      schedule: {
-        id: String(doc._id),
-        ...query,
-        data: doc.data || {},
-        meta: doc.meta || {},
-        createdAt: doc.createdAt,
-        updatedAt: doc.updatedAt,
-        createdBy: doc.createdBy || null,
-        updatedBy: doc.updatedBy || null,
-      },
-    });
+    return res.json({ ok: true, schedule: monthlyResponse(doc, query) });
   } catch (err) {
     console.error('[PUT/POST /api/schedules/monthly] ERR:', err);
     if (err?.message?.includes('duplicate key')) {
-      return res.status(409).json({ ok: false, message: 'Çakışan kayıt' });
+      // Aynı anda iki ilk kayıt: ikincisi revizyon çakışması olarak bildirilir.
+      const latest = await MonthlySchedule.findOne(req.scheduleQuery).lean().catch(() => null);
+      return res.status(409).json(revisionConflictPayload(latest));
     }
     if (err.name === 'ValidationError' || err.name === 'CastError') {
       return res.status(400).json({ ok: false, message: err.message });
@@ -1657,7 +1745,9 @@ router.post('/assign',
         $set: {
           data: nextData,
           updatedBy: req.user?.uid || null,
+          updatedByName: req.user?.name || null,
         },
+        $inc: { revision: 1 },
         $setOnInsert: {
           ...query,
           publication: draftPublication(req.user, 'created'),
@@ -1670,6 +1760,11 @@ router.post('/assign',
         update,
         { new: true, upsert: true, setDefaultsOnInsert: true }
       ).lean();
+      await scheduleChanges.recordChange({
+        scope: query, scheduleId: saved?._id || null, kind: 'edit', source: 'assign',
+        before: assignments, after: saved?.data?.assignments || [],
+        contentRevision: currentRevisionOf(saved), user: req.user,
+      });
 
       let projectionSyncOk = true;
       try {
@@ -1835,10 +1930,17 @@ router.delete('/assign',
             $set: {
               data: nextData,
               updatedBy: req.user?.uid || null,
+              updatedByName: req.user?.name || null,
             },
+            $inc: { revision: 1 },
           },
           { new: true }
         ).lean();
+        await scheduleChanges.recordChange({
+          scope: targetQuery, scheduleId: saved?._id || null, kind: 'edit', source: 'unassign',
+          before: doc?.data?.assignments || [], after: saved?.data?.assignments || [],
+          contentRevision: currentRevisionOf(saved), user: req.user,
+        });
 
         return {
           removed: true,
@@ -2829,16 +2931,49 @@ router.post('/publish',
           risks: riskResult.risks.filter((r) => !r.acknowledged).slice(0, 50),
         });
       }
-      const saved = await setPublicationStatus(query, PUBLICATION_STATUS.PUBLISHED, req.user);
+      const current = riskResult.doc;
+      const contentRevision = currentRevisionOf(current);
+      // Tekrarlanan yayın: içerik son yayından beri değişmediyse yeniden yayın / bildirim yok.
+      if (current?.publication?.status === PUBLICATION_STATUS.PUBLISHED
+        && current?.publication?.contentRevision === contentRevision) {
+        return res.json({ ok: true, alreadyPublished: true, publication: current.publication, notified: 0 });
+      }
+
+      // Yayın sürümü ve önceki yayına göre fark (revizyon ise yalnız etkilenenlere bildirim).
+      const prep = await scheduleChanges.preparePublish(query, current?.data?.assignments || []);
+      const saved = await setPublicationStatus(query, PUBLICATION_STATUS.PUBLISHED, req.user, {
+        contentRevision,
+        version: prep.version,
+      });
+      await scheduleChanges.recordChange({
+        scope: query, scheduleId: current?._id || null, kind: 'publish', source: 'publish',
+        contentRevision, publishVersion: prep.version, snapshot: prep.snapshot, user: req.user,
+        added: prep.isRevision ? prep.added : [], removed: prep.isRevision ? prep.removed : [],
+        note: prep.isRevision ? `Sürüm ${prep.previousVersion} → ${prep.version}: ${prep.added.length} eklendi, ${prep.removed.length} çıkarıldı` : 'İlk yayın',
+      });
 
       let notified = 0;
       try {
-        notified = await notifyScheduleAudience(query);
+        if (prep.isRevision) {
+          const { sendScheduleRevised } = require('../services/notificationService');
+          notified = await sendScheduleRevised({
+            hospitalId: query.hospitalId, year: query.year, month: query.month,
+            version: prep.version, added: prep.added, removed: prep.removed,
+          });
+        } else {
+          notified = await notifyScheduleAudience(query);
+        }
       } catch (notifyErr) {
         console.error('[POST /api/schedules/publish] bildirim ERR:', notifyErr?.message || notifyErr);
       }
 
-      return res.json({ ok: true, publication: saved?.publication || null, notified });
+      return res.json({
+        ok: true,
+        publication: saved?.publication || null,
+        notified,
+        version: prep.version,
+        revision: prep.isRevision ? { previousVersion: prep.previousVersion, added: prep.added.length, removed: prep.removed.length, affected: prep.affectedPersonIds.length } : null,
+      });
     } catch (err) {
       console.error('[POST /api/schedules/publish] ERR:', err);
       return res.status(500).json({ ok: false, message: 'Sunucu hatası' });
@@ -2857,6 +2992,10 @@ router.post('/unpublish',
       if (!saved) {
         return res.status(404).json({ ok: false, code: 'SCHEDULE_NOT_FOUND_IN_SCOPE', message: 'Bu kapsamda çizelge bulunamadı.' });
       }
+      await scheduleChanges.recordChange({
+        scope: req.scheduleQuery, scheduleId: saved._id, kind: 'unpublish', source: 'unpublish',
+        contentRevision: currentRevisionOf(saved), user: req.user,
+      });
       return res.json({ ok: true, publication: saved.publication || null });
     } catch (err) {
       console.error('[POST /api/schedules/unpublish] ERR:', err);
@@ -2865,7 +3004,33 @@ router.post('/unpublish',
   }
 );
 
+// İşlem geçmişi: kim, hangi nöbeti, ne zaman değiştirdi; yayın sürümleri.
+router.get('/changes',
+  requireAuth,
+  publicationScope,
+  allowMonthlyRead,
+  async (req, res) => {
+    try {
+      if (!canViewDrafts(req.user)) return res.status(403).json({ ok: false, message: 'Yetki yok' });
+      const items = await scheduleChanges.listChanges(req.scheduleQuery, { limit: req.query?.limit });
+      const doc = await MonthlySchedule.findOne(req.scheduleQuery).select('revision publication').lean();
+      const { hasUnpublishedChanges } = require('../services/schedulePublicationService');
+      return res.json({
+        ok: true,
+        items: items.map(({ snapshot, ...rest }) => rest),
+        contentRevision: currentRevisionOf(doc),
+        publication: doc?.publication || null,
+        hasUnpublishedChanges: hasUnpublishedChanges(doc),
+      });
+    } catch (err) {
+      console.error('[GET /api/schedules/changes] ERR:', err);
+      return res.status(500).json({ ok: false, message: 'Sunucu hatası' });
+    }
+  }
+);
+
 router.__test = {
+  restorePersonIds,
   chooseMonthlyResponseAssignments,
   slotKey,
   trimOverbookedAssignments,
