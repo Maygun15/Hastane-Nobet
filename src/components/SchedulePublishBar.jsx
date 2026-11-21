@@ -11,6 +11,7 @@ import {
   getMonthlySchedule,
   getScheduleRisks,
   getSlotCandidates,
+  revalidateMonthlySchedule,
   setSchedulePublication,
 } from "../api/apiAdapter.js";
 
@@ -174,6 +175,56 @@ function RiskRow({ risk, busy, onAck, onFillSlot }) {
   );
 }
 
+
+const RULE_STATUS_TEXT = {
+  current: "Güncel kurum kurallarıyla oluşturuldu",
+  outdated: "Kurum kuralları bu plandan sonra değişti",
+  unknown: "Kural sürümü bilinmiyor (eski plan)",
+};
+
+function shortVersion(v) {
+  return v ? String(v).replace(/^kv-/, "").slice(0, 6) : "—";
+}
+
+export function RuleVersionLine({ status, block, busy, onRevalidate }) {
+  if (!status && !block) return null;
+  const st = status?.status || "unknown";
+  const needsAction = !!block || st !== "current";
+  const notConfigured = status && !status.rulesConfigured;
+  const incomplete = status && status.rulesConfigured && !status.rulesComplete;
+  return (
+    <div
+      data-testid="rule-version-line"
+      className={`mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-[12px] ${
+        needsAction ? "border-amber-300 bg-white text-amber-900" : "border-slate-200 bg-white text-slate-600"
+      }`}
+    >
+      <div>
+        <span className="font-semibold">Kurallar:</span>{" "}
+        {notConfigured
+          ? "Kurum kuralları sunucuda tanımlı değil (Parametreler → Nöbet Kuralları)."
+          : incomplete
+            ? "Zorunlu kurum kuralı eksik (Parametreler → Nöbet Kuralları)."
+            : RULE_STATUS_TEXT[st]}
+        {status?.planVersion ? ` · plan sürümü ${shortVersion(status.planVersion)}` : ""}
+        {status?.currentVersion && st !== "current" ? ` · güncel sürüm ${shortVersion(status.currentVersion)}` : ""}
+        {status?.planCapturedAt ? ` · ${formatDate(status.planCapturedAt)}` : ""}
+        {block?.message ? <div className="mt-0.5 text-amber-800">{block.message}</div> : null}
+      </div>
+      {needsAction && status?.rulesComplete !== false && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onRevalidate}
+          className="rounded-lg border border-amber-400 bg-amber-50 px-2.5 py-1 font-medium text-amber-900 disabled:opacity-60"
+        >
+          {busy ? "Doğrulanıyor…" : "Güncel kurallarla doğrula"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function SchedulePublishBar({ sectionId, serviceId = "", role = "", year, month, refreshKey }) {
   const [publication, setPublication] = useState(null);
   const [exists, setExists] = useState(false);
@@ -182,6 +233,9 @@ export default function SchedulePublishBar({ sectionId, serviceId = "", role = "
   const [busy, setBusy] = useState(false);
   const [fillRisk, setFillRisk] = useState(null);
   const busyRef = useRef(false);
+  // Kurum kuralı sürümü (İP-1): { status: 'current'|'outdated'|'unknown', planVersion, currentVersion, ... }
+  const [ruleStatus, setRuleStatus] = useState(null);
+  const [ruleBlock, setRuleBlock] = useState(null); // yayın/kayıt sırasında gelen kural engeli
   const scope = { sectionId, serviceId, role, year, month };
 
   const load = useCallback(async () => {
@@ -190,6 +244,7 @@ export default function SchedulePublishBar({ sectionId, serviceId = "", role = "
       const schedule = await getMonthlySchedule({ sectionId, serviceId, role, year, month });
       setExists(!!schedule);
       setPublication(schedule?.publication || null);
+      setRuleStatus(schedule?.rules || null);
       if (schedule) {
         const r = await getScheduleRisks({ sectionId, serviceId, role, year, month }).catch(() => null);
         setRisks(Array.isArray(r?.risks) ? r.risks : []);
@@ -252,8 +307,36 @@ export default function SchedulePublishBar({ sectionId, serviceId = "", role = "
         toast.success("Çizelge taslağa alındı");
       }
     } catch (e) {
-      toast.error(publish ? "Çizelge yayınlanamadı" : "Taslağa alınamadı", { description: e?.message || "" });
+      const code = e?.body?.code || "";
+      if (/^RULE(S)?_/.test(code)) {
+        // Kural kaynaklı engel: açıklama + çözüm düğmesi çubukta kalır.
+        setRuleBlock({ code, message: e?.body?.message || e?.message || "" });
+      }
+      toast.error(publish ? "Çizelge yayınlanamadı" : "Taslağa alınamadı", { description: e?.body?.message || e?.message || "" });
       await load();
+    }
+  });
+
+  // Güncel kurum kurallarıyla yeniden doğrula → plan sürümü güncellenir, riskler yeniden hesaplanır.
+  const revalidate = () => withLock(async () => {
+    try {
+      const res = await revalidateMonthlySchedule(scope);
+      setRuleBlock(null);
+      setRuleStatus(res?.rules || null);
+      const n = Number(res?.ruleViolations || 0);
+      toast.success("Plan güncel kurallarla doğrulandı", {
+        description: n ? `${n} kural ihlali risk listesinde; yayından önce karar verin.` : "Kural ihlali bulunmadı.",
+      });
+      try {
+        window.dispatchEvent(new CustomEvent("rules:revalidated", {
+          detail: { ...scope, version: res?.ruleContext?.version || null },
+        }));
+      } catch {}
+      await load();
+    } catch (e) {
+      const code = e?.body?.code || "";
+      if (/^RULES_/.test(code)) setRuleBlock({ code, message: e?.body?.message || e?.message || "" });
+      toast.error("Doğrulama yapılamadı", { description: e?.body?.message || e?.message || "Tekrar deneyin." });
     }
   });
 
@@ -303,6 +386,8 @@ export default function SchedulePublishBar({ sectionId, serviceId = "", role = "
           </button>
         )}
       </div>
+
+      <RuleVersionLine status={ruleStatus} block={ruleBlock} busy={busy} onRevalidate={revalidate} />
 
       {risks.length > 0 && (
         <div className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-800" data-testid="risk-panel">

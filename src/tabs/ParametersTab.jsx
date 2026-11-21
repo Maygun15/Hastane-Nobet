@@ -18,7 +18,8 @@ import WorkingHoursTab from "./WorkingHoursTab.jsx";
 import LeaveTypesTab from "./LeaveTypesTab.jsx";
 import HolidayCalendarTab from "./HolidayCalendarTab.jsx";
 import ServicesTab from "./ServicesTab.jsx";
-import DutyRulesTabExplained from "./DutyRulesTab.Explained.jsx"; // ✅ açıklamalı yeni bileşen
+import DutyRulesTabExplained from "./DutyRulesTab.Explained.jsx";
+import InstitutionRulesPanel from "../components/InstitutionRulesPanel.jsx"; // ✅ açıklamalı yeni bileşen
 import ScheduleRulesManager from "../components/ScheduleRulesManager.jsx";
 import RequestBoxTab from "./RequestBoxTab.jsx";
 import { API, getToken } from "../lib/api.js";
@@ -456,64 +457,10 @@ export default function ParametersTab({
     try { localStorage.setItem(LS_KEY_RULES, JSON.stringify(dutyRules)); } catch {}
   }, [dutyRules]);
 
-  // Backend sync (online-only yapıda tek kaynak)
-  const syncTimer = useRef(null);
-  const loadedRef = useRef(false);
-  const lastSyncedRulesRef = useRef("");
-  const RULE_SCOPE = { sectionId: "calisma-cizelgesi", serviceId: "", role: "" };
-
-  useEffect(() => {
-    let alive = true;
-    const token = getToken();
-    if (!token) return;
-    (async () => {
-      try {
-        const qs = new URLSearchParams(RULE_SCOPE).toString();
-        const res = await API.http.get(`/api/duty-rules?${qs}`);
-        const backendRules = res?.rule?.rules || null;
-        if (!alive) return;
-        if (backendRules) {
-          setDutyRules((prev) => {
-            const next = applyBackendRulesToList(prev, backendRules);
-            lastSyncedRulesRef.current = stableRulesPayload(RULE_SCOPE, next);
-            return next;
-          });
-        } else {
-          lastSyncedRulesRef.current = stableRulesPayload(RULE_SCOPE, dutyRules);
-        }
-        loadedRef.current = true;
-      } catch (err) {
-        loadedRef.current = true;
-      }
-    })();
-    return () => { alive = false; };
-  }, []);
-
-  useEffect(() => {
-    const token = getToken();
-    if (!token) return;
-    if (!loadedRef.current) return;
-    const payload = { ...RULE_SCOPE, rules: mapRulesToBackend(dutyRules), weights: {} };
-    const serialized = JSON.stringify(payload);
-    if (lastSyncedRulesRef.current === serialized) return;
-    if (syncTimer.current) clearTimeout(syncTimer.current);
-    syncTimer.current = setTimeout(async () => {
-      try {
-        await API.http.req(`/api/duty-rules`, { method: "PUT", body: payload, retries: 0 });
-        lastSyncedRulesRef.current = serialized;
-      } catch (err) {
-        // BUG-13: kayıt hatası sessiz kalmasın; kurallar sadece bu tarayıcıda kalmış olabilir.
-        console.warn("DutyRules sync failed:", err?.message || err);
-        toast.error("Nöbet kuralları sunucuya kaydedilemedi", {
-          id: "duty-rules-sync-failed",
-          description: "Değişiklik sadece bu tarayıcıda duruyor. Bağlantıyı kontrol edip kuralı tekrar düzenleyin.",
-        });
-      }
-    }, 600);
-    return () => {
-      if (syncTimer.current) clearTimeout(syncTimer.current);
-    };
-  }, [dutyRules]);
+  // Not (İP-1): Kural değerlerinin yetkili kaynağı sunucudaki "Kurum kuralları" kaydıdır
+  // (InstitutionRulesPanel). Bu açıklamalı liste yalnız tarayıcıda tutulan bilgi/politika
+  // listesidir; eski "tarayıcı → sunucu" senkronu kaldırıldı (sunucudaki kaydı boş listeyle
+  // eziyordu ve motor bu listeyi okumuyordu).
 
   // active değişince hem LS’e hem HASH’e yaz
   useEffect(() => {
@@ -656,7 +603,10 @@ export default function ParametersTab({
         {active === "servisler"        && <ServicesTab />}
         {active === "tatil-takvimi"    && <HolidayCalendarTab />}
         {active === "nobet-kurallari"  && (
-          <DutyRulesTabExplained rules={dutyRules} setRules={setDutyRules} />
+          <>
+            <InstitutionRulesPanel />
+            <DutyRulesTabExplained rules={dutyRules} setRules={setDutyRules} />
+          </>
         )}
         {active === "nobet-yazma-kurallari" && (
           <ScheduleRulesManager sectionId="calisma-cizelgesi" />

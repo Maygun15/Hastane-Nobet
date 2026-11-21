@@ -965,7 +965,6 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
         })
         .filter((person) => person.id && person.name);
 
-      const rules = readDutyRulesFromLS();
       const leavesByPerson = buildLeavesByPersonForMonth(allLeaves, year, month, staffPayload);
       const supervisorConfig = LS.get("supervisorConfig", null);
       const supervisorPool = LS.get("supervisorPool", null);
@@ -982,7 +981,7 @@ export default function PlanTab({ workAreas = [], workingHours = [], peopleAll: 
         overrides,
         shiftOptions,
         ...(staffPayload.length ? { staff: staffPayload } : {}),
-        ...(Object.keys(rules).length ? { rules } : {}),
+        // Kural değerleri gönderilmez: sunucu yetkili kaynaktan (kurum kuralları) okur.
         ...(Object.keys(leavesByPerson).length ? { leavesByPerson } : {}),
         ...(supervisorConfig ? { supervisorConfig } : {}),
         ...(Array.isArray(supervisorPool) && supervisorPool.length ? { supervisorPool } : {}),

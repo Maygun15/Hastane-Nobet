@@ -10,6 +10,7 @@ vi.mock("../api/apiAdapter.js", () => ({
   setSchedulePublication: vi.fn(),
   getSlotCandidates: vi.fn(),
   assignSchedule: vi.fn(),
+  revalidateMonthlySchedule: vi.fn(),
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 

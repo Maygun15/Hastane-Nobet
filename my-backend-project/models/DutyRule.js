@@ -374,6 +374,25 @@ const DutyRuleSchema = new mongoose.Schema(
       notes: String
     },
 
+    // KURUM KURALLARI (yetkili kaynak) — services/institutionRules.js
+    // Planlama motorunun kullandığı değerler burada tutulur; tarayıcıdaki eski
+    // `dutyRulesV2` değerleri yalnız tek seferlik geçişte okunur.
+    policy: {
+      type: new mongoose.Schema(
+        {
+          values: { type: mongoose.Schema.Types.Mixed, default: {} },   // { MIN_REST_HOURS: 11, ... }
+          sources: { type: mongoose.Schema.Types.Mixed, default: {} },  // { MIN_REST_HOURS: 'kurum' }
+          revision: { type: Number, default: 0 },                       // her kayıtta +1
+          updatedAt: { type: Date, default: null },
+          updatedBy: { type: String, default: null },                   // kullanıcı kimliği
+          updatedByName: { type: String, default: null },
+          migrationKeys: { type: [String], default: [] },               // tekrar edilen geçişi engeller
+        },
+        { _id: false, minimize: false }
+      ),
+      default: undefined,
+    },
+
     createdBy: String,
     updatedBy: String
   },

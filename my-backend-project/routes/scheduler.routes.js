@@ -58,6 +58,9 @@ router.post('/generate', requireAuth, requireRole('admin', 'authorized'), requir
     const jobId = await enqueueScheduleJob({ ...params, userId, payload: params.payload, hospitalId });
     return res.status(202).json({ ok: true, jobId, status: 'queued' });
   } catch (err) {
+    if (err?.code === 'RULES_NOT_CONFIGURED' || err?.code === 'RULES_INCOMPLETE') {
+      return res.status(422).json({ ok: false, code: err.code, message: err.message, missingRequired: err.missingRequired || [] });
+    }
     console.error('[POST /api/scheduler/generate] ERR:', err);
     if (err?.code === 'SPECIFIC_SERVICE_REQUIRED') {
       return res.status(400).json(specificServiceErrorPayload(err));

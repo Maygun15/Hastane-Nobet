@@ -8,6 +8,7 @@ const { listHolidays } = require('./holidayService');
 const { generateMonthlyPlan } = require('./scheduler');
 const { generateDraftRoster } = require('./scheduler/draftRoster');
 const { fetchDutyRules, DEFAULT_RULES, DEFAULT_WEIGHTS } = require('./scheduler/ruleResolver');
+const institutionRules = require('./institutionRules');
 const { replaceAssignmentsForSchedule } = require('./assignmentSyncService');
 const { resolveStaff } = require('./scheduler/staffResolver');
 const { validateAssignments } = require('./scheduler/validator');
@@ -556,9 +557,17 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   const engineMode = String(payload.engine || payload.mode || '').toLowerCase();
   const useDraft = engineMode === 'draft';
 
-  const { doc: ruleDoc, rules: dbRules, weights: dbWeights } = await fetchDutyRules({ sectionId, serviceId, role, hospitalId });
-  const rules = { ...dbRules, ...(payload.rules || {}) };
+  // Kural değerleri YALNIZCA sunucudaki kurum kurallarından gelir (services/institutionRules.js).
+  // İstemcinin gönderdiği `payload.rules` yok sayılır; farklıysa yanıtta raporlanır.
+  // Zorunlu kural eksikse plan üretilmez (açıklayıcı 422).
+  const resolvedRules = institutionRules.assertRulesReady(
+    await institutionRules.resolveInstitutionRules({ hospitalId, sectionId, serviceId, role })
+  );
+  const ignoredClientRules = institutionRules.diffClientRules(payload.rules, resolvedRules);
+  const { doc: ruleDoc, weights: dbWeights } = await fetchDutyRules({ sectionId, serviceId, role, hospitalId });
+  const rules = institutionRules.toSchedulerRules(resolvedRules);
   const weights = { ...dbWeights, ...(payload.weights || {}) };
+  const ruleContext = institutionRules.buildRuleSnapshot(resolvedRules, { by: userId || null, mode: 'generated' });
 
   let context = null;
   let draftResult = null;
@@ -631,7 +640,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
   });
 
   if (dryRun) {
-    return { data, rules, weights, quality, sourceScheduleId: scheduleDoc?._id || null };
+    return { data, rules, weights, quality, sourceScheduleId: scheduleDoc?._id || null, ruleContext, ignoredClientRules };
   }
 
   let persistedData = data;
@@ -685,6 +694,8 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
             ...buildMonthlyScheduleWriteback({ data: persistedData, existingRoster: scheduleDoc?.data?.roster }),
             // Yeni üretilen çizelge sorumlu yayınlayana kadar personele görünmez.
             publication: draftPublication(userId, 'generated'),
+            // Bu plan hangi kurum kuralı sürümüyle üretildi (kayıt/yayın çakışma kontrolü için).
+            ruleContext,
           },
         },
         { new: true }
@@ -728,7 +739,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     console.warn('[scheduler] Assignment sync hatası:', syncErr?.message || syncErr);
   }
 
-  return { data: persistedData, rules, weights, quality, generatedId: String(doc._id) };
+  return { data: persistedData, rules, weights, quality, generatedId: String(doc._id), ruleContext, ignoredClientRules };
 }
 
 module.exports = {

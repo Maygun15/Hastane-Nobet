@@ -1,6 +1,15 @@
 // services/ruleEngine.js
 const DutyRule = require('../models/DutyRule');
 
+
+// DutyRule.leaveRules / taskRequirements şemada Map; ama `.lean()` ile okunan belgede düz
+// nesne gelir. İkisini de destekle (aksi halde "taskRequirements?.get is not a function").
+function mapLikeGet(container, key) {
+  if (!container || key == null) return undefined;
+  if (typeof container.get === 'function') return container.get(key);
+  return Object.prototype.hasOwnProperty.call(container, key) ? container[key] : undefined;
+}
+
 class RuleEngine {
   constructor(rules) {
     this.rules = rules || {};
@@ -31,7 +40,7 @@ class RuleEngine {
 
     // İzin durumu kontrol
     if (person.leaveType) {
-      const leaveRule = leaveRules?.get(person.leaveType);
+      const leaveRule = mapLikeGet(leaveRules, person.leaveType);
       if (leaveRule && !leaveRule.allowDuty) {
         return {
           eligible: false,
@@ -42,7 +51,7 @@ class RuleEngine {
 
     // Görev gereksinimlerini kontrol et
     if (taskCode) {
-      const taskReq = taskRequirements?.get(taskCode);
+      const taskReq = mapLikeGet(taskRequirements, taskCode);
       if (taskReq?.allowedRoles && person.role) {
         const isRoleAllowed = taskReq.allowedRoles.some(
           role => role.toLowerCase() === person.role.toLowerCase()
@@ -285,7 +294,7 @@ class RuleEngine {
       return { canWork: true, countsAsWorked: false };
     }
 
-    const leaveRule = this.rules?.leaveRules?.get(person.leaveType);
+    const leaveRule = mapLikeGet(this.rules?.leaveRules, person.leaveType);
     if (!leaveRule) {
       return { canWork: true, countsAsWorked: false };
     }
@@ -306,7 +315,7 @@ class RuleEngine {
       return { valid: true };
     }
 
-    const currentShiftRule = this.rules.shiftRules.get(currentShift);
+    const currentShiftRule = mapLikeGet(this.rules?.shiftRules, currentShift);
     if (!currentShiftRule) {
       return { valid: true };
     }

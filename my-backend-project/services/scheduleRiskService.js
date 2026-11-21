@@ -37,7 +37,7 @@ const DEFAULT_LIMITS = Object.freeze({ MIN_REST_HOURS: 12, MAX_CONSECUTIVE_DAYS:
 const KURAL_LABEL = {
   GUNDE_IKI_VARDIYA: 'Aynı gün iki vardiya',
   CAKISMA: 'Vardiyalar çakışıyor',
-  DINLENME_12S: '12 saatten az dinlenme',
+  DINLENME_12S: 'Kurum kuralındaki en az dinlenme süresinin altında',
   GECE_SONRASI_GUN: '24 saat nöbetin ertesi günü çalışma',
   ART_ARDA_GUN: 'Art arda gün sınırı aşıldı',
   HAFTALIK_SAAT: 'Haftalık saat sınırı aşıldı',
@@ -154,7 +154,7 @@ function auditAssignments({ assignments = [], days = [], staff = [], limits = {}
         if (p && c) {
           const gap = c.from - p.to;
           if (gap < 0) add('CAKISMA', a, `${prev.date} ${prev.shiftCode}`);
-          else if (minRest && gap < minRest) add('DINLENME_12S', a, `${(gap / 60).toFixed(1)} saat`);
+          else if (minRest && gap < minRest) add('DINLENME_12S', a, `${(gap / 60).toFixed(1)} saat; kural en az ${minRest / 60} saat`);
         }
         // Dinlenme kuralının gece tanımı (N / NIGHT / V2 / 24 saat) — V1 dahil değil.
         const prevRestNight = isNightCleanupCode(prev.shiftCode) || Number(prev.hours || 0) >= 24;

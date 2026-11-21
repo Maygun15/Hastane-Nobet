@@ -1,5 +1,6 @@
 // routes/schedules.routes.js
 const express = require('express');
+const institutionRules = require('../services/institutionRules');
 const router = express.Router();
 
 const MonthlySchedule = require('../models/MonthlySchedule');
@@ -1179,6 +1180,8 @@ router.get('/monthly',
           data: scheduleData,
           meta: doc.meta || {},
           publication: doc.publication || { status: PUBLICATION_STATUS.PUBLISHED, legacy: true },
+          ruleContext: doc.ruleContext || null,
+          rules: ruleStatusOf(doc, await resolveRulesForQuery(query).catch(() => null)),
           issues,
           createdAt: doc.createdAt,
           updatedAt: doc.updatedAt,
@@ -1241,6 +1244,22 @@ async function upsertMonthly(req, res) {
     let payload = req.body?.data || {};
     const meta = req.body?.meta || {};
     const existingDoc = await MonthlySchedule.findOne(query).lean();
+
+    // Kural sürümü kontrolü: istemci planı hangi kural sürümüyle düzenlediğini bildirirse
+    // ve bu sürüm artık güncel değilse kaydetme 409 ile durur (sessizce eski kurala göre
+    // kayıt yok). Sürüm bildirmeyen eski istemciler geri uyum için kabul edilir.
+    const declaredRuleVersion = req.body?.ruleVersion;
+    if (typeof declaredRuleVersion === 'string' && declaredRuleVersion) {
+      const resolved = await resolveRulesForQuery(query);
+      if (resolved.version !== declaredRuleVersion) {
+        const status = ruleStatusOf({ ruleContext: { version: declaredRuleVersion } }, resolved);
+        return res.status(409).json(ruleConflictPayload(
+          'RULE_VERSION_CONFLICT',
+          status,
+          'Kurum kuralları siz düzenlerken değişti. Değişiklikleriniz kaydedilmedi; "Güncel kurallarla doğrula" ile planı yeni kurallara göre kontrol edip tekrar kaydedin.'
+        ));
+      }
+    }
     const existingData = existingDoc?.data && typeof existingDoc.data === 'object' ? existingDoc.data : {};
 
     if (payload && typeof payload === 'object') {
@@ -2575,12 +2594,44 @@ async function notifyScheduleAudience(query) {
   return people.length;
 }
 
+
+/* ─── Kurum kuralı sürümü (plan ↔ yetkili kural kaydı) ─── */
+async function resolveRulesForQuery(query) {
+  return institutionRules.resolveInstitutionRules({
+    hospitalId: query.hospitalId || null,
+    sectionId: query.sectionId,
+    serviceId: query.serviceId,
+    role: query.role,
+  });
+}
+
+// unknown: planda sürüm kaydı yok (eski plan) · current: güncel · outdated: kurallar sonradan değişti
+function ruleStatusOf(doc, resolved) {
+  const planVersion = doc?.ruleContext?.version || null;
+  const currentVersion = resolved?.version || null;
+  let status = 'unknown';
+  if (planVersion) status = planVersion === currentVersion ? 'current' : 'outdated';
+  return {
+    status,
+    planVersion,
+    currentVersion,
+    planCapturedAt: doc?.ruleContext?.capturedAt || null,
+    planMode: doc?.ruleContext?.mode || null,
+    rulesConfigured: !!resolved?.configured,
+    rulesComplete: !!resolved?.complete,
+    missingRequired: resolved?.missingRequired || [],
+  };
+}
+
+function ruleConflictPayload(code, ruleStatus, message) {
+  return { ok: false, code, message, rules: ruleStatus };
+}
+
 /* ─── Yayın öncesi riskler (scheduleRiskService) ─── */
 async function loadScheduleRisks(query) {
   const { buildSchedulerInput } = require('../services/scheduler/inputBuilder');
   const { applyHolidayPolicies } = require('../services/scheduler/holidayPolicyAdapter');
   const { resolveStaff } = require('../services/scheduler/staffResolver');
-  const { fetchDutyRules } = require('../services/scheduler/ruleResolver');
   const { loadPreferencesFromDb } = require('../services/preferenceRequestService');
   const { computeScheduleRisks } = require('../services/scheduleRiskService');
 
@@ -2597,10 +2648,12 @@ async function loadScheduleRisks(query) {
   const personIds = staff.map((p) => String(p?._id || p?.id || ''));
   const [preferencesByPerson, ruleInfo] = await Promise.all([
     loadPreferencesFromDb({ hospitalId: query.hospitalId, personIds, year: query.year, month: query.month }).catch(() => ({})),
-    fetchDutyRules({ sectionId: query.sectionId, serviceId: query.serviceId, role: query.role, hospitalId: query.hospitalId }).catch(() => ({ rules: {} })),
+    // Kural limitleri yetkili kaynaktan (kurum kuralları); tanımsızsa boş + durum bilgisi.
+    resolveRulesForQuery(query).catch(() => null),
   ]);
   const assignments = Array.isArray(doc?.data?.assignments) ? doc.data.assignments : [];
-  const context = { assignments, days, staff, preferencesByPerson, limits: ruleInfo?.rules || {} };
+  const limits = ruleInfo ? institutionRules.toSchedulerRules(ruleInfo) : {};
+  const context = { assignments, days, staff, preferencesByPerson, limits, resolvedRules: ruleInfo };
   return {
     doc,
     context,
@@ -2683,6 +2736,44 @@ router.post('/risks/ack',
   }
 );
 
+// Güncel kurum kurallarıyla yeniden doğrula: riskleri güncel kurallarla hesaplar ve planın
+// kural sürümünü günceller. Kural ihlali varsa risk paneline düşer (yayın kararı yöneticide).
+router.post('/monthly/revalidate',
+  requireAuth,
+  requireRole('admin', 'authorized', 'manager'),
+  publicationScope,
+  sameServiceOrAdmin,
+  async (req, res) => {
+    try {
+      const query = req.scheduleQuery;
+      const resolved = await resolveRulesForQuery(query);
+      if (!resolved.complete) {
+        const err = new institutionRules.RulesNotReadyError(resolved);
+        return res.status(422).json({ ok: false, code: err.code, message: err.message, missingRequired: err.missingRequired });
+      }
+      const riskResult = await loadScheduleRisks(query);
+      if (!riskResult) {
+        return res.status(404).json({ ok: false, code: 'SCHEDULE_NOT_FOUND_IN_SCOPE', message: 'Bu kapsamda çizelge bulunamadı.' });
+      }
+      const ruleContext = institutionRules.buildRuleSnapshot(resolved, { by: req.user?.uid || null, mode: 'revalidated' });
+      await MonthlySchedule.updateOne({ _id: riskResult.doc._id }, { $set: { ruleContext } });
+      const ruleViolations = (riskResult.risks || []).filter((r) => r.type === 'KURAL');
+      return res.json({
+        ok: true,
+        ruleContext,
+        rules: ruleStatusOf({ ruleContext }, resolved),
+        risks: riskResult.risks,
+        total: riskResult.total,
+        pending: riskResult.pending,
+        ruleViolations: ruleViolations.length,
+      });
+    } catch (err) {
+      console.error('[POST /api/schedules/monthly/revalidate] ERR:', err);
+      return res.status(500).json({ ok: false, message: 'Sunucu hatası' });
+    }
+  }
+);
+
 router.post('/publish',
   requireAuth,
   requireRole('admin', 'authorized', 'manager'),
@@ -2694,6 +2785,25 @@ router.post('/publish',
       const riskResult = await loadScheduleRisks(query);
       if (!riskResult) {
         return res.status(404).json({ ok: false, code: 'SCHEDULE_NOT_FOUND_IN_SCOPE', message: 'Bu kapsamda çizelge bulunamadı.' });
+      }
+      // Yayın yalnızca GÜNCEL kurum kurallarıyla üretilmiş/doğrulanmış plan için.
+      const resolvedRules = riskResult.context?.resolvedRules || await resolveRulesForQuery(query);
+      const ruleStatus = ruleStatusOf(riskResult.doc, resolvedRules);
+      if (!resolvedRules?.complete) {
+        return res.status(422).json(ruleConflictPayload(
+          resolvedRules?.configured ? 'RULES_INCOMPLETE' : 'RULES_NOT_CONFIGURED',
+          ruleStatus,
+          new institutionRules.RulesNotReadyError(resolvedRules).message
+        ));
+      }
+      if (ruleStatus.status !== 'current') {
+        return res.status(409).json(ruleConflictPayload(
+          ruleStatus.status === 'unknown' ? 'RULE_VERSION_UNKNOWN' : 'RULE_VERSION_CONFLICT',
+          ruleStatus,
+          ruleStatus.status === 'unknown'
+            ? 'Bu planın hangi kurallarla oluşturulduğu bilinmiyor. Yayından önce "Güncel kurallarla doğrula" ile kontrol edin.'
+            : 'Plan oluşturulduktan sonra kurum kuralları değişti. Yayından önce "Güncel kurallarla doğrula" ile kontrol edin.'
+        ));
       }
       // Karara bağlanmamış risk varken yayın yok (hastane kararı 2026-11-16).
       if (riskResult.pending > 0) {
@@ -2748,6 +2858,7 @@ router.__test = {
 };
 
 module.exports = router;
+module.exports.ruleStatusOf = ruleStatusOf;
 
 /* =========================================================
    GET /api/schedules/generated

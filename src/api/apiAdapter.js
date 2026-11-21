@@ -517,6 +517,7 @@ export async function saveMonthlySchedule({
   month,
   data,
   meta,
+  ruleVersion,
 } = {}) {
   if (!sectionId) throw new Error("sectionId gerekli");
   const body = {
@@ -527,6 +528,8 @@ export async function saveMonthlySchedule({
     month,
     data: data ?? {},
     meta: meta ?? {},
+    // Planın düzenlendiği kurum kuralı sürümü; sunucuda değiştiyse 409 RULE_VERSION_CONFLICT.
+    ...(ruleVersion ? { ruleVersion } : {}),
   };
   const payload = await httpRequest("/api/schedules/monthly", {
     method: "PUT",
@@ -923,4 +926,47 @@ export async function exportToIKFormat({ year, month, standardHours } = {}) {
   link.click();
   link.remove();
   URL.revokeObjectURL(link.href);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   KURUM KURALLARI (yetkili kaynak: sunucu) — İP-1
+   ───────────────────────────────────────────────────────────── */
+function ruleScopeQuery({ sectionId = "calisma-cizelgesi", serviceId = "", role = "" } = {}) {
+  const qs = new URLSearchParams();
+  qs.set("sectionId", String(sectionId || "calisma-cizelgesi"));
+  qs.set("serviceId", String(serviceId || ""));
+  qs.set("role", String(role || ""));
+  return qs.toString();
+}
+
+/** Etkin kurum kuralları (katmanlar, sürüm, eksik zorunlular, katalog). */
+export async function getEffectiveRules(scope = {}, { token } = {}) {
+  return httpRequest(`/api/duty-rules/effective?${ruleScopeQuery(scope)}`, { token });
+}
+
+/** Bir kural katmanını kaydeder. expectedRevision uyuşmazsa 409 RULES_REVISION_CONFLICT. */
+export async function saveRulePolicy({ scope = {}, values = {}, sources = {}, expectedRevision } = {}, { token } = {}) {
+  return httpRequest(`/api/duty-rules/policy`, {
+    method: "PUT",
+    token,
+    body: { sectionId: "calisma-cizelgesi", ...scope, values, sources, expectedRevision },
+  });
+}
+
+/** Tarayıcıdaki eski ayarların tek seferlik aktarımı (aynı migrationKey ile tekrar güvenli). */
+export async function migrateRulePolicy({ scope = {}, values = {}, sources = {}, migrationKey } = {}, { token } = {}) {
+  return httpRequest(`/api/duty-rules/policy/migrate`, {
+    method: "POST",
+    token,
+    body: { sectionId: "calisma-cizelgesi", ...scope, values, sources, migrationKey },
+  });
+}
+
+/** Planı güncel kurum kurallarıyla yeniden doğrular ve plan kural sürümünü günceller. */
+export async function revalidateMonthlySchedule({ sectionId, serviceId = "", role = "", year, month } = {}, { token } = {}) {
+  return httpRequest(`/api/schedules/monthly/revalidate`, {
+    method: "POST",
+    token,
+    body: { sectionId, serviceId, role, year, month },
+  });
 }

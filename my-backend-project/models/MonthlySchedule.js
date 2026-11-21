@@ -26,6 +26,13 @@ const MonthlyScheduleSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: undefined,
     },
+    // Planın hangi KURUM KURALI sürümüyle üretildiği/doğrulandığı:
+    // { version, values, sources, layers, capturedAt, capturedBy, mode: 'generated'|'revalidated' }
+    // Alan yoksa (eski plan) "kural sürümü bilinmiyor" — bkz. services/institutionRules.js
+    ruleContext: {
+      type: mongoose.Schema.Types.Mixed,
+      default: undefined,
+    },
     // Yöneticinin "bu şekilde devam" kararları: { [riskKey]: { by, byName, at, note } }
     // — bkz. services/scheduleRiskService.js
     riskAcks: {

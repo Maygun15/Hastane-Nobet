@@ -5,6 +5,7 @@ const DutyRule = require('../models/DutyRule');
 const RuleEngine = require('../services/ruleEngine');
 const { withHospitalFilter } = require('../middleware/hospital');
 const { requireRole } = require('../middleware/authz');
+const institutionRules = require('../services/institutionRules');
 const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const LEGACY_DEFAULT_SECTION_ID = 'calisma-cizelgesi';
 const safeMessage = (err, fallback = 'Sunucu hatası') =>
@@ -97,6 +98,191 @@ router.put('/', requireRole('admin', 'yetkili'), async (req, res) => {
     return res.json({ ok: true, rule: doc });
   } catch (err) {
     return res.status(500).json({ message: safeMessage(err) });
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────
+   KURUM KURALLARI (yetkili kaynak) — services/institutionRules.js
+   ───────────────────────────────────────────────────────────── */
+
+// Kural düzenleme yetkisi: admin her kapsamı; yetkili (staff) yalnız kendi servis(ler)inin
+// servis katmanını düzenleyebilir; genel (servissiz) katman yalnız admin. Personel (user) hiçbirini.
+// Hastane ayrımı: sorgular req.hospitalId ile süzülür (withHospitalFilter + hospitalScope eklentisi).
+function canEditRuleScope(user, scope) {
+  const role = String(user?.role || '').toLowerCase();
+  if (role === 'admin' || role === 'superadmin') return { ok: true };
+  if (['staff', 'authorized', 'yetkili'].includes(role)) {
+    if (!scope.serviceId) {
+      return { ok: false, message: 'Genel kurum kurallarını yalnızca yönetici değiştirebilir.' };
+    }
+    const own = Array.isArray(user?.serviceIds) ? user.serviceIds.map(String) : [];
+    if (!own.includes(String(scope.serviceId))) {
+      return { ok: false, message: 'Bu servisin kurallarını değiştirme yetkiniz yok.' };
+    }
+    return { ok: true };
+  }
+  return { ok: false, message: 'Kural değiştirme yetkiniz yok.' };
+}
+
+function publicResolved(resolved) {
+  return {
+    ...resolved,
+    catalog: institutionRules.catalogForClient(),
+    sourceLabels: institutionRules.SOURCE_LABEL,
+  };
+}
+
+// GET /api/duty-rules/effective?sectionId=&serviceId=&role=
+// Planlamada kullanılacak ETKİN kurallar + katmanlar + sürüm. Aynı kapsamı okuyan her
+// oturum aynı `version` değerini görür.
+router.get('/effective', async (req, res) => {
+  try {
+    const scope = institutionRules.normalizeScope(req.query || {});
+    const resolved = await institutionRules.resolveInstitutionRules({ hospitalId: req.hospitalId || null, ...scope });
+    return res.json({ ok: true, ...publicResolved(resolved) });
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: safeMessage(err) });
+  }
+});
+
+// PUT /api/duty-rules/policy
+// Body: { sectionId, serviceId, role, values, sources, expectedRevision }
+// Tek bir katmanın değerlerini TAMAMEN yazar (göndermediğiniz anahtar bu katmandan silinir).
+// expectedRevision ≠ sunucudaki revizyon → 409 (başka biri değiştirmiş).
+router.put('/policy', async (req, res) => {
+  try {
+    const scope = institutionRules.normalizeScope(req.body || {});
+    const perm = canEditRuleScope(req.user, scope);
+    if (!perm.ok) return res.status(403).json({ ok: false, code: 'FORBIDDEN', message: perm.message });
+
+    const checked = institutionRules.validatePolicyInput({ values: req.body?.values, sources: req.body?.sources });
+    if (!checked.ok) {
+      return res.status(400).json({ ok: false, code: 'VALIDATION_FAILED', message: 'Kural değerleri geçersiz.', errors: checked.errors });
+    }
+
+    const filter = buildScopedRuleFilter(req, scope);
+    const current = await DutyRule.findOne(filter).lean();
+    const currentRevision = Number(current?.policy?.revision || 0);
+    const expected = req.body?.expectedRevision;
+    if (expected !== undefined && expected !== null && Number(expected) !== currentRevision) {
+      const resolved = await institutionRules.resolveInstitutionRules({ hospitalId: req.hospitalId || null, ...scope });
+      return res.status(409).json({
+        ok: false,
+        code: 'RULES_REVISION_CONFLICT',
+        message: `Bu kurallar siz düzenlerken değişti (${current?.policy?.updatedByName || 'başka bir kullanıcı'}). Güncel değerleri yükleyip tekrar deneyin.`,
+        currentRevision,
+        current: publicResolved(resolved),
+      });
+    }
+
+    const now = new Date();
+    const doc = await DutyRule.findOneAndUpdate(
+      { ...filter, ...(current ? { _id: current._id } : {}), ...(current ? { 'policy.revision': current?.policy?.revision ?? { $exists: false } } : {}) },
+      {
+        $set: {
+          'policy.values': checked.values,
+          'policy.sources': checked.sources,
+          'policy.revision': currentRevision + 1,
+          'policy.updatedAt': now,
+          'policy.updatedBy': req.user?.uid || null,
+          'policy.updatedByName': req.user?.name || null,
+          updatedBy: req.user?.uid || null,
+        },
+        $setOnInsert: {
+          sectionId: scope.sectionId,
+          serviceId: scope.serviceId,
+          role: scope.role,
+          ...(req.hospitalId ? { hospitalId: req.hospitalId } : {}),
+          createdBy: req.user?.uid || null,
+        },
+      },
+      { upsert: !current, new: true, setDefaultsOnInsert: true }
+    ).lean();
+    if (!doc) {
+      // Okuma ile yazma arasında başka bir kayıt geldi.
+      return res.status(409).json({ ok: false, code: 'RULES_REVISION_CONFLICT', message: 'Kurallar aynı anda değişti. Güncel değerleri yükleyip tekrar deneyin.' });
+    }
+    const resolved = await institutionRules.resolveInstitutionRules({ hospitalId: req.hospitalId || null, ...scope });
+    return res.json({ ok: true, revision: doc.policy.revision, ...publicResolved(resolved) });
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: safeMessage(err) });
+  }
+});
+
+// POST /api/duty-rules/policy/migrate
+// Tarayıcıdaki eski ayarların (dutyRulesV2) TEK SEFERLİK sunucuya aktarımı.
+// Body: { sectionId, serviceId, role, values, sources, migrationKey }
+// - Kapsamda kayıt yoksa oluşturulur (revizyon 1).
+// - Aynı migrationKey ile tekrar çağrılırsa hiçbir şey değişmez (alreadyApplied).
+// - Kapsamda zaten kayıt varsa üzerine YAZILMAZ: 409 + farklar döner; değişiklik bilinçli
+//   olarak "Kaydet" (PUT /policy) ile yapılır.
+router.post('/policy/migrate', async (req, res) => {
+  try {
+    const scope = institutionRules.normalizeScope(req.body || {});
+    const perm = canEditRuleScope(req.user, scope);
+    if (!perm.ok) return res.status(403).json({ ok: false, code: 'FORBIDDEN', message: perm.message });
+    const migrationKey = String(req.body?.migrationKey || '').trim();
+    if (!/^[a-zA-Z0-9_-]{8,80}$/.test(migrationKey)) {
+      return res.status(400).json({ ok: false, code: 'VALIDATION_FAILED', message: 'migrationKey gerekli.' });
+    }
+    const checked = institutionRules.validatePolicyInput({ values: req.body?.values, sources: req.body?.sources });
+    if (!checked.ok) {
+      return res.status(400).json({ ok: false, code: 'VALIDATION_FAILED', message: 'Aktarılacak değerler geçersiz.', errors: checked.errors });
+    }
+
+    const filter = buildScopedRuleFilter(req, scope);
+    const current = await DutyRule.findOne(filter).lean();
+    const keys = current?.policy?.migrationKeys || [];
+    if (keys.includes(migrationKey)) {
+      const resolved = await institutionRules.resolveInstitutionRules({ hospitalId: req.hospitalId || null, ...scope });
+      return res.json({ ok: true, alreadyApplied: true, revision: current.policy.revision, ...publicResolved(resolved) });
+    }
+    if (Number(current?.policy?.revision || 0) >= 1) {
+      const differences = institutionRules.RULE_KEYS
+        .filter((k) => k in checked.values && checked.values[k] !== current.policy.values?.[k])
+        .map((k) => ({ key: k, browser: checked.values[k], server: current.policy.values?.[k] ?? null }));
+      return res.status(409).json({
+        ok: false,
+        code: 'RULES_ALREADY_EXIST',
+        message: 'Bu kapsam için sunucuda zaten kurum kuralı var; tarayıcıdaki eski değerler üzerine yazılmadı.',
+        differences,
+      });
+    }
+
+    const now = new Date();
+    const doc = await DutyRule.findOneAndUpdate(
+      { ...filter, $or: [{ 'policy.revision': { $exists: false } }, { 'policy.revision': { $lt: 1 } }] },
+      {
+        $set: {
+          'policy.values': checked.values,
+          'policy.sources': checked.sources,
+          'policy.revision': 1,
+          'policy.updatedAt': now,
+          'policy.updatedBy': req.user?.uid || null,
+          'policy.updatedByName': req.user?.name || null,
+          'policy.migrationKeys': [migrationKey],
+          updatedBy: req.user?.uid || null,
+        },
+        $setOnInsert: {
+          sectionId: scope.sectionId,
+          serviceId: scope.serviceId,
+          role: scope.role,
+          ...(req.hospitalId ? { hospitalId: req.hospitalId } : {}),
+          createdBy: req.user?.uid || null,
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean().catch((e) => {
+      if (e?.code === 11000) return null; // eşzamanlı ikinci geçiş
+      throw e;
+    });
+    if (!doc) {
+      return res.status(409).json({ ok: false, code: 'RULES_ALREADY_EXIST', message: 'Aynı anda başka bir aktarım yapıldı. Sayfayı yenileyin.' });
+    }
+    const resolved = await institutionRules.resolveInstitutionRules({ hospitalId: req.hospitalId || null, ...scope });
+    return res.json({ ok: true, migrated: true, revision: doc.policy.revision, ...publicResolved(resolved) });
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: safeMessage(err) });
   }
 });
 
@@ -456,3 +642,4 @@ router.post('/calculate-hours', requireRole('admin', 'yetkili'), async (req, res
 });
 
 module.exports = router;
+module.exports.canEditRuleScope = canEditRuleScope;

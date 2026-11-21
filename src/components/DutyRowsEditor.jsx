@@ -209,6 +209,10 @@ const DutyRowsEditor = forwardRef(function DutyRowsEditor(
   const savedAssignmentsRef = useRef([]);
   const carryForwardPromptedRef = useRef(new Set());
   const suppressNextAutoSaveRef = useRef(false);
+  // Kurum kuralı sürümü (İP-1): plan hangi sürümle üretildi/doğrulandı. Kayıtta sunucuya
+  // bildirilir; sunucuda kurallar değiştiyse kayıt 409 alır ve otomatik kayıt durur.
+  const ruleVersionRef = useRef(null);
+  const ruleConflictRef = useRef(false);
   const carryForwardRequestIdRef = useRef(0);
 
   const normalizeOverridesForSignature = useCallback((ovr) => {
@@ -1184,6 +1188,8 @@ const shouldShowRestRiskPanel =
         autoSaveTimerRef.current = null;
       }
       lastSavedSignatureRef.current = null;
+      ruleVersionRef.current = null;
+      ruleConflictRef.current = false;
       suppressNextAutoSaveRef.current = true;
       setAutoSaveStatus("idle");
       setAutoSaveError(null);
@@ -1307,10 +1313,12 @@ const shouldShowRestRiskPanel =
           if ("pins" in data) setPins(data.pins || []);
           setManualChangeLog(Array.isArray(data.changeLog) ? data.changeLog : []);
           if ("rules" in data) {
-            const r = data.rules || [];
-            setRules(r);
-            LS.set("dutyRulesV2", r); // Solver için LS'yi güncelle
+            // Eski planlarda saklanan kural listesi yalnız veri uyumu için tutulur. Tarayıcı
+            // ayarlarının (dutyRulesV2) üzerine YAZILMAZ; motor kuralları sunucudan alır.
+            setRules(data.rules || []);
           }
+          ruleVersionRef.current = schedule?.ruleContext?.version || null;
+          ruleConflictRef.current = false;
           setLastSavedInfo({
             updatedAt: schedule.updatedAt || schedule.createdAt || null,
             updatedBy: schedule.updatedBy || schedule.createdBy || null,
@@ -1537,6 +1545,7 @@ const shouldShowRestRiskPanel =
         month: month1,
         data: payload,
         meta,
+        ruleVersion: ruleVersionRef.current || undefined,
       });
       setLastSavedInfo({
         updatedAt: saved?.updatedAt || new Date().toISOString(),
@@ -1569,6 +1578,18 @@ const shouldShowRestRiskPanel =
       return saved;
     } catch (err) {
       console.error("[DutyRowsEditor] saveMonthlySchedule err:", err);
+      if (err?.status === 409 && err?.body?.code === "RULE_VERSION_CONFLICT") {
+        // Düzenlemeler ekranda korunur; otomatik kayıt, kullanıcı güncel kurallarla
+        // doğrulayana kadar durur (sonsuz 409 döngüsü olmasın).
+        if (!ruleConflictRef.current) {
+          note(err.body.message || "Kurum kuralları değişti; değişiklikleriniz henüz kaydedilmedi.", "warning");
+        }
+        ruleConflictRef.current = true;
+        setAutoSaveStatus("error");
+        setAutoSaveError("Kurum kuralları değişti — üstteki 'Güncel kurallarla doğrula' ile devam edin. Değişiklikleriniz ekranda duruyor.");
+        try { window.dispatchEvent(new CustomEvent("schedule:changed")); } catch {}
+        throw err;
+      }
       setAutoSaveStatus("error");
       setAutoSaveError(err?.message || "Çizelge kaydedilemedi.");
       if (!silent) note(err?.message || "Çizelge kaydedilemedi.", "error");
@@ -1577,6 +1598,25 @@ const shouldShowRestRiskPanel =
       setSaving(false);
     }
   }, [sectionId, serviceKey, role, year, month1, rows, overrides, roster, preview, aiPlan, pins, rules, manualChangeLog, daysInMonth, note, makeSignature, isSpecificService]);
+
+  // Yayın çubuğundan "Güncel kurallarla doğrula" yapılınca: yeni sürümü al, çakışmayı kaldır,
+  // bekleyen değişiklik varsa otomatik kayıt kaldığı yerden devam etsin.
+  useEffect(() => {
+    const onRevalidated = (e) => {
+      const d = e?.detail || {};
+      if (d.sectionId && d.sectionId !== sectionId) return;
+      if (String(d.serviceId ?? "") !== String(serviceKey ?? "") || String(d.role ?? "") !== String(role ?? "")) return;
+      if (Number(d.year) !== Number(year) || Number(d.month) !== Number(month1)) return;
+      ruleVersionRef.current = d.version || null;
+      if (ruleConflictRef.current) {
+        ruleConflictRef.current = false;
+        setAutoSaveError(null);
+        setAutoSaveStatus("dirty");
+      }
+    };
+    window.addEventListener("rules:revalidated", onRevalidated);
+    return () => window.removeEventListener("rules:revalidated", onRevalidated);
+  }, [sectionId, serviceKey, role, year, month1]);
 
   useEffect(() => {
     if (autoSaveStatus !== "saved") return undefined;
@@ -1599,6 +1639,7 @@ const shouldShowRestRiskPanel =
       return undefined;
     }
     if (!sectionId || loadingRemote) return;
+    if (ruleConflictRef.current) return; // kural sürümü çakışması çözülene kadar otomatik kayıt yok
     const sig = computeSignature();
     if (!sig) return;
     if (suppressNextAutoSaveRef.current) {
@@ -1908,7 +1949,6 @@ const shouldShowRestRiskPanel =
       };
     }).filter((s) => s.id && s.name);
 
-    const dutyRules = readDutyRulesFromLS();
     const leavesByPerson = buildLeavesByPersonForMonth(year, month1, staffPayload);
     const staffWithMetaCount = staffPayload.filter(
       (s) => (s.areas && s.areas.length) || (s.shiftCodes && s.shiftCodes.length)
@@ -1950,13 +1990,17 @@ const shouldShowRestRiskPanel =
         ...(supervisorConfig ? { supervisorConfig } : {}),
         ...(Array.isArray(supervisorPool) && supervisorPool.length ? { supervisorPool } : {}),
         ...(staffPayload.length ? { staff: staffPayload } : {}),
-        ...(Object.keys(dutyRules || {}).length ? { rules: dutyRules } : {}),
+        // Kural değerleri gönderilmez: sunucu yetkili kaynaktan (kurum kuralları) okur.
         ...(Object.keys(leavesByPerson || {}).length ? { leavesByPerson } : {}),
       };
       if (serviceKey) schedulerPayload.serviceId = serviceKey;
 
       const res = await generateSchedulerPlan(schedulerPayload);
       const data = res?.data || res;
+      if (res?.ruleContext?.version) {
+        ruleVersionRef.current = res.ruleContext.version;
+        ruleConflictRef.current = false;
+      }
       if (data?.assignments?.length) {
         savedAssignmentsRef.current = Array.isArray(data.assignments) ? data.assignments : [];
         const rosterFromServer = buildRosterFromBackend(

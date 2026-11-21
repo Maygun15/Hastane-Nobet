@@ -41,6 +41,16 @@ jest.mock('../services/scheduler/ruleResolver', () => ({
   DEFAULT_RULES: {},
   DEFAULT_WEIGHTS: {},
 }));
+// Kurum kuralları (yetkili kaynak): varsayılan olarak tam tanımlı, sürüm 'kv-test'.
+const mockResolvedRules = {
+  configured: true, complete: true, missingRequired: [], version: 'kv-test',
+  values: { ONE_SHIFT_PER_DAY: true, LEAVE_BLOCK: true, NIGHT_NEXT_DAY_OFF: true, MIN_REST_HOURS: 11, MAX_CONSECUTIVE_DAYS: 6 },
+  sources: {}, origin: {}, layers: [{ level: 'genel', revision: 1 }],
+};
+jest.mock('../services/institutionRules', () => {
+  const actual = jest.requireActual('../services/institutionRules');
+  return { ...actual, resolveInstitutionRules: jest.fn() };
+});
 jest.mock('../services/preferenceRequestService', () => ({
   loadPreferencesFromDb: jest.fn().mockResolvedValue({}),
   normalizePreferenceKind: jest.fn((x) => x),
@@ -57,6 +67,7 @@ const {
   isDraftSchedule,
 } = require('../services/schedulePublicationService');
 const schedulesRouter = require('../routes/schedules.routes');
+const institutionRules = require('../services/institutionRules');
 
 const HOSPITAL_ID = 'hospital-1';
 const SCOPE = { sectionId: 'calisma-cizelgesi', serviceId: 'acil', role: 'Nurse', year: 2026, month: 12 };
@@ -212,11 +223,12 @@ describe('POST /publish', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resolveStaff.mockResolvedValue({ staff: [okPerson] });
+    institutionRules.resolveInstitutionRules.mockResolvedValue(mockResolvedRules);
   });
 
   test('karara bağlanmamış risk varken yayın engellenir (RISKS_PENDING)', async () => {
     resolveStaff.mockResolvedValue({ staff: [okPerson, noAreaPerson] });
-    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', ...SCOPE, data: {}, publication: { status: 'draft' } }));
+    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', ...SCOPE, data: {}, publication: { status: 'draft' }, ruleContext: { version: 'kv-test' } }));
 
     const r = await call('post', '/publish', { user: PLANNER, body: { ...SCOPE } });
 
@@ -229,7 +241,7 @@ describe('POST /publish', () => {
   test('"Bu şekilde devam" kararı verilen risk yayını engellemez', async () => {
     resolveStaff.mockResolvedValue({ staff: [okPerson, noAreaPerson] });
     MonthlySchedule.findOne.mockReturnValue(selectLean({
-      _id: 'sched-1', ...SCOPE, data: {}, publication: { status: 'draft' },
+      _id: 'sched-1', ...SCOPE, data: {}, publication: { status: 'draft' }, ruleContext: { version: 'kv-test' },
       riskAcks: { 'VERI_EKSIGI|p-9': { by: 'admin-1', at: new Date() } },
     }));
     MonthlySchedule.findOneAndUpdate.mockReturnValue(lean({ _id: 'sched-1', publication: { status: 'published' } }));
@@ -265,7 +277,7 @@ describe('POST /publish', () => {
   });
 
   test('yayınlar ve sadece bu çizelgedeki kişilere bildirim gönderir', async () => {
-    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', ...SCOPE, data: {}, publication: { status: 'draft' } }));
+    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', ...SCOPE, data: {}, publication: { status: 'draft' }, ruleContext: { version: 'kv-test' } }));
     MonthlySchedule.findOneAndUpdate.mockReturnValue(lean({ _id: 'sched-1', publication: { status: 'published' } }));
     Assignment.distinct.mockResolvedValue(['p-1']);
     computeMonthlyFairnessScores.mockResolvedValue({
@@ -294,5 +306,29 @@ describe('POST /publish', () => {
     const r = await call('post', '/publish', { user: STAFF, body: { ...SCOPE } });
     expect(r.status).toBe(403);
     expect(MonthlySchedule.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('kural sürümü bilinmeyen (eski) plan yayınlanmaz: RULE_VERSION_UNKNOWN', async () => {
+    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', ...SCOPE, data: {}, publication: { status: 'draft' } }));
+    const r = await call('post', '/publish', { user: PLANNER, body: { ...SCOPE } });
+    expect(r.status).toBe(409);
+    expect(r.body).toMatchObject({ ok: false, code: 'RULE_VERSION_UNKNOWN', rules: { status: 'unknown', currentVersion: 'kv-test' } });
+    expect(MonthlySchedule.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('kurallar plan sonrası değiştiyse yayın durur: RULE_VERSION_CONFLICT', async () => {
+    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', ...SCOPE, data: {}, publication: { status: 'draft' }, ruleContext: { version: 'kv-eski' } }));
+    const r = await call('post', '/publish', { user: PLANNER, body: { ...SCOPE } });
+    expect(r.status).toBe(409);
+    expect(r.body).toMatchObject({ code: 'RULE_VERSION_CONFLICT', rules: { status: 'outdated', planVersion: 'kv-eski', currentVersion: 'kv-test' } });
+  });
+
+  test('zorunlu kural eksikse yayın açıklayıcı 422 döner', async () => {
+    institutionRules.resolveInstitutionRules.mockResolvedValue({ ...mockResolvedRules, complete: false, missingRequired: ['MIN_REST_HOURS'] });
+    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', ...SCOPE, data: {}, publication: { status: 'draft' }, ruleContext: { version: 'kv-test' } }));
+    const r = await call('post', '/publish', { user: PLANNER, body: { ...SCOPE } });
+    expect(r.status).toBe(422);
+    expect(r.body.code).toBe('RULES_INCOMPLETE');
+    expect(r.body.message).toMatch(/İki vardiya arası en az dinlenme/);
   });
 });
