@@ -198,19 +198,32 @@ router.get('/leave-types/:id', async (req, res) => {
 });
 
 // POST new leave type
+function normalizeLeaveCode(code) {
+  if (code === undefined || code === null || code === '') return undefined;
+  const c = String(code).trim().toLocaleUpperCase('tr-TR');
+  return /^[A-ZÇĞİÖŞÜ0-9]{1,6}$/.test(c) ? c : null;
+}
+
 router.post('/leave-types', requireRole('admin', 'yetkili'), async (req, res) => {
   try {
     if (hasPollutionKeys(req.body)) return res.status(400).json({ message: 'Geçersiz istek gövdesi' });
-    const { name, description, color, category, maxDaysPerYear, paidLeave } = req.body;
+    const { name, description, color, category, maxDaysPerYear, paidLeave, code, isDeductible } = req.body;
     if (!isSafeName(name, 200)) return res.status(400).json({ message: 'İsim gerekli (en fazla 200 karakter)' });
-    
+    const cleanCode = normalizeLeaveCode(code);
+    if (code !== undefined && cleanCode === null) return res.status(400).json({ message: 'Kısaltma 1–6 harf/rakam olmalı' });
+    if (isDeductible !== undefined && typeof isDeductible !== 'boolean') return res.status(400).json({ message: 'isDeductible true/false olmalı' });
+
+    // Kısaltma (code) izin onayında türün bulunması için gerekir (önceden kaydedilmiyordu).
     const type = await LeaveType.create(withHospitalFilter(req, {
       name: name.trim(),
+      ...(cleanCode ? { code: cleanCode } : {}),
       description: description || '',
       color: color || '#ef4444',
       category: category || 'other',
       maxDaysPerYear: maxDaysPerYear || null,
-      paidLeave: paidLeave !== undefined ? paidLeave : true
+      paidLeave: paidLeave !== undefined ? paidLeave : true,
+      // Bakiyeden düşülür mü: açıkça işaretlenmedikçe hayır (yalnız yıllık izin gibi türler).
+      isDeductible: isDeductible === true,
     }));
     
     res.status(201).json({ ok: true, data: type });
@@ -224,9 +237,18 @@ router.put('/leave-types/:id', requireRole('admin', 'yetkili'), async (req, res)
   try {
     if (!isObjectId(req.params.id)) return res.status(400).json({ message: 'Geçersiz ID' });
     if (hasPollutionKeys(req.body)) return res.status(400).json({ message: 'Geçersiz istek gövdesi' });
-    const { name, description, color, category, maxDaysPerYear, paidLeave } = req.body;
+    const { name, description, color, category, maxDaysPerYear, paidLeave, code, isDeductible } = req.body;
     if (name !== undefined && !isSafeName(name, 200)) return res.status(400).json({ message: 'İsim en fazla 200 karakter olabilir' });
     const updates = { updatedAt: new Date() };
+    if (code !== undefined) {
+      const cleanCode = normalizeLeaveCode(code);
+      if (cleanCode === null) return res.status(400).json({ message: 'Kısaltma 1–6 harf/rakam olmalı' });
+      updates.code = cleanCode;
+    }
+    if (isDeductible !== undefined) {
+      if (typeof isDeductible !== 'boolean') return res.status(400).json({ message: 'isDeductible true/false olmalı' });
+      updates.isDeductible = isDeductible;
+    }
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
     if (color !== undefined) updates.color = color;

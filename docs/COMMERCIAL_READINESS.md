@@ -162,6 +162,31 @@ A merkezi kurallar → B aylar arası → C eş zamanlı düzenleme → D zorunl
 - vitest `issueExplanations` 2.
 - Sunucu 441 ✅, vitest 56 ✅.
 
+### F. İzin, çalışma saati ve kullanıcı deneyimi — ✅ tamamlandı
+**Bulgular (kanıt):**
+- İzin türü oluşturma/güncelleme API'si **kısaltmayı (code) ve "düşülür" bilgisini kaydetmiyordu** (`parameters.routes.js`). Onay türü kısaltmayla aradığı için API ile tanımlanan tür onayda hiç bulunamazdı.
+- Talep formunda bağlantı koparsa sonuç bilinmiyordu; tekrar gönderim talebi çoğaltabilirdi.
+
+**Değişiklik:**
+- `POST/PUT /api/parameters/leave-types`: `code` (1–6 karakter) ve `isDeductible` (varsayılan false).
+- `Request.clientRequestId` (kullanıcı + kimlik benzersiz). `POST /api/requests` aynı kimlikte mevcut talebi döndürür; eşzamanlı ikinci gönderim de (E11000) mevcut talebi döndürür.
+- Talep formu:
+  - Form başına kimlik.
+  - Bağlantı kopunca "talebin ulaşıp ulaşmadığı bilinmiyor; tekrar göndermek güvenli". Form korunur, başarı mesajı yalnız sunucu yanıtından sonra.
+- Aylık mesai çizelgesi: "Eksik saat devri: kurum kararı bekliyor" görünür açık karar.
+
+**Test:**
+- vitest +1 (bağlantı kopması → aynı kimlikle tekrar, form korunur).
+- E2E F 7/7:
+  - İzin türleri API ile kısaltmalı.
+  - `fixLeaveTypes` iki kez → ikinci kuru çalıştırma 0 değişiklik.
+  - Aynı kimlikle iki gönderim → 1 kayıt.
+  - Rapor onayı yıllık bakiyeyi etkilemedi.
+  - 3 günlük yıllık izin 20 → 17; çift onay ikinci kez düşmedi.
+  - İzin günleri takvime işlendi.
+  - Planlama izinli kişiyi o günlere atamadı.
+- **Deneme sitesinde (Render) aynı test: doğrulama bekliyor** (yönetici girişi kullanıcıda).
+
 ## Commit'ler
 (her paketten sonra eklenir)
 
@@ -169,4 +194,4 @@ A merkezi kurallar → B aylar arası → C eş zamanlı düzenleme → D zorunl
 - **Deneme sitesinde izin onayı testi — bekliyor:** Render deneme sitesinin yönetici oturumu kapalı; şifre kullanıcıda. Aynı senaryo yerelde F paketinde test edilecek.
 
 ## Sıradaki somut işlem
-F — izin/saat senaryoları (rapor bakiyeyi etkilemez, 3 günlük yıllık izin düşer), form durumları, işlem kimliği.
+G — lint, paket açıkları, CI testleri, kayıt temizliği, yedek/geri yükleme, kurulum/güncelleme/geri dönüş belgesi.

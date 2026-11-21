@@ -57,6 +57,14 @@ function parseStatusFilter(status) {
 // POST /api/requests — kullanıcı talep gönderir
 router.post('/', requireAuth, async (req, res) => {
   try {
+    // Tekrar-güvenli oluşturma: aynı kullanıcı aynı form kimliğiyle ikinci kez gönderirse
+    // yeni talep açılmaz, mevcut talep döner (bağlantı koptuğunda güvenli yeniden deneme).
+    const clientRequestId = typeof req.body?.clientRequestId === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(req.body.clientRequestId)
+      ? req.body.clientRequestId : null;
+    if (clientRequestId) {
+      const existing = await Request.findOne(withHospitalFilter(req, { fromUserId: req.user._id, clientRequestId })).lean();
+      if (existing) return res.status(200).json({ ok: true, replayed: true, request: existing });
+    }
     const {
       type, targetDate, targetDateEnd, message, swapWithPersonId,
       leaveTypeCode,
@@ -119,6 +127,7 @@ router.post('/', requireAuth, async (req, res) => {
     }
 
     const request = await Request.create(withHospitalFilter(req, {
+      ...(clientRequestId ? { clientRequestId } : {}),
       type,
       fromUserId:   req.user._id,
       fromPersonId: person?._id || null,
@@ -147,6 +156,11 @@ router.post('/', requireAuth, async (req, res) => {
     void sendNewRequestNotification({ request, senderName: req.user?.name || '' }).catch(() => {});
     res.json({ ok: true, request });
   } catch (err) {
+    // Aynı form kimliğiyle eşzamanlı iki gönderim: ikincisi benzersiz indekse çarpar → mevcut talep.
+    if (err?.code === 11000 && req.body?.clientRequestId) {
+      const existing = await Request.findOne(withHospitalFilter(req, { fromUserId: req.user._id, clientRequestId: req.body.clientRequestId })).lean().catch(() => null);
+      if (existing) return res.status(200).json({ ok: true, replayed: true, request: existing });
+    }
     res.status(500).json({ message: safeMessage(err) });
   }
 });

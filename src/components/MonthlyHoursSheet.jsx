@@ -1312,6 +1312,14 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
                 <span>Son yenileme {refreshedLabel}</span>
               </>
             )}
+            <span className="mx-1 text-slate-300">|</span>
+            <span
+              data-testid="carry-over-decision"
+              className="text-amber-800"
+              title="Aylık normun altında / üstünde kalan saatin sonraki aya devri veya gündüz mesaisiyle tamamlanması kurum kararıdır. Karar verilene kadar devir sütunları elle girilir ve otomatik hesaplanmaz."
+            >
+              Eksik saat devri: kurum kararı bekliyor (devir sütunları elle girilir)
+            </span>
           </div>
           <button
             className="h-9 rounded-lg border bg-white px-3 text-sm text-slate-700 hover:border-slate-500"

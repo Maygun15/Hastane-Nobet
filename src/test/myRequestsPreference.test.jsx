@@ -36,13 +36,14 @@ describe("MyRequestsTab tercih formu", () => {
 
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Gönder" })); });
 
-    expect(createRequest).toHaveBeenCalledWith({
+    expect(createRequest).toHaveBeenCalledWith(expect.objectContaining({
       type: "tercih",
       message: "Bayramda ailemle",
       targetDate: "2026-12-24",
       targetDateEnd: "2026-12-26",
       preferenceKind: "noNight",
-    });
+      clientRequestId: expect.stringMatching(/^req-/),
+    }));
   });
 
   it("tarih yoksa göndermez", async () => {
@@ -69,5 +70,31 @@ describe("MyRequestsTab izin formu", () => {
     expect(createRequest).toHaveBeenCalledWith(expect.objectContaining({
       type: "izin", leaveTypeCode: "Y", message: "Düğünüm var", targetDate: "2026-12-10",
     }));
+  });
+});
+
+describe("MyRequestsTab bağlantı kopması (İP-6 / F)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("yanıt alınamazsa form korunur; tekrar gönderim AYNI kimlikle yapılır (talep çoğalmaz)", async () => {
+    createRequest
+      .mockRejectedValueOnce(new Error("Failed to fetch"))
+      .mockResolvedValueOnce({ ok: true, replayed: true });
+    await openTercihForm();
+    const [start] = document.querySelectorAll('input[type="date"]');
+    fireEvent.change(start, { target: { value: "2026-12-24" } });
+    fireEvent.change(screen.getByPlaceholderText("Talebinizi açıklayın..."), { target: { value: "Bayram" } });
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Gönder" })); });
+    expect(toast.error).toHaveBeenCalledWith("Bağlantı kesildi — talebin ulaşıp ulaşmadığı bilinmiyor", expect.anything());
+    expect(screen.getByPlaceholderText("Talebinizi açıklayın...")).toHaveValue("Bayram");
+    expect(toast.success).not.toHaveBeenCalled();
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Gönder" })); });
+    expect(createRequest).toHaveBeenCalledTimes(2);
+    const [first, second] = createRequest.mock.calls.map((c) => c[0].clientRequestId);
+    expect(first).toBeTruthy();
+    expect(second).toBe(first);
+    expect(toast.success).toHaveBeenCalledWith("Talebiniz gönderildi");
   });
 });

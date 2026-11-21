@@ -72,6 +72,10 @@ const RequestSchema = new mongoose.Schema({
   purgeAt:      { type: Date, default: null },
 }, { timestamps: true });
 
+// İstemcinin form başına ürettiği kimlik: bağlantı koptuktan sonra tekrar gönderimde talep
+// çoğalmaz (aynı kullanıcı + aynı kimlik → mevcut talep döner).
+RequestSchema.add({ clientRequestId: { type: String, default: undefined, trim: true } });
+RequestSchema.index({ fromUserId: 1, clientRequestId: 1 }, { unique: true, partialFilterExpression: { clientRequestId: { $type: 'string' } } });
 RequestSchema.index({ fromUserId: 1 });
 RequestSchema.index({ hospitalId: 1, serviceId: 1, status: 1 });
 RequestSchema.index({ hospitalId: 1, status: 1, createdAt: -1 });

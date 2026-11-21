@@ -329,6 +329,7 @@ export default function MyRequestsTab() {
     setSubmitting(true);
     try {
       const payload = {
+        clientRequestId: form.clientRequestId || undefined,
         type: form.type,
         message: form.message.trim(),
         targetDate: form.targetDate || "",
@@ -357,7 +358,15 @@ export default function MyRequestsTab() {
       setForm(EMPTY_FORM);
       load();
     } catch (e) {
-      toast.error(e?.message || "Talep gönderilemedi");
+      // Form kapanmaz, girilenler korunur. Sunucu yanıtı yoksa sonuç bilinmiyor: aynı kimlikle
+      // tekrar göndermek güvenli (talep çoğalmaz).
+      if (!e?.status) {
+        toast.error("Bağlantı kesildi — talebin ulaşıp ulaşmadığı bilinmiyor", {
+          description: "Formunuz korunuyor. 'Gönder' ile tekrar deneyebilirsiniz; talep çoğalmaz.",
+        });
+      } else {
+        toast.error(e?.body?.message || e?.message || "Talep gönderilemedi", { description: "Formunuz korunuyor; düzeltip tekrar gönderin." });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -390,7 +399,9 @@ export default function MyRequestsTab() {
     }
   };
 
-  const openModal = () => { setForm(EMPTY_FORM); setOpen(true); };
+  // Her form açılışında yeni kimlik: bağlantı koparsa aynı kimlikle tekrar gönderim talebi çoğaltmaz.
+  const newClientRequestId = () => `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const openModal = () => { setForm({ ...EMPTY_FORM, clientRequestId: newClientRequestId() }); setOpen(true); };
 
   return (
     <div className="space-y-4">
