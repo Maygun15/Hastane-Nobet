@@ -85,3 +85,10 @@ Etkin değerler **Parametreler → Nöbet Kuralları → Kurum kuralları** pane
 3. Onaylı "boşluk isteği (B)" → izin gibi engel (şu an tercih cezası).
 4. Bayram sayacını adalet puanına ekle (`fairnessCounters`).
 5. Her kural için kaynak (mevzuat maddesi / kurum kararı tarihi) kurumla doldurulmalı.
+
+## Güncel kapsam tablosu (22 Kasım 2026)
+Her kuralın motor / elle atama / risk paneli / yayın aşamasındaki uygulaması ve kanıtı: **`docs/KURAL_KAPSAMI.md`**. Koddan üretilir: `node scripts/kural-kapsami.mjs`.
+Bu sürümde eklenenler:
+- Risk paneli ve yayın kapısı artık onaylı izin günü, haftalık vardiya sayısı ve kişi başı aynı görev sınırını da denetliyor.
+- Elle atama (`/assign`) kurum kurallarını uyguluyor; önce yalnız eski `ScheduleRules` kaydına bakıyordu.
+- `WEEKLY_MIN_1_OFF` = en fazla 6 gün art arda (kayan 7 gün).

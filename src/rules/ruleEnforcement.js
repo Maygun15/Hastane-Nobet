@@ -33,6 +33,8 @@ const ENGINE_RULES = [
   "MAX_TASK_PER_PERSON",
   "LEAVE_BLOCK_GENERIC",
   "WEEKLY_MAX_80H", // Kurum kuralları → "Haftada en fazla çalışma saati" (değer girilirse)
+  // Kayan 7 günde en az 1 boş gün ≡ en fazla 6 gün art arda (MAX_CONSECUTIVE_DAYS ≤ 6).
+  "WEEKLY_MIN_1_OFF",
 ];
 
 const TEMPLATE_RULES = [
