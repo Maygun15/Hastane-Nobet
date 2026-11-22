@@ -2,6 +2,8 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
+import { readWorkbook, assertExcelFile, excelErrorMessage } from "../lib/safeXlsx";
+import { matchLeaveRows } from "../lib/excelImports";
 import {
   ArrowLeftRight,
   Building2,
@@ -464,6 +466,7 @@ const parseCSV = (text) => {
   return { header, rows };
 };
 async function readTableFile(file) {
+  assertExcelFile(file);
   const ext = (file.name.split(".").pop() || "").toLowerCase();
   const isCsv = ext === "csv" || (file.type && file.type.includes("csv"));
   if (isCsv) {
@@ -471,19 +474,13 @@ async function readTableFile(file) {
     return parseCSV(text);
   }
   const ab = await file.arrayBuffer();
-  const wb = XLSX.read(ab, { type: "array" });
+  const wb = readWorkbook(ab, { type: "array" });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows2d = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
   const header = (rows2d[0] || []).map((v) => String(v ?? "").trim());
   const rows = rows2d.slice(1).map((r) => header.map((_, i) => String((r && r[i]) ?? "").trim()));
   return { header, rows };
 }
-const extractDay = (h) => {
-  const m = String(h || "").match(/\d{1,2}/);
-  if (!m) return NaN;
-  const n = parseInt(m[0], 10);
-  return n >= 1 && n <= 31 ? n : NaN;
-};
 
 /* =========================
    Sıfırlama onay modalı + akıllı buton
@@ -754,55 +751,21 @@ function SectionContent({
     const file = ev.target.files?.[0];
     if (!file) return;
     try {
-      const { header, rows } = await readTableFile(file);
-      if (!header.length) { toast.error("Dosya okunamadı", { description: "Beklenen format: .xlsx veya .csv, ilk satır başlık (personId, name, 1..31)." }); return; }
+      const table = await readTableFile(file);
+      if (!table.header.length) { toast.error("Dosya okunamadı", { description: "Beklenen format: .xlsx, .xls veya .csv; ilk satır başlık (personId veya Ad Soyad, 1..31)." }); return; }
 
       const daysInMonth = new Date(year, month1, 0).getDate();
-
-      const idxId = header.findIndex((h) => h.toLowerCase() === "personid" || h.toLowerCase() === "id");
-      const idxName = header.findIndex((h) => ["name", "ad", "ad soyad"].includes(h.toLowerCase()));
-
-      const dayCols = [];
-      header.forEach((h, i) => {
-        const d = extractDay(h);
-        if (Number.isFinite(d) && d >= 1 && d <= daysInMonth) dayCols.push([d, i]);
-      });
-      const seen = new Set();
-      const dayColsClean = [];
-      for (const [d, i] of dayCols.sort((a, b) => a[0] - b[0])) {
-        if (!seen.has(d)) { dayColsClean.push([d, i]); seen.add(d); }
-      }
-      if (!dayColsClean.length) { toast.error("Gün sütunları bulunamadı", { description: "Excel'de 1–31 arası sayısal başlıklı sütunlar olmalıdır." }); return; }
-
-      const peopleByName = Object.fromEntries(
-        (peopleAll || []).map((p) => [(p.fullName || p.name || "").trim().toLowerCase(), p])
-      );
+      // Kişi eşleştirme Türkçe harf kurallarıyla (İ/ı) — src/lib/excelImports.js
+      const matched = matchLeaveRows(table, { daysInMonth, people: peopleAll || [] });
+      if (matched.error) { toast.error("Dosya biçimi uygun değil", { description: matched.error }); return; }
 
       let updates = 0;
       const conflictLog = [];
       let conflictPolicy = null; // null: sorulmadı, true: uygula+vardiya sil, false: çakışanları atla
-      rows.forEach((cols) => {
-        let pid = idxId >= 0 ? String(cols[idxId] || "").trim() : "";
-        let personMeta = null;
-        if (!pid && idxName >= 0) {
-          const nm = String(cols[idxName] || "").trim().toLowerCase();
-          const record = peopleByName[nm];
-          if (record?.id) {
-            pid = String(record.id);
-            personMeta = record;
-          }
-        } else if (pid && idxName >= 0) {
-          const nm = String(cols[idxName] || "").trim().toLowerCase();
-          personMeta = peopleByName[nm] || personMeta;
-        }
-        if (!pid) return;
-        if (!personMeta && peopleAll) {
-          personMeta = (peopleAll || []).find((p) => String(p.id) === pid) || null;
-        }
+      matched.rows.forEach(({ pid, person: personMeta, cells }) => {
         const personName = personMeta?.fullName || personMeta?.name || "";
 
-        for (const [d, iCol] of dayColsClean) {
-          const val = String(cols[iCol] || "").trim();
+        for (const { day: d, code: val } of cells) {
           if (val) {
             const conflict = checkLeaveShiftConflict({
               personId: pid,
@@ -840,6 +803,12 @@ function SectionContent({
         }
       });
 
+      if (matched.unmatched.length) {
+        toast.warning(`${matched.unmatched.length} satırdaki kişi bulunamadı, atlandı`, {
+          description: matched.unmatched.slice(0, 5).map((u) => `satır ${u.excelRow}: ${u.name}`).join(" · ") + (matched.unmatched.length > 5 ? ` · +${matched.unmatched.length - 5} daha` : ""),
+          duration: 8000,
+        });
+      }
       if (conflictLog.length) {
         toast.warning(`${updates} hücre güncellendi, ${conflictLog.length} çakışma var`, {
           description: conflictLog.slice(0, 3).join(" · ") + (conflictLog.length > 3 ? ` · +${conflictLog.length - 3} daha` : ""),
@@ -851,7 +820,7 @@ function SectionContent({
       try { window.dispatchEvent(new Event("leaves:changed")); } catch {}
     } catch (e) {
       console.error(e);
-      toast.error("Dosya okunamadı", { description: "Dosya bozuk veya desteklenmeyen formatta." });
+      toast.error("Dosya okunamadı", { description: excelErrorMessage(e) });
     } finally {
       ev.target.value = "";
     }

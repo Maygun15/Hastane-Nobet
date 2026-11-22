@@ -2,6 +2,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
+import { readWorkbook } from "../lib/safeXlsx";
 import IDCard from "../components/IDCard.jsx";
 import {
   normalizeWorkAreaMasterList,
@@ -221,7 +222,7 @@ export default function WorkAreasTab({ workAreas, setWorkAreas, people = [] }) {
     const reader = new FileReader();
     reader.onload = async (ev) => {
       try {
-        const wb = XLSX.read(ev.target.result, { type: "binary" });
+        const wb = readWorkbook(ev.target.result, { type: "binary" });
         const sheet = wb.Sheets["CalismaAlanlari"] ?? wb.Sheets[wb.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
         const list = json

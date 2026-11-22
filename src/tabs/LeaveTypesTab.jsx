@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
+import { readWorkbook } from "../lib/safeXlsx";
 import { LEAVE_RULES as DEFAULT_LEAVE_RULES } from "../constants/rules.js";
 
 const LS_KEY = "leaveTypesV2"; // ana anahtar
@@ -344,7 +345,7 @@ export default function LeaveTypesTab({ leaveTypes, setLeaveTypes }) {
         rejectedRows = csvResult.rejectedRows;
       } else {
         const data = new Uint8Array(await f.arrayBuffer());
-        const wb = XLSX.read(data, { type: "array" });
+        const wb = readWorkbook(data, { type: "array" });
         const sh = wb.Sheets["IzinTurleri"] ?? wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(sh, { header: 1, defval: "" });
         const headerRow = Array.isArray(rows[0]) ? rows[0] : [];

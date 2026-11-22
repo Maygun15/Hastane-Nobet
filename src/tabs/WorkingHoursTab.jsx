@@ -1,6 +1,7 @@
 // src/tabs/WorkingHoursTab.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import { readWorkbook } from "../lib/safeXlsx";
 import { sortByKeyTR } from "../utils/localeSort.js";
 import { shiftDurationHours } from "../utils/date.js";
 
@@ -153,7 +154,7 @@ export default function WorkingHoursTab({ workingHours, setWorkingHours }) {
     const r = new FileReader();
     r.onload = (evt) => {
       const data = new Uint8Array(evt.target.result);
-      const wb = XLSX.read(data, { type: "array" });
+      const wb = readWorkbook(data, { type: "array" });
       const sh = wb.Sheets["Vardiyalar"] ?? wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(sh, { defval: "" });
       const parsed = rows

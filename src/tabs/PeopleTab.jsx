@@ -16,6 +16,8 @@ import {
   Users,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import { readWorkbook, assertExcelFile, assertHeaders, excelErrorMessage } from "../lib/safeXlsx";
+import { parsePeopleRows } from "../lib/excelImports";
 import IDCard from "../components/IDCard.jsx";
 import PersonProfileModal from "../components/PersonProfileModal.jsx";
 import { maskEmail, maskPhone, maskTC } from "../utils/format.js";
@@ -479,72 +481,38 @@ export default function PeopleTab({
   const importExcel = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
+    try { assertExcelFile(f); } catch (sizeErr) {
+      toast.error(excelErrorMessage(sizeErr));
+      if (importRef.current) importRef.current.value = "";
+      return;
+    }
     const r = new FileReader();
     r.onload = (evt) => {
       let wb, sh, rows;
       try {
         const data = new Uint8Array(evt.target.result);
-        wb = XLSX.read(data, { type: "array" });
+        wb = readWorkbook(data, { type: "array" });
         sh = wb.Sheets[wb.SheetNames[0]];
         rows = XLSX.utils.sheet_to_json(sh, { defval: "" });
+        assertHeaders(rows, [["AD SOYAD", "NAME"]]);
       } catch (parseErr) {
-        toast.error("Excel dosyası okunamadı: " + (parseErr?.message || "Geçersiz format"));
+        toast.error(excelErrorMessage(parseErr), { duration: 8000 });
         if (importRef.current) importRef.current.value = "";
         return;
       }
-      const parsed = rows
-        .map((r, idx) => {
-          const rrole = (r["ROL"] || role).toString().trim();
-          if (rrole !== role) return null;
-          const serviceRaw = (r["SERVIS"] || r["SERVİS"] || defaultServiceId);
-          const service = resolveServiceId(serviceRaw, serviceOptions, defaultServiceId);
-          const title = (r["UNVANI"] || r["UNVAN"] || (role === ROLE.Doctor ? "Uzman" : "Hemşire"))
-            .toString()
-            .trim();
-          const tc = (r["T.C. KİMLİK NO"] || r["TC"] || "").toString().trim();
-          const name = (r["AD SOYAD"] || r["NAME"] || "").toString().trim();
-          const phone = (r["TELEFON NUMARASI"] || r["TELEFON"] || "").toString().trim();
-          const mail = (r["MAİL ADRESİ"] || r["MAIL"] || "").toString().trim();
-          const areasRaw = (r["ÇALIŞMA ALANLARI"] || r["ALANLAR"] || "").toString();
-          const areaNames = areasRaw.split(/,|;/).map((s) => s.trim()).filter(Boolean);
-          const workAreaIdsRaw = (
-            r["ÇALIŞMA ALANI IDLERİ"] ||
-            r["ÇALIŞMA ALANI IDLERI"] ||
-            r["ALAN IDLERİ"] ||
-            r["ALAN IDLERI"] ||
-            r["WORK AREA IDS"] ||
-            r["WORKAREAIDS"] ||
-            ""
-          ).toString();
-          const explicitWorkAreaIds = workAreaIdsRaw
-            .split(/,|;/)
-            .map((s) => s.trim())
-            .filter(Boolean);
-          const workAreaIds = explicitWorkAreaIds.length
-            ? explicitWorkAreaIds
-            : areaNames
-                .map((nm) => WA.find((w) => w.name === nm)?.id)
-                .filter(Boolean);
-          const shiftsRaw = (r["VARDİYE KODLARI"] || r["VARDIYE KODLARI"] || "").toString();
-          const shiftCodes = shiftsRaw.split(/,|;/).map((s) => s.trim()).filter(Boolean);
-          if (!name) return null;
-          const generatedId = Date.now() + idx;
-          return {
-            id: generatedId,
-            personId: String(generatedId),
-            role,
-            service,
-            title,
-            tc,
-            name,
-            phone,
-            mail,
-            workAreaIds,
-            areas: areaNames, // excelden gelen isimleri de kaydet
-            shiftCodes,
-          };
-        })
-        .filter(Boolean);
+      // Satır eşlemesi saf fonksiyonda (src/lib/excelImports.js) — Türkçe ad / alan eşleştirmesi, atlanan satır nedeni.
+      const { people: parsed, skipped } = parsePeopleRows(rows, {
+        role,
+        defaultTitle: role === ROLE.Doctor ? "Uzman" : "Hemşire",
+        resolveService: (raw) => resolveServiceId(raw || defaultServiceId, serviceOptions, defaultServiceId),
+        workAreas: WA,
+      });
+      if (skipped.length) {
+        toast.warning(`${skipped.length} satır atlandı`, {
+          description: skipped.slice(0, 4).map((x) => `satır ${x.row}: ${x.reason}`).join(" · ") + (skipped.length > 4 ? ` · +${skipped.length - 4} daha` : ""),
+          duration: 8000,
+        });
+      }
       if (!parsed.length) {
         toast.error(
           "Excel başlıkları: ROL,SERVIS,UNVANI,T.C. KİMLİK NO,AD SOYAD,TELEFON NUMARASI,MAİL ADRESİ,ÇALIŞMA ALANLARI,VARDİYE KODLARI"

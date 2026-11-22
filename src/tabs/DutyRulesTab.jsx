@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import { readWorkbook } from "../lib/safeXlsx";
 import { getUiRuleMetaByUiRuleId } from "../rules/uiRuleAdapter.js";
 import UnifiedRulePreviewPanel from "../components/UnifiedRulePreviewPanel.jsx";
 
@@ -200,7 +201,7 @@ export default function DutyRulesTab({ rules, setRules }) {
     if (!file) return;
     try {
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
+      const wb = readWorkbook(buf, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
       if (!aoa || aoa.length < 2) throw new Error("Geçerli veri bulunamadı");

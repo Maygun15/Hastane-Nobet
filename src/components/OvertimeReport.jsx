@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import { readWorkbook } from "../lib/safeXlsx";
 import {
   Calendar as CalendarIcon,
   ChevronLeft, ChevronRight,
@@ -474,7 +475,7 @@ export default function OvertimeTab() {
             e.target.value = "";
             try {
               const buf = await file.arrayBuffer();
-              const wb = XLSX.read(buf, { type: "array" });
+              const wb = readWorkbook(buf, { type: "array" });
               const ws = wb.Sheets[wb.SheetNames[0]];
               const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
               const headerIdx = data.findIndex((row) =>

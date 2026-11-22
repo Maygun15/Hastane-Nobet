@@ -9,6 +9,7 @@ import React, {
   useImperativeHandle,
 } from "react";
 import * as XLSX from "xlsx";
+import { readWorkbook } from "../lib/safeXlsx";
 import { ArrowUp, ArrowDown, Trash2, Copy, Settings } from "lucide-react";
 import { LS } from "../utils/storage.js";
 import { generateRoster, STAFF_KEY } from "../engine/rosterEngine.js";
@@ -1024,7 +1025,7 @@ const shouldShowRestRiskPanel =
   const importFromTemplate = async (file) => {
     try {
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
+      const wb = readWorkbook(buf, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       if (!ws) throw new Error("Çalışma sayfası bulunamadı.");
       const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false });

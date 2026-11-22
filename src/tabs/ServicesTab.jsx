@@ -5,6 +5,7 @@ import useServicesModel, { useServices } from "../hooks/useServicesModel.js";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { PERMISSIONS } from "../constants/roles.js";
 import * as XLSX from "xlsx";
+import { readWorkbook } from "../lib/safeXlsx";
 
 /* ---------------- helpers ---------------- */
 function slugCode(s = "") {
@@ -358,7 +359,7 @@ export default function ServicesTab() {
         rowsFromFile = parseCSV(text);
       } else {
         const buf = await file.arrayBuffer();
-        const wb = XLSX.read(buf, { type: "array" });
+        const wb = readWorkbook(buf, { type: "array" });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const aoa = XLSX.utils.sheet_to_json(ws, { header: 1 });
         if (aoa.length) {

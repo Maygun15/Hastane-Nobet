@@ -1,5 +1,6 @@
 // src/lib/xlsxIO.js
 import * as XLSX from "xlsx";
+import { readWorkbook, assertExcelFile, excelErrorMessage } from "./safeXlsx";
 
 /** Basit CSV ayrıştırıcı (tırnaklara duyarlı) */
 function splitCsvLine(line) {
@@ -26,6 +27,7 @@ function parseCSV(text) {
 export async function readTabularFile(file) {
   const warnings = [];
   const name = (file?.name || "").toLowerCase();
+  try { assertExcelFile(file); } catch (e) { return { header: [], rows: [], warnings: [excelErrorMessage(e)] }; }
 
   // CSV ise yerel ayrıştırıcı
   if (name.endsWith(".csv") || (file.type && file.type.includes("csv"))) {
@@ -37,14 +39,14 @@ export async function readTabularFile(file) {
   // XLSX / XLS
   try {
     const ab = await file.arrayBuffer();
-    const wb = XLSX.read(ab, { type: "array" });
+    const wb = readWorkbook(ab, { type: "array" });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows2d = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
     const header = (rows2d[0] || []).map((v) => String(v ?? "").trim());
     const rows = rows2d.slice(1).map((r) => header.map((_, i) => String((r && r[i]) ?? "").trim()));
     return { header, rows, warnings };
   } catch (e) {
-    warnings.push("Dosya okunamadı. Dosya bozuk olabilir veya desteklenmeyen biçim.");
+    warnings.push(excelErrorMessage(e));
     return { header: [], rows: [], warnings };
   }
 }

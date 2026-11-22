@@ -1,5 +1,7 @@
 // src/lib/importExcel.js
 import * as XLSX from "xlsx";
+import { readWorkbook } from "./safeXlsx";
+import { ymd } from "./excelImports";
 
 // Türkçe/İngilizce başlıklara esnek eşleşme + "Gün" kolonundan tarih üretme (yıl/ay alınır)
 function normalize(s) {
@@ -14,7 +16,7 @@ function normalize(s) {
 export async function parseAssignmentsFile(file, opts = {}) {
   const { year, month0 } = opts; // Gün kolonundan tarih üretmek için kullanacağız.
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: "array" });
+  const wb = readWorkbook(buf, { type: "array" });
   const ws = wb.Sheets[wb.SheetNames[0]];
   if (!ws) throw new Error("Excel sayfası bulunamadı.");
 
@@ -65,9 +67,9 @@ Bulunan başlıklar: ${header.join(", ")}`
     if (idxDate < 0 && idxDay >= 0 && Number.isInteger(Number(dateRaw)) &&
         Number.isInteger(year) && Number.isInteger(month0)) {
       const dd = Number(dateRaw);
-      if (dd >= 1 && dd <= 31) {
-        const d = new Date(year, month0, dd);
-        date = d.toISOString().slice(0, 10); // 2025-09-05
+      if (dd >= 1 && dd <= new Date(year, month0 + 1, 0).getDate()) {
+        // toISOString() yerel gece yarısını UTC'ye çevirip Türkiye'de bir önceki günü verirdi.
+        date = ymd(year, month0, dd); // 2025-09-05
       }
     }
 

@@ -9,6 +9,7 @@ import React, {
   useImperativeHandle,
 } from "react";
 import * as XLSX from "xlsx";
+import { readWorkbook } from "../lib/safeXlsx";
 import { LS } from "../utils/storage.js";
 import { fetchPersonnel } from "../api/apiAdapter.js";
 import { fetchHolidayCalendar } from "../api/apiAdapter.js";
@@ -902,7 +903,7 @@ const MonthlyHoursSheet = forwardRef(function MonthlyHoursSheet({ ym, workingHou
   const importExcel = (file) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      const wb = XLSX.read(new Uint8Array(e.target.result), {
+      const wb = readWorkbook(new Uint8Array(e.target.result), {
         type: "array",
         cellDates: true,
         dateNF: "yyyy-mm-dd",

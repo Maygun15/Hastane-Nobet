@@ -1,6 +1,7 @@
 // src/components/G8OvertimeSheet.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import { readWorkbook } from "../lib/safeXlsx";
 import { Calendar as CalendarIcon, FileSpreadsheet, Upload, RotateCcw } from "lucide-react";
 import { overtimeHours } from "../utils/overtime.js";
 import { SHIFT_HOURS, LEAVE_RULES } from "../constants/rules.js";
@@ -124,7 +125,7 @@ export default function G8OvertimeSheet({
   function importXlsx(file) {
     const fr = new FileReader();
     fr.onload = () => {
-      const wb = XLSX.read(new Uint8Array(fr.result), { type: "array" });
+      const wb = readWorkbook(new Uint8Array(fr.result), { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
       const head = aoa[0].map(h => h.toString().trim().toLowerCase());

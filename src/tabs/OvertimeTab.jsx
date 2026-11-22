@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
+import { readWorkbook } from "../lib/safeXlsx";
 import {
   FileSpreadsheet, Upload, RotateCcw, Search, ListChecks, Building2, Users, Clock3, TrendingUp, Trash2
 } from "lucide-react";
@@ -726,7 +727,7 @@ const OvertimeTab = forwardRef(function OvertimeTab({
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const wb = XLSX.read(evt.target.result, { type: "array" });
+        const wb = readWorkbook(evt.target.result, { type: "array" });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
         const headerIdx = data.findIndex((row) => row.some((c) => /unvan|adı soyad/i.test(String(c || ""))));
