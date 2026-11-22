@@ -430,6 +430,15 @@ function buildMonthlyScheduleWriteback({ data = {}, existingRoster = {} } = {}) 
   };
 }
 
+const GENERATED_KEEP = Math.max(1, Number(process.env.GENERATED_KEEP || 3));
+async function pruneGeneratedSchedules(scope, keep = GENERATED_KEEP) {
+  const q = { hospitalId: scope.hospitalId, sectionId: scope.sectionId, serviceId: scope.serviceId || '', role: scope.role || '', year: Number(scope.year), month: Number(scope.month) };
+  const old = await GeneratedSchedule.find(q).sort({ createdAt: -1 }).skip(keep).select('_id').lean();
+  if (!old.length) return 0;
+  const r = await GeneratedSchedule.deleteMany({ _id: { $in: old.map((d) => d._id) } });
+  return r.deletedCount || 0;
+}
+
 // leavesV2 Setting dokümanından onaylı izin günlerini çeker.
 // Döndürdüğü format: { [personId]: string[] } — her string "YYYY-MM-DD".
 // Array olarak döner; çağıran taraf ihtiyacına göre Set'e çevirir.
@@ -716,6 +725,10 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
     );
   }
 
+  // Yalnız en yeni üretim okunur (rota + sağlık kontrolü); eskiler sınırsız birikiyordu
+  // (deneme ortamında tek kapsamda 222 kopya, veritabanının %97'si). Son GENERATED_KEEP kopya kalır.
+  await pruneGeneratedSchedules({ hospitalId, sectionId, serviceId, role, year, month }).catch((e) => console.warn('[generated-prune]', e?.message));
+
   let scheduleRevision = null;
   // MonthlySchedule write-back intentionally stays assignment-only:
   // legacy monthly readers should not become explainability authorities.
@@ -787,6 +800,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
 module.exports = {
   generateSchedule,
   buildLeavesByPersonFromDb,
+  pruneGeneratedSchedules,
   fetchDutyRules,
   DEFAULT_RULES,
   DEFAULT_WEIGHTS,

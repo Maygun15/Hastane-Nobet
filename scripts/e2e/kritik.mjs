@@ -67,7 +67,7 @@ async function login(email, password) {
 
 // ─────────── Sentetik kum ───────────
 const SLUGS = ['e2e-sentetik-a', 'e2e-sentetik-b'];
-const SANDBOX_COLLECTIONS = ['people', 'services', 'monthlyschedules', 'assignments', 'dutyrules', 'schedulechanges',
+const SANDBOX_COLLECTIONS = ['people', 'services', 'monthlyschedules', 'generatedschedules', 'assignments', 'dutyrules', 'schedulechanges',
   'leavebalances', 'leave_types', 'requests', 'notifications', 'settings', 'auditlogs', 'undooperations'];
 
 async function cleanup(db) {
@@ -314,6 +314,12 @@ async function manualRules(sb, db) {
   check('K12', 'Onaylı izin gününe elle atama → ret; zorlanırsa risk paneli + yayın engeli', r1.status === 409 && r1.body?.conflictType === 'INSTITUTION_RULE_VIOLATION' && (r1.body?.rules || []).includes('IZIN_GUNU')
     && r2.status === 200 && !!leaveRisk && pub.status === 409 && pub.body?.code === 'RISKS_PENDING',
     `atama ${r1.status} ${(r1.body?.rules || []).join(',')}; zorla ${r2.status} ${r2.status !== 200 ? (r2.body?.conflictType || r2.body?.code || '') + ' ' + (r2.body?.message || '') : ''}; risk ${leaveRisk ? 'var' : 'YOK'}; yayın ${pub.status} ${pub.body?.code || ''}`);
+
+  // K14: üretilen plan kopyaları sınırsız birikmez (son 3)
+  const { ObjectId } = require('mongoose').Types;
+  for (let i = 0; i < 4; i += 1) await call(A, 'POST', '/api/scheduler/generate', { ...S, year: Y0, month: M0, sync: true });
+  const gcount = await db.collection('generatedschedules').countDocuments({ hospitalId: new ObjectId(sb.hospitalA), year: Y0, month: M0 });
+  check('K14', 'Otomatik plan dört kez üretilince yalnız son 3 kopya saklanır', gcount === 3, `kopya sayısı ${gcount}`);
 
   // K13: gece (N) nöbetinin ertesi günü elle gündüz ataması
   const doc = (await call(A, 'GET', `/api/schedules/monthly?${qs(Y1, M1)}`)).body?.schedule;

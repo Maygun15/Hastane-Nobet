@@ -27,7 +27,7 @@ concurrency:
 jobs:
   backup:
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 60  # Atlas ücretsiz katmanda döküm yavaş (deneme: ~3 MB için 10+ dk)
     services:
       mongo:
         image: mongo:7.0

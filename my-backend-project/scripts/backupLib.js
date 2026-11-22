@@ -35,7 +35,7 @@ function runTool(tool, uri, args) {
   const cfg = path.join(dir, 'cfg.yaml');
   fs.writeFileSync(cfg, `uri: ${JSON.stringify(uri)}\n`, { mode: 0o600 });
   try {
-    const r = spawnSync(tool, [`--config=${cfg}`, ...args], { encoding: 'utf8', timeout: 15 * 60 * 1000 });
+    const r = spawnSync(tool, [`--config=${cfg}`, ...args], { encoding: 'utf8', timeout: Number(process.env.BACKUP_TIMEOUT_MIN || 60) * 60 * 1000 });
     if (r.error) throw new Error(`${tool} çalıştırılamadı: ${redactText(r.error.message)}`);
     if (r.status !== 0) throw new Error(`${tool} hata (${r.status}): ${redactText((r.stderr || '').split('\n').slice(-5).join(' '))}`);
     return redactText(r.stderr || '');
