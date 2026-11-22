@@ -8,10 +8,14 @@ name: Deneme ortamı yedeği
 # Gerekli depo gizli değerleri (Settings → Secrets and variables → Actions):
 #   STAGING_MONGODB_URI  deneme veritabanı adresi (Render → nobet-staging-api → Environment → MONGODB_URI)
 #   BACKUP_PASSPHRASE    yedek şifreleme parolası (en az 32 karakter; ayrıca güvenli yerde saklanmalı)
+# NOT: GitHub zamanlanmış (schedule) çalışmayı yalnız varsayılan daldan (main) başlatır. main'e
+# birleştirilene kadar yedek, deneme dalına her gönderimde (dağıtım sonrası) çalışır.
 on:
   schedule:
     - cron: '30 2 * * *'
   workflow_dispatch: {}
+  push:
+    branches: [vercel-preview-stabilizasyon]
 
 permissions:
   contents: read
