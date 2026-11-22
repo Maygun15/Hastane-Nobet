@@ -39,7 +39,20 @@ if (t.web) {
   const webCommit = web.body?.commit || null;
   add('Ön yüz sürümü (version.json)', web.status === 200 && !!webCommit, web.status === 200 ? `commit ${webCommit}, API ${web.body?.apiBase || '?'}` : `HTTP ${web.status}`);
   add('Ön yüzün bağlandığı API', (web.body?.apiBase || '').replace(/\/$/, '') === t.api, `${web.body?.apiBase || '?'} (beklenen ${t.api})`);
-  add('Ön yüz ve sunucu aynı commit', !!webCommit && webCommit === apiCommit, `${webCommit} / ${apiCommit}`);
+  // Render yalnız kendi klasörü değişen servisi yeniden derler: ön yüz commit'i sunucudan ileride olabilir.
+  // Uyumlu sayılması için iki commit arasında my-backend-project altında değişiklik olmamalı.
+  let same = !!webCommit && webCommit === apiCommit;
+  let note = `${webCommit} / ${apiCommit}`;
+  if (!same && webCommit && apiCommit) {
+    try {
+      const { execFileSync } = await import('node:child_process');
+      const changed = execFileSync('git', ['diff', '--name-only', apiCommit, webCommit, '--', 'my-backend-project'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+      const ancestor = (() => { try { execFileSync('git', ['merge-base', '--is-ancestor', apiCommit, webCommit]); return true; } catch { return false; } })();
+      same = ancestor && !changed;
+      note += same ? ' — sunucu dosyaları arada değişmemiş (uyumlu)' : ` — arada sunucu değişikliği var: ${changed.split('\n').slice(0, 3).join(', ') || 'commit sırası uyumsuz'}`;
+    } catch { note += ' — git ile karşılaştırılamadı'; }
+  }
+  add('Ön yüz ve sunucu sürümü eşleşiyor', same, note);
 }
 if (expected) add('Beklenen commit', apiCommit === expected, `${apiCommit} (beklenen ${expected})`);
 const failed = rows.filter((r) => !r.ok).length;
