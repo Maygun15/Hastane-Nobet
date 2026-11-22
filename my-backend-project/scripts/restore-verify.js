@@ -25,7 +25,12 @@ async function main() {
   const diffs = [];
   for (const [name, exp] of Object.entries(manifest.collections)) {
     const g = got[name];
-    if (!g) diffs.push(`${name}: eksik`);
+    if (!g) { if (!(exp.changedDuringDump && exp.countRange?.[0] === 0)) diffs.push(`${name}: eksik`); }
+    else if (exp.changedDuringDump) {
+      const [lo, hi] = exp.countRange || [exp.count, exp.count];
+      if (g.count < lo || g.count > hi) diffs.push(`${name}: döküm sırasında değişti; beklenen ${lo}–${hi}, gelen ${g.count}`);
+      else console.log(`[geri-yükle] ${name}: döküm sırasında değişmişti; ${g.count} belge (${lo}–${hi} aralığında) ✓`);
+    }
     else if (g.count !== exp.count || g.idHash !== exp.idHash) diffs.push(`${name}: beklenen ${exp.count}/${exp.idHash}, gelen ${g.count}/${g.idHash}`);
     else if (Array.isArray(exp.indexes) && JSON.stringify(exp.indexes) !== JSON.stringify(g.indexes)) {
       const missing = exp.indexes.filter((i) => !(g.indexes || []).includes(i));

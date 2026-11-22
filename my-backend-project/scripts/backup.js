@@ -28,9 +28,20 @@ async function main() {
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const archive = path.join(dir, `backup-${target}-${dbName}-${ts}.archive.gz`);
   console.log(`[yedek] başlıyor: ${target} (${host}) veritabanı ${dbName}`);
+  // Döküm canlı veritabanından alınır; döküm sürerken yazılan koleksiyonlar (ör. auditlogs) önce/sonra
+  // manifestiyle işaretlenir: geri yüklenen sayı iki değer arasında olmalı. Değişmeyenler birebir doğrulanır.
+  const pre = await collectionManifest(uri, dbName);
   runTool('mongodump', uri, [`--db=${dbName}`, `--archive=${archive}`, '--gzip']);
   fs.chmodSync(archive, 0o600);
-  const collections = await collectionManifest(uri, dbName);
+  const post = await collectionManifest(uri, dbName);
+  const collections = {};
+  for (const name of new Set([...Object.keys(pre), ...Object.keys(post)])) {
+    const a = pre[name]; const b = post[name];
+    if (a && b && a.idHash === b.idHash && a.count === b.count) collections[name] = b;
+    else collections[name] = { ...(b || a), changedDuringDump: true, countRange: [Math.min(a?.count ?? 0, b?.count ?? 0), Math.max(a?.count ?? 0, b?.count ?? 0)] };
+  }
+  const changed = Object.entries(collections).filter(([, c]) => c.changedDuringDump).map(([n]) => n);
+  if (changed.length) console.log(`[yedek] döküm sırasında değişen koleksiyon: ${changed.join(', ')} (aralıkla doğrulanır)`);
   const docs = Object.values(collections).reduce((s, c) => s + c.count, 0);
   const manifest = { createdAt: new Date().toISOString(), target, db: dbName, host, archive: path.basename(archive), bytes: fs.statSync(archive).size, docs, collections };
   fs.writeFileSync(`${archive}.manifest.json`, JSON.stringify(manifest, null, 2), { mode: 0o600 });
