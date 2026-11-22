@@ -9,6 +9,9 @@ export async function run({ A, B }) {
   const d = await db();
   // Temiz başlangıç (yalnız yerel): bu kapsamın geçmişini ve yayın kaydını sıfırla.
   await d.collection('schedulechanges').deleteMany({ year: 2026, month: 12 });
+  // Geçmiş sıfırlandığı için sürüm numaraları yeniden 1'den başlar; önceki koşunun revizyon
+  // bildirimi tekilleştirme anahtarları da sıfırlanmalı (gerçek kullanımda sürüm geri gitmez).
+  await d.collection('notifications').updateMany({ dedupeKey: /:2026-12:v\d+:/ }, { $unset: { dedupeKey: '' } });
   await d.collection('monthlyschedules').updateOne({ year: 2026, month: 12, serviceId: SCOPE.serviceId }, { $unset: { 'publication.contentRevision': '', 'publication.version': '', riskAcks: '' } });
   await req(A, 'POST', '/api/schedules/monthly/revalidate', { ...SCOPE, year: 2026, month: 12 });
   const risks = await req(A, 'GET', `/api/schedules/risks?${qs(2026, 12)}`);
