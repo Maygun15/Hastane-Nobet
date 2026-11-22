@@ -321,6 +321,19 @@ Diğer yeni alanlar taşıma gerektirmez. Kod geri dönüşü veri bozmaz; geri 
 5. **Bildirim kanalı:** e-posta / SMS, rıza metni (**ürün + hukuk**).
 6. **Yayın sonrası değişiklikte** yalnız etkilenene bildirim yeterli mi; onay zorunluluğu (**ürün**).
 
+### Deneme ortamına yayın (22 Kas 2026)
+- `ticari-hazirlik` GitHub'a gönderildi. Render'ın izlediği `vercel-preview-stabilizasyon` dalı 258ff30 → 3d6c8d5 ileri alındı (birleştirme yok, üzerine yazma yok). `main` ve üretim değişmedi.
+- **Ön yüz doğrulandı:** deneme sitesi yeni paketi sunuyor ("Güncel kurallarla doğrula", "Benimkini kaydet", "Değişiklikleri yayınla", "İşlem geçmişi", "Eksik saat devri" metinleri pakette).
+- **Sunucu:** `/api/health` yanıt veriyor. Yeni sürümün çalıştığı, oturum açılmadığı için **doğrulanmadı** (uygulama tarayıcısında yönetici oturumu oluşmadı).
+- **Dizin taşıması deneme veritabanında çalıştırılmadı:** deneme ortamı `NODE_ENV=production` (autoIndex kapalı); adres yalnız Render'da.
+
+**Yöneticinin kendi tarayıcısında kontrol listesi** (deneme sitesi, yönetici girişi):
+1. Parametreler → Nöbet Kuralları → **Kurum kuralları** paneli açılıyor; değerleri girip kaydedin.
+2. Çalışma Çizelgesi → Acil → Aralık: yayın çubuğunda kural sürümü satırı, gerekirse "Güncel kurallarla doğrula"; "Ay başı kontrolü" notu.
+3. Bir hücreyi değiştirip kaydedin; aynı planı ikinci sekmede eski hâliyle kaydetmeyi deneyin → "… tarafından değiştirildi" uyarısı.
+4. Yayınlayın, bir değişiklik yapın → "Değişiklikleri yayınla (sürüm 2)" ve "İşlem geçmişi".
+5. Gamze'nin bekleyen R ve Y izin taleplerini onaylayın → yıllık izin bakiyesi yalnız Y kadar düşer; rapor düşmez.
+
 ### İlk sonraki iş
 `ticari-hazirlik` dalını deneme ortamına yayınlamak (onayınızla):
 1. Dalı gönder (push), `render.yaml`'ın izlediği dala al.
