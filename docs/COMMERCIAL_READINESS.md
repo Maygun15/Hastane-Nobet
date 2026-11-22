@@ -351,3 +351,91 @@ Diğer yeni alanlar taşıma gerektirmez. Kod geri dönüşü veri bozmaz; geri 
   - `xlsx` açığı.
   - Deneme sitesinde bağımsız kabul testi.
 - Tahmini kalan: 2–3 iş paketi (zorunlu kurallar, işletim otomasyonu, KVKK uygulaması) + kurum kararları.
+
+---
+
+# Oturum 2 — Deneme ortamı doğrulaması ve teknik engeller (22 Kasım 2026)
+
+Amaç: `ticari-hazirlik` değişikliklerinin deneme ortamında **doğru sürüm ve doğru veritabanıyla** çalıştığını kanıtlamak ve kalan teknik engelleri gidermek.
+
+## Durum tablosu
+
+İşaretler: ✅ doğrulandı · 🟡 kısmen / koşullu · ⏳ erişim bekliyor · ❌ yapılmadı.
+
+| # | İş | Durum | Commit | Kanıt (test / çıktı) | Kalan bağımlılık |
+|---|---|---|---|---|---|
+| 1 | Sürüm ve kimlik doğrulaması | 🟡 | 9fadebc, e19f676 | `/api/version`, `dist/version.json`, `scripts/verify-deploy.mjs staging`. Ön yüz ve sunucu **e19f67649e22**, ön yüz doğru API'ye bağlı. | Veritabanı ortam işareti yazılmadı (erişim bekliyor) |
+| 1b | Veritabanı hedef koruması | ✅ | 9fadebc | `scripts/lib/dbTarget.js`: hedef açıkça verilir; bağlantı öncesi adres–hedef kontrolü, sonra ortam işareti; `.env` okunmaz. `dbTarget.test.js` 4 test. Yanlış hedef reddedildi. | — |
+| 2 | Güvence dizinleri | 🟡 | 9fadebc | Yerel: ön tarama → önizleme → uygulama → geri okuma → tekrar (0 değişiklik). Çift kayıtta kurulmadı (çıkış 3, kayıtlar listelendi). **Deneme ortamında 5 güvence dizininin 5'i de eksik**; `/api/readiness` 503. | Erişim dosyası |
+| 3 | Excel açığı | ✅ | d9f514a | xlsx 0.18.5 → **0.20.3** (SheetJS resmî tarball, depoda sabit, SHA-256 `8dc73fc3…`). Pakette `.version="0.20.3"`. Temiz `npm ci` aynı sürüm. Üretim denetimi 0 bulgu. Deneme ön yüzü yeni pakette derlendi (Render). `excelFlows.test.js` 13 test. | — |
+| 4 | Kritik akışlar (14 senaryo) | 🟡 | 9fadebc, 83e7141 | **Yerel 14/14**, 3 kez üst üste 12/12 (K12–K13 sonradan). Eski E2E 37/37. | Deneme ortamında çalıştırma: erişim dosyası |
+| 5 | Zorunlu kural kapsamı | ✅ | 83e7141, fdf3429 | `docs/KURAL_KAPSAMI.md` (70 kural, aşama bazlı; koddan üretilir). `riskAuditExtra.test.js` 4 test; E2E K12, K13. | Kurum kararları (aşağıda) |
+| 6 | Otomatik yedek + geri yükleme | 🟡 | e9d5504, e5ca602 | İş akışı hazır. Yerel öykünme: şifrele → çöz → ayrı veritabanına geri yükle (30 koleksiyon, 64 233 belge, 140 dizin birebir) → uygulama açıldı → `/api/version`. | Depo gizli değerleri; günlük zamanlama için `main`'e birleştirme |
+
+## Bu oturumda bulunan ve düzeltilen gerçek hatalar
+
+1. **Eş zamanlı iki yayın çift kayıt yazıyordu.** Aynı sürüm (v2) geçmişte iki kez yer alıyordu (E2E K10 yakaladı).
+   - Düzeltme: yayın kaydı tekil dizinle "hak" olarak önce yazılıyor; ikinci istek "zaten yayınlandı" alıyor.
+2. **Revizyon bildirimi tekrar denemede çoğalabilirdi.** Düzeltme: `dedupeKey` (kurum + kapsam + sürüm + kişi) ile tekil dizin.
+3. **Aynı işlem kimliği farklı içerikle kullanılınca sessizce eski sonuç dönüyordu.**
+   - Hem talep hem plan kaydında böyleydi.
+   - Düzeltme: içerik parmak izi karşılaştırılıyor; uyuşmazsa 409 `IDEMPOTENCY_KEY_REUSED` ve açıklama.
+4. **İzin kararında çift tıklama / eş zamanlı karar "durum değişti" hatası veriyordu.**
+   - Düzeltme: talep zaten istenen durumdaysa "zaten uygulandı" yanıtı dönüyor.
+   - Bakiye tek düşüm: işlem (transaction) + durum kontrolü; K4.
+5. **Elle atama kurum kurallarını denetlemiyordu.** Yalnız eski `ScheduleRules` kaydına bakıyordu (aylık sayı, gün aralığı, hafta sonu).
+   - Düzeltme: motor ve risk paneliyle aynı denetçi, yalnız yeni doğan ihlaller.
+   - 409 `INSTITUTION_RULE_VIOLATION`; `force` ile devam edilirse ihlal risk panelinde kalıyor.
+6. **Risk paneli (yayın kapısı) üç kuralı denetlemiyordu:** onaylı izin günü, haftalık vardiya sayısı, kişi başı görev sınırı. Elle yapılan ihlal yayına geçebiliyordu.
+7. **Çizelge içe aktarmada tarih bir gün geri kayıyordu.** `GÜN` sütunu `toISOString()` ile yazılınca Türkiye saatinde 5 Aralık, 4 Aralık oluyordu. Eski kodla test başarısız, yeni kodla başarılı.
+8. **Toplu izin içe aktarmada Türkçe ad eşleşmiyordu.** `toLowerCase()` "İSMAİL" ↔ "ismail" eşleştirmiyordu.
+9. **Excel okuma sınırsızdı.** 16 okuma noktası vardı; boyut / satır sınırı ve anlaşılır hata yoktu. Şimdi tek giriş: 5 MB, 5000 satır/sayfa, 50 sayfa; formül ayrıştırma kapalı.
+
+## Senaryo sonuçları (yerel; commit 83e7141 + b10450f)
+
+Ortam: yerel API `localhost:3100`, yerel MongoDB `127.0.0.1:27018` (ortam işareti `local`). Her koşu kendi sentetik kumunu kurar ve siler.
+
+| No | Senaryo | Beklenen | Gerçek (yerel) |
+|---|---|---|---|
+| K0 | Sürüm / ortam / güvence | commit, işaret = hedef, dizinler tam | ✅ |
+| K1 | Aynı işlem kimliği, eş zamanlı 5 gönderim | tek talep | ✅ 5×200, 1 kayıt |
+| K2 | Aynı kimlik farklı içerik | açıklamalı ret | ✅ 409 IDEMPOTENCY_KEY_REUSED |
+| K3 | Rapor (2 gün) onayı | yıllık bakiye etkilenmez | ✅ |
+| K4 | Yıllık 3 gün, eş zamanlı iki onay | bir kez düşüm 20→17 | ✅ 200/200 (biri "zaten uygulandı") |
+| K5 | İki planlayıcı aynı sürüm | eski sürümle kayıt 409 + kim | ✅ |
+| K6 | Yanıt kaybı sonrası tekrar | aynı sonuç; farklı içerik ret | ✅ |
+| K7 | Kural değişikliği → doğrulama → yayın | önce 409, sonra sürüm 1 | ✅ |
+| K8 | 31 Ara 2029 gece → 1 Oca 2030 | atama yok, önceki dönem okunur | ✅ found (1 görev) |
+| K9 | Revizyonda eski ve yeni kişi | ikisi de etkilenen, ikisine bildirim | ✅ etkilenen 2, bildirim 1/1 |
+| K10 | Eş zamanlı iki yayın | tek yayın kaydı, bildirim çoğalmaz | ✅ (düzeltmeden önce ❌: çift v2) |
+| K11 | Başka kurum / yetkisiz kullanıcı | erişim ve değişiklik yok | ✅ B: veri yok, 404; personel 403; oturumsuz 401 |
+| K12 | Onaylı izin gününe elle atama | ret; zorlanırsa risk + yayın engeli | ✅ 409 → force 200 → risk → yayın 409 |
+| K13 | Gece sonrası güne elle atama | ret | ✅ 409 GECE_SONRASI_GUN, DINLENME_12S |
+
+**Deneme ortamında henüz çalıştırılmadı.** Komut aynıdır:
+
+```bash
+E2E_TARGET=staging node scripts/e2e/kritik.mjs
+```
+
+Senaryolar sentetik iki kurum oluşturur, sonra yalnız onları siler.
+
+## Erişim durumu (somut)
+
+| Erişim | Durum | Gereken |
+|---|---|---|
+| Deneme ön yüzü / API (oturumsuz) | ✅ | — |
+| Tarayıcı oturumu (deneme) | ❌ | Uygulama içi tarayıcıda giriş üç denemede oluşmadı. Veritabanı erişimiyle **sentetik test hesapları** oluşturulup tarayıcı testinde kullanılacak; gerçek yönetici şifresi gerekmez. |
+| Deneme API test erişimi | ⏳ | Sentetik hesaplar (veritabanı erişimiyle oluşturulur) |
+| Deneme veritabanı | ⏳ | `~/nöbet/.staging-erisim.env` dosyası, izin 600, satırı `STAGING_MONGODB_URI=<Render → nobet-staging-api → Environment → MONGODB_URI>` |
+| Otomatik yedek | ⏳ | GitHub → Settings → Secrets and variables → Actions: `STAGING_MONGODB_URI`, `BACKUP_PASSPHRASE` (≥32 karakter) |
+| Günlük zamanlama | ⏳ | `ticari-hazirlik` → `main` birleştirmesi (onay) |
+
+## Deneme ortamında erişim gelince yapılacaklar (sırayla)
+
+1. `node scripts/setEnvironmentMarker.js --target=staging` — veritabanına ortam işareti yazılır. `/api/version` → `environment: staging` olunca **API'nin aynı veritabanına bağlı olduğu kanıtlanır**.
+2. `node scripts/ensureCommercialIndexes.js --target=staging` (ön tarama + önizleme) → `--apply` → tekrar (0 değişiklik).
+3. `node scripts/verify-deploy.mjs staging` → tüm satırlar ✅.
+4. `E2E_TARGET=staging node scripts/e2e/kritik.mjs` (14 senaryo).
+5. `E2E_TARGET=staging E2E_KEEP=1 …` ile sentetik hesaplar → tarayıcıda giriş, plan açma, düzenleme, kaydetme, izin onayı, yayın.
+6. GitHub gizli değerleri eklenince deneme dalına gönderim → yedek iş akışının ilk çalışması → `/api/version` `backup` alanı.
