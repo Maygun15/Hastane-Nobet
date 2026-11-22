@@ -38,9 +38,14 @@ jobs:
     env:
       STAGING_MONGODB_URI: ${{ secrets.STAGING_MONGODB_URI }}
       BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
-      BACKUP_DIR: ${{ runner.temp }}/yedek
-      RESTORE_DIR: ${{ runner.temp }}/geri
     steps:
+      # runner bağlamı iş düzeyindeki env'de kullanılamaz; dizinler adım içinde belirlenir.
+      - name: Çalışma dizinleri
+        working-directory: .
+        run: |
+          echo "BACKUP_DIR=$RUNNER_TEMP/yedek" >> "$GITHUB_ENV"
+          echo "RESTORE_DIR=$RUNNER_TEMP/geri" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
