@@ -87,11 +87,14 @@ async function main() {
     out.created = [];
     if (APPLY && out.plan.length && blockers.length) out.skippedForConflicts = true;
     if (APPLY && out.plan.length && !blockers.length) {
-      for (const M of models) {
-        const mine = out.plan.filter((p) => p.collection === M.collection.name);
-        if (!mine.length) continue;
-        await M.createIndexes(); // yalnız eksikleri oluşturur; var olanı silmez
-        out.created.push(...mine.map((p) => `${p.collection} ${JSON.stringify(p.key)}`));
+      // Yalnız önizlemedeki dizinler tek tek oluşturulur. (Mongoose createIndexes şemadaki TÜM dizinleri
+      // dener; aynı anahtarlı ama farklı adlı mevcut dizinde — ör. deneme ortamındaki notifications_ttl —
+      // yarıda kalıyordu.)
+      for (const p of out.plan) {
+        const M = models.find((m) => m.collection.name === p.collection);
+        const [, opts = {}] = M.schema.indexes().find(([k]) => JSON.stringify(k) === JSON.stringify(p.key)) || [];
+        await db.collection(p.collection).createIndex(p.key, { ...opts, background: true });
+        out.created.push(`${p.collection} ${JSON.stringify(p.key)}`);
       }
     }
 

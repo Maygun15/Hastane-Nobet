@@ -37,6 +37,15 @@ function readAccessFile(file = ACCESS_FILE) {
   return out;
 }
 
+// Deneme kurulumunda (16 Kas 2026) oluşturulan tek satırlık dosya: ~/nöbet/.staging-uri (izin 600).
+const LEGACY_FILE = path.join(os.homedir(), 'nöbet', '.staging-uri');
+function readLegacyUri(file = LEGACY_FILE) {
+  if (!fs.existsSync(file)) return '';
+  const st = fs.statSync(file);
+  if ((st.mode & 0o077) !== 0) throw new Error(`erişim dosyası başkalarınca okunabilir; chmod 600 ${file}`);
+  return (fs.readFileSync(file, 'utf8').match(/mongodb(?:\+srv)?:\/\/\S+/) || [''])[0];
+}
+
 function parseTarget(argv = process.argv) {
   const a = argv.find((x) => x.startsWith('--target='));
   const t = a ? a.split('=')[1] : process.env.DB_TARGET;
@@ -46,7 +55,7 @@ function parseTarget(argv = process.argv) {
 
 function uriFor(target) {
   if (target === 'local') return process.env.LOCAL_MONGODB_URI || 'mongodb://127.0.0.1:27018';
-  if (target === 'staging') return process.env.STAGING_MONGODB_URI || readAccessFile().STAGING_MONGODB_URI || '';
+  if (target === 'staging') return process.env.STAGING_MONGODB_URI || readAccessFile().STAGING_MONGODB_URI || readLegacyUri() || '';
   if (target === 'production') return process.env.PRODUCTION_MONGODB_URI || '';
   return '';
 }
