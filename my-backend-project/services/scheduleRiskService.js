@@ -42,6 +42,9 @@ const KURAL_LABEL = {
   CAKISMA: 'Vardiyalar çakışıyor',
   DINLENME_12S: 'Kurum kuralındaki en az dinlenme süresinin altında',
   GECE_SONRASI_GUN: '24 saat nöbetin ertesi günü çalışma',
+  IZIN_GUNU: 'onaylı izin gününde nöbet',
+  HAFTALIK_VARDIYA: 'haftalık vardiya sayısı sınırı aşıldı',
+  GOREV_SAYISI: 'aynı görev için kişi başı sınır aşıldı',
   ART_ARDA_GUN: 'Art arda gün sınırı aşıldı',
   HAFTALIK_SAAT: 'Haftalık saat sınırı aşıldı',
   ALAN_UYGUN_DEGIL: 'Kişinin alanına uygun değil',
@@ -92,7 +95,7 @@ function shiftRef(days) {
 }
 
 /** Atamaları bağımsız denetler; ihlal listesi döner. */
-function auditAssignments({ assignments = [], days = [], staff = [], limits = {}, priorAssignments = [] }) {
+function auditAssignments({ assignments = [], days = [], staff = [], limits = {}, priorAssignments = [], leavesByPerson = {} }) {
   const L = { ...DEFAULT_LIMITS, ...limits };
   const refs = shiftRef(days);
   const people = new Map(staff.map((p) => [personKey(p), p]));
@@ -128,6 +131,12 @@ function auditAssignments({ assignments = [], days = [], staff = [], limits = {}
     if (a._ref?.day && isWeekendLikeDay(a._ref.day) && String(a.shiftCode).toUpperCase() === 'M4') add('HAFTA_SONU_M4', a);
     const codes = personCodes(p);
     if (codes.length && a.shiftCode && !codes.includes(String(a.shiftCode).toUpperCase())) add('VARDIYA_KODU_UYGUN_DEGIL', a);
+    // Onaylı izin günü (motorun LEAVE_BLOCK kuralıyla aynı kaynak: leavesV2). Elle düzenlemede de yakalanır.
+    if (L.LEAVE_BLOCK !== false) {
+      const lv = leavesByPerson[k];
+      const has = lv instanceof Set ? lv.has(a.date) : Array.isArray(lv) && lv.includes(a.date);
+      if (has) add('IZIN_GUNU', a);
+    }
   }
 
   for (const raw of priorAssignments || []) {
@@ -142,6 +151,8 @@ function auditAssignments({ assignments = [], days = [], staff = [], limits = {}
     list.sort((x, y) => (x.date === y.date ? (toMin(x.start) ?? 0) - (toMin(y.start) ?? 0) : x.date < y.date ? -1 : 1));
     const perDay = new Map();
     const weekly = new Map();
+    const weeklyCount = new Map();
+    const taskCount = new Map();
     let cons = 0;
     let prevDate = null;
     for (let i = 0; i < list.length; i += 1) {
@@ -150,6 +161,16 @@ function auditAssignments({ assignments = [], days = [], staff = [], limits = {}
       if (perDay.get(a.date) === 2) add('GUNDE_IKI_VARDIYA', a);
       const wk = isoWeek(a.date);
       weekly.set(wk, { h: (weekly.get(wk)?.h || 0) + a.hours, a });
+      // Haftalık vardiya sayısı ve kişi başı aynı görev: önceki dönem görevi sayıma katılır, ihlal yalnız bu ayın görevine yazılır.
+      weeklyCount.set(wk, (weeklyCount.get(wk) || 0) + 1);
+      if (Number(L.MAX_SHIFTS_PER_WEEK) > 0 && weeklyCount.get(wk) === Number(L.MAX_SHIFTS_PER_WEEK) + 1) add('HAFTALIK_VARDIYA', a, `${weeklyCount.get(wk)} vardiya; sınır ${L.MAX_SHIFTS_PER_WEEK}`);
+      if (!a._prior) {
+        const tk = String(a.shiftId || a.rowId || '');
+        if (tk) {
+          taskCount.set(tk, (taskCount.get(tk) || 0) + 1);
+          if (Number(L.MAX_TASK_PER_PERSON) > 0 && taskCount.get(tk) === Number(L.MAX_TASK_PER_PERSON) + 1) add('GOREV_SAYISI', a, `${taskCount.get(tk)} kez; sınır ${L.MAX_TASK_PER_PERSON}`);
+        }
+      }
 
       if (prevDate !== a.date) {
         const diff = prevDate ? (Date.parse(a.date) - Date.parse(prevDate)) / 86400000 : null;
@@ -229,7 +250,7 @@ const fmtDate = (d) => {
  * Tüm riskleri tek listede, kararlarıyla birlikte döner.
  * acks: { [key]: { by, byName, at, note } } — MonthlySchedule.riskAcks
  */
-function computeScheduleRisks({ assignments = [], days = [], staff = [], preferencesByPerson = {}, acks = {}, limits = {}, priorAssignments = [] } = {}) {
+function computeScheduleRisks({ assignments = [], days = [], staff = [], preferencesByPerson = {}, acks = {}, limits = {}, priorAssignments = [], leavesByPerson = {} } = {}) {
   const rowLabel = new Map();
   for (const d of days || []) for (const s of d.shifts || []) rowLabel.set(String(s.id), `${s.area || s.label || ''} (${s.code || ''})`.trim());
   const risks = [];
@@ -255,7 +276,7 @@ function computeScheduleRisks({ assignments = [], days = [], staff = [], prefere
   }
 
   const seen = new Set();
-  for (const v of auditAssignments({ assignments, days, staff, limits, priorAssignments })) {
+  for (const v of auditAssignments({ assignments, days, staff, limits, priorAssignments, leavesByPerson })) {
     const key = `KURAL|${v.type}|${v.date}|${v.personId}`;
     if (seen.has(key)) continue;
     seen.add(key);

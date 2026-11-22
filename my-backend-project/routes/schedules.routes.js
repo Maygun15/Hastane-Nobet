@@ -1654,6 +1654,32 @@ router.post('/assign',
         console.warn('[assign] force override kural ihlali:', validation.errors, { personId: payload.personId, date: payload.date });
       }
 
+      // Kurum kuralları (motor ve risk paneliyle aynı denetçi): bu atamanın YENİ doğurduğu ihlaller.
+      // force:true ile yönetici devam edebilir; ihlal risk panelinde kalır ve yayın öncesi karar ister.
+      if (payload.personId && doc) {
+        try {
+          const pid = String(payload.personId);
+          const keysOf = (r) => new Set((r?.risks || []).filter((x) => x.type === 'KURAL' && String(x.personId) === pid).map((x) => x.key));
+          const before = await loadScheduleRisks(query, { assignmentsOverride: nextAssignments });
+          const after = await loadScheduleRisks(query, { assignmentsOverride: [...validationBase, payload] });
+          const was = keysOf(before);
+          const fresh = (after?.risks || []).filter((x) => x.type === 'KURAL' && String(x.personId) === pid && !was.has(x.key));
+          if (fresh.length && !req.body?.force) {
+            return res.status(409).json({
+              ok: false,
+              message: 'Kurum kuralı ihlali',
+              errors: fresh.map((x) => x.message),
+              rules: fresh.map((x) => x.rule),
+              canForce: true,
+              conflictType: 'INSTITUTION_RULE_VIOLATION',
+            });
+          }
+          if (fresh.length) console.warn('[assign] force ile kurum kuralı ihlali:', fresh.map((x) => x.rule), { personId: pid, date: payload.date });
+        } catch (ruleErr) {
+          console.warn('[assign] kurum kuralı kontrolü yapılamadı:', ruleErr?.message);
+        }
+      }
+
       // Aynı gün çakışma — bu kişi başka bir vardiyaya zaten atanmış mı?
       if (!req.body?.force && payload.personId) {
         const dayConflicts = await checkSameDayConflict({
@@ -2736,7 +2762,7 @@ function ruleConflictPayload(code, ruleStatus, message) {
 }
 
 /* ─── Yayın öncesi riskler (scheduleRiskService) ─── */
-async function loadScheduleRisks(query) {
+async function loadScheduleRisks(query, { assignmentsOverride = null } = {}) {
   const { buildSchedulerInput } = require('../services/scheduler/inputBuilder');
   const { applyHolidayPolicies } = require('../services/scheduler/holidayPolicyAdapter');
   const { resolveStaff } = require('../services/scheduler/staffResolver');
@@ -2754,12 +2780,16 @@ async function loadScheduleRisks(query) {
   });
   const { staff = [] } = await resolveStaff({ serviceId: query.serviceId, role: query.role, hospitalId: query.hospitalId });
   const personIds = staff.map((p) => String(p?._id || p?.id || ''));
-  const [preferencesByPerson, ruleInfo] = await Promise.all([
+  const { buildLeavesByPersonFromDb } = require('../services/schedulerService');
+  const [preferencesByPerson, ruleInfo, leavesByPerson] = await Promise.all([
     loadPreferencesFromDb({ hospitalId: query.hospitalId, personIds, year: query.year, month: query.month }).catch(() => ({})),
     // Kural limitleri yetkili kaynaktan (kurum kuralları); tanımsızsa boş + durum bilgisi.
     resolveRulesForQuery(query).catch(() => null),
+    // Onaylı izin günleri — motorla aynı kaynak (leavesV2); elle yazılan izin günü nöbeti yakalanır.
+    buildLeavesByPersonFromDb({ serviceId: query.serviceId, year: query.year, month: query.month, hospitalId: query.hospitalId }).catch(() => ({})),
   ]);
-  const assignments = Array.isArray(doc?.data?.assignments) ? doc.data.assignments : [];
+  const assignments = Array.isArray(assignmentsOverride) ? assignmentsOverride
+    : Array.isArray(doc?.data?.assignments) ? doc.data.assignments : [];
   const limits = ruleInfo ? institutionRules.toSchedulerRules(ruleInfo) : {};
   // Aylar arası (İP-2): planlamayla aynı geriye bakış ve aynı veri kaynağı.
   const monthBoundary = require('../services/scheduler/monthBoundary');
@@ -2773,7 +2803,7 @@ async function loadScheduleRisks(query) {
     status: boundary.status, message: boundary.message, lookbackDays: boundary.lookbackDays,
     from: boundary.from || null, to: boundary.to || null, priorCount: (boundary.assignments || []).length,
   };
-  const context = { assignments, days, staff, preferencesByPerson, limits, resolvedRules: ruleInfo, priorAssignments: boundary.assignments || [], boundary: boundarySummary };
+  const context = { assignments, days, staff, preferencesByPerson, limits, resolvedRules: ruleInfo, priorAssignments: boundary.assignments || [], boundary: boundarySummary, leavesByPerson };
   return {
     doc,
     context,

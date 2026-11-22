@@ -786,6 +786,7 @@ async function generateSchedule({ sectionId, serviceId = '', role = '', year, mo
 
 module.exports = {
   generateSchedule,
+  buildLeavesByPersonFromDb,
   fetchDutyRules,
   DEFAULT_RULES,
   DEFAULT_WEIGHTS,

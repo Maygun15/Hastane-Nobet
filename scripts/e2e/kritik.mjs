@@ -295,6 +295,38 @@ async function scenarios(sb, db) {
     `B plan okuma ${t1.status} (veri ${leakB ? 'SIZDI' : 'yok'}), B talep ${t2.status}, B geçmiş ${t3.status}; personel kural ${u1.status}, personel onay ${u2.status}; oturumsuz ${u3.status}`);
 }
 
+// ─────────── Elle atamada kurum kuralları ───────────
+async function manualRules(sb, db) {
+  const S = { sectionId: SECTION, serviceId: sb.serviceId, role: ROLE };
+  const qs = (y, m) => new URLSearchParams({ ...S, year: String(y), month: String(m) }).toString();
+  const A = await login(sb.creds.adminA.email, sb.creds.adminA.password);
+  // K12: hemşire 1'in onaylı yıllık izni 21–23 Ocak (K4). 22 Ocak'a elle atama.
+  // Satır dolu olduğundan o günkü triaj görevlisinin yerine yazılır (Hızlı Yerine Atama ile aynı yol).
+  const cur0 = (await call(A, 'GET', `/api/schedules/monthly?${qs(Y1, M1)}`)).body?.schedule;
+  const occupant = (cur0?.data?.assignments || []).find((x) => String(x.date).slice(0, 10) === `${Y1}-01-22` && String(x.shiftId || x.rowId) === 'r-triaj');
+  const body = { ...S, year: Y1, month: M1, personId: sb.personIds[0], personName: sb.people[0], date: `${Y1}-01-22`, shiftId: 'r-triaj', shiftCode: 'M',
+    ...(occupant ? { replacePersonId: String(occupant.personId), replacePersonName: occupant.personName } : {}) };
+  const r1 = await call(A, 'POST', '/api/schedules/assign', body);
+  const r2 = await call(A, 'POST', '/api/schedules/assign', { ...body, force: true });
+  const risks = await call(A, 'GET', `/api/schedules/risks?${qs(Y1, M1)}`);
+  const leaveRisk = (risks.body?.risks || []).find((x) => x.rule === 'IZIN_GUNU' && x.date === `${Y1}-01-22` && !x.acknowledged);
+  const pub = await call(A, 'POST', '/api/schedules/publish', { ...S, year: Y1, month: M1 });
+  check('K12', 'Onaylı izin gününe elle atama → ret; zorlanırsa risk paneli + yayın engeli', r1.status === 409 && r1.body?.conflictType === 'INSTITUTION_RULE_VIOLATION' && (r1.body?.rules || []).includes('IZIN_GUNU')
+    && r2.status === 200 && !!leaveRisk && pub.status === 409 && pub.body?.code === 'RISKS_PENDING',
+    `atama ${r1.status} ${(r1.body?.rules || []).join(',')}; zorla ${r2.status} ${r2.status !== 200 ? (r2.body?.conflictType || r2.body?.code || '') + ' ' + (r2.body?.message || '') : ''}; risk ${leaveRisk ? 'var' : 'YOK'}; yayın ${pub.status} ${pub.body?.code || ''}`);
+
+  // K13: gece (N) nöbetinin ertesi günü elle gündüz ataması
+  const doc = (await call(A, 'GET', `/api/schedules/monthly?${qs(Y1, M1)}`)).body?.schedule;
+  const asg = doc?.data?.assignments || [];
+  const busy = new Set(asg.map((x) => `${x.personId}|${String(x.date).slice(0, 10)}`));
+  const next = (d) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
+  const night = asg.find((x) => x.shiftCode === 'N' && String(x.date).slice(0, 10) < `${Y1}-01-30` && !busy.has(`${x.personId}|${next(String(x.date).slice(0, 10))}`) && String(x.personId) !== sb.personIds[0]);
+  if (!night) { check('K13', 'Gece sonrası güne elle atama reddedilir', false, 'uygun gece nöbeti bulunamadı'); return; }
+  const r3 = await call(A, 'POST', '/api/schedules/assign', { ...S, year: Y1, month: M1, personId: String(night.personId), personName: night.personName, date: next(String(night.date).slice(0, 10)), shiftId: 'r-triaj', shiftCode: 'M' });
+  check('K13', 'Gece (24 s) nöbetinin ertesi gününe elle atama reddedilir', r3.status === 409 && (r3.body?.rules || []).includes('GECE_SONRASI_GUN'),
+    `${night.personName} ${String(night.date).slice(0, 10)} N → ertesi gün M: HTTP ${r3.status} ${(r3.body?.rules || []).join(',')}`);
+}
+
 // ─────────── Ana akış ───────────
 const { conn, db, target, host, marker } = await connectTarget({ argv: [`--target=${TARGET}`] });
 console.log(`Hedef ${target}: API ${API}, veritabanı ${host} (işaret ${marker})`);
@@ -306,6 +338,7 @@ try {
   const sb = await seed(conn);
   console.log(`Sentetik kum: 2 kurum, 10 kişi, 5 hesap (giriş bilgileri dosyada, ekrana yazılmadı)`);
   await scenarios(sb, db);
+  await manualRules(sb, db);
 } catch (e) {
   console.error('HATA:', e.message);
   code = 1;
