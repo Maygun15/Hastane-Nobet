@@ -17,12 +17,16 @@ const schema = new mongoose.Schema({
   link:       { type: String, default: '', maxlength: 500 },
   read:       { type: Boolean, default: false },
   data:       { type: mongoose.Schema.Types.Mixed, default: null },
+  // Aynı olay için tek bildirim (ör. revizyon: kurum+kapsam+sürüm+kullanıcı). Tekrar denemede çoğalmaz.
+  dedupeKey:  { type: String, default: undefined },
 }, { timestamps: true });
 
 // Birincil sorgu: kullanıcının son X bildirimi — tek compound index yeterli
 schema.index({ hospitalId: 1, userId: 1, createdAt: -1 });
 // Okunmamış filtresi
 schema.index({ hospitalId: 1, userId: 1, read: 1 });
+// Tekil olay bildirimi (yalnız dedupeKey olan kayıtlar)
+schema.index({ dedupeKey: 1 }, { unique: true, partialFilterExpression: { dedupeKey: { $type: 'string' } } });
 // TTL: 30 gün sonra otomatik sil
 schema.index({ createdAt: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 });
 

@@ -975,6 +975,9 @@ function UserBadge({ user, onLogout, onChanged, isAdmin }) {
                 <LogOut className="h-4 w-4" />
                 {busy ? "Çıkış yapılıyor…" : "Çıkış Yap"}
               </button>
+              <div className="px-4 pb-2 pt-1 text-[10px] text-slate-400" data-testid="app-commit">
+                Sürüm {typeof __APP_COMMIT__ !== "undefined" && __APP_COMMIT__ ? __APP_COMMIT__.slice(0, 7) : "bilinmiyor"}
+              </div>
             </div>
           )}
         </div>

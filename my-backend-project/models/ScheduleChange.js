@@ -44,6 +44,11 @@ const ScheduleChangeSchema = new mongoose.Schema(
 
 ScheduleChangeSchema.index({ hospitalId: 1, sectionId: 1, serviceId: 1, role: 1, year: 1, month: 1, at: -1 });
 ScheduleChangeSchema.index({ hospitalId: 1, sectionId: 1, serviceId: 1, role: 1, year: 1, month: 1, kind: 1, publishVersion: -1 });
+// Aynı kapsamda aynı yayın sürümü bir kez (eş zamanlı iki yayın isteğinde ikincisi "zaten yayınlandı").
+ScheduleChangeSchema.index(
+  { hospitalId: 1, sectionId: 1, serviceId: 1, role: 1, year: 1, month: 1, publishVersion: 1 },
+  { unique: true, partialFilterExpression: { kind: 'publish' }, name: 'publish_version_once' }
+);
 applyHospitalScope(ScheduleChangeSchema);
 
 module.exports = mongoose.models.ScheduleChange || mongoose.model('ScheduleChange', ScheduleChangeSchema);

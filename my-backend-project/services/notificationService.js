@@ -158,17 +158,25 @@ async function dispatchMail({ to, subject, html, text }) {
   return sendMail({ to, subject, html, text });
 }
 
-async function saveAndBroadcast({ userId, hospitalId, type, title, message, data } = {}) {
-  if (!userId || !message) return;
+async function saveAndBroadcast({ userId, hospitalId, type, title, message, data, dedupeKey } = {}) {
+  if (!userId || !message) return null;
   try {
-    const notif = await Notification.create({
-      userId: String(userId),
-      hospitalId: String(hospitalId || ''),
-      type: type || 'info',
-      title: title || '',
-      message,
-      data: data || null,
-    });
+    let notif;
+    try {
+      notif = await Notification.create({
+        userId: String(userId),
+        hospitalId: String(hospitalId || ''),
+        type: type || 'info',
+        title: title || '',
+        message,
+        data: data || null,
+        ...(dedupeKey ? { dedupeKey: String(dedupeKey) } : {}),
+      });
+    } catch (err) {
+      // Aynı olay daha önce bildirildi (tekrar deneme) → yeniden gönderme.
+      if (dedupeKey && err?.code === 11000) return { duplicate: true };
+      throw err;
+    }
     broadcast(String(userId), 'notification', {
       id: String(notif._id),
       type: notif.type,
@@ -176,8 +184,10 @@ async function saveAndBroadcast({ userId, hospitalId, type, title, message, data
       message: notif.message,
       ts: Date.now(),
     });
+    return { created: true };
   } catch (err) {
     console.error('[saveAndBroadcast]', err?.message || err);
+    return null;
   }
 }
 
@@ -440,7 +450,7 @@ async function sendSchedulePublished({ hospitalId, year, month, people = [] }) {
  * Yayınlanmış çizelgede revizyon (İP-5 / E): yalnız nöbeti değişen kişilere uygulama içi
  * bildirim. (E-posta/SMS ayrı karar: mevcut SMTP altyapısı kapalıyken ek maliyet yok.)
  */
-async function sendScheduleRevised({ hospitalId, year, month, version, added = [], removed = [] }) {
+async function sendScheduleRevised({ hospitalId, scopeKey = '', year, month, version, added = [], removed = [] }) {
   const monthLabel = TR_MONTHS_NS[(Number(month) - 1)] || `Ay ${month}`;
   // Kişi: personId varsa o; yoksa isimle (aynı hastanede benzersiz isim) eşleştir.
   const keyOf = (x) => String(x.personId || '') || (x.personName ? `n:${String(x.personName).toLocaleUpperCase('tr-TR')}` : '');
@@ -463,15 +473,17 @@ async function sendScheduleRevised({ hospitalId, year, month, version, added = [
     const parts = [];
     if (ch.added.length) parts.push(`eklenen: ${ch.added.map((x) => `${x.date} ${x.shiftCode || ''}`.trim()).join(', ')}`);
     if (ch.removed.length) parts.push(`çıkarılan: ${ch.removed.map((x) => x.date).join(', ')}`);
-    void saveAndBroadcast({
+    // Tekrar denemede (yanıt kaybı, ikinci yayın isteği) aynı sürüm için ikinci bildirim yazılmaz.
+    const r = await saveAndBroadcast({
       userId,
       hospitalId: String(hospitalId || ''),
       type: 'warning',
       title: `${monthLabel} ${year} çizelgesi güncellendi (sürüm ${version})`,
       message: `Nöbetleriniz değişti — ${parts.join('; ')}.`,
       data: { year: Number(year), month: Number(month), version, added: ch.added, removed: ch.removed },
+      dedupeKey: `rev:${hospitalId || ''}:${scopeKey}:${year}-${month}:v${version}:${userId}`,
     });
-    sent += 1;
+    if (r?.created) sent += 1;
   }
   return sent;
 }

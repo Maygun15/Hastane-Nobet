@@ -55,6 +55,15 @@ function parseStatusFilter(status) {
 /* ─── Rotalar ─── */
 
 // POST /api/requests — kullanıcı talep gönderir
+// Aynı form kimliği: içerik aynıysa önceki talep döner; farklıysa 409 (sessizce eski talebi döndürmez).
+function replayOrReject(res, existing, body) {
+  const { fingerprint, requestContent, KEY_REUSED } = require('../utils/idempotency');
+  if (fingerprint(requestContent(existing)) !== fingerprint(requestContent(body))) {
+    return res.status(409).json({ ok: false, ...KEY_REUSED, existingRequestId: String(existing._id) });
+  }
+  return res.status(200).json({ ok: true, replayed: true, request: existing });
+}
+
 router.post('/', requireAuth, async (req, res) => {
   try {
     // Tekrar-güvenli oluşturma: aynı kullanıcı aynı form kimliğiyle ikinci kez gönderirse
@@ -63,7 +72,7 @@ router.post('/', requireAuth, async (req, res) => {
       ? req.body.clientRequestId : null;
     if (clientRequestId) {
       const existing = await Request.findOne(withHospitalFilter(req, { fromUserId: req.user._id, clientRequestId })).lean();
-      if (existing) return res.status(200).json({ ok: true, replayed: true, request: existing });
+      if (existing) return replayOrReject(res, existing, req.body);
     }
     const {
       type, targetDate, targetDateEnd, message, swapWithPersonId,
@@ -159,7 +168,7 @@ router.post('/', requireAuth, async (req, res) => {
     // Aynı form kimliğiyle eşzamanlı iki gönderim: ikincisi benzersiz indekse çarpar → mevcut talep.
     if (err?.code === 11000 && req.body?.clientRequestId) {
       const existing = await Request.findOne(withHospitalFilter(req, { fromUserId: req.user._id, clientRequestId: req.body.clientRequestId })).lean().catch(() => null);
-      if (existing) return res.status(200).json({ ok: true, replayed: true, request: existing });
+      if (existing) return replayOrReject(res, existing, req.body);
     }
     res.status(500).json({ message: safeMessage(err) });
   }
@@ -253,10 +262,29 @@ router.put('/:id', requireAuth, async (req, res) => {
     const actorName      = req.user?.name || req.user?.email || 'Yetkili';
     const actorUserId    = req.user._id;
 
+    // Aynı duruma ikinci istek (çift tıklama, yanıt kaybı sonrası tekrar): değişiklik yok, ilk sonuç döner.
+    if (!hasChange) {
+      // Yalnız not değiştiyse notu güncelle; karar bilgisi (kim/ne zaman) korunur.
+      if (typeof adminNote === 'string' && adminNote !== String(request.adminNote || '')) {
+        const noted = await Request.findOneAndUpdate(withHospitalFilter(req, { _id: request._id }), { $set: { adminNote } }, { new: true });
+        return res.json({ ok: true, request: noted });
+      }
+      return res.json({ ok: true, alreadyApplied: true, request });
+    }
+
+    // Eş zamanlı iki karar: kaybeden istek, talep zaten istenen durumdaysa "uygulandı" alır;
+    // başka duruma geçmişse 409 + güncel durum.
+    const afterConflict = async (result) => {
+      if (result.httpStatus !== 409) return res.status(result.httpStatus || 500).json({ message: result.message });
+      const now = await Request.findOne(withHospitalFilter(req, { _id: request._id })).lean();
+      if (now && String(now.status) === String(status)) return res.json({ ok: true, alreadyApplied: true, request: now });
+      return res.status(409).json({ ok: false, code: 'REQUEST_STATUS_CHANGED', message: `Talep bu arada "${now?.status || '?'}" durumuna geçti; sayfayı yenileyin.`, currentStatus: now?.status || null });
+    };
+
     // İzin onayı — service'e delege et
     if (isLeave && hasChange && status === 'approved') {
       const result = await approveLeaveRequest({ req, request, adminNote: adminNote || '', actorUserId, actorName });
-      if (!result.ok) return res.status(result.httpStatus || 500).json({ message: result.message });
+      if (!result.ok) return afterConflict(result);
       return res.json({ ok: true, request: result.request });
     }
 
@@ -277,7 +305,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     // İzin reddi — service'e delege et
     if (isLeave && hasChange && status === 'rejected') {
       const result = await rejectLeaveRequest({ req, request, adminNote: adminNote || '', actorUserId, actorName, previousStatus });
-      if (!result.ok) return res.status(result.httpStatus || 500).json({ message: result.message });
+      if (!result.ok) return afterConflict(result);
       return res.json({ ok: true, request: result.request });
     }
 
@@ -287,7 +315,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       { $set: { status, adminNote: adminNote || '', resolvedBy: actorUserId, resolvedAt: new Date() } },
       { new: true }
     );
-    if (!updatedRequest) return res.status(409).json({ message: 'Talep durumu değişti, lütfen sayfayı yenileyin' });
+    if (!updatedRequest) return afterConflict({ httpStatus: 409 });
     request = updatedRequest;
 
     void emitRequestUpdated(request, status);

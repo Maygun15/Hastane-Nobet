@@ -64,7 +64,7 @@ function scopeOf(q = {}) {
  * Değişiklik kaydı yazar. İçerik değişmediyse (edit/undo) kayıt yazılmaz.
  * Geçmiş yazımı ana işlemi bozmaz: hata yutulur ve günlüğe yazılır.
  */
-async function recordChange({ scope, scheduleId = null, kind = 'edit', source = '', before = null, after = null, added: addedIn = null, removed: removedIn = null, contentRevision = null, publishVersion = null, snapshot, user = null, note = '' } = {}) {
+async function recordChange({ scope, scheduleId = null, kind = 'edit', source = '', before = null, after = null, added: addedIn = null, removed: removedIn = null, contentRevision = null, publishVersion = null, snapshot, user = null, note = '', throwOnDuplicate = false } = {}) {
   try {
     let added = Array.isArray(addedIn) ? addedIn.map(slotOf) : [];
     let removed = Array.isArray(removedIn) ? removedIn.map(slotOf) : [];
@@ -89,6 +89,7 @@ async function recordChange({ scope, scheduleId = null, kind = 'edit', source = 
       note,
     });
   } catch (err) {
+    if (throwOnDuplicate && err?.code === 11000) throw err; // yayın sürümü zaten yazılmış (eş zamanlı yayın)
     console.error('[scheduleChange] kayıt yazılamadı:', err?.message || err);
     return null;
   }

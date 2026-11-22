@@ -184,6 +184,11 @@ if (!SKIP_DB) {
           npmScript: process.env.npm_lifecycle_event || null,
         });
         await createAdmin();
+        try {
+          const ready = await require('./services/deploymentInfo').readiness({ maxAgeMs: 0 });
+          if (!ready.ok) console.warn('[HAZIRLIK] Eksik dizin — ilgili güvence YOK:', ready.missing.map((m) => m.label).join('; '), '→ scripts/ensureCommercialIndexes.js');
+          else console.log('[HAZIRLIK] Gerekli dizinler tam');
+        } catch (e) { console.warn('[HAZIRLIK] kontrol yapılamadı:', e?.message); }
       })
       .catch((err) => {
         console.error('❌ MongoDB hatası:', err.message);
@@ -314,6 +319,22 @@ app.use('/api', globalApiLimiter);
 app.get('/', (_req, res) => res.send('Backend Sunucusu Başarıyla Çalışıyor!'));
 app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
+
+// Sürüm ve hazırlık (oturumsuz; adres, kullanıcı ya da sır içermez).
+// /api/version  → çalışan commit, veritabanı ortam işareti, güvence dizinleri
+// /api/readiness → gerekli dizinlerden biri eksikse 503 (dağıtım doğrulaması bunu kullanır)
+const deploymentInfo = require('./services/deploymentInfo');
+app.get('/api/version', async (_req, res) => {
+  try { res.set('Cache-Control', 'no-store'); res.json(await deploymentInfo.versionInfo()); }
+  catch (e) { res.status(500).json({ ok: false, message: 'sürüm bilgisi alınamadı' }); }
+});
+app.get('/api/readiness', async (_req, res) => {
+  try {
+    const info = await deploymentInfo.versionInfo();
+    res.set('Cache-Control', 'no-store');
+    res.status(info.ready?.ok ? 200 : 503).json({ ok: !!info.ready?.ok, commit: info.commit, environment: info.db.environment, ...info.ready });
+  } catch (e) { res.status(503).json({ ok: false, message: 'hazırlık kontrolü yapılamadı' }); }
+});
 
 // Public health endpoint — UptimeRobot / load balancer monitoring (auth gerektirmez)
 // Production: yalnızca status + ts döner — altyapı detayları gizlenir

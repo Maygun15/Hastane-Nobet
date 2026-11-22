@@ -1316,7 +1316,13 @@ async function upsertMonthly(req, res) {
 
     // Tekrarlanan istek (aynı opId): ikinci kez yazma; aynı sonucu döndür.
     const opId = typeof req.body?.opId === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(req.body.opId) ? req.body.opId : null;
+    const { fingerprint, KEY_REUSED } = require('../utils/idempotency');
+    const opHash = opId ? fingerprint({ data: req.body?.data || {}, meta: req.body?.meta || {} }) : null;
     if (opId && existingDoc?.lastOpId === opId) {
+      // Aynı işlem kimliği farklı içerikle: eski sonucu döndürmek yanıltıcı olur → 409.
+      if (existingDoc.lastOpHash && existingDoc.lastOpHash !== opHash) {
+        return res.status(409).json({ ok: false, ...KEY_REUSED });
+      }
       return res.json({ ok: true, replayed: true, schedule: monthlyResponse(existingDoc, query) });
     }
     // Eş zamanlı düzenleme: istemci üzerine çalıştığı revizyonu bildirir (baseRevision).
@@ -1395,7 +1401,7 @@ async function upsertMonthly(req, res) {
       meta,
       updatedBy: req.user?.uid || null,
       updatedByName: req.user?.name || null,
-      ...(opId ? { lastOpId: opId } : {}),
+      ...(opId ? { lastOpId: opId, lastOpHash: opHash } : {}),
     };
 
     // Atomik karşılaştır-ve-güncelle: yalnız okunan revizyon hâlâ geçerliyse yazar.
@@ -2941,15 +2947,24 @@ router.post('/publish',
 
       // Yayın sürümü ve önceki yayına göre fark (revizyon ise yalnız etkilenenlere bildirim).
       const prep = await scheduleChanges.preparePublish(query, current?.data?.assignments || []);
+      // Yayın kaydı önce yazılır ve "hak" yerine geçer: aynı sürüm için tekil dizin ikinci eş zamanlı
+      // isteği durdurur → ikinci istek yayın durumu, geçmiş ve bildirim üretmez.
+      try {
+        await scheduleChanges.recordChange({
+          scope: query, scheduleId: current?._id || null, kind: 'publish', source: 'publish',
+          contentRevision, publishVersion: prep.version, snapshot: prep.snapshot, user: req.user,
+          added: prep.isRevision ? prep.added : [], removed: prep.isRevision ? prep.removed : [],
+          note: prep.isRevision ? `Sürüm ${prep.previousVersion} → ${prep.version}: ${prep.added.length} eklendi, ${prep.removed.length} çıkarıldı` : 'İlk yayın',
+          throwOnDuplicate: true,
+        });
+      } catch (dupErr) {
+        if (dupErr?.code !== 11000) throw dupErr;
+        const now = await MonthlySchedule.findOne(query).lean();
+        return res.json({ ok: true, alreadyPublished: true, concurrent: true, publication: now?.publication || null, notified: 0, version: prep.version });
+      }
       const saved = await setPublicationStatus(query, PUBLICATION_STATUS.PUBLISHED, req.user, {
         contentRevision,
         version: prep.version,
-      });
-      await scheduleChanges.recordChange({
-        scope: query, scheduleId: current?._id || null, kind: 'publish', source: 'publish',
-        contentRevision, publishVersion: prep.version, snapshot: prep.snapshot, user: req.user,
-        added: prep.isRevision ? prep.added : [], removed: prep.isRevision ? prep.removed : [],
-        note: prep.isRevision ? `Sürüm ${prep.previousVersion} → ${prep.version}: ${prep.added.length} eklendi, ${prep.removed.length} çıkarıldı` : 'İlk yayın',
       });
 
       let notified = 0;
@@ -2958,6 +2973,7 @@ router.post('/publish',
           const { sendScheduleRevised } = require('../services/notificationService');
           notified = await sendScheduleRevised({
             hospitalId: query.hospitalId, year: query.year, month: query.month,
+            scopeKey: [query.sectionId, query.serviceId, query.role].map((x) => String(x || '')).join('|'),
             version: prep.version, added: prep.added, removed: prep.removed,
           });
         } else {

@@ -44,6 +44,7 @@ const MonthlyScheduleSchema = new mongoose.Schema(
     revision: { type: Number, default: undefined },
     // Tekrarlanan isteği tanımak için son işlem kimliği (aynı opId → aynı sonuç, ikinci yazma yok).
     lastOpId: { type: String, default: undefined },
+    lastOpHash: { type: String, default: undefined }, // aynı opId + farklı içerik → 409
     updatedByName: { type: String, default: undefined },
     createdBy: { type: String, default: null },
     updatedBy: { type: String, default: null },
