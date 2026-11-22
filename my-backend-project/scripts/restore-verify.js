@@ -27,7 +27,12 @@ async function main() {
     const g = got[name];
     if (!g) diffs.push(`${name}: eksik`);
     else if (g.count !== exp.count || g.idHash !== exp.idHash) diffs.push(`${name}: beklenen ${exp.count}/${exp.idHash}, gelen ${g.count}/${g.idHash}`);
+    else if (Array.isArray(exp.indexes) && JSON.stringify(exp.indexes) !== JSON.stringify(g.indexes)) {
+      const missing = exp.indexes.filter((i) => !(g.indexes || []).includes(i));
+      diffs.push(`${name}: dizin farkı — eksik ${missing.join(', ') || '(fazla dizin)'}`);
+    }
   }
+  const indexCount = Object.values(got).reduce((s, c) => s + (c.indexes || []).length, 0);
   const total = Object.values(got).reduce((s, c) => s + c.count, 0);
   if (!keep) {
     const mongoose = require('mongoose');
@@ -36,7 +41,8 @@ async function main() {
     await conn.close();
   }
   if (diffs.length) { console.error(`[geri-yükle] UYUŞMAZLIK (${diffs.length}):\n  ${diffs.join('\n  ')}`); process.exit(2); }
-  console.log(`[geri-yükle] DOĞRULANDI: ${Object.keys(got).length} koleksiyon, ${total} belge; sayı ve kimlik özeti yedekle aynı${keep ? '' : ' (doğrulama veritabanı silindi)'}`);
+  console.log(`[geri-yükle] DOĞRULANDI: ${Object.keys(got).length} koleksiyon, ${total} belge, ${indexCount} dizin; sayı, kimlik özeti ve dizinler yedekle aynı${keep ? '' : ' (doğrulama veritabanı silindi)'}`);
+  if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `restored_docs=${total}\nrestored_collections=${Object.keys(got).length}\nrestored_indexes=${indexCount}\n`);
 }
 
 main().catch((e) => { console.error('[geri-yükle] HATA:', e.message); process.exit(1); });

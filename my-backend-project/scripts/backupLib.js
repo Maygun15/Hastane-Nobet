@@ -56,7 +56,8 @@ async function collectionManifest(uri, dbName) {
       const count = await col.countDocuments();
       const h = crypto.createHash('sha256');
       for await (const d of col.find({}, { projection: { _id: 1 } }).sort({ _id: 1 })) h.update(String(d._id));
-      out[name] = { count, idHash: h.digest('hex').slice(0, 16) };
+      const indexes = (await col.indexes()).map((ix) => `${JSON.stringify(ix.key)}${ix.unique ? ' tekil' : ''}`).sort();
+      out[name] = { count, idHash: h.digest('hex').slice(0, 16), indexes };
     }
     return out;
   } finally {

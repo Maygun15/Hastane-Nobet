@@ -65,9 +65,23 @@ async function environmentMarker(db = mongoose.connection?.db) {
   return doc?.name || null;
 }
 
+async function backupStatus(db = mongoose.connection?.db) {
+  if (!db) return null;
+  const d = await db.collection('ops_meta').findOne({ _id: 'backupStatus' }).catch(() => null);
+  if (!d) return { configured: false };
+  const ageH = d.lastBackupAt ? Math.round((Date.now() - new Date(d.lastBackupAt).getTime()) / 36e5) : null;
+  return {
+    configured: true,
+    lastBackupAt: d.lastBackupAt || null, lastBackupOk: d.lastBackupOk ?? null, lastBackupAgeHours: ageH,
+    lastRestoreCheckAt: d.lastRestoreCheckAt || null, lastRestoreOk: d.lastRestoreOk ?? null,
+    stale: ageH == null || ageH > 36, // günlük yedekte 36 saatten eski → uyarı
+  };
+}
+
 async function versionInfo() {
   const connected = mongoose.connection?.readyState === 1;
   return {
+    backup: connected ? await backupStatus() : null,
     commit: buildCommit(),
     branch: process.env.RENDER_GIT_BRANCH || null,
     nodeEnv: process.env.NODE_ENV || 'development',
@@ -76,4 +90,4 @@ async function versionInfo() {
   };
 }
 
-module.exports = { buildCommit, REQUIRED_INDEXES, checkIndexes, readiness, invalidateReadiness, environmentMarker, versionInfo };
+module.exports = { backupStatus, buildCommit, REQUIRED_INDEXES, checkIndexes, readiness, invalidateReadiness, environmentMarker, versionInfo };

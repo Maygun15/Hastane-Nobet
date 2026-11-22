@@ -1,0 +1,125 @@
+name: Deneme ortamı yedeği
+
+# Her gün 05:30 (TSİ) deneme veritabanının yedeği alınır, şifrelenir, AYRI bir geçici veritabanına
+# geri yüklenip doğrulanır ve uygulama geri yüklenen veriyle açılır. Sonuç deneme veritabanına
+# (ops_meta.backupStatus) yazılır; /api/version'da ve scripts/verify-deploy.mjs'te görünür.
+# Başarısız çalışma GitHub tarafından e-postayla bildirilir.
+#
+# Gerekli depo gizli değerleri (Settings → Secrets and variables → Actions):
+#   STAGING_MONGODB_URI  deneme veritabanı adresi (Render → nobet-staging-api → Environment → MONGODB_URI)
+#   BACKUP_PASSPHRASE    yedek şifreleme parolası (en az 32 karakter; ayrıca güvenli yerde saklanmalı)
+on:
+  schedule:
+    - cron: '30 2 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    services:
+      mongo:
+        image: mongo:7.0
+        ports: ['27017:27017']
+    defaults:
+      run:
+        working-directory: my-backend-project
+    env:
+      STAGING_MONGODB_URI: ${{ secrets.STAGING_MONGODB_URI }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      BACKUP_DIR: ${{ runner.temp }}/yedek
+      RESTORE_DIR: ${{ runner.temp }}/geri
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: my-backend-project/package-lock.json
+
+      - name: Bağımlılıklar
+        run: npm ci --omit=dev
+
+      - name: Gizli değerler tanımlı mı
+        run: |
+          if [ -z "$STAGING_MONGODB_URI" ] || [ ${#BACKUP_PASSPHRASE} -lt 32 ]; then
+            echo "::error::STAGING_MONGODB_URI ve BACKUP_PASSPHRASE (en az 32 karakter) depo gizli değeri olarak tanımlanmalı"
+            exit 1
+          fi
+
+      - name: MongoDB veritabanı araçları
+        run: |
+          curl -fsSL -o /tmp/tools.deb https://fastdl.mongodb.org/tools/db/mongodb-database-tools-ubuntu2204-x86_64-100.10.0.deb
+          sudo apt-get install -y /tmp/tools.deb >/dev/null
+          mongodump --version | head -1
+
+      - name: Yedek (ortam işareti doğrulanır)
+        id: dump
+        run: node scripts/backup.js --target=staging --record
+
+      - name: Şifrele
+        id: enc
+        run: |
+          A="${{ steps.dump.outputs.archive }}"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$A" -out "$A.enc" -pass env:BACKUP_PASSPHRASE
+          sha256sum "$A.enc" | awk '{print $1}' > "$A.enc.sha256"
+          rm -f "$A"
+          echo "enc=$A.enc" >> "$GITHUB_OUTPUT"
+
+      - name: Şifreyi çöz ve ayrı veritabanına geri yükle (sayı, kimlik özeti, dizin)
+        id: restore
+        run: |
+          E="${{ steps.enc.outputs.enc }}"
+          mkdir -p "$RESTORE_DIR"
+          R="$RESTORE_DIR/$(basename "${E%.enc}")"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$E" -out "$R" -pass env:BACKUP_PASSPHRASE
+          cp "${E%.enc}.manifest.json" "$R.manifest.json"
+          RESTORE_URI=mongodb://localhost:27017 node scripts/restore-verify.js "$R" hastane --keep
+
+      - name: Uygulama geri yüklenen veriyle açılır ve okur
+        run: |
+          MONGODB_URI=mongodb://localhost:27017 node scripts/readSmoke.js
+          MONGODB_URI=mongodb://localhost:27017 PORT=3999 NODE_ENV=development SENTRY_DSN= NOTIFICATIONS_ENABLED=false \
+            JWT_SECRET="$(openssl rand -hex 32)" JWT_REFRESH_SECRET="$(openssl rand -hex 32)" FRONTEND_ORIGIN=http://localhost \
+            node index.js > "$RUNNER_TEMP/api.log" 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:3999/api/health >/dev/null && break; sleep 2; done
+          V=$(curl -sf http://localhost:3999/api/version)
+          echo "$V" | node -e "const v=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log('ortam işareti:',v.db.environment,'| güvence dizinleri:',v.ready.ok);if(v.db.environment!=='staging'){process.exit(1)}"
+          kill %1 || true
+
+      - name: Başarı kaydı
+        if: success()
+        run: node scripts/recordBackupStatus.js --target=staging --restore=ok --docs=${{ steps.restore.outputs.restored_docs }}
+
+      - name: Başarısızlık kaydı
+        if: failure()
+        run: node scripts/recordBackupStatus.js --target=staging --restore=fail --backup=${{ steps.dump.outcome == 'success' && 'ok' || 'fail' }} --note="github ${{ github.run_id }}" || true
+
+      - name: Şifreli yedeği sakla (7 gün)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deneme-yedegi-${{ github.run_id }}
+          path: |
+            ${{ env.BACKUP_DIR }}/*.enc
+            ${{ env.BACKUP_DIR }}/*.enc.sha256
+            ${{ env.BACKUP_DIR }}/*.manifest.json
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Özet
+        if: always()
+        run: |
+          {
+            echo "### Deneme yedeği"
+            echo "- Yedek: ${{ steps.dump.outcome }}"
+            echo "- Geri yükleme doğrulaması: ${{ steps.restore.outcome }} (${{ steps.restore.outputs.restored_collections }} koleksiyon, ${{ steps.restore.outputs.restored_docs }} belge, ${{ steps.restore.outputs.restored_indexes }} dizin)"
+          } >> "$GITHUB_STEP_SUMMARY"
