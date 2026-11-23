@@ -23,6 +23,7 @@ on:
 
 permissions:
   contents: read
+  actions: read  # yüklenen artifact'ı REST API ile geri indirmek için (salt okuma)
 
 concurrency:
   group: staging-backup
@@ -135,15 +136,28 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-      - name: Artifact geri indirilir
+      # Geri indirme, geri dönüşte bir insanın kullanacağı yolla yapılır: REST API, yükleme kimliği.
+      # (actions/download-artifact aynı işte yüklenen artifact'ı bulamadı: 45210040950/2 ada göre,
+      #  45266385988 kimliğe göre "not found".) Yüklemeden hemen sonra gecikme olabilir → yeniden dener.
+      - name: Artifact geri indirilir (REST API, yükleme kimliğiyle)
         id: download
         if: success()
-        uses: actions/download-artifact@v4
-        with:
-          # Ada göre arama yeniden çalıştırma denemesinde bulamayabiliyor (45210040950/2:
-          # "Artifact not found for name"); yükleme adımının verdiği kimlikle indirilir.
-          artifact-ids: ${{ steps.artifact.outputs.artifact-id }}
-          path: ${{ runner.temp }}/indirilen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ART_ID: ${{ steps.artifact.outputs.artifact-id }}
+          ART_DIGEST: ${{ steps.artifact.outputs.artifact-digest }}
+        run: |
+          D="$RUNNER_TEMP/indirilen"; mkdir -p "$D"
+          for i in 1 2 3 4 5 6; do
+            if curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+                 -o "$D/artifact.zip" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip"; then break; fi
+            echo "deneme $i: artifact $ART_ID henüz indirilemedi"; rm -f "$D/artifact.zip"; sleep 10
+          done
+          [ -s "$D/artifact.zip" ] || { echo "::error::Artifact $ART_ID indirilemedi"; exit 1; }
+          ZIP=$(sha256sum "$D/artifact.zip" | awk '{print $1}')
+          echo "indirilen zip: $(stat -c %s "$D/artifact.zip") bayt, sha256 $ZIP | yükleme özeti: ${ART_DIGEST:-yok}"
+          if [ -n "$ART_DIGEST" ] && [ "${ART_DIGEST#sha256:}" != "$ZIP" ]; then echo "::error::İndirilen zip özeti yükleme özetiyle eşleşmiyor"; exit 1; fi
+          unzip -q -o "$D/artifact.zip" -d "$D"
 
       - name: İndirilen artifact özeti şifreli yedekle aynı mı
         id: artifactCheck
@@ -152,7 +166,7 @@ jobs:
           F=$(find "$RUNNER_TEMP/indirilen" -name '*.enc' -type f | head -1)
           [ -n "$F" ] || { echo "::error::İndirilen artifact içinde şifreli yedek yok"; exit 1; }
           GOT=$(sha256sum "$F" | awk '{print $1}')
-          echo "artifact kimliği: ${{ steps.artifact.outputs.artifact-id }} | indirilen sha256: $GOT"
+          echo "artifact kimliği: ${{ steps.artifact.outputs.artifact-id }} | indirilen .enc sha256: $GOT | şifreleme adımındaki: ${{ steps.enc.outputs.sha256 }}"
           [ "$GOT" = "${{ steps.enc.outputs.sha256 }}" ] || { echo "::error::İndirilen artifact özeti şifreli yedekle eşleşmiyor"; exit 1; }
 
       # Sonuç kaydı EN SONDA: başarı ancak artifact yüklenip geri indirildikten sonra yazılır.
