@@ -73,7 +73,9 @@ async function backupStatus(db = mongoose.connection?.db) {
   return {
     configured: true,
     lastBackupAt: d.lastBackupAt || null, lastBackupOk: d.lastBackupOk ?? null, lastBackupAgeHours: ageH,
+    lastBackupRunner: d.lastBackupRunner || null, lastBackupDocs: d.lastBackupDocs ?? null,
     lastRestoreCheckAt: d.lastRestoreCheckAt || null, lastRestoreOk: d.lastRestoreOk ?? null,
+    lastRestoreRunner: d.lastRestoreRunner || null, lastRestoreDocs: d.lastRestoreDocs ?? null,
     stale: ageH == null || ageH > 36, // günlük yedekte 36 saatten eski → uyarı
   };
 }

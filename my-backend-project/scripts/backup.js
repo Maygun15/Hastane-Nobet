@@ -64,7 +64,7 @@ async function main() {
     const w = await connectTarget({ dbName });
     await w.db.collection('ops_meta').updateOne({ _id: 'backupStatus' }, { $set: {
       lastBackupAt: new Date(manifest.createdAt), lastBackupOk: true, lastBackupDocs: docs, lastBackupBytes: manifest.bytes,
-      lastBackupArchive: manifest.archive, lastBackupRunner: process.env.GITHUB_RUN_ID ? `github:${process.env.GITHUB_RUN_ID}` : 'elle',
+      lastBackupArchive: manifest.archive, lastBackupRunner: process.env.GITHUB_RUN_ID ? `github:${process.env.GITHUB_RUN_ID}/${process.env.GITHUB_RUN_ATTEMPT || 1}` : 'elle',
     } }, { upsert: true });
     await w.conn.close();
     console.log('[yedek] durum kaydedildi (ops_meta.backupStatus)');

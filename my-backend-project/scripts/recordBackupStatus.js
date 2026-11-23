@@ -7,7 +7,8 @@ const arg = (k) => (process.argv.find((a) => a.startsWith(`--${k}=`)) || '').spl
 
 connectTarget().then(async ({ conn, db, target }) => {
   const ok = arg('restore') === 'ok';
-  const set = { lastRestoreCheckAt: new Date(), lastRestoreOk: ok, lastRestoreNote: arg('note').slice(0, 200) || null };
+  const set = { lastRestoreCheckAt: new Date(), lastRestoreOk: ok, lastRestoreNote: arg('note').slice(0, 200) || null,
+    lastRestoreRunner: process.env.GITHUB_RUN_ID ? `github:${process.env.GITHUB_RUN_ID}/${process.env.GITHUB_RUN_ATTEMPT || 1}` : 'elle' };
   if (arg('docs')) set.lastRestoreDocs = Number(arg('docs'));
   if (arg('backup') === 'fail') { set.lastBackupOk = false; set.lastBackupFailedAt = new Date(); }
   await db.collection('ops_meta').updateOne({ _id: 'backupStatus' }, { $set: set }, { upsert: true });
