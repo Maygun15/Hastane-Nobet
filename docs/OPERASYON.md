@@ -42,12 +42,29 @@ Sırayla yapın. Her adım tekrar çalıştırılabilir.
 
 | # | Adım | Komut / yer | Geri alınır mı |
 |---|---|---|---|
-| 0 | **Yedek al** (§4) | `scripts/backup.js` | — |
+| 0 | **Yedek al** (§4) | `node scripts/backup.js --target=<hedef>` | — |
 | 1 | Kodu yayınla (sunucu önce, sonra ön yüz) | Render/Railway + Vercel | Evet (önceki dağıtım) |
-| 2 | Dizinler | `ensureCommercialIndexes.js --apply` | Evet: dizinler silinebilir, veri değişmez |
-| 3 | İzin türü düzeltmesi (yalnız "Y" düşülür, 20 gün hak) | `scripts/fixLeaveTypes.js` (kuru) → `--apply` | Yedekten (§5) |
-| 4 | Kurum kurallarını gir / taşı | Arayüz (§2.5) | Evet: kural kaydı yeni revizyonla değiştirilebilir |
-| 5 | Planları güncel kurallarla doğrula | Yayın çubuğu → "Güncel kurallarla doğrula" (`/monthly/revalidate`) | — |
+| 2 | **Ortam işareti** (bir kez) | `node scripts/setEnvironmentMarker.js --target=<hedef>` | Evet: `ops_meta` belgesi silinebilir |
+| 3 | **Eski tekil dizin taraması** | `node scripts/staleIndexes.js --target=<hedef>` (rapor) → incele → `--apply` | Evet: dizin yeniden oluşturulabilir, veri değişmez |
+| 4 | Güvence dizinleri | `node scripts/ensureCommercialIndexes.js --target=<hedef>` (ön tarama + önizleme) → `--apply` → tekrar (0) | Evet: dizinler silinebilir, veri değişmez |
+| 5 | Eski otomatik plan kopyaları (isteğe bağlı) | `node scripts/pruneGeneratedSchedules.js --target=<hedef>` (kuru) → `--apply` | Yalnız yedekten |
+| 6 | İzin türü düzeltmesi (yalnız "Y" düşülür, 20 gün hak) | `scripts/fixLeaveTypes.js` (kuru) → `--apply` | Yedekten (§5) |
+| 7 | Kurum kurallarını gir / taşı | Arayüz (§2.5) | Evet: kural kaydı yeni revizyonla değiştirilebilir |
+| 8 | Planları güncel kurallarla doğrula | Yayın çubuğu → "Güncel kurallarla doğrula" (`/monthly/revalidate`) | — |
+| 9 | **Dağıtım doğrulaması** | `node scripts/verify-deploy.mjs <hedef>` → "DOĞRULAMA TAMAM" | — |
+
+**Hedef seçimi:** veritabanına yazan her betik `--target=local|staging|production` ister (`scripts/lib/dbTarget.js`).
+- `.env` okunmaz.
+- Bağlantıdan önce adres–hedef uyumu denetlenir: deneme hedefi üretim kümesini gösteremez.
+- Bağlantıdan sonra veritabanındaki `ops_meta.environment` işareti hedefle aynı olmalı.
+- Üretim için `PRODUCTION_MONGODB_URI` + `ALLOW_PRODUCTION=1` ve onaylı plan gerekir.
+
+**Deneme adresi:** `STAGING_MONGODB_URI` ortam değişkeni, `~/nöbet/.staging-erisim.env` ya da `~/nöbet/.staging-uri`; izin 600 olmalı.
+
+**Üretim için önemli (22 Kas 2026 bulgusu):** deneme veritabanında çok kurumlu yapıdan önce kalmış 7 eski tekil dizin vardı.
+- Bu dizinler ikinci kurumun aynı izin kodunu, kural kaydını ve izin takvimini kullanmasını engelliyordu.
+- Deneme ortamında silindi.
+- Üretim veritabanı aynı eski koddan oluştuğu için **büyük olasılıkla aynı dizinleri taşıyor**. Adım 3 üretimde mutlaka kuru çalıştırılmalı.
 
 **Taşıma gerektirmeyenler:**
 - `MonthlySchedule.revision`: eski kayıtlarda alan yoktur. İlk kayıtta 0 sayılır ve 1 olur.
@@ -62,19 +79,36 @@ Sırayla yapın. Her adım tekrar çalıştırılabilir.
 
 ## 4. Yedek
 
+**Elle:**
 ```bash
 cd my-backend-project
-MONGODB_URI=… BACKUP_DIR=/güvenli/yol node scripts/backup.js
+BACKUP_DIR=/güvenli/yol node scripts/backup.js --target=staging --record
 ```
 
-- `.env` dosyası **okunmaz**. Yereldeki `.env` üretimi gösterdiği için bu bilinçli bir koruma.
-- Adres `mongodump`'a geçici bir `0600` yapılandırma dosyasıyla verilir, süreç listesinde görünmez. Hata metinleri maskelenir.
+- Adres hedefe göre gelir (§3 "Hedef seçimi"). Veritabanının ortam işareti hedefle aynı değilse yedek **alınmaz**.
+- Adres `mongodump`'a geçici bir `0600` dosyayla verilir; süreç listesinde görünmez, hata metinleri maskelenir.
 - Çıktı:
-  - `backup-hastane-<zaman>.archive.gz`
-  - `….manifest.json`: koleksiyon başına belge sayısı ve `_id` kümesi özeti. İçerik değil.
-  - Dosya izni `0600`; eski yedekler `BACKUP_KEEP_DAYS` (7) sonra silinir.
-- Üretim kümesi için `BACKUP_ALLOW_PROD=1` gerekir.
-- Yedek **Google Drive / iCloud klasörüne konmaz**. Kişisel veri içerir; şifreli disk veya kurumun yedek alanı kullanılır.
+  - `backup-<hedef>-hastane-<zaman>.archive.gz`
+  - `….manifest.json`: koleksiyon başına belge sayısı, `_id` özeti ve dizin listesi.
+  - Döküm sürerken yazılan koleksiyonlar (ör. `auditlogs`) önce/sonra sayımıyla işaretlenir.
+- `--record` başarı zamanını `ops_meta.backupStatus`'a yazar. Bu bilgi `/api/version` → `backup` alanında görünür; 36 saatten eskiyse `stale: true`.
+- Zaman aşımı `BACKUP_TIMEOUT_MIN` (varsayılan 60).
+  - Atlas ücretsiz katmanında döküm yavaştır: deneme ortamında 7,4 MB / 3 704 belge yaklaşık 20 dakika sürdü.
+  - Süreyi uzatan, eski otomatik plan kopyalarıydı (§3 adım 5).
+- Yedek **Google Drive / iCloud klasörüne konmaz**; kişisel veri içerir.
+
+**Otomatik (GitHub Actions, `.github/workflows/staging-backup.yml`):**
+- Her gün 05:30 TSİ. Zamanlama yalnız `main` dalındaki dosyadan çalışır; o zamana kadar deneme dalına her gönderimde çalışır.
+- Adımlar: yedek → AES-256 (pbkdf2, 200 000 tur) şifreleme → geçici MongoDB'ye geri yükleme (sayı, kimlik özeti, dizin) → uygulama geri yüklenen veriyle açılır ve `/api/version` okunur → sonuç `ops_meta.backupStatus`'a yazılır.
+- Şifreli yedek 7 gün çalışma eki olarak saklanır.
+- Başarısız çalışmayı GitHub e-postayla bildirir.
+- Gerekli depo gizli değerleri:
+  - `STAGING_MONGODB_URI`
+  - `BACKUP_PASSPHRASE` (≥32 karakter; ayrıca güvenli yerde saklanmalı, yoksa yedek açılamaz)
+- Şifreli yedeği açmak:
+  ```bash
+  openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in <dosya>.enc -out <dosya> -pass env:BACKUP_PASSPHRASE
+  ```
 
 ## 5. Geri yükleme ve doğrulama
 
@@ -119,10 +153,7 @@ RESTORE_URI=mongodb://127.0.0.1:27018 node scripts/restore-verify.js /yol/backup
 - **Dağıtım hedefi tutarsız:**
   - `deploy.yml` sunucuyu Railway'e gönderiyor, deneme ortamı Render'da.
   - Üretimin nerede çalışacağı karar bekliyor.
-- **Paket açıkları (22 Kas):**
-  - Sunucu üretim bağımlılıklarında yüksek/kritik **0**. Kalan: `exceljs` → `uuid` (orta) ve `jest` (yalnız geliştirme).
-  - **Ön yüz — `xlsx` (yüksek, düzeltmesi yok):** `package.json`'da geliştirme bağımlılığı görünür, ama Excel içe aktarma ekranlarında (`WorkAreasTab`, `WorkingHoursTab`, `WorkingHoursTimesheet`) **kullanıcıya giden pakete girer**.
-    - Risk: yöneticinin açtığı kötü niyetli bir Excel dosyası tarayıcıda prototip kirlenmesi veya donma yaratabilir.
-    - Öneri: SheetJS'in güncel CDN sürümüne (`https://cdn.sheetjs.com`) ya da `exceljs`'e geçiş; `xlsx`'i `dependencies`'e taşıyıp denetime dahil etmek.
-  - Ön yüz `vite`/`esbuild` (orta/yüksek): yalnız geliştirme sunucusunu etkiler, ana sürüm 5→8 geçişi gerekir.
-  - CI denetimi `--omit=dev` ile çalışıyor; `xlsx` bu yüzden şu an CI'da **görünmüyor**.
+- **Paket açıkları (23 Kas):**
+  - Ön yüz ve sunucu üretim bağımlılıklarında yüksek/kritik **0**.
+  - `xlsx` 0.20.3'e yükseltildi (SheetJS resmî paketi, `vendor/`, ayrıntı `vendor/README.md`).
+  - Kalan: ön yüz `vite`/`esbuild` (yalnız geliştirme sunucusu; ana sürüm 5→8 gerekir), sunucuda `exceljs` → `uuid` (orta) ve `jest` (geliştirme).

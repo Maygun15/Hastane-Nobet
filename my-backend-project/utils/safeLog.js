@@ -6,11 +6,13 @@ const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const TC_OR_PHONE = /(?<!\d)(?:\+?90)?0?\d{10,11}(?!\d)/g;
 const BEARER = /Bearer\s+[A-Za-z0-9._~+/=-]+/gi;
 const MONGO_URI = /mongodb(?:\+srv)?:\/\/[^\s"']+/gi;
+const ATLAS_HOST = /\b[a-z0-9-]+(?:-shard-\d+-\d+)?\.([a-z0-9]+)\.mongodb\.net\b/gi;
 const SECRET_KEYS = /pass(word)?|şifre|token|secret|authorization|cookie|apikey|api_key|tc(no|kn)?$|phone|telefon|email/i;
 
 function redactText(value) {
   return String(value ?? '')
     .replace(MONGO_URI, 'mongodb://<gizli>')
+    .replace(ATLAS_HOST, '<küme>.$1.mongodb.net')
     .replace(BEARER, 'Bearer <gizli>')
     .replace(EMAIL, '<e-posta>')
     .replace(TC_OR_PHONE, '<numara>');

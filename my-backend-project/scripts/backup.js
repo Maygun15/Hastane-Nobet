@@ -31,7 +31,20 @@ async function main() {
   // Döküm canlı veritabanından alınır; döküm sürerken yazılan koleksiyonlar (ör. auditlogs) önce/sonra
   // manifestiyle işaretlenir: geri yüklenen sayı iki değer arasında olmalı. Değişmeyenler birebir doğrulanır.
   const pre = await collectionManifest(uri, dbName);
-  runTool('mongodump', uri, [`--db=${dbName}`, `--archive=${archive}`, '--gzip']);
+  // Atlas ücretsiz katmanında uzun dökümde bağlantı kopabiliyor (deneme: generatedschedules sırasında);
+  // en fazla BACKUP_RETRIES (3) deneme, aralarında bekleme.
+  const tries = Math.max(1, Number(process.env.BACKUP_RETRIES || 3));
+  for (let i = 1; i <= tries; i += 1) {
+    try {
+      runTool('mongodump', uri, [`--db=${dbName}`, `--archive=${archive}`, '--gzip']);
+      break;
+    } catch (e) {
+      fs.rmSync(archive, { force: true });
+      if (i === tries) throw e;
+      console.warn(`[yedek] deneme ${i}/${tries} başarısız: ${String(e.message).slice(-160)} — yeniden denenecek`);
+      await new Promise((r) => setTimeout(r, 15000 * i));
+    }
+  }
   fs.chmodSync(archive, 0o600);
   const post = await collectionManifest(uri, dbName);
   const collections = {};

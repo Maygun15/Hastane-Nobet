@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { ENFORCEMENT, ENFORCEMENT_LABEL, getRuleEnforcement } from "../src/rules/ruleEnforcement.js";
 
 test("motorun uyguladığı kurallar 'engine' döner", () => {
-  for (const id of ["ONE_SHIFT_PER_DAY", "NIGHT_NEXT_DAY_OFF", "MIN_REST_11H", "MAX_CONSECUTIVE_6D", "LEAVE_BLOCK_GENERIC"]) {
+  // WEEKLY_MIN_1_OFF: kayan 7 günde 1 boş gün ≡ en fazla 6 gün art arda (MAX_CONSECUTIVE_DAYS ≤ 6).
+  for (const id of ["ONE_SHIFT_PER_DAY", "NIGHT_NEXT_DAY_OFF", "MIN_REST_11H", "MAX_CONSECUTIVE_6D", "LEAVE_BLOCK_GENERIC", "WEEKLY_MIN_1_OFF"]) {
     assert.equal(getRuleEnforcement(id), ENFORCEMENT.ENGINE, id);
   }
 });
@@ -14,7 +15,7 @@ test("görev satırı / alan ile sağlananlar 'template' döner", () => {
 });
 
 test("motorun kontrol etmediği kurallar ve bilinmeyenler 'info' döner", () => {
-  for (const id of ["PREGNANT_NO_NIGHTS", "HOLIDAY_EQUAL", "WEEKLY_MIN_1_OFF", "TRY_RESPECT_OFF_REQUESTS", "BILINMEYEN_KURAL", "", undefined]) {
+  for (const id of ["PREGNANT_NO_NIGHTS", "HOLIDAY_EQUAL", "TRY_RESPECT_OFF_REQUESTS", "BILINMEYEN_KURAL", "", undefined]) {
     assert.equal(getRuleEnforcement(id), ENFORCEMENT.INFO, String(id));
   }
 });
