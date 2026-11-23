@@ -439,3 +439,51 @@ Senaryolar sentetik iki kurum oluşturur, sonra yalnız onları siler.
 4. `E2E_TARGET=staging node scripts/e2e/kritik.mjs` (14 senaryo).
 5. `E2E_TARGET=staging E2E_KEEP=1 …` ile sentetik hesaplar → tarayıcıda giriş, plan açma, düzenleme, kaydetme, izin onayı, yayın.
 6. GitHub gizli değerleri eklenince deneme dalına gönderim → yedek iş akışının ilk çalışması → `/api/version` `backup` alanı.
+
+---
+
+## Oturum 2 — Son durum (23 Kasım 2026)
+
+### Durum tablosu (güncel)
+
+| # | İş | Durum | Commit | Kanıt | Kalan bağımlılık |
+|---|---|---|---|---|---|
+| 1 | Sürüm, ortam ve veritabanı kimliği | ✅ | 9fadebc, e19f676 | `verify-deploy.mjs staging` → **DOĞRULAMA TAMAM**: ön yüz ve sunucu **738ae148023b**, ön yüz doğru API'de. Deneme veritabanına yazılan `ops_meta.environment = staging` işareti deneme API'sinin `/api/version` yanıtında göründü; API aynı veritabanına bağlı. | — |
+| 2 | Güvence dizinleri | ✅ | a7ff3ae | Deneme: ön tarama temiz (çift kayıt 0) → 5 dizin oluşturuldu → geri okuma ✓ → tekrar 0. `/api/readiness` 503 → 200. | — |
+| 2b | Eski kurum kapsamsız tekil dizinler | ✅ deneme · ⏳ üretim | a94e918 | Denemede 7 eski dizin bulundu; onayla silindi; sonraki rapor temiz. | **Üretimde kuru çalıştırma** (onay) |
+| 3 | Excel açığı | ✅ | d9f514a | xlsx **0.20.3**, CVE-2023-30533 + CVE-2024-22363. Ayrıntı: `vendor/README.md`. | — |
+| 4 | Kritik akışlar | ✅ | 738ae14 | **Deneme 15/15**, iki koşu. Atlas çoğaltma kümesinde gerçek işlem (transaction) yolu. Yerel 15/15, eski E2E 37/37. Sonuç dosyası: `docs/e2e-sonuclari/kritik-staging.json`. | — |
+| 4b | Tarayıcı akışları (deneme) | ✅ | 738ae14 | Sentetik yönetici ile: giriş → izin onayı → plan açma → hızlı yerine atama (kayıt) → yayın v3 ve v4. Veritabanında doğrulandı: talep onaylı, bakiye 20→18; v4 farkı 1+/1−; yalnız etkilenen hesaba 1 bildirim. JS hatası yok. | — |
+| 5 | Zorunlu kural kapsamı | ✅ | 83e7141, fdf3429 | `docs/KURAL_KAPSAMI.md` | Kurum kararları |
+| 6 | Otomatik yedek | 🟡 | e9d5504 … 33a6a23 | İş akışı geçerli ve çalışıyor; **"Gizli değerler tanımlı mı" adımında durdu** (depo gizli değerleri yok). Elle deneme yedeği: aşağıda. | GitHub gizli değerleri; günlük zamanlama için `main` |
+
+### Bu bölümde bulunan ek hatalar (düzeltildi)
+
+1. **Dizin betiği deneme ortamında yarıda kaldı.** Mongoose `createIndexes` şemadaki tüm dizinleri deniyordu; aynı anahtarlı ama farklı adlı mevcut TTL dizininde (`notifications_ttl`) hata veriyordu.
+   - Düzeltme: yalnız önizlemedeki dizinler tek tek kuruluyor.
+2. **Eski kurum kapsamsız tekil dizinler (7).** İkinci kurum aynı izin kodunu ("Y"), kurum kuralı kaydını ve izin takvimini (`leavesV2`) kullanamıyordu. Sentetik ikinci kurum kurulurken ortaya çıktı.
+3. **Otomatik plan kopyaları sınırsız birikiyordu.** 317 kayıt / 134 MB, veritabanının %97'si; tek kapsamda 222 kopya. Yalnız en yenisi okunuyor.
+   - Yeni kod: kapsam başına son 3.
+   - Denemede 285 eski kopya onayla silindi.
+4. **Yedek doğrulaması canlı yazımda yanlış alarm veriyordu.** 20 dakikalık dökümde 2 denetim kaydı yazıldı.
+   - Düzeltme: önce/sonra manifesti, değişen koleksiyon aralıkla doğrulanıyor.
+5. **Yedek iş akışı GitHub'da hiç çalışmıyordu.** İş düzeyi `env` içinde `runner.temp` kullanılmıştı; dosya geçersizdi.
+   - Her gönderimde başarısız çalışma kaydı oluştu; büyük olasılıkla e-posta da gitti.
+6. **Atlas bağlantısı uzun dökümde kopabiliyor.** Döküm artık 3 kez yeniden deneniyor. Hata metnindeki küme/parça adı maskeleniyor.
+
+### Deneme ortamında yapılan veri işlemleri
+
+Hepsi hedef doğrulamasıyla yapıldı (adres ≠ üretim kümesi; işaret = staging).
+- `ops_meta.environment` işareti ve `ops_meta.backupStatus` yazıldı.
+- 5 güvence dizini oluşturuldu.
+- 7 eski tekil dizin silindi (onay).
+- 285 eski `generatedschedules` kopyası silindi (onay). Önceki yedekte duruyordu.
+- Sentetik kum (2 kurum, 5 hesap, 10 kişi) oluşturuldu ve sonra silindi; giriş dosyası silindi.
+
+### Arayüz gözlemleri (hata değil, iyileştirme)
+
+- Talep kartında kişi adının yanında iç kimlik görünüyor.
+- Çizelgedeki "Son kayıt" satırında kullanıcı adı yerine kimlik görünüyor.
+- Dar ekranda (≈740 px) çizelge hücreleri "SENTETİK 0." gibi kesiliyor.
+- İçerik değişmeden de yeni yayın sürümü oluşturulabiliyor (v3: 0 eklendi / 0 çıkarıldı).
+- **Ürün kararı:** yayından sonraki değişiklikler personele hemen görünüyor, yalnız bildirim gitmiyor ("Personel güncel hâli görüyor ama bildirim almadı").
