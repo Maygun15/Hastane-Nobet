@@ -140,14 +140,17 @@ jobs:
         if: success()
         uses: actions/download-artifact@v4
         with:
-          name: deneme-yedegi-${{ github.run_id }}-${{ github.run_attempt }}
+          # Ada göre arama yeniden çalıştırma denemesinde bulamayabiliyor (45210040950/2:
+          # "Artifact not found for name"); yükleme adımının verdiği kimlikle indirilir.
+          artifact-ids: ${{ steps.artifact.outputs.artifact-id }}
           path: ${{ runner.temp }}/indirilen
 
       - name: İndirilen artifact özeti şifreli yedekle aynı mı
         id: artifactCheck
         if: success()
         run: |
-          F=$(ls "$RUNNER_TEMP"/indirilen/*.enc)
+          F=$(find "$RUNNER_TEMP/indirilen" -name '*.enc' -type f | head -1)
+          [ -n "$F" ] || { echo "::error::İndirilen artifact içinde şifreli yedek yok"; exit 1; }
           GOT=$(sha256sum "$F" | awk '{print $1}')
           echo "artifact kimliği: ${{ steps.artifact.outputs.artifact-id }} | indirilen sha256: $GOT"
           [ "$GOT" = "${{ steps.enc.outputs.sha256 }}" ] || { echo "::error::İndirilen artifact özeti şifreli yedekle eşleşmiyor"; exit 1; }
@@ -159,7 +162,7 @@ jobs:
         continue-on-error: true
         run: >-
           node scripts/recordBackupStatus.js --target=staging
-          --steps="secrets:${{ steps.secrets.outcome }},tools:${{ steps.tools.outcome }},dump:${{ steps.dump.outcome }},enc:${{ steps.enc.outcome }},restore:${{ steps.restore.outcome }},smoke:${{ steps.smoke.outcome }},artifact:${{ steps.artifact.outcome }},artifactCheck:${{ steps.artifactCheck.outcome }}"
+          --steps="secrets:${{ steps.secrets.outcome }},tools:${{ steps.tools.outcome }},dump:${{ steps.dump.outcome }},enc:${{ steps.enc.outcome }},restore:${{ steps.restore.outcome }},smoke:${{ steps.smoke.outcome }},artifact:${{ steps.artifact.outcome }},download:${{ steps.download.outcome }},artifactCheck:${{ steps.artifactCheck.outcome }}"
           --backup-at="${{ steps.dump.outputs.backup_at }}" --backup-docs="${{ steps.dump.outputs.backup_docs }}"
           --restored-docs="${{ steps.restore.outputs.restored_docs }}" --restored-collections="${{ steps.restore.outputs.restored_collections }}"
           --restored-indexes="${{ steps.restore.outputs.restored_indexes }}" --artifact-id="${{ steps.artifact.outputs.artifact-id }}"
@@ -171,6 +174,7 @@ jobs:
           {
             echo "### Deneme yedeği — çalıştırma ${{ github.run_id }} / deneme ${{ github.run_attempt }}"
             echo "- Betik sürümü: \`${{ steps.src.outputs.commit }}\` (tetikleme: ${{ github.event_name }})"
+            echo ""
             echo "| Adım | Sonuç |"
             echo "|---|---|"
             echo "| Gizli değer ön kontrolü | ${{ steps.secrets.outcome }} |"
@@ -179,7 +183,8 @@ jobs:
             echo "| Ayrı veritabanına geri yükleme + veri/dizin doğrulaması | ${{ steps.restore.outcome }} (${{ steps.restore.outputs.restored_collections }} koleksiyon, ${{ steps.restore.outputs.restored_docs }} belge, ${{ steps.restore.outputs.restored_indexes }} dizin) |"
             echo "| Uygulamanın geri yüklenen veriyi okuması | ${{ steps.smoke.outcome }} |"
             echo "| Artifact yükleme | ${{ steps.artifact.outcome }} (kimlik ${{ steps.artifact.outputs.artifact-id }}) |"
-            echo "| Artifact geri indirme + özet | ${{ steps.artifactCheck.outcome }} |"
+            echo "| Artifact geri indirme | ${{ steps.download.outcome }} |"
+            echo "| İndirilen dosyanın SHA-256 karşılaştırması | ${{ steps.artifactCheck.outcome }} |"
             echo "| Sonuç kaydı (deneme veritabanı) | ${{ steps.record.outcome }} — yazıldı: ${{ steps.record.outputs.written || 'false' }} |"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "${{ steps.record.outputs.written }}" != "true" ]; then

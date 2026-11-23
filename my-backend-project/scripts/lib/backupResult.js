@@ -26,7 +26,7 @@ function checkSecrets(env = {}) {
 const STEP_LABELS = {
   secrets: 'gizli değer ön kontrolü', tools: 'veritabanı araçları', dump: 'yedek alma', enc: 'şifreleme',
   restore: 'ayrı veritabanına geri yükleme ve veri/dizin doğrulaması', smoke: 'uygulamanın geri yüklenen veriyi okuması',
-  artifact: 'şifreli yedeğin artifact olarak yüklenmesi', artifactCheck: 'artifact geri indirme ve özet karşılaştırması',
+  artifact: 'şifreli yedeğin artifact olarak yüklenmesi', download: 'artifact geri indirme', artifactCheck: 'indirilen dosyanın SHA-256 karşılaştırması',
 };
 
 /** "secrets:success,dump:failure,…" → { ok, failedStep, failedLabel, steps } — ilk başarısız/atlanan adım. */
