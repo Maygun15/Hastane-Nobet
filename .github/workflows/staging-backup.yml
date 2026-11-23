@@ -1,15 +1,19 @@
 name: Deneme ortamı yedeği
 
 # Her gün 05:30 (TSİ) deneme veritabanının yedeği alınır, şifrelenir, AYRI bir geçici veritabanına
-# geri yüklenip doğrulanır ve uygulama geri yüklenen veriyle açılır. Sonuç deneme veritabanına
-# (ops_meta.backupStatus) yazılır; /api/version'da ve scripts/verify-deploy.mjs'te görünür.
-# Başarısız çalışma GitHub tarafından e-postayla bildirilir.
+# geri yüklenip doğrulanır, uygulama geri yüklenen veriyle açılır, şifreli yedek artifact olarak
+# yüklenip geri indirilerek özeti karşılaştırılır. Sonuç EN SONDA deneme veritabanına yazılır
+# (ops_meta.backupStatus: lastAttempt her zaman, lastSuccess yalnız tüm adımlar geçtiyse) ve
+# /api/version → backup alanında görünür. Başarısız çalışma GitHub tarafından e-postayla bildirilir.
 #
-# Gerekli depo gizli değerleri (Settings → Secrets and variables → Actions):
+# Gerekli depo gizli değerleri — Settings → Secrets and variables → Actions → "Repository secrets"
+# (Environment secret ya da Variable OLMAZ; bu iş bir environment'a bağlı değildir):
 #   STAGING_MONGODB_URI  deneme veritabanı adresi (Render → nobet-staging-api → Environment → MONGODB_URI)
 #   BACKUP_PASSPHRASE    yedek şifreleme parolası (en az 32 karakter; ayrıca güvenli yerde saklanmalı)
-# NOT: GitHub zamanlanmış (schedule) çalışmayı yalnız varsayılan daldan (main) başlatır. main'e
-# birleştirilene kadar yedek, deneme dalına her gönderimde (dağıtım sonrası) çalışır.
+#
+# Sürüm: GitHub zamanlanmış çalışmayı varsayılan daldaki (main) bu dosyadan başlatır; betikler ise
+# her zaman deneme dalından (vercel-preview-stabilizasyon) alınır — deneme sunucusunda çalışan kodla
+# aynı betikler. Push tetiklemesinde tam olarak gönderilen commit alınır.
 on:
   schedule:
     - cron: '30 2 * * *'
@@ -27,7 +31,7 @@ concurrency:
 jobs:
   backup:
     runs-on: ubuntu-22.04
-    timeout-minutes: 60  # Atlas ücretsiz katmanda döküm yavaş (deneme: ~3 MB için 10+ dk)
+    timeout-minutes: 60  # Atlas ücretsiz katmanda döküm yavaş olabilir
     services:
       mongo:
         image: mongo:7.0
@@ -47,6 +51,14 @@ jobs:
           echo "RESTORE_DIR=$RUNNER_TEMP/geri" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.sha || 'vercel-preview-stabilizasyon' }}
+
+      - name: Alınan sürüm
+        id: src
+        run: |
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "Betik sürümü: $(git rev-parse --short=12 HEAD) (tetikleme: ${{ github.event_name }})"
 
       - uses: actions/setup-node@v4
         with:
@@ -58,13 +70,15 @@ jobs:
         run: npm ci --omit=dev
 
       - name: Gizli değerler tanımlı mı
-        run: |
-          if [ -z "$STAGING_MONGODB_URI" ] || [ ${#BACKUP_PASSPHRASE} -lt 32 ]; then
-            echo "::error::STAGING_MONGODB_URI ve BACKUP_PASSPHRASE (en az 32 karakter) depo gizli değeri olarak tanımlanmalı"
-            exit 1
-          fi
+        id: secrets
+        env:
+          # Yalnız var/yok bilgisi (değer değil): aynı adla Variable tanımlanmışsa ayrı uyarı verilir.
+          HAS_VAR_URI: ${{ vars.STAGING_MONGODB_URI != '' }}
+          HAS_VAR_PASSPHRASE: ${{ vars.BACKUP_PASSPHRASE != '' }}
+        run: node scripts/checkBackupSecrets.js
 
       - name: MongoDB veritabanı araçları
+        id: tools
         run: |
           curl -fsSL -o /tmp/tools.deb https://fastdl.mongodb.org/tools/db/mongodb-database-tools-ubuntu2204-x86_64-100.10.0.deb
           sudo apt-get install -y /tmp/tools.deb >/dev/null
@@ -72,7 +86,7 @@ jobs:
 
       - name: Yedek (ortam işareti doğrulanır)
         id: dump
-        run: node scripts/backup.js --target=staging --record
+        run: node scripts/backup.js --target=staging
 
       - name: Şifrele
         id: enc
@@ -82,6 +96,8 @@ jobs:
           sha256sum "$A.enc" | awk '{print $1}' > "$A.enc.sha256"
           rm -f "$A"
           echo "enc=$A.enc" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(cat "$A.enc.sha256")" >> "$GITHUB_OUTPUT"
+          echo "Şifreli yedek: $(stat -c %s "$A.enc") bayt, sha256 $(cat "$A.enc.sha256")"
 
       - name: Şifreyi çöz ve ayrı veritabanına geri yükle (sayı, kimlik özeti, dizin)
         id: restore
@@ -94,29 +110,24 @@ jobs:
           RESTORE_URI=mongodb://localhost:27017 node scripts/restore-verify.js "$R" hastane --keep
 
       - name: Uygulama geri yüklenen veriyle açılır ve okur
+        id: smoke
         run: |
           MONGODB_URI=mongodb://localhost:27017 node scripts/readSmoke.js
           MONGODB_URI=mongodb://localhost:27017 PORT=3999 NODE_ENV=development SENTRY_DSN= NOTIFICATIONS_ENABLED=false \
             JWT_SECRET="$(openssl rand -hex 32)" JWT_REFRESH_SECRET="$(openssl rand -hex 32)" FRONTEND_ORIGIN=http://localhost \
             node index.js > "$RUNNER_TEMP/api.log" 2>&1 &
+          API_PID=$!
           for i in $(seq 1 30); do curl -sf http://localhost:3999/api/health >/dev/null && break; sleep 2; done
           V=$(curl -sf http://localhost:3999/api/version)
-          echo "$V" | node -e "const v=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log('ortam işareti:',v.db.environment,'| güvence dizinleri:',v.ready.ok);if(v.db.environment!=='staging'){process.exit(1)}"
-          kill %1 || true
-
-      - name: Başarı kaydı
-        if: success()
-        run: node scripts/recordBackupStatus.js --target=staging --restore=ok --docs=${{ steps.restore.outputs.restored_docs }}
-
-      - name: Başarısızlık kaydı
-        if: failure()
-        run: node scripts/recordBackupStatus.js --target=staging --restore=fail --backup=${{ steps.dump.outcome == 'success' && 'ok' || 'fail' }} --note="github ${{ github.run_id }}" || true
+          kill "$API_PID" || true
+          echo "$V" | node -e "const v=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log('ortam işareti:',v.db.environment,'| güvence dizinleri:',v.ready.ok);if(v.db.environment!=='staging'||v.ready.ok!==true){process.exit(1)}"
 
       - name: Şifreli yedeği sakla (7 gün)
+        id: artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: deneme-yedegi-${{ github.run_id }}
+          name: deneme-yedegi-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ env.BACKUP_DIR }}/*.enc
             ${{ env.BACKUP_DIR }}/*.enc.sha256
@@ -124,11 +135,54 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      - name: Artifact geri indirilir
+        id: download
+        if: success()
+        uses: actions/download-artifact@v4
+        with:
+          name: deneme-yedegi-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/indirilen
+
+      - name: İndirilen artifact özeti şifreli yedekle aynı mı
+        id: artifactCheck
+        if: success()
+        run: |
+          F=$(ls "$RUNNER_TEMP"/indirilen/*.enc)
+          GOT=$(sha256sum "$F" | awk '{print $1}')
+          echo "artifact kimliği: ${{ steps.artifact.outputs.artifact-id }} | indirilen sha256: $GOT"
+          [ "$GOT" = "${{ steps.enc.outputs.sha256 }}" ] || { echo "::error::İndirilen artifact özeti şifreli yedekle eşleşmiyor"; exit 1; }
+
+      # Sonuç kaydı EN SONDA: başarı ancak artifact yüklenip geri indirildikten sonra yazılır.
+      - name: Sonuç kaydı (son deneme / son başarılı yedek)
+        id: record
+        if: always()
+        continue-on-error: true
+        run: >-
+          node scripts/recordBackupStatus.js --target=staging
+          --steps="secrets:${{ steps.secrets.outcome }},tools:${{ steps.tools.outcome }},dump:${{ steps.dump.outcome }},enc:${{ steps.enc.outcome }},restore:${{ steps.restore.outcome }},smoke:${{ steps.smoke.outcome }},artifact:${{ steps.artifact.outcome }},artifactCheck:${{ steps.artifactCheck.outcome }}"
+          --backup-at="${{ steps.dump.outputs.backup_at }}" --backup-docs="${{ steps.dump.outputs.backup_docs }}"
+          --restored-docs="${{ steps.restore.outputs.restored_docs }}" --restored-collections="${{ steps.restore.outputs.restored_collections }}"
+          --restored-indexes="${{ steps.restore.outputs.restored_indexes }}" --artifact-id="${{ steps.artifact.outputs.artifact-id }}"
+          --run-url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}"
+
       - name: Özet
         if: always()
         run: |
           {
-            echo "### Deneme yedeği"
-            echo "- Yedek: ${{ steps.dump.outcome }}"
-            echo "- Geri yükleme doğrulaması: ${{ steps.restore.outcome }} (${{ steps.restore.outputs.restored_collections }} koleksiyon, ${{ steps.restore.outputs.restored_docs }} belge, ${{ steps.restore.outputs.restored_indexes }} dizin)"
+            echo "### Deneme yedeği — çalıştırma ${{ github.run_id }} / deneme ${{ github.run_attempt }}"
+            echo "- Betik sürümü: \`${{ steps.src.outputs.commit }}\` (tetikleme: ${{ github.event_name }})"
+            echo "| Adım | Sonuç |"
+            echo "|---|---|"
+            echo "| Gizli değer ön kontrolü | ${{ steps.secrets.outcome }} |"
+            echo "| Yedek alma | ${{ steps.dump.outcome }} (${{ steps.dump.outputs.backup_docs }} belge) |"
+            echo "| Şifreleme | ${{ steps.enc.outcome }} |"
+            echo "| Ayrı veritabanına geri yükleme + veri/dizin doğrulaması | ${{ steps.restore.outcome }} (${{ steps.restore.outputs.restored_collections }} koleksiyon, ${{ steps.restore.outputs.restored_docs }} belge, ${{ steps.restore.outputs.restored_indexes }} dizin) |"
+            echo "| Uygulamanın geri yüklenen veriyi okuması | ${{ steps.smoke.outcome }} |"
+            echo "| Artifact yükleme | ${{ steps.artifact.outcome }} (kimlik ${{ steps.artifact.outputs.artifact-id }}) |"
+            echo "| Artifact geri indirme + özet | ${{ steps.artifactCheck.outcome }} |"
+            echo "| Sonuç kaydı (deneme veritabanı) | ${{ steps.record.outcome }} — yazıldı: ${{ steps.record.outputs.written || 'false' }} |"
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.record.outputs.written }}" != "true" ]; then
+            echo "::error title=KAYIT_YAZILAMADI::Bu çalıştırmanın sonucu deneme veritabanına YAZILAMADI; /api/version bu denemeyi göstermez."
+            exit 1
+          fi

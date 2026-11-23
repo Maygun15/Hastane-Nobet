@@ -1,4 +1,5 @@
 'use strict';
+const { presentStatus } = require('../scripts/lib/backupResult');
 // Dağıtım kimliği ve hazırlık durumu — hassas bilgi içermez (adres, kullanıcı, sır yok).
 //   commit: Render'ın derleme ortamındaki RENDER_GIT_COMMIT (yoksa .build-commit / git)
 //   environment: veritabanındaki ops_meta {_id:'environment'} işareti (local/staging/production)
@@ -68,16 +69,7 @@ async function environmentMarker(db = mongoose.connection?.db) {
 async function backupStatus(db = mongoose.connection?.db) {
   if (!db) return null;
   const d = await db.collection('ops_meta').findOne({ _id: 'backupStatus' }).catch(() => null);
-  if (!d) return { configured: false };
-  const ageH = d.lastBackupAt ? Math.round((Date.now() - new Date(d.lastBackupAt).getTime()) / 36e5) : null;
-  return {
-    configured: true,
-    lastBackupAt: d.lastBackupAt || null, lastBackupOk: d.lastBackupOk ?? null, lastBackupAgeHours: ageH,
-    lastBackupRunner: d.lastBackupRunner || null, lastBackupDocs: d.lastBackupDocs ?? null,
-    lastRestoreCheckAt: d.lastRestoreCheckAt || null, lastRestoreOk: d.lastRestoreOk ?? null,
-    lastRestoreRunner: d.lastRestoreRunner || null, lastRestoreDocs: d.lastRestoreDocs ?? null,
-    stale: ageH == null || ageH > 36, // günlük yedekte 36 saatten eski → uyarı
-  };
+  return presentStatus(d);
 }
 
 async function versionInfo() {

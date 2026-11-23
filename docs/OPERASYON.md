@@ -82,7 +82,7 @@ Sırayla yapın. Her adım tekrar çalıştırılabilir.
 **Elle:**
 ```bash
 cd my-backend-project
-BACKUP_DIR=/güvenli/yol node scripts/backup.js --target=staging --record
+BACKUP_DIR=/güvenli/yol node scripts/backup.js --target=staging
 ```
 
 - Adres hedefe göre gelir (§3 "Hedef seçimi"). Veritabanının ortam işareti hedefle aynı değilse yedek **alınmaz**.
@@ -91,18 +91,27 @@ BACKUP_DIR=/güvenli/yol node scripts/backup.js --target=staging --record
   - `backup-<hedef>-hastane-<zaman>.archive.gz`
   - `….manifest.json`: koleksiyon başına belge sayısı, `_id` özeti ve dizin listesi.
   - Döküm sürerken yazılan koleksiyonlar (ör. `auditlogs`) önce/sonra sayımıyla işaretlenir.
-- `--record` başarı zamanını `ops_meta.backupStatus`'a yazar. Bu bilgi `/api/version` → `backup` alanında görünür; 36 saatten eskiyse `stale: true`.
+- Yedek betiği durum kaydı **yazmaz**. Sonuç, doğrulama ve artifact adımlarından sonra `scripts/recordBackupStatus.js` ile yazılır (aşağıda).
 - Zaman aşımı `BACKUP_TIMEOUT_MIN` (varsayılan 60).
   - Atlas ücretsiz katmanında döküm yavaştır: deneme ortamında 7,4 MB / 3 704 belge yaklaşık 20 dakika sürdü.
   - Süreyi uzatan, eski otomatik plan kopyalarıydı (§3 adım 5).
 - Yedek **Google Drive / iCloud klasörüne konmaz**; kişisel veri içerir.
 
 **Otomatik (GitHub Actions, `.github/workflows/staging-backup.yml`):**
-- Her gün 05:30 TSİ. Zamanlama yalnız `main` dalındaki dosyadan çalışır; o zamana kadar deneme dalına her gönderimde çalışır.
-- Adımlar: yedek → AES-256 (pbkdf2, 200 000 tur) şifreleme → geçici MongoDB'ye geri yükleme (sayı, kimlik özeti, dizin) → uygulama geri yüklenen veriyle açılır ve `/api/version` okunur → sonuç `ops_meta.backupStatus`'a yazılır.
-- Şifreli yedek 7 gün çalışma eki olarak saklanır.
+- Her gün 05:30 TSİ. Zamanlama yalnız varsayılan daldaki (`main`) dosyadan çalışır; bu dosya `main`'de yoksa günlük yedek **yoktur** (yalnız deneme dalına gönderimde çalışır).
+- Betikler her zaman deneme dalından alınır (push'ta gönderilen commit, zamanlamada `vercel-preview-stabilizasyon`); `main`'deki uygulama kodu kullanılmaz. Alınan sürüm özet tablosunda yazar.
+- Adımlar (her biri ayrı sonuç verir):
+  1. gizli değer ön kontrolü — ayrı hatalar: `MONGO_SECRET_MISSING`, `MONGO_SECRET_INVALID`, `PASSPHRASE_MISSING`, `PASSPHRASE_TOO_SHORT`; aynı adla Variable varsa ayrıca belirtilir. Değer yazılmaz.
+  2. yedek (ortam işareti doğrulanır) → 3. AES-256 (pbkdf2, 200 000 tur) şifreleme
+  4. ayrı geçici MongoDB'ye geri yükleme (sayı, kimlik özeti, dizin) → 5. uygulama geri yüklenen veriyle açılır, `/api/version` ortam işareti `staging` ve güvence dizinleri tam olmalı
+  6. şifreli yedek artifact olarak yüklenir (7 gün) → 7. artifact geri indirilip sha256 özeti karşılaştırılır
+  8. **en son** sonuç kaydı (`ops_meta.backupStatus`):
+     - `lastAttempt`: her çalıştırma — başarılı mı, ilk geçmeyen adım, `github:<run>/<deneme>`, bağlantı
+     - `lastSuccess`: yalnız 1–7 hepsi geçtiyse — yedek zamanı, belge/dizin sayıları, artifact kimliği. Başarısız deneme bunu **değiştirmez**.
+  - `/api/version` → `backup.lastSuccess`, `backup.lastAttempt`, `stale` (son başarılı yedek 36 saatten eski).
+  - Kayıt veritabanına yazılamazsa (ör. adres yok) `KAYIT_YAZILAMADI` hatası verilir ve iş başarısız sayılır; o deneme `/api/version`'da görünmez.
 - Başarısız çalışmayı GitHub e-postayla bildirir.
-- Gerekli depo gizli değerleri:
+- Gerekli gizli değerler — **Settings → Secrets and variables → Actions → Repository secrets** (Environment secret ya da Variable olmaz; iş bir environment'a bağlı değildir):
   - `STAGING_MONGODB_URI`
   - `BACKUP_PASSPHRASE` (≥32 karakter; ayrıca güvenli yerde saklanmalı, yoksa yedek açılamaz)
 - Şifreli yedeği açmak:

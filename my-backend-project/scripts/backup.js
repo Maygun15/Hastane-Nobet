@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // scripts/backup.js — MongoDB yedeği (tek dosya, gzip arşiv) + manifest (koleksiyon sayısı, _id özeti, dizinler).
-// Kullanım:  node scripts/backup.js --target=local|staging|production [--record]
+// Kullanım:  node scripts/backup.js --target=local|staging|production
 //   Adres hedefe göre scripts/lib/dbTarget.js'den gelir (.env OKUNMAZ). Yedekten önce veritabanının
 //   ortam işareti (ops_meta.environment) hedefle aynı olmalı — yanlış veritabanının yedeği alınmaz.
-//   --record: başarı zamanını ops_meta.backupStatus'a yazar (/api/version'da görünür).
+//   Sonuç kaydı yedekte YAZILMAZ: geri yükleme doğrulaması ve artifact sonrası scripts/recordBackupStatus.js yazar.
 // Ortam: BACKUP_DIR (./backups), BACKUP_KEEP_DAYS (7), BACKUP_DB_NAME (hastane — uygulamayla aynı).
 // Geri yükleme ve doğrulama: scripts/restore-verify.js — docs/OPERASYON.md
 'use strict';
@@ -13,7 +13,6 @@ const { runTool, collectionManifest } = require('./backupLib');
 const { connectTarget, uriFor } = require('./lib/dbTarget');
 
 async function main() {
-  const record = process.argv.includes('--record');
   const dbName = process.env.BACKUP_DB_NAME || 'hastane';
   // Kimlik: bağlantı öncesi adres–hedef, sonra ortam işareti. Yedek salt okunur.
   const probe = await connectTarget({ readOnly: true, dbName });
@@ -60,23 +59,13 @@ async function main() {
   fs.writeFileSync(`${archive}.manifest.json`, JSON.stringify(manifest, null, 2), { mode: 0o600 });
   console.log(`[yedek] tamam: ${Object.keys(collections).length} koleksiyon, ${docs} belge, ${manifest.bytes} bayt → ${path.basename(archive)}`);
 
-  if (record) {
-    const w = await connectTarget({ dbName });
-    await w.db.collection('ops_meta').updateOne({ _id: 'backupStatus' }, { $set: {
-      lastBackupAt: new Date(manifest.createdAt), lastBackupOk: true, lastBackupDocs: docs, lastBackupBytes: manifest.bytes,
-      lastBackupArchive: manifest.archive, lastBackupRunner: process.env.GITHUB_RUN_ID ? `github:${process.env.GITHUB_RUN_ID}/${process.env.GITHUB_RUN_ATTEMPT || 1}` : 'elle',
-    } }, { upsert: true });
-    await w.conn.close();
-    console.log('[yedek] durum kaydedildi (ops_meta.backupStatus)');
-  }
-
   const cutoff = Date.now() - keepDays * 86400000;
   for (const f of fs.readdirSync(dir)) {
     if (!f.startsWith('backup-')) continue;
     const p = path.join(dir, f);
     if (fs.statSync(p).mtimeMs < cutoff) { fs.rmSync(p, { recursive: true, force: true }); console.log(`[yedek] eski yedek silindi: ${f}`); }
   }
-  if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `archive=${archive}\n`);
+  if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `archive=${archive}\nbackup_at=${manifest.createdAt}\nbackup_docs=${docs}\n`);
 }
 
 main().catch((e) => { console.error('[yedek] HATA:', e.message); process.exit(1); });
