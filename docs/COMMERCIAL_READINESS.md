@@ -455,7 +455,7 @@ Senaryolar sentetik iki kurum oluşturur, sonra yalnız onları siler.
 | 4 | Kritik akışlar | ✅ | 738ae14 | **Deneme 15/15**, iki koşu. Atlas çoğaltma kümesinde gerçek işlem (transaction) yolu. Yerel 15/15, eski E2E 37/37. Sonuç dosyası: `docs/e2e-sonuclari/kritik-staging.json`. | — |
 | 4b | Tarayıcı akışları (deneme) | ✅ | 738ae14 | Sentetik yönetici ile: giriş → izin onayı → plan açma → hızlı yerine atama (kayıt) → yayın v3 ve v4. Veritabanında doğrulandı: talep onaylı, bakiye 20→18; v4 farkı 1+/1−; yalnız etkilenen hesaba 1 bildirim. JS hatası yok. | — |
 | 5 | Zorunlu kural kapsamı | ✅ | 83e7141, fdf3429 | `docs/KURAL_KAPSAMI.md` | Kurum kararları |
-| 6 | Yedek + geri yükleme | ✅ elle · ❌ otomatik (gizli değerler) · ⏳ günlük | e9d5504 … 45064dc | **Elle (23 Kas 11:32, bu bilgisayardan):** 30 koleksiyon, 3 465 belge, 2 MB, ~1 dk. Ayrı veritabanına geri yükleme: sayı, kimlik özeti ve **190 dizin** birebir; uygulama okuması TAMAM.<br>**Otomatik (GitHub):** hiç başarılı çalışmadı — 4 çalıştırma ön kontrolde durdu (ayrıntı aşağıda). Günlük zamanlama **etkin değil**. | Depo gizli değerleri (`Repository secrets`); taslak PR'ın `main`'e birleştirilmesi |
+| 6 | Yedek + geri yükleme | ✅ elle · ✅ otomatik (push) · ⏳ günlük | e9d5504 … 3357673 | **Otomatik (GitHub, [45266877741](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45266877741)):** tüm adımlar geçti — yedek 3 476 belge, şifreleme, ayrı veritabanına geri yükleme (30 koleksiyon / 3 476 belge / 190 dizin birebir), uygulama okuması, artifact 14863601627 yükleme + REST ile geri indirme + SHA-256 eşleşmesi. `/api/version` kaydı aynı çalıştırma/deneme/artifact.<br>Günlük zamanlama **doğrulanmadı**: taslak PR [#1](https://github.com/Maygun15/Hastane-Nobet/pull/1) birleştirilmedi; ilk zamanlanmış çalışma görülmedi. | PR #1 birleştirme onayı (üretim yeniden dağıtımı etkisiyle); ilk 05:30 çalışmasının gözlenmesi |
 
 ### Bu bölümde bulunan ek hatalar (düzeltildi)
 
@@ -488,43 +488,46 @@ Hepsi hedef doğrulamasıyla yapıldı (adres ≠ üretim kümesi; işaret = sta
 - İçerik değişmeden de yeni yayın sürümü oluşturulabiliyor (v3: 0 eklendi / 0 çıkarıldı).
 - **Ürün kararı:** yayından sonraki değişiklikler personele hemen görünüyor, yalnız bildirim gitmiyor ("Personel güncel hâli görüyor ama bildirim almadı").
 
-### Otomatik yedek — güncel durum (23 Kasım 2026, 19:00 TSİ)
+### Otomatik yedek — güncel durum (24 Kasım 2026, 00:20 TSİ)
 
-**Yapılan kod düzeltmeleri (b303653, 45064dc; deneme dalında):**
-- Ön kontrol ayrı hatalar veriyor: `MONGO_SECRET_MISSING`, `MONGO_SECRET_INVALID`, `PASSPHRASE_MISSING`, `PASSPHRASE_TOO_SHORT`; aynı adla Variable varsa ayrıca belirtiliyor. Değer yazılmıyor.
-- Sıra: yedek → şifreleme → ayrı geçici veritabanına geri yükleme (sayı, kimlik özeti, dizin) → uygulama okuması → artifact yükleme → artifact geri indirme + SHA-256 karşılaştırması → **en son** sonuç kaydı. Daha önce başarı kaydı artifact yüklenmeden yazılıyordu.
-- `ops_meta.backupStatus` ikiye ayrıldı: `lastAttempt` (her deneme, ilk geçmeyen adım) ve `lastSuccess` (yalnız tüm adımlar geçtiyse; çalıştırma/deneme kimliği, belge/dizin sayıları, artifact kimliği). Başarısız deneme son başarılı yedeği değiştirmiyor. `/api/version` → `backup.lastSuccess`, `backup.lastAttempt`.
-- Kayıt veritabanına yazılamazsa `KAYIT_YAZILAMADI` hatası ve iş başarısız.
-- Betikler her zaman deneme dalından alınıyor (`main`'de bu betikler yok).
-- Doğrulama: jest 470/470 (15 yeni); yerel veritabanında prova — başarılı denemede iki kayıt, başarısız denemede `lastSuccess` değişmedi, adres yokken `written=false`.
+**Gizli değerler:** `STAGING_MONGODB_URI` ve `BACKUP_PASSPHRASE` depo sahibi tarafından **Repository secrets** altına girildi (23 Kas akşamı); listede iki ad da doğrulandı. Önceki çalıştırmaların nedeni: depoda hiç gizli değer yoktu (Repository ve Environment listeleri boş). Bağlantı adresi Render `nobet-staging-api` (dal `vercel-preview-stabilizasyon`, commit 45064dc) servisinden alındı; değer hiçbir çıktıya yazılmadı. Environment secret'lara dokunulmadı.
 
-**GitHub çalıştırmaları (hepsi başarısız; hiçbiri veritabanına bağlanmadı):**
+**Kod düzeltmeleri (deneme dalı):**
+- b303653, 45064dc: ayrı ön kontrol hataları; sonuç kaydı en sonda; `lastAttempt` / `lastSuccess` ayrımı; kayıt yazılamazsa `KAYIT_YAZILAMADI`; betikler deneme dalından.
+- e7df7b0: geri indirme artifact kimliğiyle; özet tablosu düzeltmesi — **yetmedi**.
+- 3357673: geri indirme GitHub REST API ile (`/actions/artifacts/<id>/zip`, iş belirteci, `actions: read`), kısa yeniden deneme; zip özeti = yükleme özeti, `.enc` özeti = şifreleme adımı.
+
+**GitHub çalıştırmaları:**
 
 | Çalıştırma | Commit | Sonuç |
 |---|---|---|
-| [45140570516](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45140570516) | add89a1 | Gizli değer kontrolü başarısız (eski tek mesaj). "Re-run" istendi, ancak 2. deneme hiç oluşmadı. |
-| [45207427527](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45207427527) | b303653 | Gizli değer kontrolü başarısız; başarısızlık kaydı adres olmadığından yazılamadı. |
-| [45210040950](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45210040950) | 45064dc | `MONGO_SECRET_MISSING` + `PASSPHRASE_MISSING` (ikisi de boş; aynı adla Variable yok). `KAYIT_YAZILAMADI`: bağlantı adresi yok → bu deneme `/api/version`'da görünmez. Artifact: 0. |
+| [45140570516](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45140570516) | add89a1 | ❌ gizli değer yok (eski tek mesaj) |
+| [45207427527](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45207427527) | b303653 | ❌ gizli değer yok; başarısızlık kaydı yazılamadı |
+| [45210040950/1](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45210040950/attempts/1) | 45064dc | ❌ `MONGO_SECRET_MISSING` + `PASSPHRASE_MISSING`; `KAYIT_YAZILAMADI` |
+| [45210040950/2](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45210040950/attempts/2) | 45064dc | ❌ yalnız artifact geri indirme: "Artifact not found for name". Diğer tüm adımlar geçti (3 473 belge, 190 dizin; artifact 14858499603). `/api/version`: `lastAttempt` başarısız, `lastSuccess` **değişmedi** (tasarım gereği) |
+| [45266385988](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45266385988) | e7df7b0 | ❌ yalnız geri indirme: "None of the provided artifact IDs were found" (artifact 14862896891 saklandı) |
+| [**45266877741**](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45266877741) | **3357673** | ✅ **Success** (1 dk 59 sn) |
 
-**Adım durumu (otomatik):**
+**45266877741 / deneme 1 — kanıtlar (adım günlüklerinden):**
 
-| Adım | Durum |
-|---|---|
-| Gizli değer ön kontrolü | ❌ ikisi de boş |
-| Yedek alma | ⏳ çalışmadı |
-| Şifreleme | ⏳ çalışmadı |
-| Ayrı geçici veritabanına geri yükleme + veri/dizin doğrulaması | ⏳ çalışmadı |
-| Uygulamanın geri yüklenen veriyi okuması | ⏳ çalışmadı |
-| Artifact yükleme | ⏳ çalışmadı (artifact yok) |
-| Artifact geri indirme + SHA-256 | ⏳ çalışmadı |
-| `/api/version` kaydı = çalıştırma/deneme/artifact | ⏳ — şu an görünen kayıt elle yapılan 11:32 yedeğine ait (`legacy`) |
-| Günlük zamanlama | ⏳ etkin değil — iş akışı dosyası `main`'de yok; zamanlanmış çalışma sayısı 0 |
+| Adım | Sonuç | Kanıt |
+|---|---|---|
+| Gizli değer ön kontrolü | ✅ | "STAGING_MONGODB_URI: tanımlı, biçim uygun" · "BACKUP_PASSPHRASE: tanımlı, uzunluk yeterli" |
+| Yedek alma | ✅ | 30 koleksiyon, 3 476 belge, 2 048 599 bayt (ortam işareti `staging` doğrulandı) |
+| Şifreleme | ✅ | `.enc` 2 048 624 bayt, sha256 `f56fa7a347f9a0fe82d2d83478d79c4fb5eff7cef54bcbdbabb0555311c2afa2` |
+| Ayrı geçici veritabanına geri yükleme + veri/dizin doğrulaması | ✅ | "DOĞRULANDI: 30 koleksiyon, 3476 belge, 190 dizin; sayı, kimlik özeti ve dizinler yedekle aynı" |
+| Uygulamanın geri yüklenen veriyi okuması | ✅ | readSmoke + uygulama açılışı: "ortam işareti: staging \| güvence dizinleri: true" |
+| Artifact yükleme | ✅ | `deneme-yedegi-45266877741-1`, kimlik **14863601627**, 2 051 520 bayt, zip sha256 `e056e7067f5f1c5b3e9d0dd5f19f130dd9d757ccfb6a63f4b4006c01932c576c`, 7 gün |
+| Artifact geri indirme (REST API) | ✅ | indirilen zip 2 051 520 bayt, sha256 = yükleme özeti |
+| İndirilen dosyanın SHA-256 karşılaştırması | ✅ | indirilen `.enc` sha256 = şifreleme adımındaki `f56fa7a3…c2afa2` |
+| Sonuç kaydı | ✅ | "son deneme BAŞARILI kaydedildi; son başarılı yedek güncellendi" |
 
-**Teşhis:** depo `Maygun15/Hastane-Nobet` (fork değil). İş bir environment'a bağlı değil; depoda 7 environment var (`Preview`, `Production`, Railway/Render). Değerler environment secret olarak ya da başka bir yerde kaydedildiyse iş onları boş görür. Gizli değer adlarını görmek için GitHub girişi gerekiyor (bu bilgisayarda `gh` yok); kontrol kullanıcı tarafından yapılıyor.
+**`/api/version` (deneme sunucusu) eşleşmesi:** `backup.lastSuccess` → `runner: github:45266877741/1`, `artifactId: 14863601627`, `docs: 3476`, `restoredDocs: 3476`, `restoredCollections: 30`, `restoredIndexes: 190`, `backupAt: 2026-11-23T21:11:33Z`; `lastAttempt` → aynı çalıştırma, `ok: true`; `stale: false`. Çalıştırma kimliği, deneme numarası ve artifact kimliği **eşleşiyor** ✅.
 
-**Günlük zamanlama — taslak PR (açılmadı, birleştirilmedi):**
-- Dal `zamanlanmis-deneme-yedegi` (6260f3e), hedef `main`; yalnız `.github/workflows/staging-backup.yml` (deneme dalındakiyle birebir). Uygulama kodu değişmez.
-- **Üretim etkisi:** `main`'e son gönderim (86e768f) Vercel `Production` ve iki Railway üretim servisini dağıttı. Birleştirme büyük olasılıkla aynı kodla üretim yeniden dağıtımı tetikler (yeniden derleme + yeniden başlatma). Vercel/Railway yol filtresi doğrulanamadı (panel erişimi yok).
-- Geri dönüş: `main`'de birleştirme commit'inin `git revert`'ü; veri etkilenmez.
-- Birleştirme ön koşulu: deneme dalında en az bir **tamamen başarılı** otomatik çalıştırma.
-- Günlük otomasyon, ilk gerçek zamanlanmış (`schedule`) çalışma başarıyla görülene kadar **doğrulanmadı** sayılır.
+**Günlük zamanlama — doğrulanmadı ⏳**
+- Taslak PR [Maygun15/Hastane-Nobet#1](https://github.com/Maygun15/Hastane-Nobet/pull/1): `zamanlanmis-deneme-yedegi` (d647b17) → `main`, **yalnız** `.github/workflows/staging-backup.yml` (deneme dalındakiyle birebir). Kontroller geçti; Vercel yalnız Preview dağıttı. **Birleştirilmedi.**
+- Üretim etkisi: `main`'e son gönderim (86e768f) Vercel `Production` + iki Railway üretim servisini dağıttı; Vercel GitHub bağlantısı PR'da da etkin. Birleştirme büyük olasılıkla aynı kodla üretim yeniden dağıtımı tetikler.
+- Geri dönüş: birleştirme commit'inin `git revert`'ü; veri etkilenmez.
+- İlk gerçek `schedule` çalışması başarıyla görülene kadar günlük otomasyon doğrulanmış sayılmaz.
+
+**Açık küçük işler:** Node.js 20 kullanım dışı uyarısı (`actions/*@v4`); başarısız denemelerden kalan 3 artifact 7 günde kendiliğinden silinir; parola (`BACKUP_PASSPHRASE`) depo sahibinin parola yöneticisinde saklanmalı — kaybolursa yedekler açılamaz.
