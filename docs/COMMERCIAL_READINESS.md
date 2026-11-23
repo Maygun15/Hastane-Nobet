@@ -455,7 +455,7 @@ Senaryolar sentetik iki kurum oluşturur, sonra yalnız onları siler.
 | 4 | Kritik akışlar | ✅ | 738ae14 | **Deneme 15/15**, iki koşu. Atlas çoğaltma kümesinde gerçek işlem (transaction) yolu. Yerel 15/15, eski E2E 37/37. Sonuç dosyası: `docs/e2e-sonuclari/kritik-staging.json`. | — |
 | 4b | Tarayıcı akışları (deneme) | ✅ | 738ae14 | Sentetik yönetici ile: giriş → izin onayı → plan açma → hızlı yerine atama (kayıt) → yayın v3 ve v4. Veritabanında doğrulandı: talep onaylı, bakiye 20→18; v4 farkı 1+/1−; yalnız etkilenen hesaba 1 bildirim. JS hatası yok. | — |
 | 5 | Zorunlu kural kapsamı | ✅ | 83e7141, fdf3429 | `docs/KURAL_KAPSAMI.md` | Kurum kararları |
-| 6 | Yedek + geri yükleme | ✅ elle · 🟡 otomatik | e9d5504 … 33a6a23 | **Deneme yedeği (23 Kas 11:32):** 30 koleksiyon, 3 465 belge, 2 MB, ~1 dk.<br>Ayrı veritabanına geri yükleme: sayı, kimlik özeti ve **190 dizin** birebir.<br>Uygulama modelleriyle okuma TAMAM.<br>`/api/version` → `backup: lastBackupOk/lastRestoreOk true, stale false`.<br>Otomatik iş akışı geçerli, ama "Gizli değerler tanımlı mı" adımında duruyor. | GitHub gizli değerleri (`STAGING_MONGODB_URI`, `BACKUP_PASSPHRASE`); günlük zamanlama için `main` |
+| 6 | Yedek + geri yükleme | ✅ elle · ❌ otomatik (gizli değerler) · ⏳ günlük | e9d5504 … 45064dc | **Elle (23 Kas 11:32, bu bilgisayardan):** 30 koleksiyon, 3 465 belge, 2 MB, ~1 dk. Ayrı veritabanına geri yükleme: sayı, kimlik özeti ve **190 dizin** birebir; uygulama okuması TAMAM.<br>**Otomatik (GitHub):** hiç başarılı çalışmadı — 4 çalıştırma ön kontrolde durdu (ayrıntı aşağıda). Günlük zamanlama **etkin değil**. | Depo gizli değerleri (`Repository secrets`); taslak PR'ın `main`'e birleştirilmesi |
 
 ### Bu bölümde bulunan ek hatalar (düzeltildi)
 
@@ -487,3 +487,44 @@ Hepsi hedef doğrulamasıyla yapıldı (adres ≠ üretim kümesi; işaret = sta
 - Dar ekranda (≈740 px) çizelge hücreleri "SENTETİK 0." gibi kesiliyor.
 - İçerik değişmeden de yeni yayın sürümü oluşturulabiliyor (v3: 0 eklendi / 0 çıkarıldı).
 - **Ürün kararı:** yayından sonraki değişiklikler personele hemen görünüyor, yalnız bildirim gitmiyor ("Personel güncel hâli görüyor ama bildirim almadı").
+
+### Otomatik yedek — güncel durum (23 Kasım 2026, 19:00 TSİ)
+
+**Yapılan kod düzeltmeleri (b303653, 45064dc; deneme dalında):**
+- Ön kontrol ayrı hatalar veriyor: `MONGO_SECRET_MISSING`, `MONGO_SECRET_INVALID`, `PASSPHRASE_MISSING`, `PASSPHRASE_TOO_SHORT`; aynı adla Variable varsa ayrıca belirtiliyor. Değer yazılmıyor.
+- Sıra: yedek → şifreleme → ayrı geçici veritabanına geri yükleme (sayı, kimlik özeti, dizin) → uygulama okuması → artifact yükleme → artifact geri indirme + SHA-256 karşılaştırması → **en son** sonuç kaydı. Daha önce başarı kaydı artifact yüklenmeden yazılıyordu.
+- `ops_meta.backupStatus` ikiye ayrıldı: `lastAttempt` (her deneme, ilk geçmeyen adım) ve `lastSuccess` (yalnız tüm adımlar geçtiyse; çalıştırma/deneme kimliği, belge/dizin sayıları, artifact kimliği). Başarısız deneme son başarılı yedeği değiştirmiyor. `/api/version` → `backup.lastSuccess`, `backup.lastAttempt`.
+- Kayıt veritabanına yazılamazsa `KAYIT_YAZILAMADI` hatası ve iş başarısız.
+- Betikler her zaman deneme dalından alınıyor (`main`'de bu betikler yok).
+- Doğrulama: jest 470/470 (15 yeni); yerel veritabanında prova — başarılı denemede iki kayıt, başarısız denemede `lastSuccess` değişmedi, adres yokken `written=false`.
+
+**GitHub çalıştırmaları (hepsi başarısız; hiçbiri veritabanına bağlanmadı):**
+
+| Çalıştırma | Commit | Sonuç |
+|---|---|---|
+| [45140570516](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45140570516) | add89a1 | Gizli değer kontrolü başarısız (eski tek mesaj). "Re-run" istendi, ancak 2. deneme hiç oluşmadı. |
+| [45207427527](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45207427527) | b303653 | Gizli değer kontrolü başarısız; başarısızlık kaydı adres olmadığından yazılamadı. |
+| [45210040950](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45210040950) | 45064dc | `MONGO_SECRET_MISSING` + `PASSPHRASE_MISSING` (ikisi de boş; aynı adla Variable yok). `KAYIT_YAZILAMADI`: bağlantı adresi yok → bu deneme `/api/version`'da görünmez. Artifact: 0. |
+
+**Adım durumu (otomatik):**
+
+| Adım | Durum |
+|---|---|
+| Gizli değer ön kontrolü | ❌ ikisi de boş |
+| Yedek alma | ⏳ çalışmadı |
+| Şifreleme | ⏳ çalışmadı |
+| Ayrı geçici veritabanına geri yükleme + veri/dizin doğrulaması | ⏳ çalışmadı |
+| Uygulamanın geri yüklenen veriyi okuması | ⏳ çalışmadı |
+| Artifact yükleme | ⏳ çalışmadı (artifact yok) |
+| Artifact geri indirme + SHA-256 | ⏳ çalışmadı |
+| `/api/version` kaydı = çalıştırma/deneme/artifact | ⏳ — şu an görünen kayıt elle yapılan 11:32 yedeğine ait (`legacy`) |
+| Günlük zamanlama | ⏳ etkin değil — iş akışı dosyası `main`'de yok; zamanlanmış çalışma sayısı 0 |
+
+**Teşhis:** depo `Maygun15/Hastane-Nobet` (fork değil). İş bir environment'a bağlı değil; depoda 7 environment var (`Preview`, `Production`, Railway/Render). Değerler environment secret olarak ya da başka bir yerde kaydedildiyse iş onları boş görür. Gizli değer adlarını görmek için GitHub girişi gerekiyor (bu bilgisayarda `gh` yok); kontrol kullanıcı tarafından yapılıyor.
+
+**Günlük zamanlama — taslak PR (açılmadı, birleştirilmedi):**
+- Dal `zamanlanmis-deneme-yedegi` (6260f3e), hedef `main`; yalnız `.github/workflows/staging-backup.yml` (deneme dalındakiyle birebir). Uygulama kodu değişmez.
+- **Üretim etkisi:** `main`'e son gönderim (86e768f) Vercel `Production` ve iki Railway üretim servisini dağıttı. Birleştirme büyük olasılıkla aynı kodla üretim yeniden dağıtımı tetikler (yeniden derleme + yeniden başlatma). Vercel/Railway yol filtresi doğrulanamadı (panel erişimi yok).
+- Geri dönüş: `main`'de birleştirme commit'inin `git revert`'ü; veri etkilenmez.
+- Birleştirme ön koşulu: deneme dalında en az bir **tamamen başarılı** otomatik çalıştırma.
+- Günlük otomasyon, ilk gerçek zamanlanmış (`schedule`) çalışma başarıyla görülene kadar **doğrulanmadı** sayılır.
