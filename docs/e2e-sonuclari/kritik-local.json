@@ -1,0 +1,98 @@
+{
+  "target": "local",
+  "api": "http://localhost:3100",
+  "commit": "a7ff3ae6e10a",
+  "at": "2026-11-23T08:30:26.381Z",
+  "results": [
+    {
+      "id": "K0",
+      "name": "Sunucu sürümü, ortam işareti ve güvence dizinleri",
+      "ok": true,
+      "detail": "commit a7ff3ae6e10a, ortam local, hazır true"
+    },
+    {
+      "id": "K1",
+      "name": "Aynı işlem kimliğiyle eş zamanlı 5 gönderim → tek talep",
+      "ok": true,
+      "detail": "yanıtlar 200,200,200,200,200, veritabanında 1 kayıt, 4 tekrar yanıtı"
+    },
+    {
+      "id": "K2",
+      "name": "Aynı işlem kimliği farklı içerikle → açıklamalı ret",
+      "ok": true,
+      "detail": "HTTP 409 IDEMPOTENCY_KEY_REUSED"
+    },
+    {
+      "id": "K3",
+      "name": "Rapor (2 gün) onayı yıllık izin bakiyesini etkilemez",
+      "ok": true,
+      "detail": "bakiye kayıtları: YILLIK İZİN:3"
+    },
+    {
+      "id": "K4",
+      "name": "3 günlük yıllık izin, eş zamanlı iki onay → bir kez düşüm (20 → 17)",
+      "ok": true,
+      "detail": "onaylar 200/200 (biri \"zaten uygulandı\"); hak 20, kullanılan 3, kalan 17"
+    },
+    {
+      "id": "K5",
+      "name": "İki planlayıcı aynı sürüm: eski sürümle kayıt → çakışma + kim değiştirdi",
+      "ok": true,
+      "detail": "planlama 200; kayıt A 200, P 409 (Sentetik Yönetici A, güncel rev 3)"
+    },
+    {
+      "id": "K6",
+      "name": "Yanıt kaybı sonrası aynı istek → aynı sonuç; aynı kimlik farklı içerik → ret",
+      "ok": true,
+      "detail": "rev 4 / tekrar 4 (replayed true); farklı içerik HTTP 409"
+    },
+    {
+      "id": "K7",
+      "name": "Kural değişti → yayın 409; güncel doğrulama → yayın sürüm 1",
+      "ok": true,
+      "detail": "kural 200; eski kuralla yayın 409 RULE_VERSION_CONFLICT; doğrulama 200; yayın 200 sürüm 1 "
+    },
+    {
+      "id": "K8",
+      "name": "31 Ara 2029 gece nöbeti → 1 Oca 2030 atama yok (önceki dönem okunur)",
+      "ok": true,
+      "detail": "önceki dönem found (1 görev); 1 Ocak SENTETİK HEMŞİRE 03: 0 atama"
+    },
+    {
+      "id": "K9",
+      "name": "Revizyonda eski ve yeni kişi doğru belirlenir (çıkarılan + eklenen)",
+      "ok": true,
+      "detail": "2030-01-04 SENTETİK HEMŞİRE 01 → SENTETİK HEMŞİRE 02; etkilenen 2, bildirim (h1, h2) = 1, 1"
+    },
+    {
+      "id": "K10",
+      "name": "Eş zamanlı iki yayın isteği → tek yayın kaydı, bildirim çoğalmaz",
+      "ok": true,
+      "detail": "yayın yanıtları 200/200 (v2 / zaten yayınlı); geçmişte sürüm 2 kaydı 1; kişi başı bildirim 1, 1"
+    },
+    {
+      "id": "K11",
+      "name": "Başka kurum ve yetkisiz kullanıcı veriye erişemez / değiştiremez",
+      "ok": true,
+      "detail": "B plan okuma 200 (veri yok), B talep 404, B geçmiş 200; personel kural 403, personel onay 403; oturumsuz 401"
+    },
+    {
+      "id": "K12",
+      "name": "Onaylı izin gününe elle atama → ret; zorlanırsa risk paneli + yayın engeli",
+      "ok": true,
+      "detail": "atama 409 IZIN_GUNU; zorla 200 ; risk var; yayın 409 RISKS_PENDING"
+    },
+    {
+      "id": "K14",
+      "name": "Otomatik plan dört kez üretilince yalnız son 3 kopya saklanır",
+      "ok": true,
+      "detail": "kopya sayısı 3"
+    },
+    {
+      "id": "K13",
+      "name": "Gece (24 s) nöbetinin ertesi gününe elle atama reddedilir",
+      "ok": true,
+      "detail": "SENTETİK HEMŞİRE 02 2030-01-01 N → ertesi gün M: HTTP 409 DINLENME_12S,GECE_SONRASI_GUN"
+    }
+  ]
+}
