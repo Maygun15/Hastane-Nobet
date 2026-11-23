@@ -455,7 +455,7 @@ Senaryolar sentetik iki kurum oluşturur, sonra yalnız onları siler.
 | 4 | Kritik akışlar | ✅ | 738ae14 | **Deneme 15/15**, iki koşu. Atlas çoğaltma kümesinde gerçek işlem (transaction) yolu. Yerel 15/15, eski E2E 37/37. Sonuç dosyası: `docs/e2e-sonuclari/kritik-staging.json`. | — |
 | 4b | Tarayıcı akışları (deneme) | ✅ | 738ae14 | Sentetik yönetici ile: giriş → izin onayı → plan açma → hızlı yerine atama (kayıt) → yayın v3 ve v4. Veritabanında doğrulandı: talep onaylı, bakiye 20→18; v4 farkı 1+/1−; yalnız etkilenen hesaba 1 bildirim. JS hatası yok. | — |
 | 5 | Zorunlu kural kapsamı | ✅ | 83e7141, fdf3429 | `docs/KURAL_KAPSAMI.md` | Kurum kararları |
-| 6 | Otomatik yedek | 🟡 | e9d5504 … 33a6a23 | İş akışı geçerli ve çalışıyor; **"Gizli değerler tanımlı mı" adımında durdu** (depo gizli değerleri yok). Elle deneme yedeği: aşağıda. | GitHub gizli değerleri; günlük zamanlama için `main` |
+| 6 | Yedek + geri yükleme | ✅ elle · 🟡 otomatik | e9d5504 … 33a6a23 | **Deneme yedeği (23 Kas 11:32):** 30 koleksiyon, 3 465 belge, 2 MB, ~1 dk.<br>Ayrı veritabanına geri yükleme: sayı, kimlik özeti ve **190 dizin** birebir.<br>Uygulama modelleriyle okuma TAMAM.<br>`/api/version` → `backup: lastBackupOk/lastRestoreOk true, stale false`.<br>Otomatik iş akışı geçerli, ama "Gizli değerler tanımlı mı" adımında duruyor. | GitHub gizli değerleri (`STAGING_MONGODB_URI`, `BACKUP_PASSPHRASE`); günlük zamanlama için `main` |
 
 ### Bu bölümde bulunan ek hatalar (düzeltildi)
 
