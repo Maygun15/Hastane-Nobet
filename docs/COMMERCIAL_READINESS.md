@@ -429,7 +429,7 @@ Senaryolar sentetik iki kurum oluşturur, sonra yalnız onları siler.
 | Deneme API test erişimi | ⏳ | Sentetik hesaplar (veritabanı erişimiyle oluşturulur) |
 | Deneme veritabanı | ⏳ | `~/nöbet/.staging-erisim.env` dosyası, izin 600, satırı `STAGING_MONGODB_URI=<Render → nobet-staging-api → Environment → MONGODB_URI>` |
 | Otomatik yedek | ⏳ | GitHub → Settings → Secrets and variables → Actions: `STAGING_MONGODB_URI`, `BACKUP_PASSPHRASE` (≥32 karakter) |
-| Günlük zamanlama | ⏳ | `ticari-hazirlik` → `main` birleştirmesi (onay) |
+| Günlük zamanlama | ⏳ | PR #1 birleştirildi (582a0c5); ilk zamanlanmış çalışmanın gözlenmesi |
 
 ## Deneme ortamında erişim gelince yapılacaklar (sırayla)
 
@@ -455,7 +455,7 @@ Senaryolar sentetik iki kurum oluşturur, sonra yalnız onları siler.
 | 4 | Kritik akışlar | ✅ | 738ae14 | **Deneme 15/15**, iki koşu. Atlas çoğaltma kümesinde gerçek işlem (transaction) yolu. Yerel 15/15, eski E2E 37/37. Sonuç dosyası: `docs/e2e-sonuclari/kritik-staging.json`. | — |
 | 4b | Tarayıcı akışları (deneme) | ✅ | 738ae14 | Sentetik yönetici ile: giriş → izin onayı → plan açma → hızlı yerine atama (kayıt) → yayın v3 ve v4. Veritabanında doğrulandı: talep onaylı, bakiye 20→18; v4 farkı 1+/1−; yalnız etkilenen hesaba 1 bildirim. JS hatası yok. | — |
 | 5 | Zorunlu kural kapsamı | ✅ | 83e7141, fdf3429 | `docs/KURAL_KAPSAMI.md` | Kurum kararları |
-| 6 | Yedek + geri yükleme | ✅ elle · ✅ otomatik (push) · ⏳ günlük | e9d5504 … 3357673 | **Otomatik (GitHub, [45266877741](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45266877741)):** tüm adımlar geçti — yedek 3 476 belge, şifreleme, ayrı veritabanına geri yükleme (30 koleksiyon / 3 476 belge / 190 dizin birebir), uygulama okuması, artifact 14863601627 yükleme + REST ile geri indirme + SHA-256 eşleşmesi. `/api/version` kaydı aynı çalıştırma/deneme/artifact.<br>Günlük zamanlama **doğrulanmadı**: taslak PR [#1](https://github.com/Maygun15/Hastane-Nobet/pull/1) birleştirilmedi; ilk zamanlanmış çalışma görülmedi. | PR #1 birleştirme onayı (üretim yeniden dağıtımı etkisiyle); ilk 05:30 çalışmasının gözlenmesi |
+| 6 | Yedek + geri yükleme | ✅ elle · ✅ otomatik (push) · ⏳ günlük | e9d5504 … 3357673 | **Otomatik (GitHub, [45266877741](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45266877741)):** tüm adımlar geçti — yedek 3 476 belge, şifreleme, ayrı veritabanına geri yükleme (30 koleksiyon / 3 476 belge / 190 dizin birebir), uygulama okuması, artifact 14863601627 yükleme + REST ile geri indirme + SHA-256 eşleşmesi. `/api/version` kaydı aynı çalıştırma/deneme/artifact.<br>Günlük zamanlama **henüz doğrulanmadı**: PR [#1](https://github.com/Maygun15/Hastane-Nobet/pull/1) onayla `main`'e birleştirildi (582a0c5, iş akışı `active`); ilk zamanlanmış çalışma görülmedi. | 25 Kasım 05:30 TSİ zamanlanmış çalışmasının gözlenmesi |
 
 ### Bu bölümde bulunan ek hatalar (düzeltildi)
 
@@ -524,10 +524,11 @@ Hepsi hedef doğrulamasıyla yapıldı (adres ≠ üretim kümesi; işaret = sta
 
 **`/api/version` (deneme sunucusu) eşleşmesi:** `backup.lastSuccess` → `runner: github:45266877741/1`, `artifactId: 14863601627`, `docs: 3476`, `restoredDocs: 3476`, `restoredCollections: 30`, `restoredIndexes: 190`, `backupAt: 2026-11-23T21:11:33Z`; `lastAttempt` → aynı çalıştırma, `ok: true`; `stale: false`. Çalıştırma kimliği, deneme numarası ve artifact kimliği **eşleşiyor** ✅.
 
-**Günlük zamanlama — doğrulanmadı ⏳**
-- Taslak PR [Maygun15/Hastane-Nobet#1](https://github.com/Maygun15/Hastane-Nobet/pull/1): `zamanlanmis-deneme-yedegi` (d647b17) → `main`, **yalnız** `.github/workflows/staging-backup.yml` (deneme dalındakiyle birebir). Kontroller geçti; Vercel yalnız Preview dağıttı. **Birleştirilmedi.**
-- Üretim etkisi: `main`'e son gönderim (86e768f) Vercel `Production` + iki Railway üretim servisini dağıttı; Vercel GitHub bağlantısı PR'da da etkin. Birleştirme büyük olasılıkla aynı kodla üretim yeniden dağıtımı tetikler.
-- Geri dönüş: birleştirme commit'inin `git revert`'ü; veri etkilenmez.
-- İlk gerçek `schedule` çalışması başarıyla görülene kadar günlük otomasyon doğrulanmış sayılmaz.
+**Günlük zamanlama — birleştirildi, ilk zamanlanmış çalışma bekleniyor ⏳** (24 Kasım 2026, 13:05 TSİ)
+- PR [Maygun15/Hastane-Nobet#1](https://github.com/Maygun15/Hastane-Nobet/pull/1) depo sahibinin onayıyla `main`'e birleştirildi: birleştirme commit'i `582a0c5`, yalnız `.github/workflows/staging-backup.yml`.
+- GitHub iş akışı listesinde "Deneme ortamı yedeği" `main`'de kayıtlı, durumu `active` ✅.
+- Üretim etkisi (gözlenen): Vercel `Production` aynı kodla yeniden dağıtıldı, durum `success` ✅. Bu commit için Railway dağıtım kaydı oluşmadı. `main`'e gönderim yedek işini tetiklemez (push tetikleyicisi yalnız deneme dalı); birleştirme commit'inde iş akışı çalışması yok.
+- Geri dönüş: `582a0c5`'in `git revert`'ü zamanlamayı kaldırır; veri etkilenmez.
+- İlk zamanlanmış çalışma 25 Kasım 2026 05:30 TSİ (02:30 UTC) bekleniyor; GitHub birkaç dakika–saat geciktirebilir. Bu çalışma başarıyla görülene kadar günlük otomasyon **doğrulanmış sayılmaz**.
 
 **Açık küçük işler:** Node.js 20 kullanım dışı uyarısı (`actions/*@v4`); başarısız denemelerden kalan 3 artifact 7 günde kendiliğinden silinir; parola (`BACKUP_PASSPHRASE`) depo sahibinin parola yöneticisinde saklanmalı — kaybolursa yedekler açılamaz.
