@@ -332,6 +332,39 @@ describe('POST /publish', () => {
     expect(sendSchedulePublished).not.toHaveBeenCalled();
   });
 
+  test('revizyon numarası değişti ama görevler son yayınla aynı: yeni sürüm, geçmiş kaydı ve bildirim yok', async () => {
+    const scheduleChanges = require('../services/scheduleChangeService');
+    const { sendScheduleRevised } = require('../services/notificationService');
+    scheduleChanges.preparePublish.mockResolvedValueOnce({
+      version: 3, isRevision: true, previousVersion: 2, added: [], removed: [], affectedPersonIds: [], snapshot: ['k'],
+    });
+    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', ...SCOPE, data: {}, revision: 9,
+      publication: { status: 'published', contentRevision: 7, version: 2, publishedBy: 'ilk' }, ruleContext: { version: 'kv-test' } }));
+    MonthlySchedule.findOneAndUpdate.mockReturnValue(lean({ _id: 'sched-1', publication: { status: 'published', version: 2, contentRevision: 9 } }));
+    const r = await call('post', '/publish', { user: PLANNER, body: { ...SCOPE } });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ alreadyPublished: true, unchanged: true, notified: 0, version: 2 });
+    expect(scheduleChanges.recordChange).not.toHaveBeenCalled();
+    // Yayın kimliği korunur: yalnız içerik revizyonu güncellenir
+    expect(MonthlySchedule.findOneAndUpdate.mock.calls[0][1]).toEqual({ $set: { 'publication.contentRevision': 9 } });
+    expect(sendScheduleRevised).not.toHaveBeenCalled();
+    expect(sendSchedulePublished).not.toHaveBeenCalled();
+  });
+
+  test('bildirim gönderimi hata verirse yayın yine tamamlanır; bildirim sayısı 0 döner', async () => {
+    MonthlySchedule.findOne.mockReturnValue(selectLean({ _id: 'sched-1', ...SCOPE, data: {}, publication: { status: 'draft' }, ruleContext: { version: 'kv-test' } }));
+    MonthlySchedule.findOneAndUpdate.mockReturnValue(lean({ _id: 'sched-1', publication: { status: 'published', version: 1 } }));
+    Assignment.distinct.mockResolvedValue(['p-1']);
+    computeMonthlyFairnessScores.mockResolvedValue({ people: [{ personId: 'p-1', fairnessScore: 90 }] });
+    sendSchedulePublished.mockRejectedValueOnce(new Error('posta sunucusu yanıt vermiyor'));
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await call('post', '/publish', { user: PLANNER, body: { ...SCOPE } });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, publication: { status: 'published' }, notified: 0, version: 1 });
+    expect(errSpy.mock.calls.some((c) => String(c.join(' ')).includes('bildirim'))).toBe(true);
+    errSpy.mockRestore();
+  });
+
   test('çizelge yoksa 404', async () => {
     MonthlySchedule.findOne.mockReturnValue(selectLean(null));
     const r = await call('post', '/publish', { user: PLANNER, body: { ...SCOPE } });

@@ -22,7 +22,11 @@ const require = createRequire(path.join(backend, 'package.json'));
 const { connectTarget } = require('./scripts/lib/dbTarget');
 
 const TARGET = process.env.E2E_TARGET || 'local';
-const API = { local: 'http://localhost:3100', staging: 'https://nobet-staging-api.onrender.com' }[TARGET];
+// E2E_API: yalnız local hedefte başka yerel port (ör. üretim kopyası provası, 3998). Uzak adres kabul edilmez.
+const API_OVERRIDE = process.env.E2E_API || '';
+if (API_OVERRIDE && (TARGET !== 'local' || !/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(API_OVERRIDE))) throw new Error('E2E_API yalnız local hedefte ve http://localhost:<port> olabilir');
+const API = API_OVERRIDE || { local: 'http://localhost:3100', staging: 'https://nobet-staging-api.onrender.com' }[TARGET];
+const LABEL = (process.env.E2E_LABEL || TARGET).replace(/[^a-z0-9-]/gi, '');
 if (!API) throw new Error(`E2E_TARGET yalnız local | staging (verilen: ${TARGET})`);
 const CRED_OUT = TARGET === 'staging'
   ? path.join(os.homedir(), 'nöbet', '.staging-e2e-giris.txt')
@@ -273,13 +277,25 @@ async function scenarios(sb, db) {
   await new Promise((r) => setTimeout(r, 1500));
   const notifs = await db.collection('notifications').find({ userId: { $in: usersAB }, title: /sürüm 2/ }).toArray();
   const pubV2 = await db.collection('schedulechanges').countDocuments({ hospitalId: HA, kind: 'publish', publishVersion: 2 });
+  const pubV3 = await db.collection('schedulechanges').countDocuments({ hospitalId: HA, kind: 'publish', publishVersion: 3 });
   const perUser = usersAB.map((u) => notifs.filter((n) => String(n.userId) === String(u)).length);
   const winner = [pa, pb].find((r) => r.body?.version === 2 && !r.body?.alreadyPublished) || pa;
   check('K9', 'Revizyonda eski ve yeni kişi doğru belirlenir (çıkarılan + eklenen)', !!target && !toBusy && sv.status === 200 && winner.body?.revision?.affected === 2 && perUser.every((c) => c >= 1),
     target ? `${tDate} ${sb.people[fromIdx]} → ${sb.people[toIdx]}; etkilenen ${winner.body?.revision?.affected}, bildirim (h1, h2) = ${perUser.join(', ')}` : 'hemşire 1/2 için görev bulunamadı');
   check('K10', 'Eş zamanlı iki yayın isteği → tek yayın kaydı, bildirim çoğalmaz', [pa, pb].every((r) => r.status === 200) && before === 0 && perUser.every((c) => c === 1)
-    && pubV2 === 1 && [pa, pb].filter((r) => r.body?.alreadyPublished).length === 1,
-    `yayın yanıtları ${pa.status}/${pb.status} (${[pa, pb].map((r) => r.body?.alreadyPublished ? 'zaten yayınlı' : `v${r.body?.version}`).join(' / ')}); geçmişte sürüm 2 kaydı ${pubV2}; kişi başı bildirim ${perUser.join(', ')}`);
+    && pubV2 === 1 && pubV3 === 0 && [pa, pb].filter((r) => r.body?.alreadyPublished).length === 1,
+    `yayın yanıtları ${pa.status}/${pb.status} (${[pa, pb].map((r) => r.body?.alreadyPublished ? 'zaten yayınlı' : `v${r.body?.version}`).join(' / ')}); geçmişte sürüm 2 kaydı ${pubV2}, sürüm 3 kaydı ${pubV3}; kişi başı bildirim ${perUser.join(', ')}`);
+
+  // K15 değişikliksiz yeniden yayın: görevler son yayınla aynı → yeni sürüm, geçmiş kaydı ve bildirim yok
+  const notifBefore15 = await db.collection('notifications').countDocuments({ userId: { $in: usersAB } });
+  const pubBefore15 = await db.collection('schedulechanges').countDocuments({ hospitalId: HA, kind: 'publish' });
+  const again = await call(A, 'POST', '/api/schedules/publish', { ...S, year: Y1, month: M1 });
+  await new Promise((r) => setTimeout(r, 1000));
+  const notifAfter15 = await db.collection('notifications').countDocuments({ userId: { $in: usersAB } });
+  const pubAfter15 = await db.collection('schedulechanges').countDocuments({ hospitalId: HA, kind: 'publish' });
+  check('K15', 'Değişikliksiz yeniden yayın → yeni sürüm, geçmiş kaydı ve bildirim yok', again.status === 200 && again.body?.alreadyPublished === true
+    && Number(again.body?.version ?? again.body?.publication?.version) === 2 && pubAfter15 === pubBefore15 && notifAfter15 === notifBefore15,
+    `HTTP ${again.status}, zaten yayınlı ${again.body?.alreadyPublished}, sürüm ${again.body?.version ?? again.body?.publication?.version}; yayın kaydı ${pubBefore15}→${pubAfter15}; bildirim ${notifBefore15}→${notifAfter15}`);
 
   // K11 yetki ve kurum yalıtımı
   const reqId = String(rReq._id);
@@ -362,5 +378,5 @@ const ok = results.filter((r) => r.ok).length;
 console.log(`\nSONUÇ (${TARGET}, commit ${env.commit || '?'}): ${ok}/${results.length} geçti`);
 const outDir = path.join(here, '../../docs/e2e-sonuclari');
 fs.mkdirSync(outDir, { recursive: true });
-fs.writeFileSync(path.join(outDir, `kritik-${TARGET}.json`), JSON.stringify({ ...env, at: new Date().toISOString(), results }, null, 2));
+fs.writeFileSync(path.join(outDir, `kritik-${LABEL}.json`), JSON.stringify({ ...env, at: new Date().toISOString(), results }, null, 2));
 process.exit(code || (ok === results.length ? 0 : 1));

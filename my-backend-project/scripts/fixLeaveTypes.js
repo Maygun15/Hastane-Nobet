@@ -6,8 +6,9 @@
 // (maxDaysPerYear) da boş olduğu için bakiye hep "hak 0".
 //
 // Kullanım (varsayılan KURU, hiçbir şey yazmaz):
-//   MONGODB_URI=<uri> node scripts/fixLeaveTypes.js
-//   MONGODB_URI=<uri> node scripts/fixLeaveTypes.js --apply
+//   node scripts/fixLeaveTypes.js --target=local|staging|production
+//   node scripts/fixLeaveTypes.js --target=<hedef> --apply
+// Hedef doğrulaması: scripts/lib/dbTarget.js (adres–hedef, ortam işareti; .env okunmaz).
 // Seçenekler:
 //   --deductible=Y         bakiyeden düşülecek kodlar (virgülle; varsayılan: Y)
 //   --annual-days=20       düşülen türlerde yıllık hak (gün; 657 DMK: 10 yıldan az 20, fazla 30)
@@ -16,8 +17,8 @@
 // Kişi bazlı 30 günlük haklar için personel listesiyle ayrıca güncelleme gerekir.
 'use strict';
 
-const path = require('path');
-const mongoose = require(path.join(__dirname, '..', 'node_modules', 'mongoose'));
+const { connectTarget } = require('./lib/dbTarget');
+let CONN = null;
 
 const APPLY = process.argv.includes('--apply');
 const arg = (name, def) => {
@@ -30,15 +31,12 @@ const DEDUCTIBLE = new Set(
 const ANNUAL_DAYS = Number(arg('annual-days', '20'));
 
 async function main() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) throw new Error('MONGODB_URI açıkça verilmeli (.env okunmaz).');
   if (!Number.isFinite(ANNUAL_DAYS) || ANNUAL_DAYS <= 0) throw new Error('--annual-days pozitif sayı olmalı');
-  const host = (String(uri).match(/@([^/?]+)/) || [])[1] || '?';
-  console.log(`[izin-türleri] sunucu: ${host} · mod: ${APPLY ? 'UYGULA' : 'KURU (yazmaz)'}`);
+  const { conn, db, target, host } = await connectTarget({ readOnly: !APPLY });
+  CONN = conn;
+  console.log(`[izin-türleri] hedef ${target} (${host}) · mod: ${APPLY ? 'UYGULA' : 'KURU (yazmaz)'}`);
   console.log(`[izin-türleri] düşülecek kodlar: ${[...DEDUCTIBLE].join(', ')} · yıllık hak: ${ANNUAL_DAYS} gün`);
 
-  await mongoose.connect(uri, { dbName: 'hastane', serverSelectionTimeoutMS: 15000 });
-  const db = mongoose.connection.db;
   const types = await db.collection('leave_types').find({}).sort({ code: 1 }).toArray();
 
   const changes = [];
@@ -97,11 +95,11 @@ async function main() {
     }
   }
   console.log(`[izin-türleri] ${APPLY ? 'güncellendi' : 'güncellenecek'}: ${changes.length} izin türü, ${zeroBalances.length} bakiye hakkı, ${codeKeyed.length} bakiye kimliği`);
-  await mongoose.disconnect();
+  await conn.close();
 }
 
 main().catch(async (err) => {
   console.error('[izin-türleri] HATA:', err?.message || err);
-  try { await mongoose.disconnect(); } catch {}
+  try { if (CONN) await CONN.close(); } catch {}
   process.exit(1);
 });

@@ -18,7 +18,11 @@ async function main() {
   const probe = await connectTarget({ readOnly: true, dbName });
   const { target, host, marker } = probe;
   await probe.conn.close();
-  if (marker !== target) throw new Error(`veritabanı ortam işareti "${marker || 'yok'}", hedef "${target}" — yedek alınmadı`);
+  // --first-backup: işaret yazılmadan ÖNCEKİ ilk yedek (üretimde her yazımdan önce). Yalnız işaret hiç
+  // yoksa geçerlidir; farklı bir işaret (ör. staging) yine reddedilir. Adres–hedef kontrolü yine yapılır.
+  const firstBackup = process.argv.includes('--first-backup') && !marker;
+  if (marker !== target && !firstBackup) throw new Error(`veritabanı ortam işareti "${marker || 'yok'}", hedef "${target}" — yedek alınmadı`);
+  if (firstBackup) console.log('[yedek] ilk yedek: veritabanında ortam işareti henüz yok (--first-backup); yalnız adres–hedef kontrolüyle');
   const uri = uriFor(target);
 
   const dir = path.resolve(process.env.BACKUP_DIR || path.join(__dirname, '..', 'backups'));

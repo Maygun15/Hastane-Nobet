@@ -2977,6 +2977,16 @@ router.post('/publish',
 
       // Yayın sürümü ve önceki yayına göre fark (revizyon ise yalnız etkilenenlere bildirim).
       const prep = await scheduleChanges.preparePublish(query, current?.data?.assignments || []);
+      // Değişikliksiz yeniden yayın: görevler son yayınla birebir aynıysa yeni sürüm, geçmiş kaydı ve
+      // bildirim yok. Eş zamanlı ikinci istek (ilki durumu yazmadan önce okuduysa) de buraya düşer.
+      // Yalnız yayın durumu güncel içerik revizyonuna çekilir (taslağa alınmışsa yeniden yayında görünür).
+      if (prep.isRevision && prep.added.length === 0 && prep.removed.length === 0) {
+        const saved = current?.publication?.status === PUBLICATION_STATUS.PUBLISHED
+          // Yayın kimliği (tarih, yayınlayan, sürüm) korunur; yalnız içerik revizyonu güncellenir.
+          ? await MonthlySchedule.findOneAndUpdate(query, { $set: { 'publication.contentRevision': contentRevision } }, { new: true }).lean()
+          : await setPublicationStatus(query, PUBLICATION_STATUS.PUBLISHED, req.user, { contentRevision, version: prep.previousVersion });
+        return res.json({ ok: true, alreadyPublished: true, unchanged: true, publication: saved?.publication || null, notified: 0, version: prep.previousVersion });
+      }
       // Yayın kaydı önce yazılır ve "hak" yerine geçer: aynı sürüm için tekil dizin ikinci eş zamanlı
       // isteği durdurur → ikinci istek yayın durumu, geçmiş ve bildirim üretmez.
       try {

@@ -1,8 +1,10 @@
 name: Deploy
 
+# Otomatik tetikleme KAPALI (docs/PRODUCTION_RELEASE_PLAN.md). Üretim ön yüzü Vercel'in GitHub bağlantısıyla
+# dağıtılıyor; sunucu barındırma kararı (Railway/Render/diğer) verilmeden main'e birleştirme bu iş akışıyla
+# ikinci bir üretim dağıtımı ya da başarısız Railway denemesi başlatmasın. Yalnız elle çalıştırılır.
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy-frontend:

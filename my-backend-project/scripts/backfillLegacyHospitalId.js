@@ -7,11 +7,11 @@
 // oluşturulamıyor → izin onayı "bakiye güncellenemedi" hatasıyla geri alınıyor.
 //
 // Kullanım (varsayılan KURU çalıştırma, hiçbir şey yazmaz):
-//   MONGODB_URI=<uri> node scripts/backfillLegacyHospitalId.js
-//   MONGODB_URI=<uri> node scripts/backfillLegacyHospitalId.js --apply
+//   node scripts/backfillLegacyHospitalId.js --target=local|staging|production
+//   node scripts/backfillLegacyHospitalId.js --target=<hedef> --apply
 //
 // Güvenlik:
-//   - .env OKUNMAZ; MONGODB_URI açıkça verilmelidir.
+//   - Hedef doğrulaması scripts/lib/dbTarget.js ile (.env okunmaz; adres–hedef ve ortam işareti).
 //   - Veritabanında tam olarak 1 hastane yoksa durur.
 //   - Bir kayda hospitalId eklemek, aynı benzersiz anahtarla zaten hastaneli bir
 //     kayıt varken çakışma yaratacaksa o koleksiyonu ATLAR ve raporlar.
@@ -21,8 +21,8 @@
 //     eklemek (hospitalId,date) benzersizliğinde çakışır).
 'use strict';
 
-const path = require('path');
-const mongoose = require(path.join(__dirname, '..', 'node_modules', 'mongoose'));
+const { connectTarget } = require('./lib/dbTarget');
+let CONN = null;
 
 const APPLY = process.argv.includes('--apply');
 const MISSING = { $or: [{ hospitalId: { $exists: false } }, { hospitalId: null }] };
@@ -36,18 +36,11 @@ const TARGETS = {
   generatedschedules: null,
 };
 
-function maskHost(uri) {
-  const m = String(uri).match(/@([^/?]+)/);
-  return m ? m[1] : '(bilinmiyor)';
-}
-
 async function main() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) throw new Error('MONGODB_URI açıkça verilmeli (.env okunmaz).');
-  console.log(`[backfill] hedef sunucu: ${maskHost(uri)} · mod: ${APPLY ? 'UYGULA' : 'KURU (yazmaz)'}`);
+  const { conn, db, target, host } = await connectTarget({ readOnly: !APPLY });
+  CONN = conn;
+  console.log(`[backfill] hedef ${target} (${host}) · mod: ${APPLY ? 'UYGULA' : 'KURU (yazmaz)'}`);
 
-  await mongoose.connect(uri, { dbName: 'hastane', serverSelectionTimeoutMS: 15000 });
-  const db = mongoose.connection.db;
 
   const hospitals = await db.collection('hospitals').find({}, { projection: { name: 1 } }).toArray();
   if (hospitals.length !== 1) {
@@ -135,11 +128,11 @@ async function main() {
   }
 
   console.log(`[backfill] ${APPLY ? 'güncellenen' : 'güncellenecek'} toplam: ${total}`);
-  await mongoose.disconnect();
+  await conn.close();
 }
 
 main().catch(async (err) => {
   console.error('[backfill] HATA:', err?.message || err);
-  try { await mongoose.disconnect(); } catch {}
+  try { if (CONN) await CONN.close(); } catch {}
   process.exit(1);
 });

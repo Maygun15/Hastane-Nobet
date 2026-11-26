@@ -15,13 +15,14 @@
  *   3) Eski indeksi kaldırır.
  *
  * Varsayılan KURU ÇALIŞMA: sadece ne yapacağını yazar. Uygulamak için --apply.
- * .env OKUMAZ; MONGODB_URI açıkça verilmelidir.
+ * Hedef doğrulaması scripts/lib/dbTarget.js ile (.env okunmaz; adres–hedef ve ortam işareti).
  *
- *   MONGODB_URI=... node scripts/migratePersonTcIndex.js            # kuru çalışma
- *   MONGODB_URI=... node scripts/migratePersonTcIndex.js --apply    # uygula
+ *   node scripts/migratePersonTcIndex.js --target=<hedef>            # kuru çalışma
+ *   node scripts/migratePersonTcIndex.js --target=<hedef> --apply    # uygula
  */
 
-const mongoose = require('mongoose');
+const { connectTarget } = require('./lib/dbTarget');
+let CONN = null;
 
 const OLD_NAME = 'hospitalId_1_tc_1';
 const NEW_NAME = 'hospitalId_1_tc_1_nonempty';
@@ -29,15 +30,11 @@ const NEW_SPEC = { hospitalId: 1, tc: 1 };
 const NEW_OPTS = { name: NEW_NAME, unique: true, partialFilterExpression: { tc: { $type: 'string', $gt: '' } } };
 
 async function main() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) throw new Error('MONGODB_URI açıkça verilmeli.');
   const apply = process.argv.includes('--apply');
-  const dbName = process.env.MONGODB_DB || 'hastane';
-
-  await mongoose.connect(uri, { dbName, serverSelectionTimeoutMS: 10000 });
-  const coll = mongoose.connection.db.collection('people');
-  const host = (() => { try { return new URL(uri).host; } catch { return '?'; } })();
-  console.log(`[tc-index] veritabanı: ${host}/${dbName} — mod: ${apply ? 'UYGULA' : 'KURU ÇALIŞMA'}`);
+  const { conn, db, target, host } = await connectTarget({ readOnly: !apply });
+  CONN = conn;
+  const coll = db.collection('people');
+  console.log(`[tc-index] hedef ${target} (${host}) — mod: ${apply ? 'UYGULA' : 'KURU ÇALIŞMA'}`);
 
   const indexes = await coll.indexes();
   const oldIdx = indexes.find((i) => i.name === OLD_NAME);
@@ -74,4 +71,4 @@ async function main() {
 
 main()
   .catch((err) => { console.error('[tc-index]', err.message || err); process.exitCode = 1; })
-  .finally(() => mongoose.disconnect().catch(() => {}));
+  .finally(() => (CONN ? CONN.close().catch(() => {}) : null));
