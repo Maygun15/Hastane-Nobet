@@ -429,7 +429,7 @@ Senaryolar sentetik iki kurum oluşturur, sonra yalnız onları siler.
 | Deneme API test erişimi | ⏳ | Sentetik hesaplar (veritabanı erişimiyle oluşturulur) |
 | Deneme veritabanı | ⏳ | `~/nöbet/.staging-erisim.env` dosyası, izin 600, satırı `STAGING_MONGODB_URI=<Render → nobet-staging-api → Environment → MONGODB_URI>` |
 | Otomatik yedek | ⏳ | GitHub → Settings → Secrets and variables → Actions: `STAGING_MONGODB_URI`, `BACKUP_PASSPHRASE` (≥32 karakter) |
-| Günlük zamanlama | ⏳ | PR #1 birleştirildi (582a0c5); ilk zamanlanmış çalışmanın gözlenmesi |
+| Günlük zamanlama | ✅ | 25 ve 26 Kasım zamanlanmış çalışmaları başarılı |
 
 ## Deneme ortamında erişim gelince yapılacaklar (sırayla)
 
@@ -455,7 +455,7 @@ Senaryolar sentetik iki kurum oluşturur, sonra yalnız onları siler.
 | 4 | Kritik akışlar | ✅ | 738ae14 | **Deneme 15/15**, iki koşu. Atlas çoğaltma kümesinde gerçek işlem (transaction) yolu. Yerel 15/15, eski E2E 37/37. Sonuç dosyası: `docs/e2e-sonuclari/kritik-staging.json`. | — |
 | 4b | Tarayıcı akışları (deneme) | ✅ | 738ae14 | Sentetik yönetici ile: giriş → izin onayı → plan açma → hızlı yerine atama (kayıt) → yayın v3 ve v4. Veritabanında doğrulandı: talep onaylı, bakiye 20→18; v4 farkı 1+/1−; yalnız etkilenen hesaba 1 bildirim. JS hatası yok. | — |
 | 5 | Zorunlu kural kapsamı | ✅ | 83e7141, fdf3429 | `docs/KURAL_KAPSAMI.md` | Kurum kararları |
-| 6 | Yedek + geri yükleme | ✅ elle · ✅ otomatik (push) · ⏳ günlük | e9d5504 … 3357673 | **Otomatik (GitHub, [45266877741](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45266877741)):** tüm adımlar geçti — yedek 3 476 belge, şifreleme, ayrı veritabanına geri yükleme (30 koleksiyon / 3 476 belge / 190 dizin birebir), uygulama okuması, artifact 14863601627 yükleme + REST ile geri indirme + SHA-256 eşleşmesi. `/api/version` kaydı aynı çalıştırma/deneme/artifact.<br>Günlük zamanlama **henüz doğrulanmadı**: PR [#1](https://github.com/Maygun15/Hastane-Nobet/pull/1) onayla `main`'e birleştirildi (582a0c5, iş akışı `active`); ilk zamanlanmış çalışma görülmedi. | 25 Kasım 05:30 TSİ zamanlanmış çalışmasının gözlenmesi |
+| 6 | Yedek + geri yükleme | ✅ elle · ✅ otomatik (push) · ✅ günlük (deneme) | e9d5504 … 3357673 | **Otomatik (GitHub, [45266877741](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45266877741)):** tüm adımlar geçti — yedek 3 476 belge, şifreleme, ayrı veritabanına geri yükleme (30 koleksiyon / 3 476 belge / 190 dizin birebir), uygulama okuması, artifact 14863601627 yükleme + REST ile geri indirme + SHA-256 eşleşmesi. `/api/version` kaydı aynı çalıştırma/deneme/artifact.<br>Günlük zamanlama **doğrulandı**: PR [#1](https://github.com/Maygun15/Hastane-Nobet/pull/1) (582a0c5); zamanlanmış çalışmalar [45606159080](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45606159080) (25 Kas) ve [45810117425](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45810117425) (26 Kas) başarılı; `/api/version` son kaydı 45810117425/1. | Üretim yedeği (ayrı iş) |
 
 ### Bu bölümde bulunan ek hatalar (düzeltildi)
 
@@ -532,3 +532,9 @@ Hepsi hedef doğrulamasıyla yapıldı (adres ≠ üretim kümesi; işaret = sta
 - İlk zamanlanmış çalışma 25 Kasım 2026 05:30 TSİ (02:30 UTC) bekleniyor; GitHub birkaç dakika–saat geciktirebilir. Bu çalışma başarıyla görülene kadar günlük otomasyon **doğrulanmış sayılmaz**.
 
 **Açık küçük işler:** Node.js 20 kullanım dışı uyarısı (`actions/*@v4`); başarısız denemelerden kalan 3 artifact 7 günde kendiliğinden silinir; parola (`BACKUP_PASSPHRASE`) depo sahibinin parola yöneticisinde saklanmalı — kaybolursa yedekler açılamaz.
+
+**Günlük zamanlama — doğrulandı ✅** (26 Kasım 2026, 14:45 TSİ)
+- [45606159080](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45606159080): `schedule`, `main` 582a0c5, 25 Kas 11:37 UTC, Success.
+- [45810117425](https://github.com/Maygun15/Hastane-Nobet/actions/runs/45810117425): `schedule`, 26 Kas 11:23 UTC, Success. `/api/version` → `lastSuccess.runner = github:45810117425/1`, artifact 15111241553, 3 477 belge / 30 koleksiyon / 190 dizin geri yüklendi, `stale: false`.
+- Gözlem: GitHub zamanlanmış işi ~9 saat geç başlatıyor (02:30 UTC yerine ~11:30 UTC). 36 saatlik bayat uyarısı eşiği içinde kalıyor; gecikme büyürse saat değiştirilebilir.
+- Kapsam: yalnız **deneme** veritabanı yedekleniyor. Üretim veritabanı için otomatik yedek **yok**.
